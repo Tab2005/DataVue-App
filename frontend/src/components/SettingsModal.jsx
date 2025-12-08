@@ -31,10 +31,13 @@ const SettingsModal = ({ isOpen, onClose, language }) => {
         try {
             // 取得 API 網址
             const apiUrl = import.meta.env.VITE_API_URL || 'http://localhost:8000';
+            const token = localStorage.getItem('google_token');
+
             const response = await fetch(`${apiUrl}/api/auth/exchange-token`, {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',
+                    'Authorization': `Bearer ${token}`
                 },
                 body: JSON.stringify({
                     app_id: formData.appId,

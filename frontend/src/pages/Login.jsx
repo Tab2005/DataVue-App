@@ -1,0 +1,56 @@
+import React from 'react';
+import { GoogleLogin } from '@react-oauth/google';
+import { useNavigate } from 'react-router-dom';
+
+const Login = () => {
+    const navigate = useNavigate();
+
+    const handleSuccess = (credentialResponse) => {
+        console.log('Login Success:', credentialResponse);
+        // Store the token in localStorage
+        localStorage.setItem('google_token', credentialResponse.credential);
+        // Redirect to dashboard
+        navigate('/');
+    };
+
+    const handleError = () => {
+        console.log('Login Failed');
+        alert('Login Failed. Please try again.');
+    };
+
+    return (
+        <div style={{
+            display: 'flex',
+            flexDirection: 'column',
+            alignItems: 'center',
+            justifyContent: 'center',
+            height: '100vh',
+            backgroundColor: 'var(--bg-primary)',
+            color: 'var(--text-primary)'
+        }}>
+            <div style={{
+                padding: '40px',
+                borderRadius: 'var(--radius-xl)',
+                backgroundColor: 'var(--bg-secondary)',
+                boxShadow: '0 4px 12px rgba(0,0,0,0.1)',
+                textAlign: 'center'
+            }}>
+                <h1 style={{ marginBottom: '24px' }}>Welcome Back</h1>
+                <p style={{ marginBottom: '32px', color: 'var(--text-secondary)' }}>
+                    Please sign in to access the dashboard.
+                </p>
+
+                <div style={{ display: 'flex', justifyContent: 'center' }}>
+                    <GoogleLogin
+                        onSuccess={handleSuccess}
+                        onError={handleError}
+                        theme="filled_black"
+                        shape="pill"
+                    />
+                </div>
+            </div>
+        </div>
+    );
+};
+
+export default Login;
