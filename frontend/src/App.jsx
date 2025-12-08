@@ -20,6 +20,7 @@ function App() {
 
   // 1. Fetch Ad Accounts on Mount
   useEffect(() => {
+    // 取得 API 網址：優先使用環境變數 VITE_API_URL，如果未設定則預設為 localhost (本地開發用)
     const apiUrl = import.meta.env.VITE_API_URL || 'http://localhost:8000';
     fetch(`${apiUrl}/api/ad-accounts`)
       .then(res => res.json())
@@ -40,6 +41,7 @@ function App() {
     // Show loading state implicitly or explicit (optional)
     setData(prev => ({ ...prev, kpi: prev.kpi.map(k => ({ ...k, value: "Loading..." })) }));
 
+    // 取得 API 網址
     const apiUrl = import.meta.env.VITE_API_URL || 'http://localhost:8000';
     fetch(`${apiUrl}/api/dashboard-data?account_id=${selectedAccountId}`)
       .then(res => res.json())
