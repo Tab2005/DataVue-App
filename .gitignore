@@ -1,0 +1,27 @@
+# General
+.DS_Store
+*.log
+node_modules/
+venv/
+__pycache__/
+.idea/
+.vscode/
+
+# Backend specific
+backend/.env
+backend/tokens.json
+backend/__pycache__/
+backend/venv/
+*.pyc
+
+# Frontend specific
+frontend/node_modules/
+frontend/dist/
+frontend/.env.local
+frontend/.env.development.local
+frontend/.env.test.local
+frontend/.env.production.local
+
+# We DO want to commit the template .env files if they exist, but not the actual ones with secrets
+# unless they are explicitly named differently.
+# For this project, we are using .env for secrets in backend, so it's ignored.
