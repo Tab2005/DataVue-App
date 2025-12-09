@@ -15,11 +15,13 @@ if DATABASE_URL:
         DATABASE_URL = DATABASE_URL.replace("postgres://", "postgresql://", 1)
     
     engine = create_engine(DATABASE_URL)
+    print(f"✅ Database connected: PostgreSQL detected.")
 else:
     # SQLite Configuration (Local)
     engine = create_engine(
         SQLITE_DATABASE_URL, connect_args={"check_same_thread": False}
     )
+    print(f"ℹ️ Database connected: SQLite (Local Mode).")
 
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 
