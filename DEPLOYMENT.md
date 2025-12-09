@@ -44,3 +44,27 @@ PostgreSQL 是一個獨立運行的伺服器軟體。您不需要（也就無法
 
 ## 常見問題
 - **Port**: Zeabur 自動偵測 Port。FastAPI 預設 8000，Vite 預設 5173。確保 Zeabur 的 Networking 設定有對應到正確的 Port。
+
+## 3. 現有專案升級指南 (Upgrade Existing Deployment)
+如果您已經在 Zeabur 上佈署了專案，請依照以下步驟升級以支援 PostgreSQL：
+
+### Step 1: 新增 PostgreSQL 服務
+1. 在現有的 Zeabur 專案中，點擊 **"Create Service"** -> **"Marketplace"**。
+2. 搜尋並新增 **"PostgreSQL"**。
+
+### Step 2: 取得連線字串 (Connection String)
+1. 點擊剛新增的 PostgreSQL 服務。
+2. 在 "Instructions" 或 "Connection" 分頁中，找到 `Postgres_URL` 或 `DATABASE_URL` (通常格式為 `postgres://user:password@host:port/dbname`)。
+3. **複製** 這個網址。
+
+### Step 3: 更新後端環境變數
+1. 點擊您的 **Backend 應用程式服務**。
+2. 進入 **"Settings"** -> **"Variables"**。
+3. 新增/更新變數：
+   - `DATABASE_URL`: 貼上剛剛複製的 PostgreSQL 連線字串。
+   - `ENCRYPTION_KEY`: (如果還沒設定) 請從本機 `.env` 複製貼上。
+4. Zeabur 通常會偵測到變數更動並自動重新佈署 (Redeploy)。若無，請手動觸發 Redeploy。
+
+### Step 4: 確認
+- 重新佈署完成後，您的後端就會自動連線到新的 PostgreSQL 資料庫。
+- 舊的 SQLite 資料不會自動移轉過去，您需要重新登入 Google 並重新綁定 Facebook Token。
