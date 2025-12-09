@@ -25,9 +25,6 @@ EXPOSE 8000
 # Run uvicorn server (Shell form is more stable on some platforms)
 # Run uvicorn server (Shell form is more stable on some platforms)
 # We use || sleep 3600 to catch startup errors (Keep-Alive for debugging)
-# Deep Debug Mode
-# 1. Echo verify message
-# 2. List files to confirm structure
-# 3. Run python main.py directly (bypassing uvicorn CLI to test weird behaviors)
-# 4. Trap crash
-CMD ["sh", "-c", "echo '🟢 CONTAINER STARTED - DEBUG PROBE'; ls -la; pip list; echo '🟢 STARTING PYTHON...'; python main.py || (echo '🔴 APP CRASHED!' && sleep 3600)"]
+# Standard Production Command
+# Using python -m uvicorn is generally safer for path resolution
+CMD ["sh", "-c", "python -m uvicorn main:app --host 0.0.0.0 --port 8000"]

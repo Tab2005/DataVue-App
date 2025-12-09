@@ -38,6 +38,12 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+@app.get("/")
+def health_check():
+    """Health check endpoint to verify service status and DB connection."""
+    db_type = "PostgreSQL" if "postgresql" in str(engine.url) else "SQLite"
+    return {"status": "online", "database": db_type, "message": "Backend is running!"}
+
 # --- Google Token Verification ---
 GOOGLE_CLIENT_ID = os.getenv("GOOGLE_CLIENT_ID")
 security = HTTPBearer()
