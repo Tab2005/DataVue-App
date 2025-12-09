@@ -30,5 +30,6 @@ EXPOSE 8000
 # Run using direct python script to ensure our print statements fire BEFORE uvicorn starts
 # Also keep the sleep trap to prevent crash loop
 # Debug: Run simple http server to verify networking and logging
-# Debug: Run minimal FastAPI to test framework
-CMD ["python", "-u", "debug_main.py"]
+# Production Command
+# Using direct python execution to avoid path issues and ensure main block runs
+CMD ["python", "main.py"]

@@ -117,7 +117,7 @@ def get_dashboard_data(account_id: str = None, user_id: str = Depends(verify_goo
         ],
         "chart_data": []
     }
-    }
+
 
 if __name__ == "__main__":
     import uvicorn
