@@ -43,5 +43,5 @@ EXPOSE 8000
 # Production Startup with Crash Reporter
 # This wraps main.py and serves the error log if it crashes
 # Production Startup
-# Use direct python execution
-CMD ["python", "main.py"]
+# Use shell execution for better environment variable handling
+CMD ["sh", "-c", "python main.py"]
