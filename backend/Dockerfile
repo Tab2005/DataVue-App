@@ -40,6 +40,6 @@ EXPOSE 8000
 # Production Command with Safety Net
 # Run python directly, but keep the trap just in case it crashes again
 # Debug: Run minimal FastAPI to test framework
-# Production Startup with Safety Net
-# Run python directly, but keep the trap just in case it crashes again
-CMD ["sh", "-c", "python main.py || (echo '❌ APP CRASHED' && sleep 3600)"]
+# Production Startup with Crash Reporter
+# This wraps main.py and serves the error log if it crashes
+CMD ["python", "-u", "crash_reporter.py"]
