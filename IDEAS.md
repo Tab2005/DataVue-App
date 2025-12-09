@@ -98,13 +98,54 @@
 **原因**: 資料庫需要 `google_id` 作為 Key 來區分使用者。如果沒有先完成登入功能，我們就拿不到 `google_id`，資料庫也無法設計。
 
 ### Phase 1: Google 登入整合 (Google Login)
-- [ ] 前端：新增登入頁面，實作 Google Sign-In。
-- [ ] 前端：實作路由保護 (未登入導回首頁)。
-- [ ] 後端：(選用) 實作 Token 驗證 Middleware。
+- [x] 前端：新增登入頁面，實作 Google Sign-In。
+- [x] 前端：實作路由保護 (未登入導回首頁)。
+- [x] 後端：(選用) 實作 Token 驗證 Middleware。
 - **目標**: 確保只有登入的使用者能看到畫面，並取得使用者的 `google_id`。
 
 ### Phase 2: 資料庫導入 (Database Integration)
-- [ ] 後端：設計 `User` 資料表 (SQLite)。
-- [ ] 後端：修改 API，將 Token 存入資料庫 (綁定 `google_id`)。
-- [ ] 後端：修改 API，從資料庫讀取 Token。
+- [x] 後端：設計 `User` 資料表 (SQLite)。
+- [x] 後端：修改 API，將 Token 存入資料庫 (綁定 `google_id`)。
+- [x] 後端：修改 API，從資料庫讀取 Token。
 - **目標**: 實現多使用者支援，每個人的設定互不干擾。
+
+## 4. 安全性強化 (Security Hardening)
+
+**日期**: 2025-12-09
+**狀態**: 建議實作 (Recommended)
+
+### 風險評估
+目前 Token 以明文 (Plain Text) 儲存在 SQLite 資料庫中。若駭客取得 `facebook_dashboard.db` 檔案，即可直接竊取所有使用者的 Token。
+
+### 解決方案：資料加密 (Data Encryption)
+使用 `cryptography` 套件對敏感欄位進行加密。
+
+- **技術**: 對稱式加密 (Symmetric Encryption)，例如 Fernet。
+- **金鑰管理**: 產生一把 `ENCRYPTION_KEY`，存放在 `.env` 檔案中 (不入庫)。
+- **流程**:
+    [x] 寫入資料庫前：`encrypt(token, key)`
+    [x] 從資料庫讀取後：`decrypt(encrypted_token, key)`
+
+### 實作細節紀錄 (Implementation Details)
+> 此區塊紀錄已執行的實作計畫與技術細節。
+
+#### 後端依賴 (Backend Dependencies)
+- 新增 `cryptography` 套件。
+
+#### 設定檔 (Configuration)
+- `.env` 檔案新增 `ENCRYPTION_KEY` (自動生成，不可公開)。
+
+#### 驗證邏輯 (Authentication Logic)
+- **Lazy Migration (無痛轉移)**: 
+  - 讀取 Token 時若解密失敗 (代表是舊的明文資料)，會自動回傳原始值，確保舊使用者不受影響。
+  - 寫入 Token 時一律進行加密。
+- **TokenManager 改動**:
+  - `save_user_token`: 加密 `long_lived_token` 與 `app_secret` 後存入資料庫。
+  - `get_user_token`: 從資料庫讀取 `fb_access_token` 後解密回傳。
+
+#### 驗證測試 (Verification)
+- 已建立並執行 `test_phase4.py`。
+- 確認舊的明文 Token 可正常讀取。
+- 確認新寫入的 Token 在資料庫中呈現亂碼 (`gAAAA...`)，且讀取時可正確還原。
+
+

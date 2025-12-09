@@ -1,33 +1,76 @@
-import os
-import json
 import requests
+import os
 from dotenv import load_dotenv
+from database import SessionLocal, User
+from cryptography.fernet import Fernet
 
 # Load environment variables from .env file
 load_dotenv()
 
-TOKEN_FILE = "tokens.json"
+# Initialize Encryption
+ENCRYPTION_KEY = os.getenv("ENCRYPTION_KEY")
+cipher_suite = Fernet(ENCRYPTION_KEY.encode()) if ENCRYPTION_KEY else None
 
 class TokenManager:
     @staticmethod
-    def save_tokens(tokens):
-        """Save tokens to a local JSON file."""
-        with open(TOKEN_FILE, "w") as f:
-            json.dump(tokens, f, indent=4)
-
-    @staticmethod
-    def load_tokens():
-        """Load tokens from the local JSON file."""
-        if not os.path.exists(TOKEN_FILE):
-            return {}
+    def _encrypt(value):
+        if not value or not cipher_suite:
+            return value
         try:
-            with open(TOKEN_FILE, "r") as f:
-                return json.load(f)
-        except json.JSONDecodeError:
-            return {}
+            return cipher_suite.encrypt(value.encode()).decode()
+        except Exception:
+            return value
 
     @staticmethod
-    def exchange_for_long_lived_token(app_id, app_secret, short_lived_token):
+    def _decrypt(value):
+        if not value or not cipher_suite:
+            return value
+        try:
+            return cipher_suite.decrypt(value.encode()).decode()
+        except Exception:
+            # Lazy Migration: If decryption fails (e.g. old plaintext data), return original
+            return value
+
+    @staticmethod
+    def save_user_token(google_id, long_lived_token, app_id=None, app_secret=None):
+        """Save or update user's Facebook token in the database (Encrypted)."""
+        session = SessionLocal()
+        try:
+            user = session.query(User).filter(User.google_id == google_id).first()
+            if not user:
+                user = User(google_id=google_id)
+                session.add(user)
+            
+            # Encrypt sensitive data
+            user.fb_access_token = TokenManager._encrypt(long_lived_token)
+            
+            if app_id:
+                user.fb_app_id = app_id
+            if app_secret:
+                # Encrypt App Secret too
+                user.fb_app_secret = TokenManager._encrypt(app_secret)
+            
+            session.commit()
+        except Exception as e:
+            session.rollback()
+            raise e
+        finally:
+            session.close()
+
+    @staticmethod
+    def get_user_token(google_id):
+        """Retrieve the long-lived token for a specific user (Decrypted)."""
+        session = SessionLocal()
+        try:
+            user = session.query(User).filter(User.google_id == google_id).first()
+            if user:
+                return TokenManager._decrypt(user.fb_access_token)
+            return None
+        finally:
+            session.close()
+
+    @staticmethod
+    def exchange_for_long_lived_token(app_id, app_secret, short_lived_token, user_id):
         """
         Exchange a short-lived user access token for a long-lived one (60 days).
         https://developers.facebook.com/docs/facebook-login/guides/access-tokens/get-long-lived
@@ -40,25 +83,20 @@ class TokenManager:
             "fb_exchange_token": short_lived_token
         }
         
-        response = requests.get(url, params=params)
-        data = response.json()
-        
-        if "access_token" in data:
-            # Save the new token securely
-            existing_tokens = TokenManager.load_tokens()
-            existing_tokens["long_lived_token"] = data["access_token"]
-            # Save App ID/Secret locally for future usage if needed (optional but convenient)
-            existing_tokens["app_id"] = app_id
-            # CAUTION: Saving app_secret in plaintext locally is a risk, usually better in .env
-            # But for this simple desktop-like app usage, we save it to tokens.json which is gitignored.
-            existing_tokens["app_secret"] = app_secret 
+        try:
+            response = requests.get(url, params=params)
+            data = response.json()
             
-            TokenManager.save_tokens(existing_tokens)
-            return True, "Token exchanged and saved successfully."
-        else:
-            return False, data.get("error", {}).get("message", "Unknown error during token exchange.")
-
-    @staticmethod
-    def get_access_token():
-        tokens = TokenManager.load_tokens()
-        return tokens.get("long_lived_token")
+            if "access_token" in data:
+                # Save the new token to the database
+                TokenManager.save_user_token(
+                    google_id=user_id,
+                    long_lived_token=data["access_token"],
+                    app_id=app_id,
+                    app_secret=app_secret
+                )
+                return True, "Token exchanged and saved successfully."
+            else:
+                return False, data.get("error", {}).get("message", "Unknown error during token exchange.")
+        except Exception as e:
+            return False, str(e)
