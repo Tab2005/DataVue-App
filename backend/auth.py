@@ -9,7 +9,12 @@ load_dotenv()
 
 # Initialize Encryption
 ENCRYPTION_KEY = os.getenv("ENCRYPTION_KEY")
-cipher_suite = Fernet(ENCRYPTION_KEY.encode()) if ENCRYPTION_KEY else None
+try:
+    cipher_suite = Fernet(ENCRYPTION_KEY.encode()) if ENCRYPTION_KEY else None
+except Exception as e:
+    print(f"⚠️ Encryption Key Error: {str(e)}")
+    print("⚠️ Encryption disabled. Fix ENCRYPTION_KEY in .env or Zeabur settings.")
+    cipher_suite = None
 
 class TokenManager:
     @staticmethod
