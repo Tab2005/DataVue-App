@@ -11,9 +11,15 @@ from google.oauth2 import id_token
 from google.auth.transport import requests as google_requests
 
 # Initialize Database
-init_db()
-
+# Load environment variables FIRST
 load_dotenv()
+
+# Initialize Database with Error Handling
+try:
+    init_db()
+except Exception as e:
+    print(f"❌ Database Initialization Failed: {str(e)}")
+
 
 app = FastAPI()
 
