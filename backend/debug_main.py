@@ -29,11 +29,19 @@ def import_services():
 safe_import("services", import_services)
 
 # Test 4: Main App Logic (Routes)
-def import_main_deps():
-    # Only import non-app parts to avoid re-initializing fastapi app
-    # NOW WE TRY TO IMPORT THE WHOLE APP to check for any runtime errors
-    from main import app
-safe_import("main_app_integrity", import_main_deps)
+# SKIPPED for now to avoid 502. Testing DB Driver instead.
+
+# Test 5: DB Driver (psycopg2)
+def test_db_driver():
+    import psycopg2
+    # Try creating a dummy engine to see if it segfaults
+    from sqlalchemy import create_engine
+    if os.getenv("DATABASE_URL"):
+        url = os.getenv("DATABASE_URL").replace("postgres://", "postgresql://")
+        e = create_engine(url)
+        conn = e.connect()
+        conn.close()
+safe_import("db_driver_psycopg2", test_db_driver)
 
 try:
     from fastapi import FastAPI
