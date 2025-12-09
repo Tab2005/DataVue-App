@@ -46,6 +46,13 @@ const SettingsModal = ({ isOpen, onClose, language }) => {
                 }),
             });
 
+            // Handle Token Expiry (401)
+            if (response.status === 401) {
+                localStorage.removeItem('google_token');
+                window.location.href = '/login';
+                return;
+            }
+
             const data = await response.json();
 
             if (response.ok) {
