@@ -1,70 +1,77 @@
-# Zeabur 佈署指南 (Deployment Guide)
+# Zeabur 完整佈署指南 (Full Deployment Guide)
 
-## 1. 關於資料庫 (Database Question)
-**Q: 需要在專案程式碼內建立 PostgreSQL 資料庫嗎？**
-**A: 不需要。** 
-PostgreSQL 是一個獨立運行的伺服器軟體。您不需要（也就無法）把它像 SQLite 檔案一樣放在程式碼資料夾裡。
-您只需要在 **Zeabur 的網頁控制台** 上新增一個 PostgreSQL 服務，Zeabur 就會自動管理它，並提供連線網址 (`DATABASE_URL`) 給您的程式使用。
+本指南將引導您從零開始，在 Zeabur 平台上佈署 Facebook Dashboard 應用程式。
 
-## 2. 佈署步驟 (Step-by-Step)
+## 專案結構
+此專案分為兩個部分，需要在 Zeabur 上分別建立兩個服務：
+1.  **Backend (後端)**: Python FastAPI，負責處理資料庫與 API。
+2.  **Frontend (前端)**: React/Vite，負責顯示網頁畫面。
+3.  **Database (資料庫)**: PostgreSQL，負責儲存資料。
 
-### Step 1: 建立 Zeabur 專案
-1. 登入 [Zeabur Dashboard](https://dash.zeabur.com)。
-2. 建立一個新專案 (Project)，可以命名為 `Facebook-Dashboard`。
+---
 
-### Step 2: 建立 PostgreSQL 服務
-1. 在專案中點擊 **"Create Service"** (建立服務)。
-2. 選擇 **"Marketplace"** (市集)。
-3. 搜尋並選擇 **"PostgreSQL"**。
-4. 等待它建立完成。
+## 1. 建立專案與資料庫 (Project & Database)
 
-### Step 3: 佈署應用程式 (Backend & Frontend)
-1. 再次點擊 **"Create Service"**。
-2. 選擇 **"Git"**。
-3. 連結您的 GitHub 帳號並選擇 `Facebook-Dashboard-Web-App` Repository。
-4. Zeabur 會自動偵測到這是一個 Python/Node.js 專案。
-   - *注意*: 由於我們是前後端分離 (Frontend + Backend)，Zeabur 可能會預設只抓到其中一個。
-   - **建議做法 (Monorepo)**: 您可以在 Zeabur 設定中指定 "Root Directory" 或者建立兩個服務分別佈署 `frontend` 和 `backend` 資料夾。
-   - **簡單做法**: 先佈署 Backend。
+1.  登入 [Zeabur Dashboard](https://dash.zeabur.com).
+2.  點擊 **"Create Project"**，輸入專案名稱 (例如 `Facebook-Dashboard`)。
+3.  點擊 **"Create Service"** -> **"Marketplace"**。
+4.  搜尋並選擇 **"PostgreSQL"**。
+5.  建立完成後，點擊該 PostgreSQL 服務，切換到 **"Connection"** 分頁。
+6.  複製 **"Connection String"** (以 `postgresql://` 開頭的那一長串)，稍後會用到。
 
-### Step 4: 設定環境變數 (Environment Variables)
-在您的應用程式服務 (App Service) 的 "Settings" -> "Variables" 中，新增以下變數：
+---
 
-| Key | Value | 說明 |
-| --- | --- | --- |
-| `DATABASE_URL` | (自動) | 通常點擊 "Connect to PostgreSQL" Zeabur 會自動注入，或手動從 Postgres 服務複製。 |
-| `ENCRYPTION_KEY` | `...` | **重要！** 請查看您本機 `.env` 檔案中的值，複製貼上。 |
-| `GOOGLE_CLIENT_ID` | `...` | 您的 Google Client ID。 |
-| `GOOGLE_CLIENT_SECRET` | `...` | (如果後端驗證有用到) |
+## 2. 佈署後端 (Backend Service)
 
-### Step 5: 驗證
-1. 等待佈署成功 (Build Success)。
-2. 開啟 Zeabur 提供的公開網址 (Domain)。
-3. 嘗試登入。
+1.  回到專案，點擊 **"Create Service"** -> **"Git"**。
+2.  選擇您的 GitHub Repository (`Facebook-Dashboard-Web-App`)。
+3.  建立後，點擊該服務進入設定頁面：
+    *   **Settings** -> **Root Directory**: 輸入 `backend` (若未正確設定，Zeabur 會抓不到 requirements.txt)。
+4.  **Networking**:
+    *   確認 Port 為 `8000` (FastAPI 預設)。
+    *   點擊 "Public" 產生一個公開網址 (例如 `backend-api.zeabur.app`)。**複製這個網址**。
+5.  **Variables** (環境變數):
+    *   `DATABASE_URL`: 貼上 Step 1 複製的 PostgreSQL 連線字串。
+    *   `ENCRYPTION_KEY`: 貼上您本機 `.env` 的金鑰。
+    *   `GOOGLE_CLIENT_ID`: 貼上您的 Google Client ID。
+6.  **Redeploy**: 設定完變數後，若沒自動重啟，請手動 Redeploy。
 
-## 常見問題
-- **Port**: Zeabur 自動偵測 Port。FastAPI 預設 8000，Vite 預設 5173。確保 Zeabur 的 Networking 設定有對應到正確的 Port。
+---
 
-## 3. 現有專案升級指南 (Upgrade Existing Deployment)
-如果您已經在 Zeabur 上佈署了專案，請依照以下步驟升級以支援 PostgreSQL：
+## 3. 佈署前端 (Frontend Service)
 
-### Step 1: 新增 PostgreSQL 服務
-1. 在現有的 Zeabur 專案中，點擊 **"Create Service"** -> **"Marketplace"**。
-2. 搜尋並新增 **"PostgreSQL"**。
+1.  再次點擊 **"Create Service"** -> **"Git"**。
+2.  同樣選擇 `Facebook-Dashboard-Web-App` Repository。
+3.  點擊該服務進入設定頁面：
+    *   **Settings** -> **Root Directory**: 輸入 `frontend`。
+    *   **Settings** -> **Build Command**: 輸入 `npm install && npm run build` (通常 Zeabur 會自動偵測)。
+    *   **Settings** -> **Output Directory**: 輸入 `dist`。
+4.  **Variables** (環境變數) - **這一步很重要！**:
+    *   `VITE_API_URL`: 貼上 Step 2 產生的 **後端網址** (不用加 `/api`，例如 `https://backend-api.zeabur.app`)。
+    *   `VITE_GOOGLE_CLIENT_ID`: 貼上您的 Google Client ID。
+5.  **Networking**:
+    *   點擊 "Public" 產生前端的公開網址 (例如 `my-dashboard.zeabur.app`)。
+6.  **Redeploy**: 環境變數設定完後，務必重新佈署，前端程式碼才會吃到變數。
 
-### Step 2: 取得連線字串 (Connection String)
-1. 點擊剛新增的 PostgreSQL 服務。
-2. 在 "Instructions" 或 "Connection" 分頁中，找到 `Postgres_URL` 或 `DATABASE_URL` (通常格式為 `postgres://user:password@host:port/dbname`)。
-3. **複製** 這個網址。
+---
 
-### Step 3: 更新後端環境變數
-1. 點擊您的 **Backend 應用程式服務**。
-2. 進入 **"Settings"** -> **"Variables"**。
-3. 新增/更新變數：
-   - `DATABASE_URL`: 貼上剛剛複製的 PostgreSQL 連線字串。
-   - `ENCRYPTION_KEY`: (如果還沒設定) 請從本機 `.env` 複製貼上。
-4. Zeabur 通常會偵測到變數更動並自動重新佈署 (Redeploy)。若無，請手動觸發 Redeploy。
+## 4. Google Cloud Console 設定更新 (重要)
 
-### Step 4: 確認
-- 重新佈署完成後，您的後端就會自動連線到新的 PostgreSQL 資料庫。
-- 舊的 SQLite 資料不會自動移轉過去，您需要重新登入 Google 並重新綁定 Facebook Token。
+由於您的網址變了 (不再是 localhost)，您必須去 Google Cloud Console 更新設定，否則 Google 登入會失敗。
+
+1.  前往 Google Cloud Console -> APIs & Services -> Credentials。
+2.  編輯您的 OAuth 2.0 Client ID。
+3.  **Authorized Javascript Origins**: 新增您的**前端網址** (例如 `https://my-dashboard.zeabur.app`)。
+4.  **Authorized Redirect URIs**: 雖然此專案主要用 Popup，但建議將前端網址也加進去。
+
+---
+
+## 5. 驗證與除錯
+
+1.  開啟前端網址。
+2.  嘗試登入 Google。
+3.  **檢查連線**:
+    *   如果登入成功但沒數據：檢查後端 Log，看是否有 `✅ Database connected: PostgreSQL detected`。
+    *   如果顯示 "Failed to fetch"：檢查前端變數 `VITE_API_URL` 是否正確指向後端，且後端是否正常運作。
+
+祝佈署順利！
