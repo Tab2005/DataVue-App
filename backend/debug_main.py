@@ -31,8 +31,9 @@ safe_import("services", import_services)
 # Test 4: Main App Logic (Routes)
 def import_main_deps():
     # Only import non-app parts to avoid re-initializing fastapi app
-    from main import GOOGLE_CLIENT_ID
-safe_import("main_deps", import_main_deps)
+    # NOW WE TRY TO IMPORT THE WHOLE APP to check for any runtime errors
+    from main import app
+safe_import("main_app_integrity", import_main_deps)
 
 try:
     from fastapi import FastAPI

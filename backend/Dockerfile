@@ -32,4 +32,5 @@ EXPOSE 8000
 # Debug: Run simple http server to verify networking and logging
 # Production Command with Safety Net
 # Run python directly, but keep the trap just in case it crashes again
-CMD ["sh", "-c", "python main.py || (echo '❌ APP CRASHED' && sleep 3600)"]
+# Debug: Run minimal FastAPI to test framework
+CMD ["python", "-u", "debug_main.py"]
