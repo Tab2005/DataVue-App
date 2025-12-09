@@ -17,7 +17,14 @@
 3.  點擊 **"Create Service"** -> **"Marketplace"**。
 4.  搜尋並選擇 **"PostgreSQL"**。
 5.  建立完成後，點擊該 PostgreSQL 服務，切換到 **"Connection"** 分頁。
-6.  複製 **"Connection String"** (以 `postgresql://` 開頭的那一長串)，稍後會用到。
+6.  複製 **"Connection String"**。
+    > [!IMPORTANT]
+    > **強烈建議使用私有連線 (Private Connectivity)**
+    > public URL (`cgk1.clusters.zeabur.com`) 可能會導致連線逾時。
+    > 1. 請尋找 **"Private Connectivity"** 或 **"內網存取"** 區塊。
+    > 2. Host 通常是 `postgresql.zeabur.internal`，Port 是 `5432`。
+    > 3. 請自行組裝連線字串：`postgresql://root:您的密碼@postgresql.zeabur.internal:5432/postgres`
+    > 4. 使用這個 **內網連線字串** 作為 `DATABASE_URL`。
 
 ---
 
