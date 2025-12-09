@@ -27,4 +27,6 @@ EXPOSE 8000
 # We use || sleep 3600 to catch startup errors (Keep-Alive for debugging)
 # Standard Production Command
 # Using python -m uvicorn is generally safer for path resolution
-CMD ["sh", "-c", "python -m uvicorn main:app --host 0.0.0.0 --port 8000"]
+# Run using direct python script to ensure our print statements fire BEFORE uvicorn starts
+# Also keep the sleep trap to prevent crash loop
+CMD ["sh", "-c", "python main.py || (echo '❌ APP CRASHED' && sleep 3600)"]
