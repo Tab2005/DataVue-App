@@ -121,5 +121,7 @@ def get_dashboard_data(account_id: str = None, user_id: str = Depends(verify_goo
 
 if __name__ == "__main__":
     import uvicorn
-    # Important: host="0.0.0.0" is required for Docker/Zeabur to expose the port.
-    uvicorn.run("main:app", host="0.0.0.0", port=8000, reload=True)
+    print("🚀 STARTING UVICORN SERVER...", file=sys.stderr)
+    # Use 'app' object directly instead of string to avoid re-import issues
+    # Disable reload for production stability
+    uvicorn.run(app, host="0.0.0.0", port=8000)
