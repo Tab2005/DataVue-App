@@ -22,4 +22,5 @@ EXPOSE 8000
 # Run uvicorn server
 # Run uvicorn server using python -m to ensure path resolution
 # Run uvicorn server using shell to trap errors and keep container alive for debugging
-CMD ["sh", "-c", "python -m uvicorn main:app --host 0.0.0.0 --port 8000 || (echo '❌ APP CRASHED! Keeping container alive for debug...' && sleep 3600)"]
+# Run uvicorn server (Shell form is more stable on some platforms)
+CMD ["sh", "-c", "python -m uvicorn main:app --host 0.0.0.0 --port 8000"]
