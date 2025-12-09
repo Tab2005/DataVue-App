@@ -42,4 +42,6 @@ EXPOSE 8000
 # Debug: Run minimal FastAPI to test framework
 # Production Startup with Crash Reporter
 # This wraps main.py and serves the error log if it crashes
-CMD ["python", "-u", "crash_reporter.py"]
+# Production Startup
+# Use direct python execution
+CMD ["python", "main.py"]
