@@ -40,4 +40,6 @@ EXPOSE 8000
 # Production Command with Safety Net
 # Run python directly, but keep the trap just in case it crashes again
 # Debug: Run minimal FastAPI to test framework
-CMD ["sh", "-c", "python -u debug_main.py || (echo '❌ DEBUG PROBE CRASHED' && sleep 3600)"]
+# Production Startup
+# Use direct python execution for stability with pg8000
+CMD ["python", "main.py"]

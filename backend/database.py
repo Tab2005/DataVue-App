@@ -10,12 +10,14 @@ DATABASE_URL = os.getenv("DATABASE_URL")
 
 if DATABASE_URL:
     # PostgreSQL Configuration
-    # Fix for SQLAlchemy requiring 'postgresql://' instead of 'postgres://' (common in some providers)
+    # Use pg8000 (Pure Python Driver) to avoid C-extension segfaults in Docker
     if DATABASE_URL.startswith("postgres://"):
-        DATABASE_URL = DATABASE_URL.replace("postgres://", "postgresql://", 1)
+        DATABASE_URL = DATABASE_URL.replace("postgres://", "postgresql+pg8000://", 1)
+    elif DATABASE_URL.startswith("postgresql://"):
+        DATABASE_URL = DATABASE_URL.replace("postgresql://", "postgresql+pg8000://", 1)
     
     engine = create_engine(DATABASE_URL)
-    print(f"✅ Database connected: PostgreSQL detected.")
+    print(f"✅ Database connected: PostgreSQL (via pg8000).")
 else:
     # SQLite Configuration (Local)
     engine = create_engine(
