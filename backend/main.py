@@ -1,4 +1,10 @@
+import sys
+print("🚀 Starting Main Application...", file=sys.stderr)
 from fastapi import FastAPI, HTTPException, Depends, status
+print("✅ FastAPI imported", file=sys.stderr)
+import os
+print(f"📂 Current Debug Dir: {os.getcwd()}", file=sys.stderr)
+
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from pydantic import BaseModel
