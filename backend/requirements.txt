@@ -6,3 +6,4 @@ python-dotenv
 google-auth
 sqlalchemy
 cryptography
+psycopg2-binary
