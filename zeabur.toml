@@ -1,0 +1,9 @@
+[[services]]
+name = "backend"
+dir = "backend"
+
+[[services]]
+name = "frontend"
+dir = "frontend"
+buildCommand = "npm install && npm run build"
+outputDir = "dist"
