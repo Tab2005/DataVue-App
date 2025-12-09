@@ -40,6 +40,6 @@ EXPOSE 8000
 # Production Command with Safety Net
 # Run python directly, but keep the trap just in case it crashes again
 # Debug: Run minimal FastAPI to test framework
-# Production Startup
-# Use direct python execution for stability with pg8000
-CMD ["python", "main.py"]
+# Production Startup with Safety Net
+# Run python directly, but keep the trap just in case it crashes again
+CMD ["sh", "-c", "python main.py || (echo '❌ APP CRASHED' && sleep 3600)"]

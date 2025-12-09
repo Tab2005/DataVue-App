@@ -9,8 +9,23 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from pydantic import BaseModel
 from auth import TokenManager
-from services import FacebookService
-from database import init_db
+# Robust Imports with Error Handling
+try:
+    from database import init_db, engine, SessionLocal
+    DB_STATUS = "OK"
+except Exception as e:
+    print(f"❌ DATABASE IMPORT ERROR: {e}", file=sys.stderr)
+    DB_STATUS = f"ERROR: {e}"
+    # Mock objects to prevent NameError later
+    engine = None
+    SessionLocal = None
+    def init_db(): pass
+
+try:
+    from services import FacebookService
+except Exception as e:
+    print(f"❌ SERVICES IMPORT ERROR: {e}", file=sys.stderr)
+
 import os
 from dotenv import load_dotenv
 from google.oauth2 import id_token
@@ -41,8 +56,16 @@ app.add_middleware(
 @app.get("/")
 def health_check():
     """Health check endpoint to verify service status and DB connection."""
-    db_type = "PostgreSQL" if "postgresql" in str(engine.url) else "SQLite"
-    return {"status": "online", "database": db_type, "message": "Backend is running!"}
+    db_info = "Unknown"
+    if engine:
+        db_info = "PostgreSQL" if "postgresql" in str(engine.url) else "SQLite"
+    
+    return {
+        "status": "online", 
+        "database_status": DB_STATUS,
+        "database_type": db_info,
+        "message": "Backend is running (Safe Mode)"
+    }
 
 # --- Google Token Verification ---
 GOOGLE_CLIENT_ID = os.getenv("GOOGLE_CLIENT_ID")
