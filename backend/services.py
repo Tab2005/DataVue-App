@@ -62,7 +62,7 @@ class FacebookService:
         
         # Fields to fetch
         fields = (
-            "spend,impressions,reach,cpm,cpc,ctr,inline_link_clicks,"
+            "spend,impressions,reach,cpm,cpc,ctr,inline_link_clicks,clicks,"
             "actions,action_values,purchase_roas"
         )
         
@@ -138,7 +138,11 @@ class FacebookService:
 
             return {
                 "kpi": FacebookService._format_kpi(cur_data, prev_data),
-                "charts": FacebookService._format_charts(trend_list)
+                "charts": FacebookService._format_charts(trend_list),
+                "date_range": {
+                    "start": date_start,
+                    "stop": date_stop
+                }
             }
 
         except Exception as e:
@@ -188,11 +192,10 @@ class FacebookService:
         cur_acts = FacebookService._process_actions(cur)
         prev_acts = FacebookService._process_actions(prev)
         
-        # Define the 8 Metrics mapping based on User's Screenshot
-        # 1. Spend
         metrics = []
         
-        def add_metric(label, key, is_currency=False, is_action=False, action_key=None, is_roas=False):
+        def add_metric(label, key, is_currency=False, is_action=False, action_key=None, is_roas=False, is_percent=False, is_inverse=False):
+            # 1. Get Values
             if is_action:
                 c_val = cur_acts.get(action_key, 0)
                 p_val = prev_acts.get(action_key, 0)
@@ -206,31 +209,72 @@ class FacebookService:
                 c_val = get_val(cur, key)
                 p_val = get_val(prev, key)
 
-            val_str = f"${c_val:,.2f}" if is_currency else f"{c_val:,.0f}" if c_val > 10 else f"{c_val:.2f}"
+            # 2. Calculate Diff and Percent
+            diff = c_val - p_val
+            if p_val == 0:
+                percent = 100.0 if c_val > 0 else 0.0
+            else:
+                percent = (diff / p_val) * 100.0
+
+            # 3. Format Strings
+            def fmt_num(n):
+                if is_currency: return f"${abs(n):,.2f}" if key in ['cpc', 'cpm'] else f"${abs(n):,.0f}" # Condense big numbers
+                if is_percent: return f"{abs(n):.2f}%"
+                if is_roas: return f"{abs(n):.2f}"
+                return f"{abs(n):,.0f}"
+
+            # Value Formatting (No Abs for main value, though metrics usually +ve)
+            val_str = fmt_num(c_val).replace('$-', '-$') # Handle negative currency visual if ever needed
+            if c_val < 0: val_str = "-" + val_str
+            else: val_str = fmt_num(c_val) # Re-format to strip potential double negative logic or just keep simple
             
-            # Special formatting for ROAS, CTR, CPC
-            if key == "cpc": val_str = f"${c_val:.2f}"
-            if key == "cpm": val_str = f"${c_val:.2f}"
-            if key == "ctr": val_str = f"{c_val:.2f}%"
-            if is_roas: val_str = f"{c_val:.2f}"
+            # Simple main value format (positive)
+            if is_currency: 
+                val_str = f"${c_val:,.2f}" # Force 2 decimals for currency like CPC? Or 0 for Spend? 
+                # Screenshot shows Spend $14,816.00 and CPC $2.90. So always 2 decimals?
+                # Let's clean up:
+                if key in ['cpc', 'cpm', 'ctr'] or is_roas: pass # keep precision
+                else: val_str = f"${c_val:,.0f}" # Integers for big spend? Screenshot shows .00
+                val_str = f"${c_val:,.2f}"
+            elif is_percent:
+                 val_str = f"{c_val:.2f}%"
+            elif is_roas:
+                 val_str = f"{c_val:.2f}"
+            else:
+                 val_str = f"{c_val:,.0f}"
+
+            # Prev Value (in parens)
+            prev_str = f"({fmt_num(p_val)})"
+            
+            # Diff String (Value difference)
+            diff_str = fmt_num(diff)
+
+            # Percent String
+            percent_str = f"{abs(percent):.1f}%" # Screenshot shows 1 decimals e.g. 39.6%
+
 
             metrics.append({
                 "label": label,
                 "value": val_str,
-                "sub_value": f"{p_val:,.2f}" if is_currency else f"{p_val:,.0f}", # Simplified sub-value
-                "change": FacebookService._calculate_change(c_val, p_val),
-                "isPositive": c_val >= p_val # Simple logic, can be refined (e.g. CPA down is positive)
+                "sub_value": prev_str,
+                "diff": diff_str,
+                "percent": percent_str,
+                "is_increase": diff >= 0,
+                "is_inverse": is_inverse # True = Increase is Bad (Red)
             })
 
-        # The 8 Grid Items
+        # The 8 Grid Items mapping
+        # Inverse: Spend, CPC, CPM, CPA (Cost related)
+        # Normal: Impressions, Clicks, CTR, Actions, ROAS
+        
         add_metric("曝光 (Impressions)", "impressions")
-        add_metric("點擊 (Clicks)", "clicks") # Note: 'clicks' (all) or 'inline_link_clicks'? Graph uses 'clicks' usually for general
-        add_metric("CTR", "ctr")
-        add_metric("CPC", "cpc")
-        add_metric("費用 (Spend)", "spend", is_currency=True)
+        add_metric("連結點擊次數 (Link Clicks)", "inline_link_clicks") 
+        add_metric("CTR", "ctr", is_percent=True)
+        add_metric("CPC", "cpc", is_currency=True, is_inverse=True)
+        add_metric("費用 (Spend)", "spend", is_currency=True, is_inverse=True)
         add_metric("購買 (Purchases)", "", is_action=True, action_key="purchase")
         add_metric("購物車 (AddToCart)", "", is_action=True, action_key="add_to_cart")
-        add_metric("ROAS", "", is_roas=True)
+        add_metric("ROAS", "", is_roas=True) # ROAS is Normal (Higher is Better)
 
         return metrics
 

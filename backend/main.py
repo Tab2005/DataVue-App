@@ -125,7 +125,8 @@ def get_dashboard_data(account_id: str = None, days: int = 7, user_id: str = Dep
                 "source": "real",
                 "account_id": account_id,
                 "kpi": insights["kpi"],
-                "chart_data": insights["charts"]
+                "chart_data": insights["charts"],
+                "date_range": insights.get("date_range")
             }
         else:
             raise HTTPException(status_code=400, detail="Failed to fetch insights for this account")

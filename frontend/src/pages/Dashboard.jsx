@@ -11,7 +11,8 @@ function Dashboard() {
     const [days, setDays] = useState(7); // Default to 7 days
     const [data, setData] = useState({
         kpi: [], // Will be populated by API (Array of 8 items)
-        chart_data: []
+        chart_data: [],
+        date_range: null
     });
     const [loading, setLoading] = useState(false);
 
@@ -70,7 +71,8 @@ function Dashboard() {
                 if (resData) {
                     setData({
                         kpi: resData.kpi || [],
-                        chart_data: resData.chart_data || []
+                        chart_data: resData.chart_data || [],
+                        date_range: resData.date_range || null
                     });
                 }
             })
@@ -125,35 +127,50 @@ function Dashboard() {
                                 {language === 'zh' ? '成效總覽' : 'Performance Overview'}
                             </h2>
 
-                            <div style={{ display: 'flex', gap: '8px' }}>
-                                <button
-                                    onClick={() => handleDaysChange(7)}
-                                    style={{
-                                        padding: '6px 16px',
-                                        borderRadius: '6px',
-                                        border: days === 7 ? '1px solid var(--accent-primary)' : '1px solid var(--glass-border)',
-                                        background: days === 7 ? 'var(--accent-primary)' : 'transparent',
-                                        color: days === 7 ? 'white' : 'var(--text-secondary)',
-                                        cursor: 'pointer',
-                                        fontSize: '0.9rem'
-                                    }}
-                                >
-                                    Last 7 Days
-                                </button>
-                                <button
-                                    onClick={() => handleDaysChange(30)}
-                                    style={{
-                                        padding: '6px 16px',
-                                        borderRadius: '6px',
-                                        border: days === 30 ? '1px solid var(--accent-primary)' : '1px solid var(--glass-border)',
-                                        background: days === 30 ? 'var(--accent-primary)' : 'transparent',
-                                        color: days === 30 ? 'white' : 'var(--text-secondary)',
-                                        cursor: 'pointer',
-                                        fontSize: '0.9rem'
-                                    }}
-                                >
-                                    Last 30 Days
-                                </button>
+                            <div style={{ display: 'flex', gap: '16px', alignItems: 'center' }}>
+                                {data.date_range && (
+                                    <span style={{
+                                        color: 'var(--text-secondary)',
+                                        fontSize: '0.85rem',
+                                        background: 'rgba(255,255,255,0.03)',
+                                        padding: '4px 8px',
+                                        borderRadius: '4px',
+                                        border: '1px solid var(--glass-border)'
+                                    }}>
+                                        {data.date_range.start} ~ {data.date_range.stop}
+                                    </span>
+                                )}
+
+                                <div style={{ display: 'flex', gap: '8px' }}>
+                                    <button
+                                        onClick={() => handleDaysChange(7)}
+                                        style={{
+                                            padding: '6px 16px',
+                                            borderRadius: '6px',
+                                            border: days === 7 ? '1px solid var(--accent-primary)' : '1px solid var(--glass-border)',
+                                            background: days === 7 ? 'var(--accent-primary)' : 'transparent',
+                                            color: days === 7 ? 'white' : 'var(--text-secondary)',
+                                            cursor: 'pointer',
+                                            fontSize: '0.9rem'
+                                        }}
+                                    >
+                                        Last 7 Days
+                                    </button>
+                                    <button
+                                        onClick={() => handleDaysChange(30)}
+                                        style={{
+                                            padding: '6px 16px',
+                                            borderRadius: '6px',
+                                            border: days === 30 ? '1px solid var(--accent-primary)' : '1px solid var(--glass-border)',
+                                            background: days === 30 ? 'var(--accent-primary)' : 'transparent',
+                                            color: days === 30 ? 'white' : 'var(--text-secondary)',
+                                            cursor: 'pointer',
+                                            fontSize: '0.9rem'
+                                        }}
+                                    >
+                                        Last 30 Days
+                                    </button>
+                                </div>
                             </div>
                         </div>
 
@@ -177,8 +194,10 @@ function Dashboard() {
                                         title={kpi.label}
                                         value={kpi.value}
                                         sub_value={kpi.sub_value}
-                                        change={kpi.change}
-                                        isPositive={kpi.isPositive}
+                                        diff={kpi.diff}
+                                        percent={kpi.percent}
+                                        is_increase={kpi.is_increase}
+                                        is_inverse={kpi.is_inverse}
                                     />
                                 ))
                             )}
@@ -188,9 +207,9 @@ function Dashboard() {
                     {/* Charts Area */}
                     <section>
                         <div style={{ marginBottom: '16px' }}>
-                            <h3 style={{ fontSize: '1.1rem', fontWeight: 600 }}>媒體費用走勢 (Media Cost Trend)</h3>
+                            <h3 style={{ fontSize: '1.1rem', fontWeight: 600 }}>費用走勢 (Cost Trend)</h3>
                         </div>
-                        <TrendsChart data={data.chart_data} language={language} title="Media Cost" />
+                        <TrendsChart data={data.chart_data} language={language} title="Cost Trend" />
                     </section>
 
                 </main>
