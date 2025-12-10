@@ -208,17 +208,18 @@ const Analytics = () => {
         setLoading(true);
         setError(null);
         try {
-            const idToken = localStorage.getItem('google_token'); // Correct key
+            const idToken = localStorage.getItem('google_token');
+            const apiUrl = import.meta.env.VITE_API_URL || 'http://localhost:8000';
 
             const query = new URLSearchParams({
                 account_id: selectedAccountId,
                 since: dateRange.since,
                 until: dateRange.until,
                 level: level,
-                // compare: isCompareMode ? 'true' : 'false' // Future param
+                // compare: isCompareMode ? 'true' : 'false' 
             });
 
-            const res = await fetch(`http://localhost:8000/api/analytics-data?${query}`, {
+            const res = await fetch(`${apiUrl}/api/analytics-data?${query}`, {
                 headers: {
                     'Authorization': `Bearer ${idToken}`
                 }
