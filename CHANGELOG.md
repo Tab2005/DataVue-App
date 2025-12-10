@@ -1,5 +1,14 @@
 # Changelog
 
+## [1.3.1] - 2025-12-10
+### Added
+- **Analytics KPI Cards**: 新增關鍵指標總覽卡片 (通用、電商、漏斗指標)。
+- **Custom Metric Selector**: 實作自訂指標欄位選擇器，支援連動控制 KPI 卡片與表格欄位顯示。
+- **Funnel Metrics**: 後端新增漏斗指標計算 logic (View-to-Cart, Cart Purchase Rate, Cart Value Realization)。
+
+### Changed
+- **UI Layout**: 調整 Analytics 頁面佈局，將 KPI Cards 移至主要設定與表格之間。
+
 ## [1.3.0] - 2025-12-10
 ### Added
 - **Localization**: 全站中英文語系切換 (Global Language Switch) - 支援 Header, Sidebar, Dashboard, Analytics。

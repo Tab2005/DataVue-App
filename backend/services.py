@@ -401,12 +401,21 @@ class FacebookService:
                 flat["cost_per_atc"] = flat["spend"] / flat["add_to_cart"] if flat["add_to_cart"] > 0 else 0
                 flat["cvr"] = (flat["purchases"] / flat["link_clicks"] * 100) if flat["link_clicks"] > 0 else 0
                 
-                # Cart Drop-off Rate (1 - (Purchase / ATC))
+                # Funnel Rates
+                # 1. View to Cart (ATC / View Content)
+                flat["view_to_cart"] = (flat["add_to_cart"] / flat["view_content"] * 100) if flat["view_content"] > 0 else 0
+                
+                # 2. Cart Purchase Rate (Purchases / ATC) - Inverse of Dropoff
                 if flat["add_to_cart"] > 0:
+                    flat["cart_conversion"] = (flat["purchases"] / flat["add_to_cart"]) * 100
                     flat["cart_dropoff"] = (1 - (flat["purchases"] / flat["add_to_cart"])) * 100
                 else:
-                    flat["cart_dropoff"] = 0 
+                    flat["cart_conversion"] = 0
+                    flat["cart_dropoff"] = 0
                     
+                # 3. Cart Value Realization (Purchase Value / ATC Value)
+                flat["cart_value_realization"] = (flat["purchase_value"] / flat["atc_value"] * 100) if flat["atc_value"] > 0 else 0
+
                 processed_rows.append(flat)
                 
             return processed_rows

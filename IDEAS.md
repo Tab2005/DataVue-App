@@ -241,3 +241,74 @@
 *   **API Update**: `/api/analytics-data` 需接受 `filters (json)`, `level`, `since`, `until` 等參數。
 *   **State Management**: 前端需管理較複雜的 Filter State。
 
+
+### Phase 3.3 Detail: Indicator Customization (Based on user request)
+
+**Goal**: Implement a grouped metric selector identical to the provided screenshot to allow users to customize table columns.
+
+#### 1. UI Structure (Sidebar/Modal Component)
+A collapsible section or modal "自訂表格指標欄位 (Custom Table Metric Columns)" containing 5 groups:
+
+*   **通用指標 (General Metrics)**
+    *   [x] Link Clicks (連結點擊次數)
+    *   [x] Reach (觸及人數)
+    *   [x] CPC (單次連結點擊成本)
+    *   [x] Spend (花費金額)
+    *   [x] CTR (連結點擊率)
+    *   [x] CPM (每千次廣告曝光成本)
+    *   [x] Impressions (曝光次數)
+
+*   **電商指標 (E-commerce Metrics)**
+    *   [x] Payment Info Added (新增付款資訊次數)
+    *   [x] Add to Cart Conversion Value (加到購物車的轉換值)
+    *   [x] Initiate Checkout (開始結帳次數)
+    *   [x] CPA (單次購買成本)
+    *   [x] Add to Cart (加到購物車次數)
+    *   [x] ROAS
+    *   [x] Cost per Add to Cart (每次加入購物車成本)
+    *   [x] Purchase Conversion Value (購買轉換價值)
+    *   [x] Purchases (購買次數)
+    *   [x] Content Views (內容查看次數)
+
+*   **漏斗指標 (Funnel Metrics)**
+    *   [x] Cart Purchase Rate (購物車購買率)
+    *   [x] Cart Value Realization Rate (購物車價值實現率)
+    *   [x] Ad Cart Drop-off Rate (廣告購物車流失率)
+    *   [x] View-to-Cart Rate (查看後購物車加入率)
+    *   [x] Purchase Conversion Rate (購買轉換率)
+
+*   **互動指標 (Engagement Metrics)**
+    *   [x] Post Comments (貼文留言)
+    *   [x] Post Saves (貼文儲存)
+    *   [x] Post Shares (貼文分享)
+    *   [x] Post Engagement (貼文互動)
+    *   [x] Post Reactions (貼文心情)
+    *   [x] Page Likes (粉絲專頁按讚)
+
+*   **品質診斷 (Quality Ranking)**
+    *   [x] Quality Ranking (品質排名)
+    *   [x] Conversion Rate Ranking (轉換率排名)
+    *   [x] Engagement Rate Ranking (互動率排名)
+
+#### 2. Implementation Strategy
+
+**Frontend**:
+-   **State**: `selectedMetrics` (Array of strings).
+-   **Component**: `MetricSelector` (accepts selection state and update function).
+-   **Logic**:
+    -   Table Header: Dynamically map `selectedMetrics` to `<th>`.
+    -   Table Body: Dynamically map `selectedMetrics` to `<td>`.
+-   **Enhancement**: "Save as Preset" button to save the current selection (localStorage).
+
+**Backend**:
+-   **Field Expansion**:
+    -   Add `actions` and `action_values` processing for engagement metrics.
+    -   Add `quality_ranking`, `conversion_rate_ranking`, `engagement_rate_ranking` to API request fields.
+-   **Calculations**:
+    -   Engagement metrics are simple sums from `actions`.
+    -   Quality rankings are direct string return values (e.g., "Above Average", "Average", "Below Average 35%").
+
+#### 3. Suggestions
+-   **Presets**: Default checking "General" + "E-commerce" is recommended for quick start.
+-   **Drag & Drop**: In the future, allow column reordering.
+
