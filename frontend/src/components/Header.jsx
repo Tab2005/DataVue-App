@@ -1,13 +1,14 @@
 import React from 'react';
 import { FiSearch, FiBell, FiUser, FiGlobe } from 'react-icons/fi';
 
-const Header = ({ language, setLanguage, accounts = [], selectedAccountId, setSelectedAccountId, onGenerateReport }) => {
+const Header = ({ language, setLanguage, accounts = [], selectedAccountId, setSelectedAccountId, onGenerateReport, isSidebarCollapsed }) => {
   return (
     <header className="glass-panel" style={{
       height: '70px',
       position: 'fixed',
       top: 0,
-      left: '240px', // Matches sidebar width
+      left: isSidebarCollapsed ? '80px' : '240px', // Responsive to sidebar
+      transition: 'left 0.3s ease',
       right: 0,
       zIndex: 100,
       display: 'flex',

@@ -1,7 +1,7 @@
 import React from 'react';
 import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
 
-const TrendsChart = ({ data, language, title }) => {
+const TrendsChart = ({ data, language, title, dataKey = 'value' }) => {
     // Translations
     const t = {
         loading: language === 'zh' ? '正在載入圖表數據...' : 'Loading Chart Data...',
@@ -35,7 +35,6 @@ const TrendsChart = ({ data, language, title }) => {
         }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
                 <h3 style={{ color: 'var(--text-secondary)', fontWeight: 500 }}>{title || t.defaultTitle}</h3>
-                {/* Date range is now controlled by the parent Dashboard */}
             </div>
 
             <div style={{ flex: 1, width: '100%', minHeight: 0 }}>
@@ -73,7 +72,7 @@ const TrendsChart = ({ data, language, title }) => {
                         />
                         <Area
                             type="monotone"
-                            dataKey="value"
+                            dataKey={dataKey}
                             stroke="var(--accent-primary)"
                             strokeWidth={3}
                             fillOpacity={1}

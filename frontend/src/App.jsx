@@ -3,6 +3,8 @@ import { BrowserRouter as Router, Routes, Route } from 'react-router-dom';
 import { GoogleOAuthProvider } from '@react-oauth/google';
 import Login from './pages/Login';
 import Dashboard from './pages/Dashboard';
+import Analytics from './pages/Analytics';
+import Layout from './components/Layout';
 import ProtectedRoute from './components/ProtectedRoute';
 
 function App() {
@@ -14,14 +16,11 @@ function App() {
       <Router>
         <Routes>
           <Route path="/login" element={<Login />} />
-          <Route
-            path="/"
-            element={
-              <ProtectedRoute>
-                <Dashboard />
-              </ProtectedRoute>
-            }
-          />
+          <Route path="/login" element={<Login />} />
+          <Route element={<ProtectedRoute><Layout /></ProtectedRoute>}>
+            <Route path="/" element={<Dashboard />} />
+            <Route path="/analytics" element={<Analytics />} />
+          </Route>
         </Routes>
       </Router>
     </GoogleOAuthProvider>

@@ -142,6 +142,31 @@ def get_dashboard_data(account_id: str = None, days: int = 7, user_id: str = Dep
         "chart_data": []
     }
 
+@app.get("/api/analytics-data")
+def get_analytics_data(
+    account_id: str, 
+    since: str, 
+    until: str, 
+    level: str = "account", 
+    user_id: str = Depends(verify_google_token)
+):
+    """
+    Endpoint for the Advanced Analytics page.
+    Requires account_id, custom date range (since/until), and aggregation level.
+    """
+    report_data = FacebookService.get_custom_report(account_id, user_id, since, until, level)
+    
+    if report_data is None:
+         raise HTTPException(status_code=400, detail="Failed to fetch analytics data")
+         
+    return {
+        "data": report_data,
+        "meta": {
+            "level": level,
+            "period": f"{since} ~ {until}"
+        }
+    }
+
 
 if __name__ == "__main__":
     import uvicorn

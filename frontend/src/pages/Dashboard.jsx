@@ -1,219 +1,180 @@
 import React, { useState, useEffect } from 'react';
-import Sidebar from '../components/Sidebar';
-import Header from '../components/Header';
+import { useOutletContext } from 'react-router-dom';
 import KPICard from '../components/KPICard';
 import TrendsChart from '../components/TrendsChart';
 
 function Dashboard() {
-    const [language, setLanguage] = useState('zh');
-    const [accounts, setAccounts] = useState([]);
-    const [selectedAccountId, setSelectedAccountId] = useState('');
-    const [days, setDays] = useState(7); // Default to 7 days
-    const [data, setData] = useState({
-        kpi: [], // Will be populated by API (Array of 8 items)
-        chart_data: [],
-        date_range: null
-    });
+    // 1. Get Context from Layout
+    const { selectedAccountId, user, language } = useOutletContext();
+
+    const [days, setDays] = useState(7);
+    const [dashboardData, setDashboardData] = useState(null);
     const [loading, setLoading] = useState(false);
+    const [error, setError] = useState(null);
 
-    // 1. Fetch Ad Accounts on Mount with Retry Logic
+    // Translations
+    const t = {
+        zh: {
+            title: "成效總覽 (Overview)",
+            welcome: "歡迎回來，查看您的廣告帳戶成效",
+            last7Days: "近 7 天",
+            last30Days: "近 30 天",
+            spendTrend: "花費趨勢 (Spend Trend)"
+        },
+        en: {
+            title: "Performance Overview",
+            welcome: "Welcome back, check your ad account performance.",
+            last7Days: "Last 7 Days",
+            last30Days: "Last 30 Days",
+            spendTrend: "Spend Trend"
+        }
+    };
+
+    const txt = t[language] || t.zh;
+
+    // 2. Fetch Trigger
     useEffect(() => {
-        const fetchAccounts = async (retries = 3) => {
-            const apiUrl = import.meta.env.VITE_API_URL || 'http://localhost:8000';
-            const token = localStorage.getItem('google_token');
-
-            try {
-                const response = await fetch(`${apiUrl}/api/ad-accounts`, {
-                    headers: {
-                        'Authorization': `Bearer ${token}`
-                    }
-                });
-
-                if (!response.ok) {
-                    throw new Error(`HTTP error! status: ${response.status}`);
-                }
-
-                const accList = await response.json();
-
-                if (Array.isArray(accList)) {
-                    setAccounts(accList);
-                    if (accList.length > 0) {
-                        setSelectedAccountId(accList[0].id);
-                    }
-                }
-            } catch (err) {
-                console.error(`Failed to fetch accounts (Retries left: ${retries})`, err);
-                if (retries > 0) {
-                    setTimeout(() => fetchAccounts(retries - 1), 1500); // Retry after 1.5s
-                }
-            }
-        };
-
-        fetchAccounts();
-    }, []);
-
-    // 2. Fetch Report Data Triggered by Account or specific interaction
-    // We wrap it in a function to call when 'Generate Report' or 'Days Toggle' changes
-    const fetchReport = (daysOverride = days) => {
         if (!selectedAccountId) return;
 
-        setLoading(true);
-        const apiUrl = import.meta.env.VITE_API_URL || 'http://localhost:8000';
-        const token = localStorage.getItem('google_token');
-
-        fetch(`${apiUrl}/api/dashboard-data?account_id=${selectedAccountId}&days=${daysOverride}`, {
-            headers: {
-                'Authorization': `Bearer ${token}`
-            }
-        })
-            .then(res => res.json())
-            .then(resData => {
-                if (resData) {
-                    setData({
-                        kpi: resData.kpi || [],
-                        chart_data: resData.chart_data || [],
-                        date_range: resData.date_range || null
-                    });
-                }
-            })
-            .catch(err => {
+        const fetchData = async () => {
+            setLoading(true);
+            setError(null); // Clear previous errors
+            try {
+                const apiUrl = import.meta.env.VITE_API_URL || 'http://localhost:8000';
+                const token = localStorage.getItem('google_token');
+                const res = await fetch(`${apiUrl}/api/dashboard-data?account_id=${selectedAccountId}&days=${days}`, {
+                    headers: { 'Authorization': `Bearer ${token}` }
+                });
+                if (!res.ok) throw new Error('Data fetch failed');
+                const json = await res.json();
+                setDashboardData(json); // Response is not wrapped in 'data'
+            } catch (err) {
                 console.error("Failed to fetch report", err);
-            })
-            .finally(() => setLoading(false));
-    };
-
-    // Auto-fetch when selectedAccountId changes and we switch days
-    useEffect(() => {
-        if (selectedAccountId) {
-            fetchReport(days);
-        }
+                setError(err.message);
+            } finally {
+                setLoading(false);
+            }
+        };
+        fetchData();
     }, [selectedAccountId, days]);
 
-    const handleDaysChange = (newDays) => {
-        setDays(newDays);
-    };
+    // KPI Config with Translations
+    const getKpiConfig = (lang) => [
+        { key: 'impressions', title: lang === 'zh' ? '曝光 (Impressions)' : 'Impressions', format: 'number' },
+        { key: 'link_clicks', title: lang === 'zh' ? '連結點擊 (Link Clicks)' : 'Link Clicks', format: 'number' },
+        { key: 'ctr', title: 'CTR', format: 'percent' },
+        { key: 'cpc', title: 'CPC', format: 'currency', isInverse: true },
+        { key: 'spend', title: lang === 'zh' ? '費用 (Spend)' : 'Spend', format: 'currency', isInverse: true },
+        { key: 'purchases', title: lang === 'zh' ? '購買 (Purchases)' : 'Purchases', format: 'number' },
+        { key: 'add_to_cart', title: lang === 'zh' ? '購物車 (AddToCart)' : 'Add to Cart', format: 'number' },
+        { key: 'roas', title: lang === 'zh' ? '回報率 (ROAS)' : 'ROAS', format: 'float' },
+    ];
+
+    const kpiList = getKpiConfig(language);
 
     return (
-        <div style={{ display: 'flex', minHeight: '100vh', background: 'var(--bg-primary)' }}>
-            <Sidebar language={language} />
-
-            <div style={{ flex: 1, marginLeft: '240px' }}>
-                <Header
-                    language={language}
-                    setLanguage={setLanguage}
-                    accounts={accounts}
-                    selectedAccountId={selectedAccountId}
-                    setSelectedAccountId={setSelectedAccountId}
-                    onGenerateReport={() => fetchReport(days)}
-                />
-
-                <main style={{
-                    marginTop: '70px',
-                    padding: '32px',
-                    display: 'flex',
-                    flexDirection: 'column',
-                    gap: '24px'
-                }}>
-                    {/* Performance Overview Section */}
-                    <section className="glass-panel" style={{
-                        padding: '24px',
-                        borderRadius: 'var(--radius-xl)',
-                        display: 'flex',
-                        flexDirection: 'column',
-                        gap: '24px'
-                    }}>
-                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                            <h2 style={{ fontSize: '1.1rem', fontWeight: 600 }}>
-                                {language === 'zh' ? '成效總覽' : 'Performance Overview'}
-                            </h2>
-
-                            <div style={{ display: 'flex', gap: '16px', alignItems: 'center' }}>
-                                {data.date_range && (
-                                    <span style={{
-                                        color: 'var(--text-secondary)',
-                                        fontSize: '0.85rem',
-                                        background: 'rgba(255,255,255,0.03)',
-                                        padding: '4px 8px',
-                                        borderRadius: '4px',
-                                        border: '1px solid var(--glass-border)'
-                                    }}>
-                                        {data.date_range.start} ~ {data.date_range.stop}
-                                    </span>
-                                )}
-
-                                <div style={{ display: 'flex', gap: '8px' }}>
-                                    <button
-                                        onClick={() => handleDaysChange(7)}
-                                        style={{
-                                            padding: '6px 16px',
-                                            borderRadius: '6px',
-                                            border: days === 7 ? '1px solid var(--accent-primary)' : '1px solid var(--glass-border)',
-                                            background: days === 7 ? 'var(--accent-primary)' : 'transparent',
-                                            color: days === 7 ? 'white' : 'var(--text-secondary)',
-                                            cursor: 'pointer',
-                                            fontSize: '0.9rem'
-                                        }}
-                                    >
-                                        Last 7 Days
-                                    </button>
-                                    <button
-                                        onClick={() => handleDaysChange(30)}
-                                        style={{
-                                            padding: '6px 16px',
-                                            borderRadius: '6px',
-                                            border: days === 30 ? '1px solid var(--accent-primary)' : '1px solid var(--glass-border)',
-                                            background: days === 30 ? 'var(--accent-primary)' : 'transparent',
-                                            color: days === 30 ? 'white' : 'var(--text-secondary)',
-                                            cursor: 'pointer',
-                                            fontSize: '0.9rem'
-                                        }}
-                                    >
-                                        Last 30 Days
-                                    </button>
-                                </div>
-                            </div>
-                        </div>
-
-                        {/* KPI Grid - 4 Columns x 2 Rows */}
-                        <div style={{
-                            display: 'grid',
-                            gridTemplateColumns: 'repeat(4, 1fr)',
-                            gap: '16px',
-                            opacity: loading ? 0.5 : 1, // Visual feedback for loading
-                            transition: 'opacity 0.2s'
+        <div style={{ padding: '24px', width: '100%' }}>
+            {/* ... Header Omitted ... */}
+            <div style={{ marginBottom: '32px', display: 'flex', justifyContent: 'space-between', alignItems: 'end' }}>
+                <div>
+                    <h1 style={{ fontSize: '1.8rem', fontWeight: '700', color: 'var(--text-primary)', marginBottom: '8px' }}>
+                        {txt.title}
+                    </h1>
+                    <p style={{ color: 'var(--text-secondary)' }}>
+                        {txt.welcome}
+                    </p>
+                </div>
+                {/* ... Controls Omitted ... */}
+                <div className="glass-panel" style={{ display: 'flex', padding: '4px', borderRadius: '8px' }}>
+                    {dashboardData && dashboardData.date_range && (
+                        <span style={{
+                            color: 'var(--text-secondary)',
+                            fontSize: '0.85rem',
+                            padding: '0 8px',
+                            borderRight: '1px solid var(--glass-border)',
+                            display: 'flex',
+                            alignItems: 'center'
                         }}>
-                            {data.kpi.length === 0 ? (
-                                // Placeholders or Empty State
-                                Array(8).fill(0).map((_, i) => (
-                                    <div key={i} style={{ height: '120px', background: 'rgba(255,255,255,0.02)', borderRadius: 'var(--radius-lg)' }}></div>
-                                ))
-                            ) : (
-                                data.kpi.map((kpi, idx) => (
-                                    <KPICard
-                                        key={idx}
-                                        title={kpi.label}
-                                        value={kpi.value}
-                                        sub_value={kpi.sub_value}
-                                        diff={kpi.diff}
-                                        percent={kpi.percent}
-                                        is_increase={kpi.is_increase}
-                                        is_inverse={kpi.is_inverse}
-                                    />
-                                ))
-                            )}
-                        </div>
-                    </section>
-
-                    {/* Charts Area */}
-                    <section>
-                        <div style={{ marginBottom: '16px' }}>
-                            <h3 style={{ fontSize: '1.1rem', fontWeight: 600 }}>費用走勢 (Cost Trend)</h3>
-                        </div>
-                        <TrendsChart data={data.chart_data} language={language} title="Cost Trend" />
-                    </section>
-
-                </main>
+                            {dashboardData.date_range.start} ~ {dashboardData.date_range.stop}
+                        </span>
+                    )}
+                    <button
+                        onClick={() => setDays(7)}
+                        style={{
+                            background: days === 7 ? 'rgba(255,255,255,0.1)' : 'transparent',
+                            color: days === 7 ? 'white' : 'var(--text-secondary)',
+                            border: 'none',
+                            padding: '6px 16px',
+                            borderRadius: '6px',
+                            cursor: 'pointer',
+                            transition: 'all 0.2s'
+                        }}
+                    >
+                        {txt.last7Days}
+                    </button>
+                    <button
+                        onClick={() => setDays(30)}
+                        style={{
+                            background: days === 30 ? 'rgba(255,255,255,0.1)' : 'transparent',
+                            color: days === 30 ? 'white' : 'var(--text-secondary)',
+                            border: 'none',
+                            padding: '6px 16px',
+                            borderRadius: '6px',
+                            cursor: 'pointer',
+                            transition: 'all 0.2s'
+                        }}
+                    >
+                        {txt.last30Days}
+                    </button>
+                </div>
             </div>
+
+            {loading ? (
+                <div style={{ textAlign: 'center', padding: '40px', color: 'var(--text-secondary)' }}>載入數據中...</div>
+            ) : error ? (
+                <div style={{ textAlign: 'center', padding: '40px', color: 'var(--text-error)' }}>Error: {error}</div>
+            ) : (
+                <>
+                    {/* KPI Grid */}
+                    <div style={{
+                        display: 'grid',
+                        gridTemplateColumns: 'repeat(4, 1fr)',
+                        gap: '16px',
+                        marginBottom: '24px'
+                    }}>
+                        {dashboardData && dashboardData.kpi ? (
+                            kpiList.map((cfg) => {
+                                const dataItem = dashboardData.kpi[cfg.key];
+                                if (!dataItem) return null;
+                                return (
+                                    <KPICard
+                                        key={cfg.key}
+                                        title={cfg.title}
+                                        value={dataItem.value}
+                                        sub_value={dataItem.previous}
+                                        diff={dataItem.diff}
+                                        percent={dataItem.change}
+                                        is_increase={dataItem.is_increase}
+                                        is_inverse={cfg.isInverse}
+                                    />
+                                );
+                            })
+                        ) : (
+                            <div style={{ gridColumn: '1 / -1', textAlign: 'center', color: 'gray' }}>No Data</div>
+                        )}
+                    </div>
+
+                    {/* Charts Row */}
+                    <div className="glass-panel" style={{ padding: '24px', borderRadius: '16px', minHeight: '300px' }}>
+                        <h3 style={{ margin: '0 0 20px 0', fontSize: '1.1rem', color: 'var(--text-secondary)' }}>{txt.spendTrend}</h3>
+                        {dashboardData && dashboardData.chart_data ? (
+                            <TrendsChart data={dashboardData.chart_data} dataKey="spend" color="#ef4444" />
+                        ) : (
+                            <div style={{ textAlign: 'center', color: 'gray', padding: '40px' }}>No Chart Data</div>
+                        )}
+                    </div>
+                </>
+            )}
         </div>
     );
 }

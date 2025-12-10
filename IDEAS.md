@@ -182,3 +182,62 @@
     - 更新 UI 佈局，將原本單一 Grid 改為三個 Section (通用、電商、漏斗)。
     - 支援不同的數值格式 (貨幣、百分比、整數)。
 
+## 6. Analytics Page: Advanced Reporting (深度分析與報表)
+
+**日期**: 2025-12-10
+**狀態**: 需求確認 (Requirements Confirmed) -> 規劃中
+
+### 設計目標 (Objective)
+與其說是單純的 Dashboard，不如說是 **「動態報表產生器 (Dynamic Report Generator)」**。
+目標是復刻並超越 GAS 工具的彈性，讓您能自由篩選、比較不同層級 (Campaign/AdSet) 的數據。
+
+### 核心功能模組 (Core Modules)
+
+#### 1. 設定控制台 (Control Panel)
+配置於頁面左側或頂部，提供完整的篩選條件：
+
+*   **基礎設定**:
+    *   **分析層級 (Level)**: 帳號 (Account) / 行銷活動 (Campaign) / 廣告群組 (AdSet) / 廣告 (Ad)。
+    *   **日期範圍 (Date Range)**: 支援「自訂日期 (Custom Date)」選擇器，而非僅限 7/30 天。
+    *   **比較模式 (Comparison)**: 開關 `V.S 比較模式` (上一期 / 去年同期)。
+
+*   **進階篩選 (Filtering)**:
+    *   **關鍵字篩選**: `包含 (Include)` / `排除 (Exclude)` 關鍵字輸入框。
+    *   **快速勾選**: 列出所有Active Campaign供快速勾選 (如截圖 1)。
+
+*   **指標自訂 (Metric Toggles)**:
+    *   提供 Checkbox 讓使用者決定表格要顯示哪些欄位 (通用、電商、漏斗、互動)。
+
+#### 2. 動態數據表格 (Dynamic Data Table)
+根據上方設定產生的詳細報表。
+
+*   **Columns**: 根據「指標自訂」動態增減。
+*   **Rows**: 根據「分析層級」顯示 (例如選 Campaign 就列出所有 Campaigns)。
+*   **Comparison**: 若開啟 VS 模式，數值旁顯示 `(diff%)` 或用顏色標示。
+
+#### 3. 視覺化圖表 (Visualization)
+*   **Funnel Chart**: 針對篩選後的總數據繪製漏斗。
+*   **Dual-Axis Trend**: 允許自選兩軸 (e.g., Spend vs ROAS) 繪製所選範圍的趨勢。
+
+### 實作階段規劃 (Implementation Phases)
+
+為了穩健開發，建議分三階段完成：
+
+*   **Phase 3.1: 基礎架構 (Foundation)**
+    *   建立 `/analytics` 頁面。
+    *   實作「自訂日期選擇器」與「層級選擇 (Level Selector)」。
+    *   後端 API 支援 `level` 與 `custom_date` 參數。
+    *   先顯示預設的指標 (E-commerce + Funnel)。
+
+*   **Phase 3.2: 篩選與搜尋 (Filtering)**
+    *   實作「關鍵字篩選 (Include/Exclude)」邏輯。
+    *   實作「行銷活動多選 (Campaign Multi-select)」功能。
+
+*   **Phase 3.3: 高度客製化 (Customization)**
+    *   實作「指標勾選 (Metric Toggles)」UI。
+    *   前端表格動態渲染 (Dynamic Columns)。
+
+### 技術筆記
+*   **API Update**: `/api/analytics-data` 需接受 `filters (json)`, `level`, `since`, `until` 等參數。
+*   **State Management**: 前端需管理較複雜的 Filter State。
+
