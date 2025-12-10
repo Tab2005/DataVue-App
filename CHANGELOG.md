@@ -1,5 +1,22 @@
 # Changelog
 
+## [1.3.2] - 2025-12-10
+### Added
+- **Analytics UI**: 
+  - **View Tabs**: 新增指標視圖分頁功能 (總覽 / 電商 / 漏斗 / 自訂)，快速切換不同分析場景。
+  - **Engagement Metrics**: 新增「互動指標」分類，支援 6 種關鍵互動數據 (貼文留言, 儲存, 分享, 互動, 心情, 粉絲頁按讚)。
+  - **Compact Mode**: 優化表格排版，縮減儲存格間距，解決寬度溢出問題。
+  - **Sticky Header**: 表格標頭固定功能，提升長列表閱讀體驗。
+- **Logic**:
+  - **Dynamic Limits**: 實作「單一分類最多 7 個指標」的動態限制機制，防止版面過寬。
+  - **Auto-Logout**: 新增 Token 過期自動偵測機制 (401 Error Handling)，失效時自動導回登入頁。
+
+### Changed
+- **Analytics Presets**:
+  - **Summary View**: 調整預設指標與 Dashboard Overview 一致 (含 Impressions, Link Clicks, CTR, CPC, Spend, Purchases, ATC, ROAS)。
+  - **E-commerce View**: 更新預設指標為 7 項核心電商數據 (依漏斗順序排列)。
+- **User Experience**: 優化錯誤訊息提示，當指標選擇超過限制時給予明確反饋。
+
 ## [1.3.1] - 2025-12-10
 ### Added
 - **Analytics KPI Cards**: 新增關鍵指標總覽卡片 (通用、電商、漏斗指標)。

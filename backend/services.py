@@ -395,6 +395,15 @@ class FacebookService:
                 
                 flat["purchase_value"] = acts.get("purchase_val", 0)
                 flat["atc_value"] = acts.get("add_to_cart_val", 0)
+
+                # 2.1 Engagement Metrics (New)
+                flat["post_comments"] = acts.get("comment", 0)
+                flat["post_saves"] = acts.get("post_save", 0)
+                flat["post_shares"] = acts.get("post", 0) # 'post' usually represents shares in actions list
+                flat["post_engagement"] = acts.get("post_engagement", 0)
+                flat["post_reactions"] = acts.get("post_reaction", 0)
+                flat["page_likes"] = acts.get("like", 0)
+
                 
                 # 3. Derived Metrics
                 flat["cpa"] = flat["spend"] / flat["purchases"] if flat["purchases"] > 0 else 0

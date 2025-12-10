@@ -45,7 +45,14 @@ function Dashboard() {
                 const res = await fetch(`${apiUrl}/api/dashboard-data?account_id=${selectedAccountId}&days=${days}`, {
                     headers: { 'Authorization': `Bearer ${token}` }
                 });
-                if (!res.ok) throw new Error('Data fetch failed');
+                if (!res.ok) {
+                    if (res.status === 401) {
+                        // Redirect to login if unauthorized
+                        window.location.href = '/login';
+                        return;
+                    }
+                    throw new Error('Data fetch failed');
+                }
                 const json = await res.json();
                 setDashboardData(json); // Response is not wrapped in 'data'
             } catch (err) {

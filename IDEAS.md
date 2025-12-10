@@ -312,3 +312,42 @@ A collapsible section or modal "自訂表格指標欄位 (Custom Table Metric Co
 -   **Presets**: Default checking "General" + "E-commerce" is recommended for quick start.
 -   **Drag & Drop**: In the future, allow column reordering.
 
+
+## 7. Analytics Page UI Improvements (針對橫向捲動問題)
+
+**日期**: 2025-12-10
+**狀態**: 待討論 (Pending Discussion)
+**問題**: 當使用者勾選過多自訂指標時，表格寬度過大，導致橫向捲動不便，且容易迷失方向 (看不到最左邊的名稱或是最右邊的數據)。
+
+### 提案解決方案 (Proposed Solutions)
+
+#### 方案 A: 凍結首欄 (Sticky Columns) - **推薦**
+- **描述**: 將最左側的「名稱 (Name)」欄位固定 (Position Sticky)。
+- **效果**: 無論橫向捲動到哪裡，都能知道現在看的是哪個行銷活動/廣告的數據。
+- **技術**: CSS `position: sticky; left: 0; z-index: 10;`.
+
+#### 方案 B: 快速視圖切換 (View Presets)
+- **描述**: 在「自訂指標」區塊增加快速按鈕，例如 [只看電商]、[只看漏斗]、[精簡模式]。
+- **效果**: 鼓勵使用者一次只專注在一類指標，減少同時顯示的欄位數量。
+
+#### 方案 C: 雙軸捲動同步與樣式優化 (Scroll Sync & Styling)
+- **描述**: 
+    - 增加 **Sticky Header**: 表格標題列固定在頂部，垂直捲動時標題不消失。
+    - **Compact Mode (緊湊模式)**: 縮小 Cell Padding，讓同樣寬度能顯示更多欄位。
+    - **Scroll Shadows**: 當有內容溢出時，在邊緣顯示陰影提示。
+
+### 建議實作步驟
+1. 優先實作 **Sticky First Column** 與 **Sticky Header**，這能最直接改善體驗。
+2. 調整 CSS Padding 使表格更緊湊。
+
+#### 方案 D: 指標視圖分頁 (Metric View Tabs) - **針對「勾選過多導致過寬」的終極解法**
+- **描述**: 在「自訂指標」區塊上方新增 **快速視圖按鈕 (View Tabs)**，例如：
+    - `[ 📊 總覽 (Summary) ]`: 僅顯示花費、ROAS、CPA、購買數。 (最窄)
+    - `[ 🛒 電商詳情 (E-commerce) ]`: 顯示加入購物車、結帳、購買等詳細流程。
+    - `[ 🌪️ 漏斗分析 (Funnel) ]`: 顯示各階段轉換率。
+    - `[ ⚙️ 自訂 (Custom) ]`: 允許使用者自由勾選 (即目前的模式)。
+- **解決點**: 
+    - 預設情境下 (總覽/電商) 表格寬度適中，不會有橫向捲動問題。
+    - 當使用者需要看特定領域 (如漏斗) 時，點擊切換，**自動取消勾選**不相關的欄位，保持畫面簡潔。
+    - 只有在使用者真的「全都要」時，才切換到 Custom 模式讓他自己承擔捲動責任。
+- **優化勾選介面**: 將勾選區塊收合在「自訂模式」中，或是預設隱藏，避免佔用上方太多空間。

@@ -21,6 +21,37 @@ const COMPARE_PRESETS = [
     { label: '自訂 (Custom)', value: 'custom' },
 ];
 
+const VIEW_PRESETS = {
+    summary: {
+        label_zh: '📊 總覽 (Summary)',
+        label_en: '📊 Summary',
+        // Creating a match with Dashboard Overview: Impressions, Link Clicks, CTR, CPC, Spend, Purchases, Add to Cart, ROAS
+        metrics: ['impressions', 'link_clicks', 'ctr', 'cpc', 'spend', 'purchases', 'add_to_cart', 'roas']
+    },
+    ecommerce: {
+        label_zh: '🛒 電商詳情 (E-commerce)',
+        label_en: '🛒 E-commerce',
+        // User requested 7 specific metrics: ATC Value, CPA, ATC, ROAS, Cost per ATC, Purchase Value, Purchases
+        // Reordered for logical funnel flow: ATC -> Cost/ATC -> ATC Value -> Purchases -> CPA -> Purchase Value -> ROAS
+        metrics: ['add_to_cart', 'cost_per_atc', 'atc_value', 'purchases', 'cpa', 'purchase_value', 'roas']
+    },
+    engagement: {
+        label_zh: '❤️ 互動指標 (Engagement)',
+        label_en: '❤️ Engagement',
+        metrics: ['post_comments', 'post_saves', 'post_shares', 'post_engagement', 'post_reactions', 'page_likes']
+    },
+    funnel: {
+        label_zh: '🌪️ 漏斗分析 (Funnel)',
+        label_en: '🌪️ Funnel',
+        metrics: ['cvr', 'view_to_cart', 'cart_conversion', 'cart_dropoff', 'cart_value_realization']
+    },
+    custom: {
+        label_zh: '⚙️ 自訂 (Custom)',
+        label_en: '⚙️ Custom',
+        metrics: [] // User defined
+    }
+};
+
 // Unified Metric Groups Config
 // Used for BOTH the Metric Selector (Checkbox) and the KPI Cards/Table Columns
 const METRIC_GROUPS = [
@@ -43,18 +74,31 @@ const METRIC_GROUPS = [
         id: 'ecommerce',
         label_zh: '電商指標',
         label_en: 'E-commerce Metrics',
-        color: '#10b981', // Emerald
+        color: '#8b5cf6', // Violet
         metrics: [
-            { key: 'view_content', label_zh: '內容查看次數', label_en: 'Content Views', format: 'number' },
-            { key: 'cost_per_atc', label_zh: '每次加入購物車成本', label_en: 'Cost per Add to Cart', format: 'currency' },
-            { key: 'add_to_cart', label_zh: '加到購物車次數', label_en: 'Add to Cart', format: 'number' },
-            { key: 'atc_value', label_zh: '加到購物車的轉換值', label_en: 'ATC Value', format: 'currency' },
-            { key: 'initiate_checkout', label_zh: '開始結帳次數', label_en: 'Initiate Checkout', format: 'number' },
-            { key: 'add_payment_info', label_zh: '新增付款資訊次數', label_en: 'Payment Info Added', format: 'number' },
+            { key: 'view_content', label_zh: '查看內容', label_en: 'View Content', format: 'number' },
+            { key: 'add_to_cart', label_zh: '加到購物車', label_en: 'Add to Cart', format: 'number' },
+            { key: 'initiate_checkout', label_zh: '開始結帳', label_en: 'Initiate Checkout', format: 'number' },
             { key: 'purchases', label_zh: '購買次數', label_en: 'Purchases', format: 'number' },
-            { key: 'purchase_value', label_zh: '購買轉換價值', label_en: 'Purchase Convert Value', format: 'currency' },
-            { key: 'cpa', label_zh: 'CPA (單次購買成本)', label_en: 'CPA', format: 'currency' },
+            { key: 'cost_per_atc', label_zh: '每次加入購物車成本', label_en: 'Cost per ATC', format: 'currency' },
+            { key: 'atc_value', label_zh: '加到購物車的轉換值', label_en: 'ATC Value', format: 'currency' },
+            { key: 'cpa', label_zh: '單次購買成本 (CPA)', label_en: 'CPA', format: 'currency' }, // Added
+            { key: 'purchase_value', label_zh: '購買轉換價值', label_en: 'Purchase Value', format: 'currency' },
             { key: 'roas', label_zh: 'ROAS', label_en: 'ROAS', format: 'decimal' },
+        ]
+    },
+    {
+        id: 'engagement',
+        label_zh: '互動指標',
+        label_en: 'Engagement',
+        color: '#ec4899', // Pink
+        metrics: [
+            { key: 'post_comments', label_zh: '貼文留言', label_en: 'Post Comments', format: 'number' },
+            { key: 'post_saves', label_zh: '貼文儲存', label_en: 'Post Saves', format: 'number' },
+            { key: 'post_shares', label_zh: '貼文分享', label_en: 'Post Shares', format: 'number' },
+            { key: 'post_engagement', label_zh: '貼文互動', label_en: 'Post Engagement', format: 'number' },
+            { key: 'post_reactions', label_zh: '貼文心情', label_en: 'Post Reactions', format: 'number' },
+            { key: 'page_likes', label_zh: '粉絲專頁按讚', label_en: 'Page Likes', format: 'number' },
         ]
     },
     {
@@ -197,8 +241,27 @@ const Analytics = () => {
         METRIC_GROUPS.flatMap(g => g.metrics).map(m => m.key)
     ));
 
+    // View State
+    const [activeView, setActiveView] = useState('custom'); // Default to custom or summary? Stick to custom for now to not surprise user, or maybe summary? Let's use 'summary' as default to solve the overflow issue immediately.
+
     // UI: Toggle Metric Panel
     const [showMetricPanel, setShowMetricPanel] = useState(false);
+
+    // Initial Load - Set default view to Summary to fix overflow
+    useEffect(() => {
+        handleViewChange('summary');
+    }, []);
+
+    const handleViewChange = (view) => {
+        setActiveView(view);
+        if (view !== 'custom') {
+            setSelectedMetrics(new Set(VIEW_PRESETS[view].metrics));
+            setShowMetricPanel(false); // Hide panel when using preset
+        } else {
+            // When switching to custom, maybe open the panel?
+            setShowMetricPanel(true);
+        }
+    };
 
     // 2.1 Handle Preset Change
     const handlePresetChange = (e) => {
@@ -252,7 +315,13 @@ const Analytics = () => {
                 }
             });
 
-            if (!res.ok) throw new Error("Failed to fetch data");
+            if (!res.ok) {
+                if (res.status === 401) {
+                    window.location.href = '/login';
+                    return;
+                }
+                throw new Error("Failed to fetch data");
+            }
 
             const json = await res.json();
             setReportData(json.data);
@@ -271,12 +340,31 @@ const Analytics = () => {
         }
     }, [selectedAccountId]);
 
-    // Metric Toggle Handler
+    // 3.1 Toggle Metric (Checkbox)
     const toggleMetric = (key) => {
         const newSet = new Set(selectedMetrics);
         if (newSet.has(key)) {
             newSet.delete(key);
         } else {
+            // MAX LIMIT CHECK (PER GROUP)
+            // 1. Find which group this metric belongs to
+            const group = METRIC_GROUPS.find(g => g.metrics.some(m => m.key === key));
+
+            if (group) {
+                // 2. Count how many metrics from THIS group are already selected
+                let countInGroup = 0;
+                group.metrics.forEach(m => {
+                    if (newSet.has(m.key)) countInGroup++;
+                });
+
+                if (countInGroup >= 7) {
+                    const groupName = language === 'zh' ? group.label_zh : group.label_en;
+                    alert(language === 'zh'
+                        ? `為確保最佳瀏覽體驗，[${groupName}] 分類最多只能選擇 7 個指標。`
+                        : `Max 7 metrics allowed in [${groupName}] category.`);
+                    return;
+                }
+            }
             newSet.add(key);
         }
         setSelectedMetrics(newSet);
@@ -317,6 +405,13 @@ const Analytics = () => {
             purchases: sum('purchases'),
             purchase_value: sum('purchase_value'),
             atc_value: sum('atc_value'),
+            // Engagement (New)
+            post_comments: sum('post_comments'),
+            post_saves: sum('post_saves'),
+            post_shares: sum('post_shares'),
+            post_engagement: sum('post_engagement'),
+            post_reactions: sum('post_reactions'),
+            page_likes: sum('page_likes'),
         };
 
         // Recalculate derived rates
@@ -433,20 +528,33 @@ const Analytics = () => {
                         </div>
                     )}
 
+
                     {/* Metric Selector Toggle (Now includes ALL groups) */}
                     <div style={{ borderTop: '1px solid var(--glass-border)', paddingTop: '16px' }}>
-                        <div
-                            style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', cursor: 'pointer' }}
-                            onClick={() => setShowMetricPanel(!showMetricPanel)}
-                        >
-                            <label style={{ fontSize: '0.9rem', color: 'var(--text-primary)', fontWeight: 600, display: 'flex', alignItems: 'center', gap: '8px' }}>
-                                <span style={{ fontSize: '1.2rem' }}>📊</span>
-                                {txt.customMetrics}
-                            </label>
-                            <span>{showMetricPanel ? '▲' : '▼'}</span>
+
+                        {/* View Tabs */}
+                        <div style={{ display: 'flex', gap: '8px', marginBottom: '16px', flexWrap: 'wrap' }}>
+                            {Object.entries(VIEW_PRESETS).map(([key, preset]) => (
+                                <button
+                                    key={key}
+                                    onClick={() => handleViewChange(key)}
+                                    style={{
+                                        padding: '6px 12px',
+                                        borderRadius: '20px',
+                                        border: '1px solid var(--glass-border)',
+                                        background: activeView === key ? 'var(--accent-primary)' : 'rgba(255,255,255,0.05)',
+                                        color: 'white',
+                                        fontSize: '0.85rem',
+                                        cursor: 'pointer',
+                                        transition: 'all 0.2s'
+                                    }}
+                                >
+                                    {language === 'zh' ? preset.label_zh : preset.label_en}
+                                </button>
+                            ))}
                         </div>
 
-                        {showMetricPanel && (
+                        {activeView === 'custom' && (
                             <div style={{ marginTop: '16px', animation: 'fadeIn 0.3s' }}>
                                 {METRIC_GROUPS.map(group => (
                                     <div key={group.id} style={{ marginBottom: '16px' }}>
@@ -550,8 +658,8 @@ const Analytics = () => {
 
             {/* KPI Cards Section (Middle) - Now Dynamic! */}
             {summaryData && (
-                <div style={{ marginBottom: '32px' }}>
-                    <h2 style={{ fontSize: '1.2rem', color: '#fbbf24', marginBottom: '16px', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <div className="glass-panel" style={{ marginBottom: '32px', padding: '24px', borderRadius: '16px' }}>
+                    <h2 style={{ fontSize: '1.2rem', color: '#fbbf24', marginBottom: '24px', display: 'flex', alignItems: 'center', gap: '8px', borderBottom: '1px solid var(--glass-border)', paddingBottom: '16px' }}>
                         ⭐ {txt.keyMetrics} <span style={{ fontSize: '0.9rem', color: 'var(--text-secondary)', fontWeight: 'normal' }}>({dateRange.since} ~ {dateRange.until})</span>
                     </h2>
 
@@ -593,14 +701,28 @@ const Analytics = () => {
             ) : error ? (
                 <div style={{ textAlign: 'center', padding: '40px', color: '#f87171' }}>{error}</div>
             ) : (
-                <div className="glass-panel" style={{ padding: '20px', borderRadius: '16px', overflowX: 'auto' }}>
+                <div className="glass-panel" style={{ padding: '0', borderRadius: '16px', overflowX: 'auto', maxHeight: '600px', overflowY: 'auto' }}>
                     <table style={{ width: '100%', borderCollapse: 'collapse', color: 'var(--text-primary)', fontSize: '0.9rem' }}>
                         <thead>
                             <tr style={{ borderBottom: '1px solid var(--glass-border)', textAlign: 'left' }}>
-                                <th style={{ padding: '12px', minWidth: '200px' }}>{txt.table.name}</th>
+                                <th style={{
+                                    padding: '8px',
+                                    minWidth: '200px',
+                                    position: 'sticky', // Keep sticky TOP for header
+                                    top: 0,
+                                    zIndex: 30,
+                                    background: '#242526'
+                                }}>{txt.table.name}</th>
                                 {/* Dynamic Headers */}
                                 {activeCols.map(col => (
-                                    <th key={col.key} style={{ padding: '12px', minWidth: '100px' }}>
+                                    <th key={col.key} style={{
+                                        padding: '8px',
+                                        minWidth: '100px',
+                                        position: 'sticky',
+                                        top: 0,
+                                        zIndex: 20,
+                                        background: '#242526'
+                                    }}>
                                         {language === 'zh' ? col.label_zh : col.label_en}
                                     </th>
                                 ))}
@@ -609,7 +731,10 @@ const Analytics = () => {
                         <tbody>
                             {reportData && reportData.map((row, idx) => (
                                 <tr key={idx} style={{ borderBottom: '1px solid rgba(255,255,255,0.05)' }}>
-                                    <td style={{ padding: '12px', fontWeight: 600 }}>{row.name}</td>
+                                    <td style={{
+                                        padding: '8px',
+                                        fontWeight: 600
+                                    }}>{row.name}</td>
                                     {/* Dynamic Cells */}
                                     {activeCols.map(col => {
                                         let val = row[col.key];
@@ -619,7 +744,7 @@ const Analytics = () => {
                                         else if (col.format === 'number') val = val?.toLocaleString();
 
                                         return (
-                                            <td key={col.key} style={{ padding: '12px' }}>{val}</td>
+                                            <td key={col.key} style={{ padding: '8px' }}>{val}</td>
                                         );
                                     })}
                                 </tr>

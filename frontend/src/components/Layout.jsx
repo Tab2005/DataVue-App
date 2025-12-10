@@ -44,6 +44,11 @@ const Layout = () => {
                 });
 
                 if (!response.ok) {
+                    if (response.status === 401) {
+                        console.warn("Token expired or invalid in Layout, logging out...");
+                        handleLogout();
+                        return;
+                    }
                     throw new Error(`HTTP error! status: ${response.status}`);
                 }
 

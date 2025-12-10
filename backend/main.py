@@ -75,10 +75,14 @@ def verify_google_token(credentials: HTTPAuthorizationCredentials = Depends(secu
     token = credentials.credentials
     try:
         # P.S. Ideally cache the validation or use a library that handles caching certs
+        # DEBUG LOGGING
+        print(f"🔐 Verifying Token: {token[:10]}... ClientID: {GOOGLE_CLIENT_ID}", file=sys.stderr)
+        
         id_info = id_token.verify_oauth2_token(token, google_requests.Request(), GOOGLE_CLIENT_ID)
         userid = id_info['sub']
         return userid
     except ValueError as e:
+        print(f"❌ Token Verification Failed: {e}", file=sys.stderr)
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail=f"Invalid authentication credentials: {str(e)}",
@@ -129,6 +133,7 @@ def get_dashboard_data(account_id: str = None, days: int = 7, user_id: str = Dep
                 "date_range": insights.get("date_range")
             }
         else:
+            print(f"❌ Dashboard Data Fetch Failed for {account_id}", file=sys.stderr)
             raise HTTPException(status_code=400, detail="Failed to fetch insights for this account")
 
     return {
