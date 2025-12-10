@@ -1,7 +1,10 @@
-import React from 'react';
-import { FiSearch, FiBell, FiUser, FiGlobe } from 'react-icons/fi';
 
-const Header = ({ language, setLanguage, accounts = [], selectedAccountId, setSelectedAccountId, onGenerateReport, isSidebarCollapsed }) => {
+import React, { useState } from 'react';
+import { FiSearch, FiBell, FiUser, FiGlobe, FiSettings, FiLogOut } from 'react-icons/fi';
+
+const Header = ({ language, setLanguage, accounts = [], selectedAccountId, setSelectedAccountId, onGenerateReport, isSidebarCollapsed, onLogout, user }) => {
+  const [showUserMenu, setShowUserMenu] = useState(false);
+
   return (
     <header className="glass-panel" style={{
       height: '70px',
@@ -88,6 +91,7 @@ const Header = ({ language, setLanguage, accounts = [], selectedAccountId, setSe
           {language === 'zh' ? '中文 / EN' : 'EN / 中文'}
         </button>
 
+        {/* Search Bar */}
         <div style={{
           display: 'flex',
           alignItems: 'center',
@@ -110,6 +114,7 @@ const Header = ({ language, setLanguage, accounts = [], selectedAccountId, setSe
           />
         </div>
 
+        {/* Bell */}
         <div style={{
           position: 'relative',
           cursor: 'pointer',
@@ -127,22 +132,126 @@ const Header = ({ language, setLanguage, accounts = [], selectedAccountId, setSe
           }}></span>
         </div>
 
-        <div style={{
-          width: '36px',
-          height: '36px',
-          borderRadius: '50%',
-          backgroundColor: 'var(--bg-hover)',
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'center',
-          border: '1px solid var(--accent-primary)',
-          cursor: 'pointer'
-        }}>
-          <FiUser />
+        {/* User Avatar with Dropdown */}
+        <div style={{ position: 'relative' }}>
+          <div
+            onClick={() => setShowUserMenu(!showUserMenu)}
+            style={{
+              width: '36px',
+              height: '36px',
+              borderRadius: '50%',
+              backgroundColor: 'var(--bg-hover)',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              border: '1px solid var(--accent-primary)',
+              cursor: 'pointer',
+              overflow: 'hidden'
+            }}>
+            {user && user.avatar ? (
+              <img src={user.avatar} alt="User" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+            ) : (
+              <FiUser />
+            )}
+          </div>
+
+          {/* Dropdown Menu */}
+          {showUserMenu && (
+            <>
+              {/* Backdrop to close */}
+              <div
+                style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, zIndex: 998 }}
+                onClick={() => setShowUserMenu(false)}
+              />
+
+              {/* Menu Card */}
+              <div className="glass-panel" style={{
+                position: 'absolute',
+                top: '48px',
+                right: 0,
+                width: '280px',
+                background: 'var(--bg-secondary)',
+                border: '1px solid var(--glass-border)',
+                borderRadius: '8px',
+                boxShadow: '0 4px 20px rgba(0,0,0,0.4)',
+                padding: '0',
+                zIndex: 999,
+                overflow: 'hidden'
+              }}>
+                {/* User Info Section */}
+                <div style={{ padding: '16px', borderBottom: '1px solid var(--glass-border)' }}>
+                  <div style={{ fontWeight: 'bold', color: 'var(--text-primary)', marginBottom: '4px' }}>
+                    {user?.name || 'Admin User'}
+                  </div>
+                  <div style={{ fontSize: '0.85rem', color: 'var(--text-secondary)' }}>
+                    {user?.email || 'admin@example.com'}
+                  </div>
+                </div>
+
+                {/* Actions Section */}
+                <div style={{ display: 'flex', padding: '8px' }}>
+                  {/* Change Password */}
+                  <button style={{
+                    flex: 1,
+                    background: 'transparent',
+                    border: 'none',
+                    color: 'var(--text-secondary)',
+                    padding: '10px',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    gap: '8px',
+                    cursor: 'pointer',
+                    borderRadius: '4px',
+                    transition: 'background 0.2s'
+                  }}
+                    onMouseEnter={(e) => e.currentTarget.style.background = 'rgba(255,255,255,0.05)'}
+                    onMouseLeave={(e) => e.currentTarget.style.background = 'transparent'}
+                    onClick={() => alert(language === 'zh' ? '修改密碼功能即將推出' : 'Change Password Coming Soon')}
+                  >
+                    <FiSettings />
+                    <span style={{ fontSize: '0.9rem' }}>{language === 'zh' ? '修改密碼' : 'Password'}</span>
+                  </button>
+
+                  {/* Vertical Divider */}
+                  <div style={{ width: '1px', background: 'var(--glass-border)', margin: '4px 0' }}></div>
+
+                  {/* Logout */}
+                  <button style={{
+                    flex: 1,
+                    background: 'transparent',
+                    border: 'none',
+                    color: 'var(--text-secondary)',
+                    padding: '10px',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    gap: '8px',
+                    cursor: 'pointer',
+                    borderRadius: '4px',
+                    transition: 'background 0.2s'
+                  }}
+                    onMouseEnter={(e) => e.currentTarget.style.background = 'rgba(255,255,255,0.05)'}
+                    onMouseLeave={(e) => e.currentTarget.style.background = 'transparent'}
+                    onClick={() => {
+                      if (window.confirm(language === 'zh' ? '確定要登出嗎？' : 'Logout?')) {
+                        onLogout && onLogout();
+                      }
+                    }}
+                  >
+                    <FiLogOut />
+                    <span style={{ fontSize: '0.9rem' }}>{language === 'zh' ? '登出' : 'Logout'}</span>
+                  </button>
+                </div>
+              </div>
+            </>
+          )}
         </div>
+
       </div>
     </header>
   );
 };
 
 export default Header;
+

@@ -49,6 +49,13 @@ const Layout = () => {
         fetchAccounts();
     }, []);
 
+    const handleLogout = () => {
+        localStorage.removeItem('google_token');
+        localStorage.removeItem('selected_account_id');
+        // Optional: clear user info if stored elsewhere
+        window.location.href = '/login';
+    };
+
     return (
         <div className="layout-container" style={{ display: 'flex', minHeight: '100vh', background: 'var(--bg-gradient)' }}>
             <Sidebar
@@ -71,6 +78,8 @@ const Layout = () => {
                     setSelectedAccountId={setSelectedAccountId}
                     onGenerateReport={() => { }}
                     isSidebarCollapsed={isSidebarCollapsed}
+                    onLogout={handleLogout}
+                    user={user}
                 />
 
                 <div style={{ padding: '0', flex: 1, marginTop: '70px' }}>
