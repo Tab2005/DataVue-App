@@ -8,17 +8,13 @@ function Dashboard() {
     const [language, setLanguage] = useState('zh');
     const [accounts, setAccounts] = useState([]);
     const [selectedAccountId, setSelectedAccountId] = useState('');
+    const [days, setDays] = useState(7); // Default to 7 days
     const [data, setData] = useState({
-        kpi: [
-            { label: "Total Followers", value: "---", change: "---", isPositive: true },
-            { label: "Engagement Rate", value: "---", change: "---", isPositive: true },
-            { label: "Impressions", value: "---", change: "---", isPositive: false },
-            { label: "Reach", value: "---", change: "---", isPositive: true },
-        ],
+        kpi: [], // Will be populated by API (Array of 8 items)
         chart_data: []
     });
+    const [loading, setLoading] = useState(false);
 
-    // 1. Fetch Ad Accounts on Mount
     // 1. Fetch Ad Accounts on Mount with Retry Logic
     useEffect(() => {
         const fetchAccounts = async (retries = 3) => {
@@ -55,18 +51,16 @@ function Dashboard() {
         fetchAccounts();
     }, []);
 
-    // 2. Fetch Report Data ONLY when triggered
-    const handleGenerateReport = () => {
+    // 2. Fetch Report Data Triggered by Account or specific interaction
+    // We wrap it in a function to call when 'Generate Report' or 'Days Toggle' changes
+    const fetchReport = (daysOverride = days) => {
         if (!selectedAccountId) return;
 
-        // Show loading state implicitly or explicit (optional)
-        setData(prev => ({ ...prev, kpi: prev.kpi.map(k => ({ ...k, value: "Loading..." })) }));
-
-        // 取得 API 網址
+        setLoading(true);
         const apiUrl = import.meta.env.VITE_API_URL || 'http://localhost:8000';
         const token = localStorage.getItem('google_token');
 
-        fetch(`${apiUrl}/api/dashboard-data?account_id=${selectedAccountId}`, {
+        fetch(`${apiUrl}/api/dashboard-data?account_id=${selectedAccountId}&days=${daysOverride}`, {
             headers: {
                 'Authorization': `Bearer ${token}`
             }
@@ -75,18 +69,26 @@ function Dashboard() {
             .then(resData => {
                 if (resData) {
                     setData({
-                        kpi: resData.kpi ? resData.kpi.map(item => ({
-                            ...item,
-                            isPositive: item.change.startsWith('+')
-                        })) : [],
+                        kpi: resData.kpi || [],
                         chart_data: resData.chart_data || []
                     });
                 }
             })
             .catch(err => {
                 console.error("Failed to fetch report", err);
-                // Reset or show error
-            });
+            })
+            .finally(() => setLoading(false));
+    };
+
+    // Auto-fetch when selectedAccountId changes and we switch days
+    useEffect(() => {
+        if (selectedAccountId) {
+            fetchReport(days);
+        }
+    }, [selectedAccountId, days]);
+
+    const handleDaysChange = (newDays) => {
+        setDays(newDays);
     };
 
     return (
@@ -100,7 +102,7 @@ function Dashboard() {
                     accounts={accounts}
                     selectedAccountId={selectedAccountId}
                     setSelectedAccountId={setSelectedAccountId}
-                    onGenerateReport={handleGenerateReport}
+                    onGenerateReport={() => fetchReport(days)}
                 />
 
                 <main style={{
@@ -108,29 +110,87 @@ function Dashboard() {
                     padding: '32px',
                     display: 'flex',
                     flexDirection: 'column',
-                    gap: '32px'
+                    gap: '24px'
                 }}>
-
-                    {/* KPI Grid */}
-                    <section style={{
-                        display: 'grid',
-                        gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))',
+                    {/* Performance Overview Section */}
+                    <section className="glass-panel" style={{
+                        padding: '24px',
+                        borderRadius: 'var(--radius-xl)',
+                        display: 'flex',
+                        flexDirection: 'column',
                         gap: '24px'
                     }}>
-                        {data.kpi.map((kpi, idx) => (
-                            <KPICard
-                                key={idx}
-                                title={kpi.label}
-                                value={kpi.value}
-                                change={kpi.change}
-                                isPositive={kpi.isPositive} // Derived from change string
-                            />
-                        ))}
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                            <h2 style={{ fontSize: '1.1rem', fontWeight: 600 }}>
+                                {language === 'zh' ? '成效總覽' : 'Performance Overview'}
+                            </h2>
+
+                            <div style={{ display: 'flex', gap: '8px' }}>
+                                <button
+                                    onClick={() => handleDaysChange(7)}
+                                    style={{
+                                        padding: '6px 16px',
+                                        borderRadius: '6px',
+                                        border: days === 7 ? '1px solid var(--accent-primary)' : '1px solid var(--glass-border)',
+                                        background: days === 7 ? 'var(--accent-primary)' : 'transparent',
+                                        color: days === 7 ? 'white' : 'var(--text-secondary)',
+                                        cursor: 'pointer',
+                                        fontSize: '0.9rem'
+                                    }}
+                                >
+                                    Last 7 Days
+                                </button>
+                                <button
+                                    onClick={() => handleDaysChange(30)}
+                                    style={{
+                                        padding: '6px 16px',
+                                        borderRadius: '6px',
+                                        border: days === 30 ? '1px solid var(--accent-primary)' : '1px solid var(--glass-border)',
+                                        background: days === 30 ? 'var(--accent-primary)' : 'transparent',
+                                        color: days === 30 ? 'white' : 'var(--text-secondary)',
+                                        cursor: 'pointer',
+                                        fontSize: '0.9rem'
+                                    }}
+                                >
+                                    Last 30 Days
+                                </button>
+                            </div>
+                        </div>
+
+                        {/* KPI Grid - 4 Columns x 2 Rows */}
+                        <div style={{
+                            display: 'grid',
+                            gridTemplateColumns: 'repeat(4, 1fr)',
+                            gap: '16px',
+                            opacity: loading ? 0.5 : 1, // Visual feedback for loading
+                            transition: 'opacity 0.2s'
+                        }}>
+                            {data.kpi.length === 0 ? (
+                                // Placeholders or Empty State
+                                Array(8).fill(0).map((_, i) => (
+                                    <div key={i} style={{ height: '120px', background: 'rgba(255,255,255,0.02)', borderRadius: 'var(--radius-lg)' }}></div>
+                                ))
+                            ) : (
+                                data.kpi.map((kpi, idx) => (
+                                    <KPICard
+                                        key={idx}
+                                        title={kpi.label}
+                                        value={kpi.value}
+                                        sub_value={kpi.sub_value}
+                                        change={kpi.change}
+                                        isPositive={kpi.isPositive}
+                                    />
+                                ))
+                            )}
+                        </div>
                     </section>
 
                     {/* Charts Area */}
                     <section>
-                        <TrendsChart data={data.chart_data} language={language} />
+                        <div style={{ marginBottom: '16px' }}>
+                            <h3 style={{ fontSize: '1.1rem', fontWeight: 600 }}>媒體費用走勢 (Media Cost Trend)</h3>
+                        </div>
+                        <TrendsChart data={data.chart_data} language={language} title="Media Cost" />
                     </section>
 
                 </main>

@@ -11,7 +11,7 @@
   5. 實作 `ProtectedRoute` 元件，檢查是否有 Token，若無則導回登入頁。
 
 #### 3. 後端 (FastAPI) - 選用但推薦
-雖然純前端驗證也可以擋住一般使用者，但為了安全性，後端 API 也應該要驗證 Token。
+雖然純前端驗證也可以擋住一使用者，但為了安全性，後端 API 也應該要驗證 Token。
 - **套件**: `google-auth` 或 `pyjwt`。
 - **流程**:
   1. 前端呼叫 API 時，將 Google Token 放在 Header (`Authorization: Bearer <token>`)。
@@ -128,4 +128,57 @@
 - 確認舊的明文 Token 可正常讀取。
 - 確認新寫入的 Token 在資料庫中呈現亂碼 (`gAAAA...`)，且讀取時可正確還原。
 
+## 5. 電商儀表板移植計畫 (E-commerce Dashboard Migration)
+
+**日期**: 2025-12-10
+**參考來源**: GAS 舊專案截圖 (User Provided Image)
+**目標**: 完整重現三大類指標 (通用、電商、漏斗)
+
+### A. 通用指標 (General Metrics)
+**API Fields**: `spend`, `impressions`, `reach`, `cpm`, `cpc`, `ctr`, `inline_link_clicks`
+- **花費金額 (Spend)**: `spend`
+- **曝光次數 (Impressions)**: `impressions`
+- **觸及人數 (Reach)**: `reach`
+- **連結點擊次數 (Link Clicks)**: `inline_link_clicks` (注意：使用 inline 較準確反映導外流量)
+- **連結點擊率 (CTR)**: `ctr`
+- **CPC (單次連結點擊成本)**: `cpc`
+- **CPM (每千次廣告曝光成本)**: `cpm`
+
+### B. 電商指標 (E-commerce Metrics)
+**API Fields**: `actions`, `action_values`, `purchase_roas`
+需解析 `actions` list 取得特定 action_type 的 value。
+
+- **內容查看次數**: `actions.view_content`
+- **每次加入購物車成本**: `spend / actions.add_to_cart` (需後端計算)
+- **加入購物車次數**: `actions.add_to_cart`
+- **加入購物車的轉換值**: `action_values.add_to_cart`
+- **開始結帳次數**: `actions.initiate_checkout`
+- **新增付款資訊次數**: `actions.add_payment_info`
+- **購買次數**: `actions.purchase`
+- **購買轉換價值**: `action_values.purchase`
+- **CPA (單次購買成本)**: `spend / actions.purchase` (或使用 `cost_per_action_type`)
+- **ROAS**: `purchase_roas`
+
+### C. 漏斗指標 (Funnel Metrics)
+全數需由後端計算 (Derived Metrics)，需注意分母為 0 的情況。
+
+1.  **購買轉換率 (CVR)**
+    - 公式：`actions.purchase / inline_link_clicks`
+2.  **查看後購物車加入率**
+    - 公式：`actions.add_to_cart / actions.view_content`
+3.  **購物車購買率**
+    - 公式：`actions.purchase / actions.add_to_cart`
+4.  **廣告購物車流失率**
+    - 公式：`1 - (actions.purchase / actions.add_to_cart)`
+5.  **購物車價值實現率**
+    - 公式：`action_values.purchase / action_values.add_to_cart`
+
+### 實作規劃
+1.  **Backend (`services.py`)**:
+    - 擴充 API 請求欄位。
+    - 實作 `_process_actions(data)` helper function，將 list 轉為 dict 以利存取。
+    - 實作 `_calculate_funnel(data)` function，處理所有除法邏輯。
+2.  **Frontend (`Dashboard.jsx`)**:
+    - 更新 UI 佈局，將原本單一 Grid 改為三個 Section (通用、電商、漏斗)。
+    - 支援不同的數值格式 (貨幣、百分比、整數)。
 

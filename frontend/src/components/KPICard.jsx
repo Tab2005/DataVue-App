@@ -1,19 +1,21 @@
 import React from 'react';
 
-const KPICard = ({ title, value, change, isPositive }) => {
+const KPICard = ({ title, value, sub_value, change, isPositive }) => {
     return (
         <div className="glass-panel" style={{
-            padding: '24px',
-            borderRadius: 'var(--radius-xl)',
+            padding: '20px',
+            borderRadius: 'var(--radius-lg)', // Slightly smaller radius for grid items
             display: 'flex',
             flexDirection: 'column',
-            gap: '12px',
+            gap: '4px',
             transition: 'transform 0.2s ease, box-shadow 0.2s ease',
-            cursor: 'default'
+            cursor: 'default',
+            minHeight: '120px',
+            justifyContent: 'center'
         }}
             onMouseEnter={(e) => {
-                e.currentTarget.style.transform = 'translateY(-4px)';
-                e.currentTarget.style.boxShadow = 'var(--shadow-lg)';
+                e.currentTarget.style.transform = 'translateY(-2px)';
+                e.currentTarget.style.boxShadow = 'var(--shadow-md)';
                 e.currentTarget.style.borderColor = 'rgba(45, 136, 255, 0.3)';
             }}
             onMouseLeave={(e) => {
@@ -23,37 +25,43 @@ const KPICard = ({ title, value, change, isPositive }) => {
             }}
         >
             <h3 style={{
-                fontSize: '0.9rem',
+                fontSize: '0.85rem',
                 color: 'var(--text-secondary)',
-                fontWeight: 500
+                fontWeight: 600,
+                marginBottom: '4px'
             }}>
                 {title}
             </h3>
 
             <div style={{
-                fontSize: '2rem',
+                fontSize: '1.5rem',
                 fontWeight: 700,
-                letterSpacing: '-1px'
+                letterSpacing: '-0.5px',
+                color: 'var(--text-primary)'
             }}>
                 {value}
             </div>
 
             <div style={{
                 display: 'flex',
-                alignItems: 'center',
-                gap: '6px',
-                fontSize: '0.85rem',
-                fontWeight: 600,
-                color: isPositive ? '#4ade80' : '#f87171'
+                alignItems: 'baseline',
+                gap: '8px',
+                fontSize: '0.75rem',
+                marginTop: '4px'
             }}>
                 <span style={{
-                    backgroundColor: isPositive ? 'rgba(74, 222, 128, 0.1)' : 'rgba(248, 113, 113, 0.1)',
-                    padding: '2px 6px',
-                    borderRadius: '4px'
+                    color: 'var(--text-tertiary)',
+                    fontWeight: 400
+                }}>
+                    {sub_value}
+                </span>
+
+                <span style={{
+                    color: isPositive ? '#4ade80' : '#f87171',
+                    fontWeight: 600
                 }}>
                     {change}
                 </span>
-                <span style={{ color: 'var(--text-secondary)', fontWeight: 400 }}>vs last month</span>
             </div>
         </div>
     );

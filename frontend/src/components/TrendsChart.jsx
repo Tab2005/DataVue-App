@@ -39,17 +39,7 @@ const TrendsChart = ({ data, language }) => {
         }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
                 <h3 style={{ color: 'var(--text-secondary)', fontWeight: 500 }}>{t.title}</h3>
-                <select style={{
-                    background: 'rgba(255,255,255,0.05)',
-                    border: '1px solid var(--glass-border)',
-                    color: 'var(--text-secondary)',
-                    padding: '4px 8px',
-                    borderRadius: '6px',
-                    outline: 'none'
-                }}>
-                    <option>{t.options.sixMonths}</option>
-                    <option>{t.options.lastYear}</option>
-                </select>
+                {/* Date range is now controlled by the parent Dashboard */}
             </div>
 
             <div style={{ flex: 1, width: '100%', minHeight: 0 }}>

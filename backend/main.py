@@ -116,10 +116,10 @@ def get_ad_accounts(user_id: str = Depends(verify_google_token)):
     return accounts
 
 @app.get("/api/dashboard-data")
-def get_dashboard_data(account_id: str = None, user_id: str = Depends(verify_google_token)):
+def get_dashboard_data(account_id: str = None, days: int = 7, user_id: str = Depends(verify_google_token)):
     if account_id:
-        # Pass user_id
-        insights = FacebookService.get_account_insights(account_id, user_id)
+        # Pass user_id and days
+        insights = FacebookService.get_account_insights(account_id, user_id, days)
         if insights:
             return {
                 "source": "real",
