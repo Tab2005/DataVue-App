@@ -16,7 +16,25 @@ const Layout = () => {
         const fetchAccounts = async (retries = 3) => {
             const apiUrl = import.meta.env.VITE_API_URL || 'http://localhost:8000';
             const token = localStorage.getItem('google_token');
-            if (token) setUser(prev => ({ ...prev, access_token: token }));
+            const userInfoStr = localStorage.getItem('user_info');
+
+            if (token) {
+                let userData = { access_token: token };
+                if (userInfoStr) {
+                    try {
+                        const parsedUser = JSON.parse(userInfoStr);
+                        userData = {
+                            ...userData,
+                            name: parsedUser.name || 'User',
+                            email: parsedUser.email || '',
+                            avatar: parsedUser.picture || parsedUser.avatar || ''
+                        };
+                    } catch (e) {
+                        console.error("Failed to parse user info", e);
+                    }
+                }
+                setUser(prev => ({ ...prev, ...userData }));
+            }
 
             try {
                 const response = await fetch(`${apiUrl}/api/ad-accounts`, {
