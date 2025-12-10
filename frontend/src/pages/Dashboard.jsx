@@ -19,25 +19,40 @@ function Dashboard() {
     });
 
     // 1. Fetch Ad Accounts on Mount
+    // 1. Fetch Ad Accounts on Mount with Retry Logic
     useEffect(() => {
-        // 取得 API 網址：優先使用環境變數 VITE_API_URL，如果未設定則預設為 localhost (本地開發用)
-        const apiUrl = import.meta.env.VITE_API_URL || 'http://localhost:8000';
-        const token = localStorage.getItem('google_token');
+        const fetchAccounts = async (retries = 3) => {
+            const apiUrl = import.meta.env.VITE_API_URL || 'http://localhost:8000';
+            const token = localStorage.getItem('google_token');
 
-        fetch(`${apiUrl}/api/ad-accounts`, {
-            headers: {
-                'Authorization': `Bearer ${token}`
-            }
-        })
-            .then(res => res.json())
-            .then(accList => {
-                if (Array.isArray(accList) && accList.length > 0) {
-                    setAccounts(accList);
-                    // Optional: Default select first one
-                    setSelectedAccountId(accList[0].id);
+            try {
+                const response = await fetch(`${apiUrl}/api/ad-accounts`, {
+                    headers: {
+                        'Authorization': `Bearer ${token}`
+                    }
+                });
+
+                if (!response.ok) {
+                    throw new Error(`HTTP error! status: ${response.status}`);
                 }
-            })
-            .catch(err => console.error("Failed to fetch accounts", err));
+
+                const accList = await response.json();
+
+                if (Array.isArray(accList)) {
+                    setAccounts(accList);
+                    if (accList.length > 0) {
+                        setSelectedAccountId(accList[0].id);
+                    }
+                }
+            } catch (err) {
+                console.error(`Failed to fetch accounts (Retries left: ${retries})`, err);
+                if (retries > 0) {
+                    setTimeout(() => fetchAccounts(retries - 1), 1500); // Retry after 1.5s
+                }
+            }
+        };
+
+        fetchAccounts();
     }, []);
 
     // 2. Fetch Report Data ONLY when triggered
