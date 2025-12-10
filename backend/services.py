@@ -82,35 +82,49 @@ class FacebookService:
                 print(f"FB API Error (Current): {cur_res['error']}")
                 return None
                 
-            cur_data = cur_res.get("data", [{}])[0]
+            cur_data_list = cur_res.get("data", [])
+            cur_data = cur_data_list[0] if cur_data_list else {}
             
             # Calculate Previous Period Range
-            # We use the date_start/date_stop returned by FB to be precise regarding timezone
+            # Try to use FB returned dates first, otherwise fallback to manual calculation
             date_start = cur_data.get("date_start")
             date_stop = cur_data.get("date_stop")
             
+            fmt = "%Y-%m-%d"
+            
+            if not date_start or not date_stop:
+                # Manual Fallback: today - days
+                today = datetime.now()
+                # Note: FB 'last_7d' usually excludes today or includes? 
+                # Standard FB logic: last_x_days excludes today.
+                d_stop = today - timedelta(days=1)
+                d_start = d_stop - timedelta(days=days-1)
+                
+                date_start = d_start.strftime(fmt)
+                date_stop = d_stop.strftime(fmt)
+                
+                # Mock date in cur_data if missing so we don't error later
+                cur_data["date_start"] = date_start
+                cur_data["date_stop"] = date_stop
+
+            # Prepare Prev Params
+            d_start = datetime.strptime(date_start, fmt)
+            d_stop = datetime.strptime(date_stop, fmt)
+            delta = d_stop - d_start + timedelta(days=1)
+            
+            prev_start = (d_start - delta).strftime(fmt)
+            prev_stop = (d_start - timedelta(days=1)).strftime(fmt)
+            
             prev_params = {
                 "fields": fields,
-                "level": "account"
+                "level": "account",
+                "time_range": f'{{"since":"{prev_start}","until":"{prev_stop}"}}'
             }
-            
-            if date_start and date_stop:
-                fmt = "%Y-%m-%d"
-                d_start = datetime.strptime(date_start, fmt)
-                d_stop = datetime.strptime(date_stop, fmt)
-                delta = d_stop - d_start + timedelta(days=1) # inclusive days
-                
-                prev_start = (d_start - delta).strftime(fmt)
-                prev_stop = (d_start - timedelta(days=1)).strftime(fmt)
-                
-                prev_params["time_range"] = f'{{"since":"{prev_start}","until":"{prev_stop}"}}'
-            else:
-                # Fallback if dates missing (unlikely)
-                return None
 
             # Previous Data
             prev_res = requests.get(url, headers=headers, params=prev_params).json()
-            prev_data = prev_res.get("data", [{}])[0]
+            prev_data_list = prev_res.get("data", [])
+            prev_data = prev_data_list[0] if prev_data_list else {}
 
             # 2. Fetch Daily Trend (for the Chart) - Current Range Only
             trend_params = {
