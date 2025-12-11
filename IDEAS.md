@@ -452,3 +452,26 @@ A collapsible section or modal "自訂表格指標欄位 (Custom Table Metric Co
 ### 備註 (Notes)
 *   Facebook API 對於協作廣告的權限控管較嚴格，需確保 User Token 擁有該 Catalog 的讀取權限。
 *   部分細節指標可能需要 `read_insights` 之外的權限。
+
+## 10. 進階趨勢比較圖表 (Trend Comparison Charts) (✅ Implemented v1.4.0)
+
+**日期**: 2025-12-11
+**狀態**: 已完成 (Completed)
+
+### 功能概述 (Overview)
+提供一個可互動的趨勢圖表，允許使用者同時比較兩個不同的指標 (如 Spend vs ROAS) 的歷史趨勢，以分析成效波動。
+
+### 核心功能 (Core Features)
+1.  **動態指標選擇 (Dynamic Metrics)**:
+    *   下拉選單自動包含所有目前數據表中選用的指標 (e.g., CPAS Metrics, Funnel Metrics)。
+    *   自動加入 "Core Metrics" (Spend, Purchases, ROAS...) 以確保基礎分析能力。
+2.  **雙座標軸 (Dual Axis)**:
+    *   左軸 (Left Axis): 柱狀圖/區域圖 (Bar/Area) 呈現量級指標 (如 Spend, Impressions)。
+    *   右軸 (Right Axis): 線圖 (Line) 呈現比率或趨勢指標 (如 ROAS, CTR)。
+3.  **智慧座標同步 (Smart Axis Scaling)**:
+    *   當選擇同質性指標 (如 Purchases vs Add to Cart) 時，自動同步左右軸的最大值，避免視覺誤導。
+    *   異質指標 (如 Spend vs ROAS) 保持獨立座標軸。
+4.  **比較模式 (Comparison Mode)**:
+    *   支援顯示上一期 (Previous Period) 數據（虛線呈現）。
+5.  **手機優化 (Mobile Optimization)**:
+    *   響應式設計，自動調整控制項排列與圖表高度。

@@ -1,5 +1,19 @@
 # Changelog
 
+## v1.4.0 (2025-12-11) - Trend Comparison Chart
+- **New Feature**: Added collapsible "Trend Comparison Chart" section to Analytics page.
+- **Dynamic Metrics**: Chart dropdowns now dynamically include any metrics selected in the data table (e.g., CPAS, Funnel metrics).
+- **Comparison Mode**: Visualizes "vs Previous Period" trends with dashed lines.
+- **Smart Axis Scaling**: Automatically synchronizes Y-axis scales when comparing similar metric types (e.g., Purchases vs Add to Cart) to prevent misleading visuals.
+- **Mobile Optimization**: Responsive layout for Trend Chart controls (vertical stacking, full-width dropdowns) on smaller screens.
+- **Backend Upgrade**: Updated `/api/analytics-trend` to calculate all available system metrics on a daily basis.
+
+## v1.3.7 (2025-12-11) - Collaborative Ads (CPAS) Metrics
+- **New Metrics**: Added "Collaborative Ads" category with 6 key metrics:
+    - Shared Purchases, Shared Purchase Value, Shared ROAS, Shared ATC, Shared ATC Value, Shared View Content.
+- **Backend**: Enhanced `get_custom_report` to process `catalog_segment_value` and `catalog_segment_actions`.
+- **Frontend**: Updated Metric Selector and Summary logic to support CPAS data.
+
 ## v1.3.6 (2025-12-11)
 ### Added
 - **Mobile Responsiveness**:

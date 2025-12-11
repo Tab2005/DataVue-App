@@ -172,6 +172,24 @@ def get_analytics_data(
         }
     }
 
+@app.get("/api/analytics-trend")
+def get_analytics_trend_data(
+    account_id: str,
+    since: str,
+    until: str,
+    prev_since: str = None,
+    prev_until: str = None,
+    user_id: str = Depends(verify_google_token)
+):
+    """
+    Endpoint for daily trend chart data.
+    """
+    trend_data = FacebookService.get_analytics_trend(account_id, user_id, since, until, prev_since, prev_until)
+    if trend_data is None:
+         # Return empty list instead of 400 to avoid breaking UI if just no data
+         return []
+    return trend_data
+
 
 if __name__ == "__main__":
     import uvicorn

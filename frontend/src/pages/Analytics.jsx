@@ -3,6 +3,7 @@ import { useOutletContext } from 'react-router-dom';
 import html2canvas from 'html2canvas';
 import { format, subDays, startOfWeek, endOfWeek, startOfMonth, endOfMonth, subMonths, subYears, differenceInDays } from 'date-fns';
 import KPICard from '../components/KPICard';
+import TrendSection from '../components/TrendSection';
 
 const DATE_PRESETS = [
     { label: '今日 (Today)', value: 'today' },
@@ -1071,6 +1072,16 @@ const Analytics = () => {
                     </div>
                 </div>
             )}
+
+            {/* NEW: Trend Section (Collapsible) */}
+            <TrendSection
+                accountId={selectedAccountId}
+                dateRange={dateRange}
+                prevDateRange={prevDateRange}
+                isCompareMode={isCompareMode}
+                selectedMetrics={selectedMetrics}
+                metricGroups={METRIC_GROUPS}
+            />
 
             {/* Data Table */}
             {loading ? (

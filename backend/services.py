@@ -514,3 +514,141 @@ class FacebookService:
         except Exception as e:
             print(f"Error fetching custom report: {e}")
             return None
+
+    @staticmethod
+    def get_analytics_trend(account_id, user_id, since, until, prev_since=None, prev_until=None):
+        """
+        Fetches DAILY trend data for current and optional previous period.
+        Merges them by relative Day Index.
+        Calculates ALL metrics (CPAS, Funnel, Engagement) to match Table data.
+        """
+        headers = FacebookService.get_headers(user_id)
+        if not headers:
+            return None
+
+        url = f"{FacebookService.BASE_URL}/{account_id}/insights"
+        
+        # Use SAME base fields as report to ensure all data is available
+        fields = (
+            "spend,impressions,reach,cpm,cpc,ctr,inline_link_clicks,clicks,"
+            "actions,action_values,purchase_roas,"
+            "catalog_segment_value,catalog_segment_actions" # CPAS
+        )
+
+        def fetch_daily(s, u):
+            params = {
+                "fields": fields,
+                "level": "account",
+                "time_range": f'{{"since":"{s}","until":"{u}"}}',
+                "time_increment": "1", # Daily
+                "limit": 100
+            }
+            try:
+                res = requests.get(url, headers=headers, params=params).json()
+                return res.get("data", [])
+            except Exception as e:
+                print(f"Error train fetch: {e}")
+                return []
+
+        # 1. Fetch Current & Previous
+        cur_data = fetch_daily(since, until)
+        
+        prev_data = []
+        if prev_since and prev_until:
+            prev_data = fetch_daily(prev_since, prev_until)
+
+        # 2. Helper to Process a Single Day Item (Identical logic to get_custom_report)
+        def process_daily_item(item):
+            if not item: return {}
+            
+            # Base values
+            row = {
+                "spend": float(item.get("spend", 0)),
+                "impressions": int(item.get("impressions", 0)),
+                "reach": int(item.get("reach", 0)),
+                "link_clicks": int(item.get("inline_link_clicks", 0)),
+                "clicks": int(item.get("clicks", 0)),
+                "cpc": float(item.get("cpc", 0)),
+                "ctr": float(item.get("ctr", 0)),
+                "cpm": float(item.get("cpm", 0)),
+                
+                # ROAS (Standard)
+                "roas": float(item.get("purchase_roas", [{}])[0].get("value", 0) if item.get("purchase_roas") else 0),
+            } 
+            
+            # Actions parsing
+            acts = FacebookService._process_actions(item)
+            
+            row["view_content"] = acts.get("view_content", 0)
+            row["add_to_cart"] = acts.get("add_to_cart", 0)
+            row["initiate_checkout"] = acts.get("initiate_checkout", 0)
+            row["add_payment_info"] = acts.get("add_payment_info", 0)
+            row["purchases"] = acts.get("purchase", 0)
+            row["purchase_value"] = acts.get("purchase_val", 0)
+            row["atc_value"] = acts.get("add_to_cart_val", 0)
+            
+            # Engagement
+            row["post_comments"] = acts.get("comment", 0)
+            row["post_saves"] = acts.get("post_save", 0)
+            row["post_shares"] = acts.get("post", 0)
+            row["post_engagement"] = acts.get("post_engagement", 0)
+            row["post_reactions"] = acts.get("post_reaction", 0)
+            row["page_likes"] = acts.get("like", 0)
+            
+            # CPAS
+            cpas_acts = FacebookService._process_actions({"actions": item.get("catalog_segment_actions", [])})
+            cpas_vals = FacebookService._process_actions({"action_values": item.get("catalog_segment_value", [])})
+
+            row["shared_purchases"] = cpas_acts.get("purchase", 0)
+            row["shared_purchase_value"] = cpas_vals.get("purchase_val", 0)
+            row["shared_add_to_cart"] = cpas_acts.get("add_to_cart", 0)
+            row["shared_atc_value"] = cpas_vals.get("add_to_cart_val", 0)
+            row["shared_view_content"] = cpas_acts.get("view_content", 0)
+            row["shared_roas"] = (row["shared_purchase_value"] / row["spend"]) if row["spend"] > 0 else 0
+            
+            # Derived Metrics
+            row["cpa"] = row["spend"] / row["purchases"] if row["purchases"] > 0 else 0
+            row["cost_per_atc"] = row["spend"] / row["add_to_cart"] if row["add_to_cart"] > 0 else 0
+            row["cvr"] = (row["purchases"] / row["link_clicks"] * 100) if row["link_clicks"] > 0 else 0
+            
+            # Funnel
+            row["view_to_cart"] = (row["add_to_cart"] / row["view_content"] * 100) if row["view_content"] > 0 else 0
+            if row["add_to_cart"] > 0:
+                row["cart_conversion"] = (row["purchases"] / row["add_to_cart"]) * 100
+                row["cart_dropoff"] = (1 - (row["purchases"] / row["add_to_cart"])) * 100
+            else:
+                row["cart_conversion"] = 0
+                row["cart_dropoff"] = 0
+            
+            row["cart_value_realization"] = (row["purchase_value"] / row["atc_value"] * 100) if row["atc_value"] > 0 else 0
+
+            return row
+
+        # 3. Merge by Index
+        max_len = max(len(cur_data), len(prev_data))
+        merged = []
+
+        for i in range(max_len):
+            c_item = cur_data[i] if i < len(cur_data) else {}
+            p_item = prev_data[i] if i < len(prev_data) else {}
+            
+            c_metrics = process_daily_item(c_item)
+            p_metrics = process_daily_item(p_item)
+            
+            final_row = {
+                "index": i,
+                "date": c_item.get("date_start", f"Day {i+1}"),
+                "prev_date": p_item.get("date_start", ""),
+            }
+            
+            # Flatten Current Metrics
+            for k, v in c_metrics.items():
+                final_row[k] = v
+                
+            # Flatten Previous Metrics (with _prev suffix)
+            for k, v in p_metrics.items():
+                final_row[f"{k}_prev"] = v
+
+            merged.append(final_row)
+
+        return merged
