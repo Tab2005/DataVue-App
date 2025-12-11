@@ -11,6 +11,25 @@ const Layout = () => {
     const [language, setLanguage] = useState('zh');
     const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
 
+    // Mobile Detection
+    const [isMobile, setIsMobile] = useState(window.innerWidth < 768);
+
+    useEffect(() => {
+        const handleResize = () => {
+            const mobile = window.innerWidth < 768;
+            setIsMobile(mobile);
+            // Auto-collapse on mobile if resizing down
+            if (mobile && !isSidebarCollapsed) {
+                setIsSidebarCollapsed(true);
+            }
+        };
+
+        window.addEventListener('resize', handleResize);
+        handleResize(); // Init
+
+        return () => window.removeEventListener('resize', handleResize);
+    }, []);
+
     // Fetch Accounts Logic (Moved from Dashboard)
     useEffect(() => {
         const fetchAccounts = async (retries = 3) => {
@@ -85,12 +104,13 @@ const Layout = () => {
                 language={language}
                 isCollapsed={isSidebarCollapsed}
                 setIsCollapsed={setIsSidebarCollapsed}
+                isMobile={isMobile}
             />
             <div className="main-content" style={{
                 flex: 1,
                 display: 'flex',
                 flexDirection: 'column',
-                marginLeft: isSidebarCollapsed ? '80px' : '240px',
+                marginLeft: isMobile ? '0' : (isSidebarCollapsed ? '80px' : '240px'),
                 transition: 'margin-left 0.3s ease'
             }}>
                 <Header
@@ -101,12 +121,14 @@ const Layout = () => {
                     setSelectedAccountId={setSelectedAccountId}
                     onGenerateReport={() => { }}
                     isSidebarCollapsed={isSidebarCollapsed}
+                    setIsSidebarCollapsed={setIsSidebarCollapsed}
+                    isMobile={isMobile}
                     onLogout={handleLogout}
                     user={user}
                 />
 
                 <div style={{ padding: '0', flex: 1, marginTop: '70px', minWidth: 0, overflowX: 'hidden' }}>
-                    <Outlet context={{ selectedAccountId, user, accounts, language, isSidebarCollapsed }} />
+                    <Outlet context={{ selectedAccountId, user, accounts, language, isSidebarCollapsed, isMobile }} />
                 </div>
             </div>
         </div>

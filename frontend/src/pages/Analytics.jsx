@@ -583,33 +583,38 @@ const Analytics = () => {
 
 
     // 6. Basic UI Components
+    const { isMobile } = useOutletContext(); // Destructure isMobile
+
     return (
-        <div style={{ padding: '24px', width: '100%', maxWidth: '100%', overflow: 'hidden' }}>
+        <div style={{ padding: isMobile ? '16px' : '24px', width: '100%', maxWidth: '100%', overflow: 'hidden', boxSizing: 'border-box' }}>
             {/* Header Section */}
-            <div style={{ marginBottom: '24px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+            <div style={{ marginBottom: '24px', display: 'flex', flexDirection: isMobile ? 'column' : 'row', justifyContent: 'space-between', alignItems: isMobile ? 'flex-start' : 'center', gap: isMobile ? '8px' : '0' }}>
                 <div>
-                    <h1 style={{ fontSize: '1.8rem', fontWeight: '700', color: 'var(--text-primary)' }}>
+                    <h1 style={{ fontSize: isMobile ? '1.5rem' : '1.8rem', fontWeight: '700', color: 'var(--text-primary)' }}>
                         {txt.title}
                     </h1>
-                    <p style={{ color: 'var(--text-secondary)' }}>
+                    <p style={{ color: 'var(--text-secondary)', fontSize: isMobile ? '0.9rem' : '1rem' }}>
                         {txt.subtitle}
                     </p>
                 </div>
             </div>
 
             {/* Split Layout Control Panel (Top) */}
-            <div style={{ display: 'grid', gridTemplateColumns: '3fr 1fr', gap: '24px', marginBottom: '24px' }}>
+            <div style={{
+                display: 'grid',
+                gridTemplateColumns: isMobile ? '1fr' : '3fr 1fr',
+                gap: '24px',
+                marginBottom: '24px'
+            }}>
 
                 {/* Left Panel: Primary Settings */}
-                <div className="glass-panel" style={{ padding: '24px', borderRadius: '16px', display: 'flex', flexDirection: 'column', gap: '20px' }}>
-
-
+                <div className="glass-panel" style={{ padding: isMobile ? '16px' : '24px', borderRadius: '16px', display: 'flex', flexDirection: 'column', gap: '20px' }}>
 
                     <h3 style={{ margin: 0, fontSize: '1rem', color: 'var(--text-secondary)', marginBottom: '8px' }}>{txt.mainSettings}</h3>
 
-                    <div style={{ display: 'flex', gap: '20px', flexWrap: 'wrap' }}>
+                    <div style={{ display: 'flex', flexDirection: isMobile ? 'column' : 'row', gap: '20px', flexWrap: 'wrap' }}>
                         {/* Level Selector */}
-                        <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', flex: 1, minWidth: '180px' }}>
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', flex: 1, minWidth: isMobile ? '100%' : '180px' }}>
                             <label style={{ fontSize: '0.85rem', color: 'var(--text-secondary)', fontWeight: 600 }}>{txt.level}</label>
                             <select
                                 value={level}
@@ -631,7 +636,7 @@ const Analytics = () => {
                         </div>
 
                         {/* Date Preset Selector */}
-                        <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', flex: 1, minWidth: '180px' }}>
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', flex: 1, minWidth: isMobile ? '100%' : '180px' }}>
                             <label style={{ fontSize: '0.85rem', color: 'var(--text-secondary)', fontWeight: 600 }}>{txt.dateRange}</label>
                             <select
                                 value={datePreset}
@@ -697,7 +702,17 @@ const Analytics = () => {
                         </div>
 
                         {/* Row 2: Filter Toolbar (Moved here) */}
-                        <div style={{ display: 'flex', gap: '16px', alignItems: 'center', marginBottom: '16px', background: 'rgba(255,255,255,0.03)', padding: '12px', borderRadius: '12px', border: '1px solid var(--glass-border)' }}>
+                        <div style={{
+                            display: 'flex',
+                            flexDirection: isMobile ? 'column' : 'row',
+                            gap: '16px',
+                            alignItems: isMobile ? 'stretch' : 'center',
+                            marginBottom: '16px',
+                            background: 'rgba(255,255,255,0.03)',
+                            padding: '12px',
+                            borderRadius: '12px',
+                            border: '1px solid var(--glass-border)'
+                        }}>
                             {/* Keyword Search */}
                             <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flex: 1 }}>
                                 <span style={{ fontSize: '1.2rem' }}>🔍</span>
@@ -1036,8 +1051,12 @@ const Analytics = () => {
                     overflowX: 'auto',
                     maxHeight: '600px',
                     overflowY: 'auto',
-                    // Dynamic Width: Viewport - Sidebar (240/80) - Padding (60)
-                    maxWidth: isSidebarCollapsed ? 'calc(100vw - 140px)' : 'calc(100vw - 300px)',
+                    // Dynamic Width: 
+                    // Mobile: Full width minus padding (32px)
+                    // Desktop: Viewport minus Sidebar (240/80) - Padding (60)
+                    maxWidth: isMobile
+                        ? 'calc(100vw - 32px)'
+                        : (isSidebarCollapsed ? 'calc(100vw - 140px)' : 'calc(100vw - 300px)'),
                     width: '100%',
                     display: 'block',
                     transition: 'max-width 0.3s ease'

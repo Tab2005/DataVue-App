@@ -1,5 +1,14 @@
 # Changelog
 
+## v1.3.6 (2025-12-11)
+### Added
+- **Mobile Responsiveness**:
+    - **Sidebar**: Mobile overlay mode with backdrop.
+    - **Header**: Responsive layout with hamburger menu.
+    - **Dashboard**: Responsive KPI grid (1 column on mobile) and control panel.
+    - **Analytics**: Responsive filter toolbar and table (scrollable).
+- **Mobile UX**: Swapped Title with Account Selector on mobile for better usability.
+
 ## [v1.3.5] - 2025-12-11
 ### Added
 - **Advanced Filtering**: 新增「進階篩選」工具列。

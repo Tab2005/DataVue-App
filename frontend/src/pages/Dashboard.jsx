@@ -5,7 +5,7 @@ import TrendsChart from '../components/TrendsChart';
 
 function Dashboard() {
     // 1. Get Context from Layout
-    const { selectedAccountId, user, language } = useOutletContext();
+    const { selectedAccountId, user, language, isMobile } = useOutletContext();
 
     const [days, setDays] = useState(7);
     const [dashboardData, setDashboardData] = useState(null);
@@ -80,19 +80,38 @@ function Dashboard() {
     const kpiList = getKpiConfig(language);
 
     return (
-        <div style={{ padding: '24px', width: '100%' }}>
-            {/* ... Header Omitted ... */}
-            <div style={{ marginBottom: '32px', display: 'flex', justifyContent: 'space-between', alignItems: 'end' }}>
+        <div style={{ padding: isMobile ? '16px' : '24px', width: '100%', boxSizing: 'border-box' }}>
+            {/* Header Section */}
+            <div style={{
+                marginBottom: '32px',
+                display: 'flex',
+                flexDirection: isMobile ? 'column' : 'row',
+                justifyContent: 'space-between',
+                alignItems: isMobile ? 'flex-start' : 'flex-end',
+                gap: isMobile ? '16px' : '0'
+            }}>
                 <div>
-                    <h1 style={{ fontSize: '1.8rem', fontWeight: '700', color: 'var(--text-primary)', marginBottom: '8px' }}>
+                    <h1 style={{
+                        fontSize: isMobile ? '1.5rem' : '1.8rem',
+                        fontWeight: '700',
+                        color: 'var(--text-primary)',
+                        marginBottom: '8px'
+                    }}>
                         {txt.title}
                     </h1>
-                    <p style={{ color: 'var(--text-secondary)' }}>
+                    <p style={{ color: 'var(--text-secondary)', fontSize: isMobile ? '0.9rem' : '1rem' }}>
                         {txt.welcome}
                     </p>
                 </div>
-                {/* ... Controls Omitted ... */}
-                <div className="glass-panel" style={{ display: 'flex', padding: '4px', borderRadius: '8px' }}>
+
+                {/* Date Controls */}
+                <div className="glass-panel" style={{
+                    display: 'flex',
+                    padding: '4px',
+                    borderRadius: '8px',
+                    width: isMobile ? '100%' : 'auto',
+                    justifyContent: isMobile ? 'space-between' : 'flex-start'
+                }}>
                     {dashboardData && dashboardData.date_range && (
                         <span style={{
                             color: 'var(--text-secondary)',
@@ -105,34 +124,38 @@ function Dashboard() {
                             {dashboardData.date_range.start} ~ {dashboardData.date_range.stop}
                         </span>
                     )}
-                    <button
-                        onClick={() => setDays(7)}
-                        style={{
-                            background: days === 7 ? 'rgba(255,255,255,0.1)' : 'transparent',
-                            color: days === 7 ? 'white' : 'var(--text-secondary)',
-                            border: 'none',
-                            padding: '6px 16px',
-                            borderRadius: '6px',
-                            cursor: 'pointer',
-                            transition: 'all 0.2s'
-                        }}
-                    >
-                        {txt.last7Days}
-                    </button>
-                    <button
-                        onClick={() => setDays(30)}
-                        style={{
-                            background: days === 30 ? 'rgba(255,255,255,0.1)' : 'transparent',
-                            color: days === 30 ? 'white' : 'var(--text-secondary)',
-                            border: 'none',
-                            padding: '6px 16px',
-                            borderRadius: '6px',
-                            cursor: 'pointer',
-                            transition: 'all 0.2s'
-                        }}
-                    >
-                        {txt.last30Days}
-                    </button>
+                    <div style={{ display: 'flex' }}>
+                        <button
+                            onClick={() => setDays(7)}
+                            style={{
+                                background: days === 7 ? 'rgba(255,255,255,0.1)' : 'transparent',
+                                color: days === 7 ? 'white' : 'var(--text-secondary)',
+                                border: 'none',
+                                padding: '6px 16px',
+                                borderRadius: '6px',
+                                cursor: 'pointer',
+                                transition: 'all 0.2s',
+                                fontSize: '0.85rem'
+                            }}
+                        >
+                            {txt.last7Days}
+                        </button>
+                        <button
+                            onClick={() => setDays(30)}
+                            style={{
+                                background: days === 30 ? 'rgba(255,255,255,0.1)' : 'transparent',
+                                color: days === 30 ? 'white' : 'var(--text-secondary)',
+                                border: 'none',
+                                padding: '6px 16px',
+                                borderRadius: '6px',
+                                cursor: 'pointer',
+                                transition: 'all 0.2s',
+                                fontSize: '0.85rem'
+                            }}
+                        >
+                            {txt.last30Days}
+                        </button>
+                    </div>
                 </div>
             </div>
 
@@ -145,7 +168,7 @@ function Dashboard() {
                     {/* KPI Grid */}
                     <div style={{
                         display: 'grid',
-                        gridTemplateColumns: 'repeat(4, 1fr)',
+                        gridTemplateColumns: isMobile ? 'repeat(1, 1fr)' : 'repeat(4, 1fr)',
                         gap: '16px',
                         marginBottom: '24px'
                     }}>

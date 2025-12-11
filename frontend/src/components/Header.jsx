@@ -1,8 +1,8 @@
 
 import React, { useState } from 'react';
-import { FiSearch, FiBell, FiUser, FiGlobe, FiSettings, FiLogOut } from 'react-icons/fi';
+import { FiSearch, FiBell, FiUser, FiGlobe, FiSettings, FiLogOut, FiMenu } from 'react-icons/fi';
 
-const Header = ({ language, setLanguage, accounts = [], selectedAccountId, setSelectedAccountId, onGenerateReport, isSidebarCollapsed, onLogout, user }) => {
+const Header = ({ language, setLanguage, accounts = [], selectedAccountId, setSelectedAccountId, onGenerateReport, isSidebarCollapsed, setIsSidebarCollapsed, onLogout, user, isMobile }) => {
   const [showUserMenu, setShowUserMenu] = useState(false);
 
   return (
@@ -10,27 +10,50 @@ const Header = ({ language, setLanguage, accounts = [], selectedAccountId, setSe
       height: '70px',
       position: 'fixed',
       top: 0,
-      left: isSidebarCollapsed ? '80px' : '240px', // Responsive to sidebar
+      left: isMobile ? '0' : (isSidebarCollapsed ? '80px' : '240px'), // Responsive
       transition: 'left 0.3s ease',
       right: 0,
       zIndex: 100,
       display: 'flex',
       alignItems: 'center',
       justifyContent: 'space-between',
-      padding: '0 32px',
+      padding: isMobile ? '0 16px' : '0 32px', // Reduce padding on mobile
       borderBottom: '1px solid var(--glass-border)',
       borderLeft: 'none',
       borderRight: 'none',
       borderTop: 'none',
-      boxShadow: 'none' // Remove default shadow for cleaner look
+      boxShadow: 'none'
     }}>
-      <h2 style={{ fontSize: '1.25rem' }}>
-        {language === 'zh' ? '儀表板總覽' : 'Dashboard Overview'}
-      </h2>
+      <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
+        {/* Mobile Hamburger */}
+        {isMobile && (
+          <button
+            onClick={() => setIsSidebarCollapsed(!isSidebarCollapsed)}
+            style={{
+              background: 'transparent',
+              border: 'none',
+              color: 'var(--text-primary)',
+              fontSize: '1.5rem',
+              cursor: 'pointer',
+              display: 'flex',
+              alignItems: 'center'
+            }}
+          >
+            <FiMenu />
+          </button>
+        )}
 
-      <div style={{ display: 'flex', alignItems: 'center', gap: '24px' }}>
+        {/* Title: Hidden on Mobile to make room for Selector */}
+        {!isMobile && (
+          <h2 style={{ fontSize: '1.25rem', whiteSpace: 'nowrap' }}>
+            {language === 'zh' ? '儀表板總覽' : 'Dashboard Overview'}
+          </h2>
+        )}
+      </div>
 
-        {/* Account Selector & Report Gen */}
+      <div style={{ display: 'flex', alignItems: 'center', gap: isMobile ? '12px' : '24px' }}>
+
+        {/* Account Selector: Visible on ALL screens now */}
         <div style={{ display: 'flex', gap: '8px' }}>
           <select
             value={selectedAccountId || ''}
@@ -42,7 +65,8 @@ const Header = ({ language, setLanguage, accounts = [], selectedAccountId, setSe
               padding: '6px 12px',
               borderRadius: '6px',
               outline: 'none',
-              maxWidth: '200px'
+              maxWidth: isMobile ? '160px' : '200px', // Smaller on mobile
+              fontSize: isMobile ? '0.9rem' : '1rem'
             }}
           >
             {accounts.length === 0 && <option value="">{language === 'zh' ? '載入中...' : 'Loading...'}</option>}
@@ -54,24 +78,27 @@ const Header = ({ language, setLanguage, accounts = [], selectedAccountId, setSe
             ))}
           </select>
 
-          <button
-            onClick={onGenerateReport}
-            disabled={!selectedAccountId}
-            style={{
-              background: !selectedAccountId ? 'gray' : 'var(--accent-primary)',
-              color: 'white',
-              border: 'none',
-              padding: '6px 12px',
-              borderRadius: '6px',
-              cursor: !selectedAccountId ? 'not-allowed' : 'pointer',
-              fontSize: '0.85rem'
-            }}
-          >
-            {language === 'zh' ? '產生報表' : 'Generate Report'}
-          </button>
+          {/* Generate Button: Hidden on Mobile (Auto-fetch works on select change) */}
+          {!isMobile && (
+            <button
+              onClick={onGenerateReport}
+              disabled={!selectedAccountId}
+              style={{
+                background: !selectedAccountId ? 'gray' : 'var(--accent-primary)',
+                color: 'white',
+                border: 'none',
+                padding: '6px 12px',
+                borderRadius: '6px',
+                cursor: !selectedAccountId ? 'not-allowed' : 'pointer',
+                fontSize: '0.85rem'
+              }}
+            >
+              {language === 'zh' ? '產生報表' : 'Generate Report'}
+            </button>
+          )}
         </div>
 
-        {/* Language Toggle */}
+        {/* Language Toggle (Shortened on Mobile) */}
         <button
           onClick={() => setLanguage(l => l === 'zh' ? 'en' : 'zh')}
           style={{
@@ -88,31 +115,33 @@ const Header = ({ language, setLanguage, accounts = [], selectedAccountId, setSe
           }}
         >
           <FiGlobe />
-          {language === 'zh' ? '中文 / EN' : 'EN / 中文'}
+          {!isMobile && (language === 'zh' ? '中文 / EN' : 'EN / 中文')}
         </button>
 
-        {/* Search Bar */}
-        <div style={{
-          display: 'flex',
-          alignItems: 'center',
-          backgroundColor: 'var(--bg-secondary)',
-          padding: '8px 16px',
-          borderRadius: '20px',
-          border: '1px solid var(--glass-border)',
-          width: '250px'
-        }}>
-          <FiSearch style={{ color: 'var(--text-secondary)', marginRight: '8px' }} />
-          <input
-            placeholder={language === 'zh' ? "搜尋..." : "Search..."}
-            style={{
-              background: 'transparent',
-              border: 'none',
-              color: 'var(--text-primary)',
-              outline: 'none',
-              width: '100%'
-            }}
-          />
-        </div>
+        {/* Search Bar (Hidden on Mobile for space) */}
+        {!isMobile && (
+          <div style={{
+            display: 'flex',
+            alignItems: 'center',
+            backgroundColor: 'var(--bg-secondary)',
+            padding: '8px 16px',
+            borderRadius: '20px',
+            border: '1px solid var(--glass-border)',
+            width: '250px'
+          }}>
+            <FiSearch style={{ color: 'var(--text-secondary)', marginRight: '8px' }} />
+            <input
+              placeholder={language === 'zh' ? "搜尋..." : "Search..."}
+              style={{
+                background: 'transparent',
+                border: 'none',
+                color: 'var(--text-primary)',
+                outline: 'none',
+                width: '100%'
+              }}
+            />
+          </div>
+        )}
 
         {/* Bell */}
         <div style={{

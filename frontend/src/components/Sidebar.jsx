@@ -3,9 +3,13 @@ import { FiHome, FiBarChart2, FiUsers, FiSettings, FiActivity, FiChevronLeft, Fi
 import { Link, useLocation } from 'react-router-dom';
 import SettingsModal from './SettingsModal';
 
-const Sidebar = ({ language, isCollapsed, setIsCollapsed }) => {
+const Sidebar = ({ language, isCollapsed, setIsCollapsed, isMobile }) => {
     const [isSettingsOpen, setIsSettingsOpen] = useState(false);
     const location = useLocation();
+
+    // Mobile: Toggle logic is inverted for visual state (Collapsed = Hidden)
+    const showSidebar = isMobile ? !isCollapsed : true;
+    const sidebarWidth = isMobile ? '240px' : (isCollapsed ? '80px' : '240px');
 
     const menuItems = [
         { icon: <FiHome size={20} />, label: 'Overview', path: '/' },
@@ -17,8 +21,25 @@ const Sidebar = ({ language, isCollapsed, setIsCollapsed }) => {
 
     return (
         <>
+            {/* Mobile Backdrop */}
+            {isMobile && !isCollapsed && (
+                <div
+                    style={{
+                        position: 'fixed',
+                        top: 0,
+                        left: 0,
+                        right: 0,
+                        bottom: 0,
+                        backgroundColor: 'rgba(0,0,0,0.5)',
+                        zIndex: 49,
+                        backdropFilter: 'blur(2px)'
+                    }}
+                    onClick={() => setIsCollapsed(true)}
+                />
+            )}
+
             <aside style={{
-                width: isCollapsed ? '80px' : '240px',
+                width: sidebarWidth,
                 height: '100vh',
                 backgroundColor: 'var(--bg-secondary)',
                 borderRight: '1px solid var(--glass-border)',
@@ -29,13 +50,18 @@ const Sidebar = ({ language, isCollapsed, setIsCollapsed }) => {
                 left: 0,
                 top: 0,
                 zIndex: 50,
-                transition: 'width 0.3s ease',
-                overflow: 'hidden' // Prevent text overflow during transition
+                transition: 'all 0.3s ease',
+                overflow: 'hidden',
+                // Mobile Transform
+                transform: isMobile
+                    ? (isCollapsed ? 'translateX(-100%)' : 'translateX(0)')
+                    : 'none',
+                boxShadow: isMobile && !isCollapsed ? '4px 0 20px rgba(0,0,0,0.5)' : 'none'
             }}>
                 <div style={{
                     display: 'flex',
                     alignItems: 'center',
-                    justifyContent: isCollapsed ? 'center' : 'flex-start',
+                    justifyContent: (isCollapsed && !isMobile) ? 'center' : 'flex-start',
                     gap: 'var(--spacing-sm)',
                     marginBottom: '40px',
                     color: 'var(--accent-primary)',
@@ -46,7 +72,7 @@ const Sidebar = ({ language, isCollapsed, setIsCollapsed }) => {
                     <div style={{
                         width: '32px',
                         height: '32px',
-                        minWidth: '32px', // Prevent shrinking
+                        minWidth: '32px',
                         background: 'var(--accent-primary)',
                         borderRadius: '8px',
                         display: 'flex',
@@ -56,7 +82,7 @@ const Sidebar = ({ language, isCollapsed, setIsCollapsed }) => {
                     }}>
                         F
                     </div>
-                    {!isCollapsed && <span>Facebook DB</span>}
+                    {(!isCollapsed || isMobile) && <span>Facebook DB</span>}
                 </div>
 
                 <nav style={{ display: 'flex', flexDirection: 'column', gap: '8px', flex: 1 }}>
@@ -67,7 +93,7 @@ const Sidebar = ({ language, isCollapsed, setIsCollapsed }) => {
                         const itemStyle = {
                             display: 'flex',
                             alignItems: 'center',
-                            justifyContent: isCollapsed ? 'center' : 'flex-start',
+                            justifyContent: (isCollapsed && !isMobile) ? 'center' : 'flex-start',
                             gap: '12px',
                             padding: '12px',
                             borderRadius: 'var(--radius-md)',
@@ -75,7 +101,7 @@ const Sidebar = ({ language, isCollapsed, setIsCollapsed }) => {
                             backgroundColor: isActive ? 'rgba(45, 136, 255, 0.1)' : 'transparent',
                             color: isActive ? 'var(--accent-primary)' : 'var(--text-secondary)',
                             transition: 'all 0.2s ease',
-                            textDecoration: 'none', // For Link
+                            textDecoration: 'none',
                             width: '100%',
                             boxSizing: 'border-box'
                         };
@@ -83,7 +109,7 @@ const Sidebar = ({ language, isCollapsed, setIsCollapsed }) => {
                         const content = (
                             <>
                                 {item.icon}
-                                {!isCollapsed && <span style={{ fontWeight: 500, whiteSpace: 'nowrap' }}>{item.label}</span>}
+                                {(!isCollapsed || isMobile) && <span style={{ fontWeight: 500, whiteSpace: 'nowrap' }}>{item.label}</span>}
                             </>
                         );
 
@@ -93,6 +119,7 @@ const Sidebar = ({ language, isCollapsed, setIsCollapsed }) => {
                                     key={index}
                                     to={item.path}
                                     style={itemStyle}
+                                    onClick={() => isMobile && setIsCollapsed(true)} // Close on navigate (mobile)
                                     onMouseEnter={(e) => {
                                         if (!isActive) {
                                             e.currentTarget.style.backgroundColor = 'var(--bg-hover)';
@@ -111,24 +138,14 @@ const Sidebar = ({ language, isCollapsed, setIsCollapsed }) => {
                             );
                         }
 
-                        // Action Items (Settings, etc.)
+                        // ... (Action Items)
                         return (
                             <div key={index} style={itemStyle}
                                 onClick={() => {
                                     if (item.action) item.action();
+                                    if (isMobile) setIsCollapsed(true);
                                 }}
-                                onMouseEnter={(e) => {
-                                    if (!isActive) {
-                                        e.currentTarget.style.backgroundColor = 'var(--bg-hover)';
-                                        e.currentTarget.style.color = 'var(--text-primary)';
-                                    }
-                                }}
-                                onMouseLeave={(e) => {
-                                    if (!isActive) {
-                                        e.currentTarget.style.backgroundColor = 'transparent';
-                                        e.currentTarget.style.color = 'var(--text-secondary)';
-                                    }
-                                }}
+                            // ...
                             >
                                 {content}
                             </div>
@@ -136,31 +153,33 @@ const Sidebar = ({ language, isCollapsed, setIsCollapsed }) => {
                     })}
                 </nav>
 
-                {/* Collapse Toggle Button */}
-                <div
-                    onClick={() => setIsCollapsed(!isCollapsed)}
-                    style={{
-                        padding: '12px',
-                        display: 'flex',
-                        alignItems: 'center',
-                        justifyContent: 'center',
-                        cursor: 'pointer',
-                        color: 'var(--text-secondary)',
-                        borderRadius: '8px',
-                        marginTop: 'auto',
-                    }}
-                    onMouseEnter={(e) => e.currentTarget.style.backgroundColor = 'var(--bg-hover)'}
-                    onMouseLeave={(e) => e.currentTarget.style.backgroundColor = 'transparent'}
-                >
-                    {isCollapsed ? <FiChevronRight size={24} /> : <FiChevronLeft size={24} />}
-                </div>
+                {/* Collapse Toggle Button (Desktop Only) */}
+                {!isMobile && (
+                    <div
+                        onClick={() => setIsCollapsed(!isCollapsed)}
+                        style={{
+                            padding: '12px',
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                            cursor: 'pointer',
+                            color: 'var(--text-secondary)',
+                            borderRadius: '8px',
+                            marginTop: 'auto',
+                        }}
+                        onMouseEnter={(e) => e.currentTarget.style.backgroundColor = 'var(--bg-hover)'}
+                        onMouseLeave={(e) => e.currentTarget.style.backgroundColor = 'transparent'}
+                    >
+                        {isCollapsed ? <FiChevronRight size={24} /> : <FiChevronLeft size={24} />}
+                    </div>
+                )}
 
             </aside>
 
             <SettingsModal
                 isOpen={isSettingsOpen}
                 onClose={() => setIsSettingsOpen(false)}
-                language={language || 'zh'} // Fallback if language not passed
+                language={language || 'zh'}
             />
         </>
     );
