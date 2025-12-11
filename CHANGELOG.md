@@ -1,5 +1,24 @@
 # Changelog
 
+## [1.3.3] - 2025-12-11
+### Added
+- **Ad Creative Thumbnails**: 
+  - **Table View**: 廣告層級 (Ad Level) 表格新增素材縮圖顯示。
+  - **Hover Preview**: 滑鼠懸停顯示 300px 高解析度素材預覽圖 (Portal Implementation)。
+  - **Backend**: 優化 `services.py` 優先抓取 HQ Image URL，解決縮圖模糊問題。
+- **Metric Controls**: 
+  - **Bulk Actions**: 自訂指標選單新增「全選 / 全消 (Select All / Deselect All)」快速操作功能。
+
+### Fixed
+- **Comparison Data**: 
+  - 修正 Comparison Mode 下，Campaign/AdSet/Ad 層級抓不到前期數據 (顯示為 0) 的問題。
+  - 原因：Backend 回傳通用 `id` 導致 Frontend ID Matching 失敗。
+  - 解法：Backend 明確回傳 `campaign_id`, `adset_id`, `ad_id` 以供精確比對。
+- **Naming Logic**: 
+  - 修正 Ad/AdSet 層級報表名稱錯誤顯示為 Campaign Name 的問題 (Backend Name Priority Fix)。
+- **Formatting**: 
+  - **Overview Cards**: 將「花費 (Spend)」與其他金額指標調整為整數顯示 (無小數點)，提升閱讀性 (CPA 保留小數位)。
+
 ## [1.3.2] - 2025-12-10
 ### Added
 - **Analytics UI**: 

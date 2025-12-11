@@ -69,16 +69,18 @@ const KPICard = ({ title, value, sub_value, diff, percent, is_increase, is_inver
             </div>
 
             {/* Change Row: Arrow Diff (Percent) */}
-            <div style={{
-                display: 'flex',
-                alignItems: 'center',
-                gap: '6px',
-                fontSize: '0.85rem',
-                fontWeight: 600,
-                color: color
-            }}>
-                <span>{arrow} {diff} ({percent})</span>
-            </div>
+            {diff && (
+                <div style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '6px',
+                    fontSize: '0.85rem',
+                    fontWeight: 600,
+                    color: color
+                }}>
+                    <span>{arrow} {diff} ({percent})</span>
+                </div>
+            )}
         </div>
     );
 };

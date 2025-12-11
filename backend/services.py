@@ -222,7 +222,7 @@ class FacebookService:
             # 3. Format Strings
             def fmt_num(n, for_display=True):
                 if is_currency: 
-                    return f"${n:,.2f}" if for_display else n 
+                    return f"${n:,.0f}" if for_display else n 
                 if is_percent: 
                     return f"{n:.2f}%" if for_display else n
                 if is_roas: 
@@ -343,6 +343,7 @@ class FacebookService:
             return None
             
         fields = (
+            "campaign_id,adset_id,ad_id," # ID fields
             "campaign_name,adset_name,ad_name," # Identity fields
             "spend,impressions,reach,cpm,cpc,ctr,inline_link_clicks,clicks,"
             "actions,action_values,purchase_roas"
@@ -365,14 +366,64 @@ class FacebookService:
                 return None
                 
             data = res.get("data", [])
+            print(f"DEBUG_REPORT: Level={level} Period={since}~{until} Rows={len(data)}")
+            if len(data) > 0:
+                 print(f"DEBUG_SAMPLE: {data[0].get('campaign_name')} Spend={data[0].get('spend')}")
             
-            # Process each row 
+            # Process each row
+            
+            # If Level is Ad, fetch Creative Images separately to map them
+            ad_image_map = {}
+            if level == "ad":
+                try:
+                    # Fetch Ads with Creative fields
+                    c_url = f"{FacebookService.BASE_URL}/{account_id}/ads"
+                    c_params = {
+                        "fields": "id,creative{thumbnail_url,image_url}",
+                        "limit": 1000 # Fetch enough ads to cover the report
+                    }
+                    c_res = requests.get(c_url, headers=headers, params=c_params).json()
+                    c_data = c_res.get("data", [])
+                    
+                    for ad in c_data:
+                        # Creative object structure
+                        creative = ad.get("creative", {})
+                        # Prefer full image for preview quality, fallback to thumbnail
+                        img = creative.get("image_url") or creative.get("thumbnail_url")
+                        if img:
+                            ad_image_map[ad["id"]] = img
+                            
+                    print(f"DEBUG_CREATIVES: Found {len(ad_image_map)} images")
+                except Exception as e:
+                    print(f"Error fetching creatives: {e}")
+
             processed_rows = []
             for row in data:
                 # 1. Basic Metrics
+                # Determine Name based on Level
+                name = "Account Total"
+                row_id = "total"
+                
+                if level == "ad":
+                     name = row.get("ad_name")
+                     row_id = row.get("ad_id")
+                elif level == "adset":
+                     name = row.get("adset_name")
+                     row_id = row.get("adset_id")
+                elif level == "campaign":
+                     name = row.get("campaign_name")
+                     row_id = row.get("campaign_id")
+                
+                # Fallback if specific name is missing (shouldn't happen with FB API but safe)
+                if not name:
+                     name = row.get("campaign_name") or row.get("adset_name") or row.get("ad_name") or "Unknown"
+
                 flat = {
-                    "id": row.get("campaign_id") or row.get("adset_id") or row.get("ad_id") or "total",
-                    "name": row.get("campaign_name") or row.get("adset_name") or row.get("ad_name") or "Account Total",
+                    "id": row_id or row.get("campaign_id") or row.get("adset_id") or row.get("ad_id") or "total",
+                    "campaign_id": row.get("campaign_id"), 
+                    "adset_id": row.get("adset_id"),
+                    "ad_id": row.get("ad_id"),
+                    "name": name,
                     "spend": float(row.get("spend", 0)),
                     "impressions": int(row.get("impressions", 0)),
                     "reach": int(row.get("reach", 0)),
@@ -382,6 +433,7 @@ class FacebookService:
                     "cpc": float(row.get("cpc", 0)),
                     "cpm": float(row.get("cpm", 0)),
                     "roas": float(row.get("purchase_roas", [{}])[0].get("value", 0) if row.get("purchase_roas") else 0),
+                    "image_url": ad_image_map.get(row.get("ad_id")) if level == "ad" else None
                 }
                 
                 # 2. Process Actions

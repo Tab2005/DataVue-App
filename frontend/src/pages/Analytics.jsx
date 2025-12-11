@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useOutletContext } from 'react-router-dom';
-import { format, subDays, startOfWeek, endOfWeek, startOfMonth, endOfMonth, subMonths } from 'date-fns';
+import { format, subDays, startOfWeek, endOfWeek, startOfMonth, endOfMonth, subMonths, subYears, differenceInDays } from 'date-fns';
+import KPICard from '../components/KPICard';
 
 const DATE_PRESETS = [
     { label: '今日 (Today)', value: 'today' },
@@ -61,13 +62,13 @@ const METRIC_GROUPS = [
         label_en: 'General Metrics',
         color: '#3b82f6', // Blue for KPI Card border
         metrics: [
-            { key: 'spend', label_zh: '花費金額', label_en: 'Spend', format: 'currency' },
+            { key: 'spend', label_zh: '花費金額', label_en: 'Spend', format: 'currency', isInverse: true },
             { key: 'impressions', label_zh: '曝光次數', label_en: 'Impressions', format: 'number' },
             { key: 'reach', label_zh: '觸及人數', label_en: 'Reach', format: 'number' },
             { key: 'link_clicks', label_zh: '連結點擊次數', label_en: 'Link Clicks', format: 'number' },
             { key: 'ctr', label_zh: '連結點擊率 (CTR)', label_en: 'CTR', format: 'percent' },
-            { key: 'cpc', label_zh: 'CPC (單次連結點擊成本)', label_en: 'CPC', format: 'currency' },
-            { key: 'cpm', label_zh: 'CPM (每千次廣告曝光成本)', label_en: 'CPM', format: 'currency' },
+            { key: 'cpc', label_zh: 'CPC (單次連結點擊成本)', label_en: 'CPC', format: 'currency', isInverse: true },
+            { key: 'cpm', label_zh: 'CPM (每千次廣告曝光成本)', label_en: 'CPM', format: 'currency', isInverse: true },
         ]
     },
     {
@@ -107,10 +108,18 @@ const METRIC_GROUPS = [
         label_en: 'Funnel Metrics',
         color: '#f59e0b', // Amber
         metrics: [
-            { key: 'cvr', label_zh: '購買轉換率', label_en: 'Purchase Conversion Rate', format: 'percent' },
-            { key: 'view_to_cart', label_zh: '查看後購物車加入率', label_en: 'View-to-Cart Rate', format: 'percent' },
-            { key: 'cart_conversion', label_zh: '購物車購買率', label_en: 'Cart Purchase Rate', format: 'percent' },
-            { key: 'cart_dropoff', label_zh: '廣告購物車流失率', label_en: 'Cart Drop-off Rate', format: 'percent' },
+            { key: 'view_content', label_zh: '查看內容', label_en: 'View Content', format: 'number' },
+            { key: 'add_to_cart', label_zh: '加到購物車', label_en: 'Add to Cart', format: 'number' },
+            { key: 'cost_per_atc', label_zh: '每次加購成本', label_en: 'Cost per ATC', format: 'currency', isInverse: true },
+            { key: 'view_to_cart', label_zh: '查看後加購率', label_en: 'View to Cart Rate', format: 'percent' },
+            { key: 'initiate_checkout', label_zh: '發起結帳', label_en: 'Initiate Checkout', format: 'number' },
+            { key: 'add_payment_info', label_zh: '加入付款資訊', label_en: 'Add Payment Info', format: 'number' },
+            { key: 'purchases', label_zh: '購買次數', label_en: 'Purchases', format: 'number' },
+            { key: 'cpa', label_zh: '每次購買成本 (CPA)', label_en: 'Cost per Purchase', format: 'currency', isInverse: true },
+            { key: 'cart_conversion', label_zh: '加購購買率', label_en: 'Cart Purchase Rate', format: 'percent' },
+            { key: 'cart_dropoff', label_zh: '加購流失率', label_en: 'Cart Dropoff Rate', format: 'percent', isInverse: true },
+            { key: 'purchase_value', label_zh: '購買價值', label_en: 'Purchase Value', format: 'currency' },
+            { key: 'atc_value', label_zh: '加購價值', label_en: 'ATC Value', format: 'currency' },
             { key: 'cart_value_realization', label_zh: '購物車價值實現率', label_en: 'Cart Value Realization', format: 'percent' },
         ]
     }
@@ -118,7 +127,7 @@ const METRIC_GROUPS = [
 
 const Analytics = () => {
     // 1. Get shared context
-    const { selectedAccountId, user, language } = useOutletContext();
+    const { selectedAccountId, user, language, isSidebarCollapsed } = useOutletContext();
 
     // 2. Translations
     const t = {
@@ -149,9 +158,9 @@ const Analytics = () => {
                 last_week: "上週",
                 this_month: "本月",
                 last_month: "上月",
-                last_7d: "最近 7 天",
-                last_14d: "最近 14 天",
-                last_30d: "最近 30 天",
+                last_7d: "過去 7 天",
+                last_14d: "過去 14 天",
+                last_30d: "過去 30 天",
                 custom: "自訂",
             },
             comparePresets: {
@@ -198,9 +207,9 @@ const Analytics = () => {
                 last_week: "Last Week",
                 this_month: "This Month",
                 last_month: "Last Month",
-                last_7d: "Last 7 Days",
-                last_14d: "Last 14 Days",
-                last_30d: "Last 30 Days",
+                last_7d: "Past 7 Days",
+                last_14d: "Past 14 Days",
+                last_30d: "Past 30 Days",
                 custom: "Custom",
             },
             comparePresets: {
@@ -228,9 +237,10 @@ const Analytics = () => {
     const [level, setLevel] = useState('account');
     const [datePreset, setDatePreset] = useState('last_7d');
     const [dateRange, setDateRange] = useState({
-        since: format(subDays(new Date(), 6), 'yyyy-MM-dd'),
-        until: format(new Date(), 'yyyy-MM-dd')
+        since: format(subDays(new Date(), 7), 'yyyy-MM-dd'),
+        until: format(subDays(new Date(), 1), 'yyyy-MM-dd')
     });
+    const [prevDateRange, setPrevDateRange] = useState({ since: '', until: '' });
 
     // Comparison State
     const [isCompareMode, setIsCompareMode] = useState(false);
@@ -278,9 +288,9 @@ const Analytics = () => {
             case 'last_week': { const start = startOfWeek(subDays(today, 7), { weekStartsOn: 1 }); const end = endOfWeek(subDays(today, 7), { weekStartsOn: 1 }); newRange.since = format(start, 'yyyy-MM-dd'); newRange.until = format(end, 'yyyy-MM-dd'); break; }
             case 'this_month': newRange.since = format(startOfMonth(today), 'yyyy-MM-dd'); newRange.until = format(today, 'yyyy-MM-dd'); break;
             case 'last_month': { const lm = subMonths(today, 1); newRange.since = format(startOfMonth(lm), 'yyyy-MM-dd'); newRange.until = format(endOfMonth(lm), 'yyyy-MM-dd'); break; }
-            case 'last_7d': newRange.since = format(subDays(today, 6), 'yyyy-MM-dd'); newRange.until = format(today, 'yyyy-MM-dd'); break;
-            case 'last_14d': newRange.since = format(subDays(today, 13), 'yyyy-MM-dd'); newRange.until = format(today, 'yyyy-MM-dd'); break;
-            case 'last_30d': newRange.since = format(subDays(today, 29), 'yyyy-MM-dd'); newRange.until = format(today, 'yyyy-MM-dd'); break;
+            case 'last_7d': newRange.since = format(subDays(today, 7), 'yyyy-MM-dd'); newRange.until = format(subDays(today, 1), 'yyyy-MM-dd'); break; // Exclude today
+            case 'last_14d': newRange.since = format(subDays(today, 14), 'yyyy-MM-dd'); newRange.until = format(subDays(today, 1), 'yyyy-MM-dd'); break;
+            case 'last_30d': newRange.since = format(subDays(today, 30), 'yyyy-MM-dd'); newRange.until = format(subDays(today, 1), 'yyyy-MM-dd'); break;
             case 'custom': return;
         }
 
@@ -289,9 +299,11 @@ const Analytics = () => {
 
     // 3. Data State
     const [reportData, setReportData] = useState(null);
+    const [prevReportData, setPrevReportData] = useState(null);
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState(null);
 
+    // 4. Fetch Function
     // 4. Fetch Function
     const fetchAnalytics = async () => {
         if (!selectedAccountId || !user) return;
@@ -302,17 +314,16 @@ const Analytics = () => {
             const idToken = localStorage.getItem('google_token');
             const apiUrl = import.meta.env.VITE_API_URL || 'http://localhost:8000';
 
-            const query = new URLSearchParams({
+            // 1. Fetch Current Data
+            const currentQuery = new URLSearchParams({
                 account_id: selectedAccountId,
                 since: dateRange.since,
                 until: dateRange.until,
                 level: level,
             });
 
-            const res = await fetch(`${apiUrl}/api/analytics-data?${query}`, {
-                headers: {
-                    'Authorization': `Bearer ${idToken}`
-                }
+            const res = await fetch(`${apiUrl}/api/analytics-data?${currentQuery}`, {
+                headers: { 'Authorization': `Bearer ${idToken}` }
             });
 
             if (!res.ok) {
@@ -325,6 +336,45 @@ const Analytics = () => {
 
             const json = await res.json();
             setReportData(json.data);
+
+            // 2. Fetch Comparison Data (if enabled)
+            if (isCompareMode) {
+                let prevSince, prevUntil;
+                const startDate = new Date(dateRange.since);
+                const endDate = new Date(dateRange.until);
+                const diffDays = differenceInDays(endDate, startDate) + 1; // Inclusive
+
+                if (comparePreset === 'year_over_year') {
+                    prevSince = format(subYears(startDate, 1), 'yyyy-MM-dd');
+                    prevUntil = format(subYears(endDate, 1), 'yyyy-MM-dd');
+                } else {
+                    // Default: Previous Period
+                    prevSince = format(subDays(startDate, diffDays), 'yyyy-MM-dd');
+                    prevUntil = format(subDays(endDate, diffDays), 'yyyy-MM-dd');
+                }
+                setPrevDateRange({ since: prevSince, until: prevUntil });
+
+                const prevQuery = new URLSearchParams({
+                    account_id: selectedAccountId,
+                    since: prevSince,
+                    until: prevUntil,
+                    level: level,
+                });
+
+                const prevRes = await fetch(`${apiUrl}/api/analytics-data?${prevQuery}`, {
+                    headers: { 'Authorization': `Bearer ${idToken}` }
+                });
+
+                if (prevRes.ok) {
+                    const prevJson = await prevRes.json();
+                    setPrevReportData(prevJson.data);
+                } else {
+                    console.warn("Failed to fetch previous data");
+                    setPrevReportData([]);
+                }
+            } else {
+                setPrevReportData(null);
+            }
 
         } catch (err) {
             console.error(err);
@@ -346,25 +396,8 @@ const Analytics = () => {
         if (newSet.has(key)) {
             newSet.delete(key);
         } else {
-            // MAX LIMIT CHECK (PER GROUP)
-            // 1. Find which group this metric belongs to
-            const group = METRIC_GROUPS.find(g => g.metrics.some(m => m.key === key));
-
-            if (group) {
-                // 2. Count how many metrics from THIS group are already selected
-                let countInGroup = 0;
-                group.metrics.forEach(m => {
-                    if (newSet.has(m.key)) countInGroup++;
-                });
-
-                if (countInGroup >= 7) {
-                    const groupName = language === 'zh' ? group.label_zh : group.label_en;
-                    alert(language === 'zh'
-                        ? `為確保最佳瀏覽體驗，[${groupName}] 分類最多只能選擇 7 個指標。`
-                        : `Max 7 metrics allowed in [${groupName}] category.`);
-                    return;
-                }
-            }
+            // MAX LIMIT CHECK REMOVED
+            // Grid layout handles wrapping automatically
             newSet.add(key);
         }
         setSelectedMetrics(newSet);
@@ -387,11 +420,12 @@ const Analytics = () => {
     const activeCols = getActiveColumns();
 
     // 7. Calculate Summary for KPI Cards
-    const calculateSummary = () => {
-        if (!reportData || reportData.length === 0) return null;
+    // 7. Calculate Summary for KPI Cards
+    const calculateSummary = (data) => {
+        if (!data || data.length === 0) return null;
 
         // Sum basic additive metrics
-        const sum = (key) => reportData.reduce((acc, row) => acc + (row[key] || 0), 0);
+        const sum = (key) => data.reduce((acc, row) => acc + (row[key] || 0), 0);
 
         const total = {
             spend: sum('spend'),
@@ -432,7 +466,8 @@ const Analytics = () => {
         return total;
     };
 
-    const summaryData = calculateSummary();
+    const summaryData = calculateSummary(reportData);
+    const prevSummaryData = calculateSummary(prevReportData);
 
     const renderMetricValue = (val, format) => {
         if (val === undefined || val === null || isNaN(val)) return '-';
@@ -445,7 +480,7 @@ const Analytics = () => {
 
     // 6. Basic UI Components
     return (
-        <div style={{ padding: '24px', width: '100%' }}>
+        <div style={{ padding: '24px', width: '100%', maxWidth: '100%', overflow: 'hidden' }}>
             {/* Header Section */}
             <div style={{ marginBottom: '24px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                 <div>
@@ -558,8 +593,33 @@ const Analytics = () => {
                             <div style={{ marginTop: '16px', animation: 'fadeIn 0.3s' }}>
                                 {METRIC_GROUPS.map(group => (
                                     <div key={group.id} style={{ marginBottom: '16px' }}>
-                                        <div style={{ fontSize: '0.85rem', color: group.color || 'var(--accent-primary)', fontWeight: 'bold', marginBottom: '8px' }}>
-                                            {language === 'zh' ? group.label_zh : group.label_en}
+                                        <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '8px' }}>
+                                            <div style={{ fontSize: '0.85rem', color: group.color || 'var(--accent-primary)', fontWeight: 'bold' }}>
+                                                {language === 'zh' ? group.label_zh : group.label_en}
+                                            </div>
+                                            <div style={{ fontSize: '0.75rem', display: 'flex', gap: '8px' }}>
+                                                <span
+                                                    onClick={() => {
+                                                        const newSet = new Set(selectedMetrics);
+                                                        group.metrics.forEach(m => newSet.add(m.key));
+                                                        setSelectedMetrics(newSet);
+                                                    }}
+                                                    style={{ color: 'var(--accent-primary)', cursor: 'pointer', textDecoration: 'underline' }}
+                                                >
+                                                    {language === 'zh' ? '全選' : 'Select All'}
+                                                </span>
+                                                <span style={{ color: 'var(--text-tertiary)' }}>|</span>
+                                                <span
+                                                    onClick={() => {
+                                                        const newSet = new Set(selectedMetrics);
+                                                        group.metrics.forEach(m => newSet.delete(m.key));
+                                                        setSelectedMetrics(newSet);
+                                                    }}
+                                                    style={{ color: 'var(--accent-primary)', cursor: 'pointer', textDecoration: 'underline' }}
+                                                >
+                                                    {language === 'zh' ? '全消' : 'Deselect All'}
+                                                </span>
+                                            </div>
                                         </div>
                                         <div style={{ display: 'flex', flexWrap: 'wrap', gap: '12px' }}>
                                             {group.metrics.map(metric => (
@@ -677,16 +737,49 @@ const Analytics = () => {
                                         {language === 'zh' ? group.label_zh : group.label_en}
                                     </h3>
                                     <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(200px, 1fr))', gap: '12px' }}>
-                                        {activeGroupMetrics.map(m => (
-                                            <div key={m.key} className="glass-panel" style={{ padding: '16px', borderRadius: '12px', borderLeft: '3px solid var(--accent-primary)', background: 'rgba(255,255,255,0.03)' }}>
-                                                <div style={{ fontSize: '0.8rem', color: 'var(--text-secondary)', marginBottom: '8px', minHeight: '32px' }}>
-                                                    {language === 'zh' ? m.label_zh : m.label_en}
-                                                </div>
-                                                <div style={{ fontSize: '1.5rem', fontWeight: 'bold', color: 'white' }}>
-                                                    {renderMetricValue(summaryData[m.key], m.format)}
-                                                </div>
-                                            </div>
-                                        ))}
+                                        {activeGroupMetrics.map(m => {
+                                            const currentVal = summaryData[m.key] || 0;
+                                            const prevVal = prevSummaryData ? (prevSummaryData[m.key] || 0) : null;
+
+                                            // Diff calculation
+                                            let diff = null;
+                                            let percent = null;
+                                            let isIncrease = false;
+
+                                            if (prevSummaryData) {
+                                                const d = currentVal - prevVal;
+                                                isIncrease = d >= 0;
+
+                                                // Format Difference
+                                                if (m.format === 'currency') diff = `${d >= 0 ? '+' : ''}$${Math.abs(d).toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}`;
+                                                else if (m.format === 'percent') diff = `${d >= 0 ? '+' : ''}${d.toFixed(2)}%`;
+                                                else if (m.format === 'decimal') diff = `${d >= 0 ? '+' : ''}${d.toFixed(2)}`;
+                                                else diff = `${d >= 0 ? '+' : ''}${Math.abs(d).toLocaleString()}`;
+
+                                                // Calculate Percent Change
+                                                if (prevVal !== 0) {
+                                                    const p = (d / prevVal) * 100;
+                                                    percent = `${p >= 0 ? '+' : ''}${p.toFixed(1)}%`;
+                                                } else if (currentVal !== 0) {
+                                                    percent = '+100%';
+                                                } else {
+                                                    percent = '0%';
+                                                }
+                                            }
+
+                                            return (
+                                                <KPICard
+                                                    key={m.key}
+                                                    title={language === 'zh' ? m.label_zh : m.label_en}
+                                                    value={renderMetricValue(currentVal, m.format)}
+                                                    sub_value={prevSummaryData ? `(${renderMetricValue(prevVal, m.format)})` : ''}
+                                                    diff={diff}
+                                                    percent={percent}
+                                                    is_increase={isIncrease}
+                                                    is_inverse={m.isInverse || false}
+                                                />
+                                            );
+                                        })}
                                     </div>
                                 </div>
                             );
@@ -701,61 +794,253 @@ const Analytics = () => {
             ) : error ? (
                 <div style={{ textAlign: 'center', padding: '40px', color: '#f87171' }}>{error}</div>
             ) : (
-                <div className="glass-panel" style={{ padding: '0', borderRadius: '16px', overflowX: 'auto', maxHeight: '600px', overflowY: 'auto' }}>
+                <div className="glass-panel" style={{
+                    padding: '0',
+                    borderRadius: '16px',
+                    overflowX: 'auto',
+                    maxHeight: '600px',
+                    overflowY: 'auto',
+                    // Dynamic Width: Viewport - Sidebar (240/80) - Padding (60)
+                    maxWidth: isSidebarCollapsed ? 'calc(100vw - 140px)' : 'calc(100vw - 300px)',
+                    width: '100%',
+                    display: 'block',
+                    transition: 'max-width 0.3s ease'
+                }}>
                     <table style={{ width: '100%', borderCollapse: 'collapse', color: 'var(--text-primary)', fontSize: '0.9rem' }}>
                         <thead>
-                            <tr style={{ borderBottom: '1px solid var(--glass-border)', textAlign: 'left' }}>
-                                <th style={{
-                                    padding: '8px',
-                                    minWidth: '200px',
-                                    position: 'sticky', // Keep sticky TOP for header
-                                    top: 0,
-                                    zIndex: 30,
-                                    background: '#242526'
-                                }}>{txt.table.name}</th>
-                                {/* Dynamic Headers */}
-                                {activeCols.map(col => (
-                                    <th key={col.key} style={{
+                            {/* Comparison Mode Header */}
+                            {isCompareMode ? (
+                                <>
+                                    {/* Row 1: Metric Names */}
+                                    <tr style={{ borderBottom: '1px solid var(--glass-border)', textAlign: 'center' }}>
+                                        <th rowSpan={2} style={{
+                                            padding: '8px',
+                                            minWidth: '200px',
+                                            position: 'sticky',
+                                            top: 0,
+                                            left: 0,
+                                            zIndex: 50,
+                                            background: '#242526',
+                                            textAlign: 'left',
+                                            borderRight: '1px solid var(--glass-border)'
+                                        }}>{txt.table.name}</th>
+                                        {activeCols.map(col => (
+                                            <th key={col.key} colSpan={4} style={{
+                                                padding: '8px',
+                                                borderLeft: '1px solid var(--glass-border)',
+                                                background: '#242526', // Use solid bg for headers
+                                                position: 'sticky',
+                                                top: 0,
+                                                zIndex: 40
+                                            }}>
+                                                {language === 'zh' ? col.label_zh : col.label_en}
+                                            </th>
+                                        ))}
+                                    </tr>
+                                    {/* Row 2: Sub-columns */}
+                                    <tr style={{ borderBottom: '1px solid var(--glass-border)', textAlign: 'right', fontSize: '0.8rem', color: 'var(--text-secondary)' }}>
+                                        {activeCols.map(col => (
+                                            <React.Fragment key={col.key}>
+                                                <th style={{ padding: '8px', minWidth: '90px', background: '#242526', borderLeft: '1px solid var(--glass-border)', position: 'sticky', top: '38px', zIndex: 39 }}>
+                                                    {dateRange.since}<br />~ {dateRange.until?.slice(5)}
+                                                </th>
+                                                <th style={{ padding: '8px', minWidth: '90px', background: '#242526', position: 'sticky', top: '38px', zIndex: 39 }}>
+                                                    {prevDateRange.since}<br />~ {prevDateRange.until?.slice(5)}
+                                                </th>
+                                                <th style={{ padding: '8px', minWidth: '80px', background: '#242526', position: 'sticky', top: '38px', zIndex: 39 }}>
+                                                    {language === 'zh' ? '變化' : 'Change'}
+                                                </th>
+                                                <th style={{ padding: '8px', minWidth: '80px', background: '#242526', position: 'sticky', top: '38px', zIndex: 39 }}>
+                                                    {language === 'zh' ? '變化 (%)' : 'Change (%)'}
+                                                </th>
+                                            </React.Fragment>
+                                        ))}
+                                    </tr>
+                                </>
+                            ) : (
+                                /* Standard Header */
+                                <tr style={{ borderBottom: '1px solid var(--glass-border)', textAlign: 'left' }}>
+                                    <th style={{
                                         padding: '8px',
-                                        minWidth: '100px',
+                                        minWidth: '200px',
                                         position: 'sticky',
                                         top: 0,
-                                        zIndex: 20,
+                                        left: 0,
+                                        zIndex: 50,
                                         background: '#242526'
-                                    }}>
-                                        {language === 'zh' ? col.label_zh : col.label_en}
-                                    </th>
-                                ))}
-                            </tr>
+                                    }}>{txt.table.name}</th>
+                                    {activeCols.map(col => (
+                                        <th key={col.key} style={{
+                                            padding: '8px',
+                                            minWidth: '100px',
+                                            position: 'sticky',
+                                            top: 0,
+                                            zIndex: 40,
+                                            background: '#242526'
+                                        }}>
+                                            {language === 'zh' ? col.label_zh : col.label_en}
+                                        </th>
+                                    ))}
+                                </tr>
+                            )}
                         </thead>
                         <tbody>
                             {reportData && reportData.map((row, idx) => (
-                                <tr key={idx} style={{ borderBottom: '1px solid rgba(255,255,255,0.05)' }}>
+                                <tr key={idx} style={{
+                                    borderBottom: '1px solid rgba(255,255,255,0.05)',
+                                    background: idx % 2 === 0 ? 'transparent' : 'rgba(255,255,255,0.02)'
+                                }}>
+                                    {/* Name Column with Thumbnail */}
                                     <td style={{
                                         padding: '8px',
-                                        fontWeight: 600
-                                    }}>{row.name}</td>
-                                    {/* Dynamic Cells */}
-                                    {activeCols.map(col => {
-                                        let val = row[col.key];
-                                        // Simple formatting
-                                        if (col.format === 'currency') val = `$${val?.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
-                                        else if (col.format === 'percent') val = `${val?.toFixed(2)}%`;
-                                        else if (col.format === 'number') val = val?.toLocaleString();
+                                        position: 'sticky',
+                                        left: 0,
+                                        zIndex: 30,
+                                        background: '#242526',
+                                        borderRight: '1px solid var(--glass-border)',
+                                        minWidth: '240px'
+                                    }}>
+                                        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                                            {/* Thumbnail & Preview */}
+                                            {row.image_url && (
+                                                <div
+                                                    style={{ position: 'relative' }}
+                                                    onMouseEnter={(e) => {
+                                                        const rect = e.currentTarget.getBoundingClientRect();
+                                                        // Use a temporary state or just direct DOM/CSS for simple tooltip?
+                                                        // React way: Set state. But for performance in a table, CSS hover group is tricky with sticky/overflow.
+                                                        // Let's use a "Preview Portal" concept or just a fixed div that shows on hover if we track state.
+                                                        // Easiest: Simple CSS hover within the cell might convert to fixed? No, sticky cell clipping.
+                                                        // Strategy: Use a known fixed container ID or just state.
+                                                        // Let's retry: Simple state driven Preview.
+                                                        document.getElementById('preview-img-container').style.display = 'block';
+                                                        document.getElementById('preview-img').src = row.image_url;
+                                                        document.getElementById('preview-img-container').style.top = `${rect.top}px`;
+                                                        document.getElementById('preview-img-container').style.left = `${rect.right + 10}px`;
+                                                    }}
+                                                    onMouseLeave={() => {
+                                                        document.getElementById('preview-img-container').style.display = 'none';
+                                                    }}
+                                                >
+                                                    <img
+                                                        src={row.image_url}
+                                                        alt="Ad"
+                                                        style={{
+                                                            width: '40px',
+                                                            height: '40px',
+                                                            objectFit: 'cover',
+                                                            borderRadius: '4px',
+                                                            cursor: 'zoom-in',
+                                                            border: '1px solid var(--glass-border)'
+                                                        }}
+                                                    />
+                                                </div>
+                                            )}
 
-                                        return (
-                                            <td key={col.key} style={{ padding: '8px' }}>{val}</td>
-                                        );
+                                            <div style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: '200px' }} title={row.name}>
+                                                {row.name}
+                                            </div>
+                                        </div>
+                                    </td>
+
+                                    {/* Data Columns */}
+                                    {activeCols.map(col => {
+                                        const currentVal = row[col.key];
+
+                                        // Formatting Helper
+                                        const formatVal = (v, format) => {
+                                            if (v === undefined || v === null) return '-';
+                                            if (format === 'percent') return `${v.toFixed(2)}%`;
+                                            if (format === 'currency') return `$${v.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}`;
+                                            if (format === 'decimal') return v.toFixed(2);
+                                            return v.toLocaleString();
+                                        };
+
+                                        if (isCompareMode && prevReportData) {
+                                            // Comparison Logic
+                                            let prevVal = 0;
+                                            let diff = 0;
+                                            let percentStr = '-';
+                                            let diffColor = 'inherit';
+
+                                            const idField = level === 'account' ? (row.date_start ? 'date_start' : 'index') : `${level}_id`;
+
+                                            // Matching Logic
+                                            let prevRow;
+                                            if (level === 'account') {
+                                                // If 'account' overview (single row), assume index 0 match
+                                                if (!row.date_start) prevRow = prevReportData[0];
+                                                // If daily breakdown, match by date_start (TODO: verify this if breakdown used)
+                                            } else {
+                                                prevRow = prevReportData.find(p => p[idField] === row[idField]);
+                                            }
+
+                                            if (prevRow) {
+                                                prevVal = prevRow[col.key] || 0;
+                                                diff = (currentVal || 0) - prevVal;
+
+                                                if (prevVal !== 0) {
+                                                    const p = (diff / prevVal) * 100;
+                                                    percentStr = `${p >= 0 ? '▲' : '▼'} ${Math.abs(p).toFixed(2)}%`;
+                                                } else if (currentVal !== 0) {
+                                                    percentStr = '▲ 100%';
+                                                }
+
+                                                // Color
+                                                if (diff !== 0) {
+                                                    const isIncrease = diff >= 0;
+                                                    if (col.isInverse) {
+                                                        diffColor = isIncrease ? '#fb7185' : '#4ade80';
+                                                    } else {
+                                                        diffColor = isIncrease ? '#4ade80' : '#fb7185';
+                                                    }
+                                                }
+                                            } else {
+                                                // No Prev Data found for this ID
+                                                diff = currentVal;
+                                                percentStr = '-'; // Don't show confusing 100% if likely data mismatch
+                                            }
+
+                                            return (
+                                                <React.Fragment key={col.key}>
+                                                    <td style={{ padding: '8px', textAlign: 'right', borderLeft: '1px solid var(--glass-border)' }}>{formatVal(currentVal, col.format)}</td>
+                                                    <td style={{ padding: '8px', textAlign: 'right', color: 'var(--text-secondary)' }}>{prevRow ? formatVal(prevVal, col.format) : '-'}</td>
+                                                    <td style={{ padding: '8px', textAlign: 'right' }}>{formatVal(diff, col.format)}</td>
+                                                    <td style={{ padding: '8px', textAlign: 'right', color: diffColor, fontWeight: 500 }}>{percentStr}</td>
+                                                </React.Fragment>
+                                            );
+
+                                        } else {
+                                            // Standard Mode
+                                            return (
+                                                <td key={col.key} style={{ padding: '8px' }}>{formatVal(currentVal, col.format)}</td>
+                                            );
+                                        }
                                     })}
                                 </tr>
                             ))}
                         </tbody>
                     </table>
-                    {!reportData || reportData.length === 0 && (
-                        <div style={{ textAlign: 'center', padding: '20px', color: 'var(--text-tertiary)' }}>無數據 (No Data)</div>
-                    )}
                 </div>
             )}
+
+            {/* Hover Preview Container (Fixed Position) */}
+            <div
+                id="preview-img-container"
+                style={{
+                    display: 'none',
+                    position: 'fixed',
+                    zIndex: 9999,
+                    background: '#242526',
+                    padding: '8px',
+                    borderRadius: '8px',
+                    border: '1px solid var(--glass-border)',
+                    boxShadow: '0 20px 50px rgba(0,0,0,0.6)',
+                    pointerEvents: 'none' // Let mouse pass through so it doesn't flicker
+                }}
+            >
+                <img id="preview-img" src="" alt="Preview" style={{ maxWidth: '300px', maxHeight: '300px', borderRadius: '4px' }} />
+            </div>
         </div>
     );
 };

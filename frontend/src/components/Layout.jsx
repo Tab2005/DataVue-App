@@ -105,8 +105,8 @@ const Layout = () => {
                     user={user}
                 />
 
-                <div style={{ padding: '0', flex: 1, marginTop: '70px' }}>
-                    <Outlet context={{ selectedAccountId, user, accounts, language }} />
+                <div style={{ padding: '0', flex: 1, marginTop: '70px', minWidth: 0, overflowX: 'hidden' }}>
+                    <Outlet context={{ selectedAccountId, user, accounts, language, isSidebarCollapsed }} />
                 </div>
             </div>
         </div>
