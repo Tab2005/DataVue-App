@@ -1,5 +1,15 @@
 # Changelog
 
+## [v1.3.5] - 2025-12-11
+### Added
+- **Advanced Filtering**: 新增「進階篩選」工具列。
+  - **Keyword Search**: 支援關鍵字搜尋 (包含/排除)。
+  - **Active Only**: "只看快篩" 功能，一鍵過濾僅顯示目前投放中的廣告。
+- **KPI Export**: 
+  - **Image Export**: 支援將「關鍵指標總覽」區塊匯出為 PNG 圖片 (包含日期與亂數檔名)。
+- **Backend Stability**: 
+  - 優化 API 請求邏輯，針對不同層級 (Account vs Ad) 動態調整抓取欄位 (`effective_status`)，解決 Fetch Error。
+
 ## [1.3.4] - 2025-12-11
 ### Added
 - **Quality Diagnosis**: 

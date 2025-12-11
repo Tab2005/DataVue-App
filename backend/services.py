@@ -342,18 +342,21 @@ class FacebookService:
         if not headers:
             return None
             
-        fields = (
+        base_fields = (
             "campaign_id,adset_id,ad_id," # ID fields
             "campaign_name,adset_name,ad_name," # Identity fields
             "spend,impressions,reach,cpm,cpc,ctr,inline_link_clicks,clicks,"
             "actions,action_values,purchase_roas,"
             "quality_ranking,engagement_rate_ranking,conversion_rate_ranking" # Quality Diagnosis
         )
-        
+
+        # Removed 'objective,effective_status' from Insights API to prevent errors.
+        # We will fetch status separately for Ads.
+
         url = f"{FacebookService.BASE_URL}/{account_id}/insights"
         
         params = {
-            "fields": fields,
+            "fields": base_fields,
             "level": level,
             "time_range": f'{{"since":"{since}","until":"{until}"}}',
             "time_increment": "all_days", # Aggregate all data
@@ -368,39 +371,38 @@ class FacebookService:
                 
             data = res.get("data", [])
             print(f"DEBUG_REPORT: Level={level} Period={since}~{until} Rows={len(data)}")
-            if len(data) > 0:
-                 print(f"DEBUG_SAMPLE: {data[0].get('campaign_name')} Spend={data[0].get('spend')}")
             
             # Process each row
             
-            # If Level is Ad, fetch Creative Images separately to map them
-            ad_image_map = {}
+            # If Level is Ad, fetch Creative Images AND Status separately
+            ad_meta_map = {} # Stores {id: {image_url: ..., status: ...}}
             if level == "ad":
                 try:
-                    # Fetch Ads with Creative fields
+                    # Fetch Ads with Creative fields AND Status
                     c_url = f"{FacebookService.BASE_URL}/{account_id}/ads"
                     c_params = {
-                        "fields": "id,creative{thumbnail_url,image_url}",
-                        "limit": 1000 # Fetch enough ads to cover the report
+                        "fields": "id,effective_status,creative{thumbnail_url,image_url}",
+                        "limit": 1000 
                     }
                     c_res = requests.get(c_url, headers=headers, params=c_params).json()
                     c_data = c_res.get("data", [])
                     
                     for ad in c_data:
-                        # Creative object structure
+                        # Creative
                         creative = ad.get("creative", {})
-                        # Prefer full image for preview quality, fallback to thumbnail
                         img = creative.get("image_url") or creative.get("thumbnail_url")
-                        if img:
-                            ad_image_map[ad["id"]] = img
+                        
+                        ad_meta_map[ad["id"]] = {
+                            "image_url": img,
+                            "status": ad.get("effective_status", "UNKNOWN")
+                        }
                             
-                    print(f"DEBUG_CREATIVES: Found {len(ad_image_map)} images")
                 except Exception as e:
-                    print(f"Error fetching creatives: {e}")
+                    print(f"Error fetching ad metadata: {e}")
 
             processed_rows = []
             for row in data:
-                # 1. Basic Metrics
+                # ... (Naming logic) ...
                 # Determine Name based on Level
                 name = "Account Total"
                 row_id = "total"
@@ -415,9 +417,11 @@ class FacebookService:
                      name = row.get("campaign_name")
                      row_id = row.get("campaign_id")
                 
-                # Fallback if specific name is missing (shouldn't happen with FB API but safe)
                 if not name:
                      name = row.get("campaign_name") or row.get("adset_name") or row.get("ad_name") or "Unknown"
+
+                # Get Metadata (Ad Level)
+                meta = ad_meta_map.get(row.get("ad_id"), {}) if level == "ad" else {}
 
                 flat = {
                     "id": row_id or row.get("campaign_id") or row.get("adset_id") or row.get("ad_id") or "total",
@@ -434,12 +438,17 @@ class FacebookService:
                     "cpc": float(row.get("cpc", 0)),
                     "cpm": float(row.get("cpm", 0)),
                     "roas": float(row.get("purchase_roas", [{}])[0].get("value", 0) if row.get("purchase_roas") else 0),
-                    "image_url": ad_image_map.get(row.get("ad_id")) if level == "ad" else None,
                     
-                    # Quality Diagnosis (Ad Level mostly)
+                    "image_url": meta.get("image_url"), # From Meta Map
+                    
+                    # Quality Diagnosis
                     "quality_ranking": row.get("quality_ranking", "-"),
                     "engagement_rate_ranking": row.get("engagement_rate_ranking", "-"),
                     "conversion_rate_ranking": row.get("conversion_rate_ranking", "-"),
+                    
+                    # Metadata
+                    "objective": row.get("objective", "-"), # This might be missing now, acceptable.
+                    "status": meta.get("status", "UNKNOWN"), # From Meta Map
                 }
                 
                 # 2. Process Actions

@@ -351,3 +351,35 @@ A collapsible section or modal "自訂表格指標欄位 (Custom Table Metric Co
     - 當使用者需要看特定領域 (如漏斗) 時，點擊切換，**自動取消勾選**不相關的欄位，保持畫面簡潔。
     - 只有在使用者真的「全都要」時，才切換到 Custom 模式讓他自己承擔捲動責任。
 - **優化勾選介面**: 將勾選區塊收合在「自訂模式」中，或是預設隱藏，避免佔用上方太多空間。
+
+## 8. 系統架構與效能優化 (Architecture & Performance Notes)
+
+**日期**: 2025-12-11
+**主題**: 資料流向與大規模數據的潛在風險分析
+
+### 1. 目前架構：即時暫存 (Real-time Proxy)
+*   **資料流向**: Frontend (Browser) -> Backend (Python Memory) -> Facebook API
+*   **儲存特性**: 
+    *   **無資料庫 (No Database)**: 數據僅存在於處理請求的短暫記憶體中，未寫入硬碟。
+    *   **無持久化 (No Persistence)**: 瀏覽器關閉或重新整理後，資料即消失，需重新請求。
+
+### 2. 潛在風險 (Potential Risks)
+當廣告量級極大 (e.g., > 10,000 Ads) 時可能遇到的瓶頸：
+1.  **Network Latency (網路延遲)**: 
+    *   目前採 Full-Fetch (一次抓全量)，若資料量大，等待時間可能超過 10~30 秒。
+    *   可能觸發 HTTP Timeout (通常 60s)。
+2.  **API Rate Limiting (API 限制)**:
+    *   Facebook API 有呼叫頻率限制。頻繁全量拉取可能導致 `(#17) User request limit reached`。
+3.  **Browser Performance (瀏覽器效能)**:
+    *   前端一次渲染數千列 DOM (TableRow) + 數千張圖片縮圖，會大量消耗 Client 端記憶體，導致頁面卡頓。
+
+### 3. 優化策略 (Optimization Strategies)
+若未來遇到效能瓶頸，建議依序採取的優化方案：
+1.  **分頁機制 (Pagination) [High Priority]**: 
+    *   改為 On-Demand Fetching，一次只抓第一頁 (e.g., 50 筆)。
+    *   大幅降低單次 API 負載與前端渲染壓力。
+2.  **快取機制 (Caching)**: 
+    *   後端實作 TTL Cache (e.g., 5分鐘內相同請求直接回傳記憶體舊資料)。
+    *   減少重複呼叫 Facebook API。
+3.  **資料庫導入 (Database)**:
+    *   僅在需要「跨長期歷史分析」或「複雜交叉比對」時才考慮引入。

@@ -1,5 +1,6 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { useOutletContext } from 'react-router-dom';
+import html2canvas from 'html2canvas';
 import { format, subDays, startOfWeek, endOfWeek, startOfMonth, endOfMonth, subMonths, subYears, differenceInDays } from 'date-fns';
 import KPICard from '../components/KPICard';
 
@@ -259,8 +260,44 @@ const Analytics = () => {
     // View State
     const [activeView, setActiveView] = useState('custom'); // Default to custom or summary? Stick to custom for now to not surprise user, or maybe summary? Let's use 'summary' as default to solve the overflow issue immediately.
 
+    // Filter State
+    const [filterKeyword, setFilterKeyword] = useState('');
+    const [filterMode, setFilterMode] = useState('include'); // 'include' | 'exclude'
+    const [filterActiveOnly, setFilterActiveOnly] = useState(false);
+
     // UI: Toggle Metric Panel
     const [showMetricPanel, setShowMetricPanel] = useState(false);
+
+    // KPI Export State
+    const kpiRef = useRef(null);
+    const [showKpiMenu, setShowKpiMenu] = useState(false);
+
+    const handleExportImage = async () => {
+        if (!kpiRef.current) return;
+
+        try {
+            const canvas = await html2canvas(kpiRef.current, {
+                backgroundColor: '#18191a', // Match theme background
+                scale: 2, // High resolution
+                useCORS: true // Allow cross-origin images
+            });
+
+            // Generate Filename: YYYYMMDD_Random3
+            const now = new Date();
+            const dateStr = now.toISOString().slice(0, 10).replace(/-/g, '');
+            const randomStr = Math.floor(Math.random() * 900 + 100).toString();
+            const filename = `${dateStr}_${randomStr}.png`;
+
+            const link = document.createElement('a');
+            link.download = filename;
+            link.href = canvas.toDataURL();
+            link.click();
+
+            setShowKpiMenu(false);
+        } catch (err) {
+            console.error("Export failed", err);
+        }
+    };
 
     // Initial Load - Set default view to Summary to fix overflow
     useEffect(() => {
@@ -442,6 +479,48 @@ const Analytics = () => {
 
     const activeCols = getActiveColumns();
 
+    // 6. Filter Data
+    const filteredData = React.useMemo(() => {
+        if (!reportData) return [];
+
+        return reportData.filter(row => {
+            // 1. Status Filter
+            if (filterActiveOnly) {
+                const status = (row.status || '').toUpperCase();
+                if (status !== 'ACTIVE') return false;
+            }
+
+            // 2. Keyword Filter
+            if (filterKeyword.trim()) {
+                const keyword = filterKeyword.toLowerCase();
+                // Check all name fields
+                const name = (row.name || row.campaign_name || row.adset_name || row.ad_name || '').toLowerCase();
+                const match = name.includes(keyword);
+
+                return filterMode === 'include' ? match : !match;
+            }
+
+            return true;
+        });
+    }, [reportData, filterKeyword, filterMode, filterActiveOnly]);
+
+    const filteredPrevData = React.useMemo(() => {
+        if (!prevReportData) return [];
+        return prevReportData.filter(row => {
+            if (filterActiveOnly) {
+                const status = (row.status || '').toUpperCase();
+                if (status !== 'ACTIVE') return false;
+            }
+            if (filterKeyword.trim()) {
+                const keyword = filterKeyword.toLowerCase();
+                const name = (row.name || row.campaign_name || row.adset_name || row.ad_name || '').toLowerCase();
+                const match = name.includes(keyword);
+                return filterMode === 'include' ? match : !match;
+            }
+            return true;
+        });
+    }, [prevReportData, filterKeyword, filterMode, filterActiveOnly]);
+
     // 7. Calculate Summary for KPI Cards
     // 7. Calculate Summary for KPI Cards
     const calculateSummary = (data) => {
@@ -489,8 +568,10 @@ const Analytics = () => {
         return total;
     };
 
-    const summaryData = calculateSummary(reportData);
-    const prevSummaryData = calculateSummary(prevReportData);
+
+
+    const summaryData = calculateSummary(filteredData);
+    const prevSummaryData = calculateSummary(filteredPrevData);
 
     const renderMetricValue = (val, format) => {
         if (val === undefined || val === null || isNaN(val)) return '-';
@@ -521,6 +602,9 @@ const Analytics = () => {
 
                 {/* Left Panel: Primary Settings */}
                 <div className="glass-panel" style={{ padding: '24px', borderRadius: '16px', display: 'flex', flexDirection: 'column', gap: '20px' }}>
+
+
+
                     <h3 style={{ margin: 0, fontSize: '1rem', color: 'var(--text-secondary)', marginBottom: '8px' }}>{txt.mainSettings}</h3>
 
                     <div style={{ display: 'flex', gap: '20px', flexWrap: 'wrap' }}>
@@ -610,6 +694,69 @@ const Analytics = () => {
                                     {language === 'zh' ? preset.label_zh : preset.label_en}
                                 </button>
                             ))}
+                        </div>
+
+                        {/* Row 2: Filter Toolbar (Moved here) */}
+                        <div style={{ display: 'flex', gap: '16px', alignItems: 'center', marginBottom: '16px', background: 'rgba(255,255,255,0.03)', padding: '12px', borderRadius: '12px', border: '1px solid var(--glass-border)' }}>
+                            {/* Keyword Search */}
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flex: 1 }}>
+                                <span style={{ fontSize: '1.2rem' }}>🔍</span>
+                                <input
+                                    type="text"
+                                    placeholder={language === 'zh' ? "搜尋關鍵字..." : "Search keyword..."}
+                                    value={filterKeyword}
+                                    onChange={(e) => setFilterKeyword(e.target.value)}
+                                    style={{
+                                        background: 'transparent',
+                                        border: 'none',
+                                        color: 'var(--text-primary)',
+                                        fontSize: '1rem',
+                                        width: '100%',
+                                        outline: 'none'
+                                    }}
+                                />
+                            </div>
+
+                            <div style={{ width: '1px', height: '24px', background: 'var(--glass-border)' }}></div>
+
+                            {/* Filter Mode */}
+                            <select
+                                value={filterMode}
+                                onChange={(e) => setFilterMode(e.target.value)}
+                                style={{
+                                    background: 'transparent',
+                                    border: 'none',
+                                    color: 'var(--text-secondary)',
+                                    fontSize: '0.9rem',
+                                    cursor: 'pointer',
+                                    outline: 'none'
+                                }}
+                            >
+                                <option value="include">{language === 'zh' ? '包含 (Include)' : 'Include'}</option>
+                                <option value="exclude">{language === 'zh' ? '排除 (Exclude)' : 'Exclude'}</option>
+                            </select>
+
+                            <div style={{ width: '1px', height: '24px', background: 'var(--glass-border)' }}></div>
+
+                            {/* Active Only Toggle */}
+                            <label style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer' }}>
+                                <span style={{ fontSize: '0.9rem', color: filterActiveOnly ? '#4ade80' : 'var(--text-secondary)', fontWeight: filterActiveOnly ? 600 : 400 }}>
+                                    ⚡ {language === 'zh' ? '只看快篩 (Active)' : 'Active Only'}
+                                </span>
+                                <div className="switch" style={{ position: 'relative', display: 'inline-block', width: '36px', height: '20px' }}>
+                                    <input type="checkbox" checked={filterActiveOnly} onChange={(e) => setFilterActiveOnly(e.target.checked)} style={{ opacity: 0, width: 0, height: 0 }} />
+                                    <span style={{
+                                        position: 'absolute', cursor: 'pointer', top: 0, left: 0, right: 0, bottom: 0,
+                                        backgroundColor: filterActiveOnly ? '#4ade80' : '#4b5563', borderRadius: '20px', transition: '.4s'
+                                    }}>
+                                        <span style={{
+                                            position: 'absolute', content: "", height: '14px', width: '14px', left: '3px', bottom: '3px',
+                                            backgroundColor: 'white', transition: '.4s', borderRadius: '50%',
+                                            transform: filterActiveOnly ? 'translateX(16px)' : 'translateX(0)'
+                                        }}></span>
+                                    </span>
+                                </div>
+                            </label>
                         </div>
 
                         {activeView === 'custom' && (
@@ -742,10 +889,75 @@ const Analytics = () => {
 
             {/* KPI Cards Section (Middle) - Now Dynamic! */}
             {summaryData && (
-                <div className="glass-panel" style={{ marginBottom: '32px', padding: '24px', borderRadius: '16px' }}>
-                    <h2 style={{ fontSize: '1.2rem', color: '#fbbf24', marginBottom: '24px', display: 'flex', alignItems: 'center', gap: '8px', borderBottom: '1px solid var(--glass-border)', paddingBottom: '16px' }}>
-                        ⭐ {txt.keyMetrics} <span style={{ fontSize: '0.9rem', color: 'var(--text-secondary)', fontWeight: 'normal' }}>({dateRange.since} ~ {dateRange.until})</span>
-                    </h2>
+
+                <div ref={kpiRef} className="glass-panel" style={{ marginBottom: '32px', padding: '24px', borderRadius: '16px', position: 'relative' }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '24px', borderBottom: '1px solid var(--glass-border)', paddingBottom: '16px' }}>
+                        <h2 style={{ fontSize: '1.2rem', color: '#fbbf24', display: 'flex', alignItems: 'center', gap: '8px', margin: 0 }}>
+                            ⭐ {txt.keyMetrics} <span style={{ fontSize: '0.9rem', color: 'var(--text-secondary)', fontWeight: 'normal' }}>({dateRange.since} ~ {dateRange.until})</span>
+                        </h2>
+
+                        {/* More Options Menu */}
+                        <div style={{ position: 'relative' }} data-html2canvas-ignore="true">
+                            <button
+                                onClick={() => setShowKpiMenu(!showKpiMenu)}
+                                style={{
+                                    background: 'transparent',
+                                    border: 'none',
+                                    color: 'var(--text-secondary)',
+                                    fontSize: '1.2rem',
+                                    cursor: 'pointer',
+                                    padding: '4px',
+                                    borderRadius: '50%',
+                                    display: 'flex',
+                                    alignItems: 'center',
+                                    justifyContent: 'center',
+                                    transition: 'background 0.2s'
+                                }}
+                                onMouseEnter={(e) => e.target.style.background = 'rgba(255,255,255,0.1)'}
+                                onMouseLeave={(e) => e.target.style.background = 'transparent'}
+                            >
+                                ⋮
+                            </button>
+
+                            {showKpiMenu && (
+                                <div style={{
+                                    position: 'absolute',
+                                    top: '100%',
+                                    right: 0,
+                                    marginTop: '8px',
+                                    background: '#242526',
+                                    border: '1px solid var(--glass-border)',
+                                    borderRadius: '8px',
+                                    padding: '4px',
+                                    zIndex: 100,
+                                    boxShadow: '0 4px 12px rgba(0,0,0,0.5)',
+                                    minWidth: '140px'
+                                }}>
+                                    <button
+                                        onClick={handleExportImage}
+                                        style={{
+                                            display: 'flex',
+                                            alignItems: 'center',
+                                            gap: '8px',
+                                            width: '100%',
+                                            padding: '8px 12px',
+                                            background: 'transparent',
+                                            border: 'none',
+                                            color: 'var(--text-primary)',
+                                            fontSize: '0.9rem',
+                                            cursor: 'pointer',
+                                            borderRadius: '4px',
+                                            textAlign: 'left'
+                                        }}
+                                        onMouseEnter={(e) => e.target.style.background = 'rgba(255,255,255,0.1)'}
+                                        onMouseLeave={(e) => e.target.style.background = 'transparent'}
+                                    >
+                                        ⬇️ {language === 'zh' ? '匯出圖片' : 'Export Image'}
+                                    </button>
+                                </div>
+                            )}
+                        </div>
+                    </div>
 
                     <div style={{ display: 'flex', flexDirection: 'column', gap: '24px' }}>
                         {METRIC_GROUPS.map((group, gIdx) => {
@@ -909,7 +1121,7 @@ const Analytics = () => {
                             )}
                         </thead>
                         <tbody>
-                            {reportData && reportData.map((row, idx) => (
+                            {filteredData && filteredData.map((row, idx) => (
                                 <tr key={idx} style={{
                                     borderBottom: '1px solid rgba(255,255,255,0.05)',
                                     background: idx % 2 === 0 ? 'transparent' : 'rgba(255,255,255,0.02)'
