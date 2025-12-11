@@ -347,7 +347,8 @@ class FacebookService:
             "campaign_name,adset_name,ad_name," # Identity fields
             "spend,impressions,reach,cpm,cpc,ctr,inline_link_clicks,clicks,"
             "actions,action_values,purchase_roas,"
-            "quality_ranking,engagement_rate_ranking,conversion_rate_ranking" # Quality Diagnosis
+            "quality_ranking,engagement_rate_ranking,conversion_rate_ranking," # Quality Diagnosis
+            "catalog_segment_value,catalog_segment_actions" # CPAS Metrics
         )
 
         # Removed 'objective,effective_status' from Insights API to prevent errors.
@@ -470,6 +471,20 @@ class FacebookService:
                 flat["post_engagement"] = acts.get("post_engagement", 0)
                 flat["post_reactions"] = acts.get("post_reaction", 0)
                 flat["page_likes"] = acts.get("like", 0)
+
+                # 2.2 CPAS Metrics (Collaborative Ads)
+                # Parse catalog_segment_actions/values which have same structure as actions
+                cpas_acts = FacebookService._process_actions({"actions": row.get("catalog_segment_actions", [])})
+                cpas_vals = FacebookService._process_actions({"action_values": row.get("catalog_segment_value", [])})
+
+                flat["shared_purchases"] = cpas_acts.get("purchase", 0)
+                flat["shared_purchase_value"] = cpas_vals.get("purchase_val", 0)
+                flat["shared_add_to_cart"] = cpas_acts.get("add_to_cart", 0)
+                flat["shared_atc_value"] = cpas_vals.get("add_to_cart_val", 0)
+                flat["shared_view_content"] = cpas_acts.get("view_content", 0)
+                
+                # Derived CPAS ROAS
+                flat["shared_roas"] = (flat["shared_purchase_value"] / flat["spend"]) if flat["spend"] > 0 else 0
 
                 
                 # 3. Derived Metrics

@@ -127,6 +127,20 @@ const METRIC_GROUPS = [
             { key: 'conversion_rate_ranking', label_zh: '轉換率排名', label_en: 'Conversion Rate Ranking', format: 'string' },
             { key: 'engagement_rate_ranking', label_zh: '互動率排名', label_en: 'Engagement Rate Ranking', format: 'string' },
         ]
+    },
+    {
+        id: 'collaborative',
+        label_zh: '協作指標 (CPAS)',
+        label_en: 'Collaborative Ads',
+        color: '#06b6d4', // Cyan
+        metrics: [
+            { key: 'shared_purchases', label_zh: '共享購買次數', label_en: 'Shared Purch.', format: 'number' },
+            { key: 'shared_purchase_value', label_zh: '共享購買值', label_en: 'Shared Value', format: 'currency' },
+            { key: 'shared_roas', label_zh: '共享 ROAS', label_en: 'Shared ROAS', format: 'decimal' },
+            { key: 'shared_add_to_cart', label_zh: '共享加購次數', label_en: 'Shared ATC', format: 'number' },
+            { key: 'shared_atc_value', label_zh: '共享加購值', label_en: 'Shared ATC Val', format: 'currency' },
+            { key: 'shared_view_content', label_zh: '共享瀏覽次數', label_en: 'Shared Views', format: 'number' },
+        ]
     }
 ];
 
@@ -175,6 +189,12 @@ const Analytics = () => {
             },
             table: {
                 name: "名稱",
+                headers: {
+                    campaign: "活動名稱",
+                    adset: "廣告組合名稱",
+                    ad: "廣告名稱",
+                    account: "名稱"
+                },
                 spend: "花費",
                 roas: "回報率 (ROAS)",
                 purchases: "購買數",
@@ -224,6 +244,12 @@ const Analytics = () => {
             },
             table: {
                 name: "Name",
+                headers: {
+                    campaign: "Campaign Name",
+                    adset: "Ad Set Name",
+                    ad: "Ad Name",
+                    account: "Name"
+                },
                 spend: "Spend",
                 roas: "ROAS",
                 purchases: "Purchases",
@@ -548,6 +574,12 @@ const Analytics = () => {
             post_engagement: sum('post_engagement'),
             post_reactions: sum('post_reactions'),
             page_likes: sum('page_likes'),
+            // CPAS (New)
+            shared_purchases: sum('shared_purchases'),
+            shared_purchase_value: sum('shared_purchase_value'),
+            shared_add_to_cart: sum('shared_add_to_cart'),
+            shared_atc_value: sum('shared_atc_value'),
+            shared_view_content: sum('shared_view_content'),
         };
 
         // Recalculate derived rates
@@ -557,6 +589,7 @@ const Analytics = () => {
         total.cpa = total.purchases > 0 ? total.spend / total.purchases : 0;
         total.cost_per_atc = total.add_to_cart > 0 ? total.spend / total.add_to_cart : 0;
         total.roas = total.spend > 0 ? total.purchase_value / total.spend : 0;
+        total.shared_roas = total.spend > 0 ? total.shared_purchase_value / total.spend : 0;
 
         // Funnel Rates
         total.cvr = total.link_clicks > 0 ? (total.purchases / total.link_clicks) * 100 : 0;
@@ -1078,7 +1111,7 @@ const Analytics = () => {
                                             background: '#242526',
                                             textAlign: 'left',
                                             borderRight: '1px solid var(--glass-border)'
-                                        }}>{txt.table.name}</th>
+                                        }}>{txt.table.headers[level] || txt.table.name}</th>
                                         {activeCols.map(col => (
                                             <th key={col.uniqueKey} colSpan={4} style={{
                                                 padding: '8px',
@@ -1123,7 +1156,7 @@ const Analytics = () => {
                                         left: 0,
                                         zIndex: 50,
                                         background: '#242526'
-                                    }}>{txt.table.name}</th>
+                                    }}>{txt.table.headers[level] || txt.table.name}</th>
                                     {activeCols.map(col => (
                                         <th key={col.uniqueKey} style={{
                                             padding: '8px',

@@ -383,3 +383,72 @@ A collapsible section or modal "自訂表格指標欄位 (Custom Table Metric Co
     *   減少重複呼叫 Facebook API。
 3.  **資料庫導入 (Database)**:
     *   僅在需要「跨長期歷史分析」或「複雜交叉比對」時才考慮引入。
+
+## 9. 協作廣告指標 (Collaborative Ads / CPAS Metrics)
+
+**日期**: 2025-12-11
+**狀態**: 待實作 (Pending Implementation)
+
+### 協作廣告簡介 (Overview)
+協作廣告 (Collaborative Ads, CPAS) 允許品牌商使用零售商 (Retailer) 的目錄 (Catalog) 投放廣告，並追蹤在零售商網站上的轉換。
+
+### 關鍵指標與 API 欄位 (Key Metrics & Fields)
+
+協作廣告的指標主要透過 `catalog_segment_value` 與 `catalog_segment_actions` 來獲取，或是透過特定的 breakdown。但在一般的 Marketing API 報表中，最核心的關注點在於「歸因於協作目錄的轉換」。
+
+#### A. 核心轉換指標 (Core Conversion Metrics)
+這些指標與一般電商指標類似，但數據來源是「零售商分享的目錄」。
+
+*   **Catalog Sales (目錄銷售)**:
+    *   `actions` list 中 `action_type` 為 `omni_purchase` 或 `purchase`。
+    *   需確認是否需過濾 `action_device`, `action_canvas_component_name` 等。
+*   **Shared Catalog Purchase Value (目錄銷售金額)**:
+    *   `action_values` list 中 `action_type` 為 `omni_purchase` 或 `purchase`。
+*   **Add to Cart (加入購物車)**:
+    *   `mobile_app_add_to_cart` 或 `add_to_cart`。
+*   **View Content (查看內容)**:
+    *   `view_content`。
+*   **Shared Items Purchases (共享項目購買次數)**:
+    *   對應 API: `catalog_segment_actions` -> `action_type: purchase`
+    *   意義: 歸因於該協作目錄商品的購買次數。
+*   **Shared Items Purchase Value (僅限共享項目的購買轉換值)**:
+    *   對應 API: `catalog_segment_value` -> `action_type: purchase`
+    *   意義: 購買共享項目的總金額。
+*   **Shared Items Purchase ROAS (共享項目的購買 ROAS)**:
+    *   計算公式: `Shared Items Purchase Value` / `Spend`
+    *   意義: 廣告花費在推廣共享項目上的投資報酬率。
+*   **Shared Items Adds to Cart (將共享項目加到購物車的次數)**:
+    *   對應 API: `catalog_segment_actions` -> `action_type: add_to_cart`
+    *   意義: 使用者將共享商品加入購物車的次數。
+*   **Shared Items Add to Cart Conversion Value (僅限共享項目的加到購物車轉換值)**:
+    *   對應 API: `catalog_segment_value` -> `action_type: add_to_cart`
+    *   意義: 加入購物車的共享商品總價值。
+*   **Shared Items Content Views (含有共享項目的內容瀏覽次數)**:
+    *   對應 API: `catalog_segment_actions` -> `action_type: view_content`
+    *   意義: 使用者瀏覽共享商品詳情頁的次數。
+
+#### B. 協作特定欄位 (CPAS Specific Fields)
+若要區分「自有官網」與「協作零售商」的成效，通常需要查看：
+
+1.  **Catalog Segment Statistics (目錄分眾統計)**:
+    *   `catalog_segment_value`: 顯示各目錄分眾 (Segment) 的轉換價值。
+    *   `catalog_segment_actions`: 顯示各目錄分眾的轉換次數。
+    *   這對於同時與多家零售商 (如 Shopee, Momo) 合作時非常重要，可區分業績來自哪個通路。
+
+2.  **Breakdowns (細分)**:
+    *   雖然 API 不直接支援 `breakdowns=retailer_id`，但可透過 Campaign Name 命名規則或 Tag 來區分。
+    *   若使用 Graph API，可嘗試 `catalog_segment_id` breakdown (需驗證)。
+
+### 建議實作方向 (Implementation Plan)
+
+1.  **API 请求擴充 (`services.py`)**:
+    *   新增欄位: `catalog_segment_value`, `catalog_segment_actions`。
+2.  **前端顯示 (`Dashboard.jsx` / `Analytics.jsx`)**:
+    *   在「電商指標」群組中，新增一個子群組 "CPAS (Collaborative)"。
+    *   顯示 "Retailer Sales (通路銷售額)" 與 "Retailer ROAS"。
+3.  **濾掉重複數據**:
+    *   注意 CPAS 數據可能會與 Pixel 數據混淆（若 Pixel 埋設不當）。但在 API 層級，`catalog_segment` 開頭的欄位通常是專屬於目錄銷售的。
+
+### 備註 (Notes)
+*   Facebook API 對於協作廣告的權限控管較嚴格，需確保 User Token 擁有該 Catalog 的讀取權限。
+*   部分細節指標可能需要 `read_insights` 之外的權限。
