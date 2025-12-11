@@ -60,15 +60,15 @@ const METRIC_GROUPS = [
         id: 'general',
         label_zh: '通用指標',
         label_en: 'General Metrics',
-        color: '#3b82f6', // Blue for KPI Card border
+        color: '#3b82f6', // Blue
         metrics: [
-            { key: 'spend', label_zh: '花費金額', label_en: 'Spend', format: 'currency', isInverse: true },
-            { key: 'impressions', label_zh: '曝光次數', label_en: 'Impressions', format: 'number' },
-            { key: 'reach', label_zh: '觸及人數', label_en: 'Reach', format: 'number' },
             { key: 'link_clicks', label_zh: '連結點擊次數', label_en: 'Link Clicks', format: 'number' },
-            { key: 'ctr', label_zh: '連結點擊率 (CTR)', label_en: 'CTR', format: 'percent' },
+            { key: 'reach', label_zh: '觸及人數', label_en: 'Reach', format: 'number' },
             { key: 'cpc', label_zh: 'CPC (單次連結點擊成本)', label_en: 'CPC', format: 'currency', isInverse: true },
+            { key: 'spend', label_zh: '花費金額', label_en: 'Spend', format: 'currency', isInverse: true },
+            { key: 'ctr', label_zh: '連結點擊率 (CTR)', label_en: 'CTR', format: 'percent' },
             { key: 'cpm', label_zh: 'CPM (每千次廣告曝光成本)', label_en: 'CPM', format: 'currency', isInverse: true },
+            { key: 'impressions', label_zh: '曝光次數', label_en: 'Impressions', format: 'number' },
         ]
     },
     {
@@ -77,15 +77,29 @@ const METRIC_GROUPS = [
         label_en: 'E-commerce Metrics',
         color: '#8b5cf6', // Violet
         metrics: [
-            { key: 'view_content', label_zh: '查看內容', label_en: 'View Content', format: 'number' },
-            { key: 'add_to_cart', label_zh: '加到購物車', label_en: 'Add to Cart', format: 'number' },
-            { key: 'initiate_checkout', label_zh: '開始結帳', label_en: 'Initiate Checkout', format: 'number' },
-            { key: 'purchases', label_zh: '購買次數', label_en: 'Purchases', format: 'number' },
-            { key: 'cost_per_atc', label_zh: '每次加入購物車成本', label_en: 'Cost per ATC', format: 'currency' },
+            { key: 'add_payment_info', label_zh: '新增付款資訊次數', label_en: 'Add Payment Info', format: 'number' },
             { key: 'atc_value', label_zh: '加到購物車的轉換值', label_en: 'ATC Value', format: 'currency' },
-            { key: 'cpa', label_zh: '單次購買成本 (CPA)', label_en: 'CPA', format: 'currency' }, // Added
-            { key: 'purchase_value', label_zh: '購買轉換價值', label_en: 'Purchase Value', format: 'currency' },
+            { key: 'initiate_checkout', label_zh: '開始結帳次數', label_en: 'Initiate Checkout', format: 'number' },
+            { key: 'cpa', label_zh: 'CPA (單次購買成本)', label_en: 'CPA', format: 'currency', isInverse: true },
+            { key: 'add_to_cart', label_zh: '加到購物車次數', label_en: 'Add to Cart', format: 'number' },
             { key: 'roas', label_zh: 'ROAS', label_en: 'ROAS', format: 'decimal' },
+            { key: 'cost_per_atc', label_zh: '每次加入購物車成本', label_en: 'Cost per ATC', format: 'currency', isInverse: true },
+            { key: 'purchase_value', label_zh: '購買轉換價值', label_en: 'Purchase Value', format: 'currency' },
+            { key: 'purchases', label_zh: '購買次數', label_en: 'Purchases', format: 'number' },
+            { key: 'view_content', label_zh: '內容查看次數', label_en: 'View Content', format: 'number' },
+        ]
+    },
+    {
+        id: 'funnel',
+        label_zh: '漏斗指標',
+        label_en: 'Funnel Metrics',
+        color: '#f59e0b', // Amber
+        metrics: [
+            { key: 'cart_conversion', label_zh: '購物車購買率', label_en: 'Cart Purchase Rate', format: 'percent' },
+            { key: 'cart_value_realization', label_zh: '購物車價值實現率', label_en: 'Cart Value Realization', format: 'percent' },
+            { key: 'cart_dropoff', label_zh: '廣告購物車流失率', label_en: 'Cart Dropoff Rate', format: 'percent', isInverse: true },
+            { key: 'view_to_cart', label_zh: '查看後購物車加入率', label_en: 'View to Cart Rate', format: 'percent' },
+            { key: 'cvr', label_zh: '購買轉換率', label_en: 'Conversion Rate', format: 'percent' },
         ]
     },
     {
@@ -103,24 +117,14 @@ const METRIC_GROUPS = [
         ]
     },
     {
-        id: 'funnel',
-        label_zh: '漏斗指標',
-        label_en: 'Funnel Metrics',
-        color: '#f59e0b', // Amber
+        id: 'quality',
+        label_zh: '品質診斷',
+        label_en: 'Quality Diagnosis',
+        color: '#10b981', // Emerald
         metrics: [
-            { key: 'view_content', label_zh: '查看內容', label_en: 'View Content', format: 'number' },
-            { key: 'add_to_cart', label_zh: '加到購物車', label_en: 'Add to Cart', format: 'number' },
-            { key: 'cost_per_atc', label_zh: '每次加購成本', label_en: 'Cost per ATC', format: 'currency', isInverse: true },
-            { key: 'view_to_cart', label_zh: '查看後加購率', label_en: 'View to Cart Rate', format: 'percent' },
-            { key: 'initiate_checkout', label_zh: '發起結帳', label_en: 'Initiate Checkout', format: 'number' },
-            { key: 'add_payment_info', label_zh: '加入付款資訊', label_en: 'Add Payment Info', format: 'number' },
-            { key: 'purchases', label_zh: '購買次數', label_en: 'Purchases', format: 'number' },
-            { key: 'cpa', label_zh: '每次購買成本 (CPA)', label_en: 'Cost per Purchase', format: 'currency', isInverse: true },
-            { key: 'cart_conversion', label_zh: '加購購買率', label_en: 'Cart Purchase Rate', format: 'percent' },
-            { key: 'cart_dropoff', label_zh: '加購流失率', label_en: 'Cart Dropoff Rate', format: 'percent', isInverse: true },
-            { key: 'purchase_value', label_zh: '購買價值', label_en: 'Purchase Value', format: 'currency' },
-            { key: 'atc_value', label_zh: '加購價值', label_en: 'ATC Value', format: 'currency' },
-            { key: 'cart_value_realization', label_zh: '購物車價值實現率', label_en: 'Cart Value Realization', format: 'percent' },
+            { key: 'quality_ranking', label_zh: '品質排名', label_en: 'Quality Ranking', format: 'string' },
+            { key: 'conversion_rate_ranking', label_zh: '轉換率排名', label_en: 'Conversion Rate Ranking', format: 'string' },
+            { key: 'engagement_rate_ranking', label_zh: '互動率排名', label_en: 'Engagement Rate Ranking', format: 'string' },
         ]
     }
 ];
@@ -247,8 +251,9 @@ const Analytics = () => {
     const [comparePreset, setComparePreset] = useState('previous_period');
 
     // Metric Selector State (Default: Select all keys from all groups)
+    // Use composite keys "group:metric" to allow independent selection of same metric in different groups
     const [selectedMetrics, setSelectedMetrics] = useState(new Set(
-        METRIC_GROUPS.flatMap(g => g.metrics).map(m => m.key)
+        METRIC_GROUPS.flatMap(g => g.metrics.map(m => `${g.id}:${m.key}`))
     ));
 
     // View State
@@ -265,7 +270,23 @@ const Analytics = () => {
     const handleViewChange = (view) => {
         setActiveView(view);
         if (view !== 'custom') {
-            setSelectedMetrics(new Set(VIEW_PRESETS[view].metrics));
+            const presetMetrics = VIEW_PRESETS[view].metrics;
+            const newSet = new Set();
+
+            // Map preset simple keys to composite keys
+            // Strategy: Find the first occurrence of the metric in any group and add it.
+            // This ensures standard presets work visually.
+            presetMetrics.forEach(key => {
+                for (const group of METRIC_GROUPS) {
+                    const match = group.metrics.find(m => m.key === key);
+                    if (match) {
+                        newSet.add(`${group.id}:${key}`);
+                        break; // Stop after first match to avoid duplicates in presets
+                    }
+                }
+            });
+
+            setSelectedMetrics(newSet);
             setShowMetricPanel(false); // Hide panel when using preset
         } else {
             // When switching to custom, maybe open the panel?
@@ -391,14 +412,14 @@ const Analytics = () => {
     }, [selectedAccountId]);
 
     // 3.1 Toggle Metric (Checkbox)
-    const toggleMetric = (key) => {
+    // 3.1 Toggle Metric (Checkbox)
+    const toggleMetric = (groupId, key) => {
+        const compositeKey = `${groupId}:${key}`;
         const newSet = new Set(selectedMetrics);
-        if (newSet.has(key)) {
-            newSet.delete(key);
+        if (newSet.has(compositeKey)) {
+            newSet.delete(compositeKey);
         } else {
-            // MAX LIMIT CHECK REMOVED
-            // Grid layout handles wrapping automatically
-            newSet.add(key);
+            newSet.add(compositeKey);
         }
         setSelectedMetrics(newSet);
     };
@@ -409,8 +430,10 @@ const Analytics = () => {
         // Flatten groups to preserve order
         METRIC_GROUPS.forEach(group => {
             group.metrics.forEach(m => {
-                if (selectedMetrics.has(m.key)) {
-                    cols.push(m);
+                const compositeKey = `${group.id}:${m.key}`;
+                if (selectedMetrics.has(compositeKey)) {
+                    // Add composite key for React unique mapping
+                    cols.push({ ...m, uniqueKey: compositeKey });
                 }
             });
         });
@@ -601,7 +624,8 @@ const Analytics = () => {
                                                 <span
                                                     onClick={() => {
                                                         const newSet = new Set(selectedMetrics);
-                                                        group.metrics.forEach(m => newSet.add(m.key));
+                                                        // Use composite keys
+                                                        group.metrics.forEach(m => newSet.add(`${group.id}:${m.key}`));
                                                         setSelectedMetrics(newSet);
                                                     }}
                                                     style={{ color: 'var(--accent-primary)', cursor: 'pointer', textDecoration: 'underline' }}
@@ -612,7 +636,7 @@ const Analytics = () => {
                                                 <span
                                                     onClick={() => {
                                                         const newSet = new Set(selectedMetrics);
-                                                        group.metrics.forEach(m => newSet.delete(m.key));
+                                                        group.metrics.forEach(m => newSet.delete(`${group.id}:${m.key}`));
                                                         setSelectedMetrics(newSet);
                                                     }}
                                                     style={{ color: 'var(--accent-primary)', cursor: 'pointer', textDecoration: 'underline' }}
@@ -626,8 +650,8 @@ const Analytics = () => {
                                                 <label key={metric.key} style={{ display: 'flex', alignItems: 'center', gap: '6px', cursor: 'pointer', fontSize: '0.9rem', color: 'var(--text-secondary)' }}>
                                                     <input
                                                         type="checkbox"
-                                                        checked={selectedMetrics.has(metric.key)}
-                                                        onChange={() => toggleMetric(metric.key)}
+                                                        checked={selectedMetrics.has(`${group.id}:${metric.key}`)}
+                                                        onChange={() => toggleMetric(group.id, metric.key)}
                                                         style={{ accentColor: 'var(--accent-primary)' }}
                                                     />
                                                     {language === 'zh' ? metric.label_zh : metric.label_en}
@@ -725,8 +749,8 @@ const Analytics = () => {
 
                     <div style={{ display: 'flex', flexDirection: 'column', gap: '24px' }}>
                         {METRIC_GROUPS.map((group, gIdx) => {
-                            // Filter metrics for this group that are currently selected
-                            const activeGroupMetrics = group.metrics.filter(m => selectedMetrics.has(m.key));
+                            // Filter metrics for this group that are currently selected using composite key
+                            const activeGroupMetrics = group.metrics.filter(m => selectedMetrics.has(`${group.id}:${m.key}`));
 
                             // If no metrics in this group are selected, don't render the group title or container
                             if (activeGroupMetrics.length === 0) return null;
@@ -825,7 +849,7 @@ const Analytics = () => {
                                             borderRight: '1px solid var(--glass-border)'
                                         }}>{txt.table.name}</th>
                                         {activeCols.map(col => (
-                                            <th key={col.key} colSpan={4} style={{
+                                            <th key={col.uniqueKey} colSpan={4} style={{
                                                 padding: '8px',
                                                 borderLeft: '1px solid var(--glass-border)',
                                                 background: '#242526', // Use solid bg for headers
@@ -840,7 +864,7 @@ const Analytics = () => {
                                     {/* Row 2: Sub-columns */}
                                     <tr style={{ borderBottom: '1px solid var(--glass-border)', textAlign: 'right', fontSize: '0.8rem', color: 'var(--text-secondary)' }}>
                                         {activeCols.map(col => (
-                                            <React.Fragment key={col.key}>
+                                            <React.Fragment key={col.uniqueKey}>
                                                 <th style={{ padding: '8px', minWidth: '90px', background: '#242526', borderLeft: '1px solid var(--glass-border)', position: 'sticky', top: '38px', zIndex: 39 }}>
                                                     {dateRange.since}<br />~ {dateRange.until?.slice(5)}
                                                 </th>
@@ -870,7 +894,7 @@ const Analytics = () => {
                                         background: '#242526'
                                     }}>{txt.table.name}</th>
                                     {activeCols.map(col => (
-                                        <th key={col.key} style={{
+                                        <th key={col.uniqueKey} style={{
                                             padding: '8px',
                                             minWidth: '100px',
                                             position: 'sticky',
@@ -1002,7 +1026,7 @@ const Analytics = () => {
                                             }
 
                                             return (
-                                                <React.Fragment key={col.key}>
+                                                <React.Fragment key={col.uniqueKey}>
                                                     <td style={{ padding: '8px', textAlign: 'right', borderLeft: '1px solid var(--glass-border)' }}>{formatVal(currentVal, col.format)}</td>
                                                     <td style={{ padding: '8px', textAlign: 'right', color: 'var(--text-secondary)' }}>{prevRow ? formatVal(prevVal, col.format) : '-'}</td>
                                                     <td style={{ padding: '8px', textAlign: 'right' }}>{formatVal(diff, col.format)}</td>
@@ -1013,7 +1037,7 @@ const Analytics = () => {
                                         } else {
                                             // Standard Mode
                                             return (
-                                                <td key={col.key} style={{ padding: '8px' }}>{formatVal(currentVal, col.format)}</td>
+                                                <td key={col.uniqueKey} style={{ padding: '8px' }}>{formatVal(currentVal, col.format)}</td>
                                             );
                                         }
                                     })}

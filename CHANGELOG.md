@@ -1,5 +1,19 @@
 # Changelog
 
+## [1.3.4] - 2025-12-11
+### Added
+- **Quality Diagnosis**: 
+  - 新增「品質診斷 (Quality Diagnosis)」指標分類，包含品質排名、轉換率排名、互動率排名。
+  - Backend API 更新：支援抓取 Ad Quality Ranking 相關欄位。
+- **Metric Groups**: 
+  - 全面調整指標分類 (E-commerce, Funnel) 以符合設計需求，加入 `Add Payment Info` 等新指標。
+
+### Fixed
+- **Metric Sync**: 
+  - 修正「自訂指標」與「KPI 卡片」及「表格欄位」不同步的問題。
+  - 實作 Group-Scoped Selection (Composite Keys)，解決跨群組同名指標 (e.g., Purchases) 的選取衝突。
+  - 確保切換 View Presets 時能正確映射到各分組指標。
+
 ## [1.3.3] - 2025-12-11
 ### Added
 - **Ad Creative Thumbnails**: 

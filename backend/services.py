@@ -346,7 +346,8 @@ class FacebookService:
             "campaign_id,adset_id,ad_id," # ID fields
             "campaign_name,adset_name,ad_name," # Identity fields
             "spend,impressions,reach,cpm,cpc,ctr,inline_link_clicks,clicks,"
-            "actions,action_values,purchase_roas"
+            "actions,action_values,purchase_roas,"
+            "quality_ranking,engagement_rate_ranking,conversion_rate_ranking" # Quality Diagnosis
         )
         
         url = f"{FacebookService.BASE_URL}/{account_id}/insights"
@@ -433,7 +434,12 @@ class FacebookService:
                     "cpc": float(row.get("cpc", 0)),
                     "cpm": float(row.get("cpm", 0)),
                     "roas": float(row.get("purchase_roas", [{}])[0].get("value", 0) if row.get("purchase_roas") else 0),
-                    "image_url": ad_image_map.get(row.get("ad_id")) if level == "ad" else None
+                    "image_url": ad_image_map.get(row.get("ad_id")) if level == "ad" else None,
+                    
+                    # Quality Diagnosis (Ad Level mostly)
+                    "quality_ranking": row.get("quality_ranking", "-"),
+                    "engagement_rate_ranking": row.get("engagement_rate_ranking", "-"),
+                    "conversion_rate_ranking": row.get("conversion_rate_ranking", "-"),
                 }
                 
                 # 2. Process Actions
