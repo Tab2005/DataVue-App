@@ -3,7 +3,7 @@ from datetime import datetime, timedelta
 from auth import TokenManager
 
 class FacebookService:
-    BASE_URL = "https://graph.facebook.com/v18.0"
+    BASE_URL = "https://graph.facebook.com/v24.0"
 
     @staticmethod
     def get_headers(user_id):
