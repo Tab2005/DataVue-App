@@ -40,24 +40,30 @@ class User(Base):
     fb_app_secret = Column(String, nullable=True)
     token_expires_at = Column(DateTime, nullable=True)
 
+from sqlalchemy import inspect
+
 def init_db():
     Base.metadata.create_all(bind=engine)
     
     # Auto-Migration: Add 'token_expires_at' if missing
     try:
-        with engine.connect() as conn:
-            # Check if column exists
-            try:
-                conn.execute(text("SELECT token_expires_at FROM users LIMIT 1"))
-            except (OperationalError, ProgrammingError):
-                print("⚠️ Column 'token_expires_at' not found. Migrating database...")
-                # Determine dialect for correct type
-                dialect = engine.dialect.name
-                col_type = "TIMESTAMP" if dialect == "postgresql" else "DATETIME"
-                
+        inspector = inspect(engine)
+        # Check if table exists first (sanity check)
+        if inspector.has_table("users"):
+            columns = inspector.get_columns("users")
+            column_names = [c["name"] for c in columns]
+            
+            if "token_expires_at" not in column_names:
+                print("⚠️ Column 'token_expires_at' missing. Migrating database...")
                 try:
-                    conn.execute(text(f"ALTER TABLE users ADD COLUMN token_expires_at {col_type}"))
-                    conn.commit()
+                    with engine.connect() as conn:
+                        # Use explicit transaction for DDL
+                        with conn.begin():
+                            # Determine dialect for correct type
+                            dialect = engine.dialect.name
+                            col_type = "TIMESTAMP" if dialect == "postgresql" else "DATETIME"
+                            
+                            conn.execute(text(f"ALTER TABLE users ADD COLUMN token_expires_at {col_type}"))
                     print(f"✅ Migration successful: Added 'token_expires_at' column ({col_type}).")
                 except Exception as migration_err:
                     print(f"❌ Migration Failed: {migration_err}")
