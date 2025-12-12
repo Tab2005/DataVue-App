@@ -296,6 +296,9 @@ const Analytics = () => {
     // Sorting State
     const [sortConfig, setSortConfig] = useState({ key: null, direction: 'desc' });
 
+    // Table Row Selection State
+    const [selectedRowIds, setSelectedRowIds] = useState(new Set()); // IDs of selected rows
+
     // UI: Toggle Metric Panel
     const [showMetricPanel, setShowMetricPanel] = useState(false);
 
@@ -552,13 +555,28 @@ const Analytics = () => {
         });
     }, [prevReportData, filterKeyword, filterMode, filterActiveOnly]);
 
-    // 7. Calculate Summary for KPI Cards
-    // 7. Calculate Summary for KPI Cards
-    const calculateSummary = (data) => {
-        if (!data || data.length === 0) return null;
+
+    // Sync selectedRowIds with filteredData
+    // Default Behavior: When filteredData changes (e.g. date change), Select All by default.
+    useEffect(() => {
+        if (filteredData) {
+            const allIds = new Set(filteredData.map(item => item.id));
+            setSelectedRowIds(allIds);
+        }
+    }, [filteredData]);
+
+    // 7. Calculate Summary for KPI Cards (Dynamic Selection)
+    const calculateSummary = (dataSource) => {
+        if (!dataSource || dataSource.length === 0) return null;
+
+        // Filter by Selection
+        // Logic: If selectedRowIds exists, only sum items in it.
+        const targetData = dataSource.filter(item => selectedRowIds.has(item.id));
+
+        if (targetData.length === 0) return null; // Or return all zeros? Returning null usually hides cards or shows 0.
 
         // Sum basic additive metrics
-        const sum = (key) => data.reduce((acc, row) => acc + (row[key] || 0), 0);
+        const sum = (key) => targetData.reduce((acc, row) => acc + (row[key] || 0), 0);
 
         const total = {
             spend: sum('spend'),
@@ -608,8 +626,13 @@ const Analytics = () => {
 
 
 
-    const summaryData = calculateSummary(filteredData);
-    const prevSummaryData = calculateSummary(filteredPrevData);
+
+    const currentSummaryData = React.useMemo(() => calculateSummary(filteredData), [filteredData, selectedRowIds]);
+
+    const prevSummaryData = React.useMemo(() => {
+        if (!filteredPrevData) return null;
+        return calculateSummary(filteredPrevData);
+    }, [filteredPrevData, selectedRowIds]);
 
     const renderMetricValue = (val, format) => {
         if (val === undefined || val === null || isNaN(val)) return '-';
@@ -983,12 +1006,33 @@ const Analytics = () => {
             </div>
 
             {/* KPI Cards Section (Middle) - Now Dynamic! */}
-            {summaryData && (
+            {currentSummaryData && (
 
                 <div ref={kpiRef} className="glass-panel" style={{ marginBottom: '32px', padding: '24px', borderRadius: '16px', position: 'relative' }}>
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '24px', borderBottom: '1px solid var(--glass-border)', paddingBottom: '16px' }}>
-                        <h2 style={{ fontSize: '1.2rem', color: '#fbbf24', display: 'flex', alignItems: 'center', gap: '8px', margin: 0 }}>
-                            ⭐ {txt.keyMetrics} <span style={{ fontSize: '0.9rem', color: 'var(--text-secondary)', fontWeight: 'normal' }}>({dateRange.since} ~ {dateRange.until})</span>
+                        <h2 style={{
+                            fontSize: '1.2rem',
+                            color: '#fbbf24',
+                            display: 'flex',
+                            flexDirection: 'row', // Always row, let wrap handle it
+                            flexWrap: 'wrap',
+                            alignItems: 'baseline',
+                            gap: '8px',
+                            margin: 0,
+                            lineHeight: 1.5
+                        }}>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', whiteSpace: 'nowrap' }}>
+                                ⭐ {txt.keyMetrics}
+                            </div>
+                            <span style={{
+                                fontSize: isMobile ? '0.8rem' : '0.9rem',
+                                color: 'var(--text-secondary)',
+                                fontWeight: 'normal',
+                                lineHeight: isMobile ? '1.4' : 'inherit'
+                            }}>
+                                ({dateRange.since} ~ {dateRange.until}
+                                {isCompareMode && prevDateRange.since ? ` vs ${prevDateRange.since} ~ ${prevDateRange.until}` : ''})
+                            </span>
                         </h2>
 
                         {/* More Options Menu */}
@@ -1069,7 +1113,7 @@ const Analytics = () => {
                                     </h3>
                                     <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(200px, 1fr))', gap: '12px' }}>
                                         {activeGroupMetrics.map(m => {
-                                            const currentVal = summaryData[m.key] || 0;
+                                            const currentVal = currentSummaryData ? (currentSummaryData[m.key] || 0) : 0;
                                             const prevVal = prevSummaryData ? (prevSummaryData[m.key] || 0) : null;
 
                                             // Diff calculation
@@ -1127,6 +1171,7 @@ const Analytics = () => {
                 isCompareMode={isCompareMode}
                 selectedMetrics={selectedMetrics}
                 metricGroups={METRIC_GROUPS}
+                selectedRowIds={selectedRowIds} // Pass selection to filter chart
             />
 
             {/* Data Table */}
@@ -1168,7 +1213,23 @@ const Analytics = () => {
                                             background: '#242526',
                                             textAlign: 'left',
                                             borderRight: '1px solid var(--glass-border)'
-                                        }}>{txt.table.headers[level] || txt.table.name}</th>
+                                        }}>
+                                            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                                                <input
+                                                    type="checkbox"
+                                                    checked={filteredData.length > 0 && selectedRowIds.size === filteredData.length}
+                                                    onChange={(e) => {
+                                                        if (e.target.checked) {
+                                                            setSelectedRowIds(new Set(filteredData.map(d => d.id)));
+                                                        } else {
+                                                            setSelectedRowIds(new Set());
+                                                        }
+                                                    }}
+                                                    style={{ cursor: 'pointer' }}
+                                                />
+                                                {txt.table.headers[level] || txt.table.name}
+                                            </div>
+                                        </th>
                                         {activeCols.map(col => (
                                             <th
                                                 key={col.uniqueKey}
@@ -1226,7 +1287,23 @@ const Analytics = () => {
                                         left: 0,
                                         zIndex: 50,
                                         background: '#242526'
-                                    }}>{txt.table.headers[level] || txt.table.name}</th>
+                                    }}>
+                                        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                                            <input
+                                                type="checkbox"
+                                                checked={filteredData.length > 0 && selectedRowIds.size === filteredData.length}
+                                                onChange={(e) => {
+                                                    if (e.target.checked) {
+                                                        setSelectedRowIds(new Set(filteredData.map(d => d.id)));
+                                                    } else {
+                                                        setSelectedRowIds(new Set());
+                                                    }
+                                                }}
+                                                style={{ cursor: 'pointer' }}
+                                            />
+                                            {txt.table.headers[level] || txt.table.name}
+                                        </div>
+                                    </th>
                                     {activeCols.map(col => (
                                         <th
                                             key={col.uniqueKey}
@@ -1271,7 +1348,25 @@ const Analytics = () => {
                                         minWidth: '200px',
                                         maxWidth: '200px'
                                     }}>
-                                        <div style={{ display: 'flex', alignItems: 'flex-start', gap: '12px' }}>
+                                        <div style={{ display: 'flex', alignItems: 'flex-start', gap: '8px' }}>
+                                            {/* Row Selection Checkbox */}
+                                            <div style={{ marginTop: '2px', flexShrink: 0 }}>
+                                                <input
+                                                    type="checkbox"
+                                                    checked={selectedRowIds.has(row.id)}
+                                                    onChange={(e) => {
+                                                        const newSet = new Set(selectedRowIds);
+                                                        if (e.target.checked) {
+                                                            newSet.add(row.id);
+                                                        } else {
+                                                            newSet.delete(row.id);
+                                                        }
+                                                        setSelectedRowIds(newSet);
+                                                    }}
+                                                    style={{ cursor: 'pointer' }}
+                                                />
+                                            </div>
+
                                             {/* Thumbnail & Preview */}
                                             {row.image_url && (
                                                 <div

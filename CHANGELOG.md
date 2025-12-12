@@ -13,6 +13,17 @@
     - **Column Width**: Adjusted first column (Name) width to 200px.
     - **Readability**: Enabled multi-line text wrapping (max 2 lines) for long names in the first column.
 
+## v1.4.2 (2025-12-12) - Stability & Mobile UX
+- **Stability**:
+    - **Crash Fix**: Resolved a critical "Black Screen" crash in the Analytics page caused by a reference error (`summaryData` vs `currentSummaryData`) during KPI card rendering.
+- **Mobile Experience**:
+    - **KPI Header**: Optimized the "Metrics Overview" header for mobile devices.
+        - Implemented a flexible wrapping layout (`flex-wrap`) to allow the date range to sit next to the title when space permits.
+        - Reduced font size for date ranges on mobile to conserve screen space.
+        - Improved date format in Comparison Mode to clearly show Current vs Previous periods on separate lines if needed.
+- **UI Improvements**:
+    - **Date Display**: Enhanced the KPI section to explicitly show the comparison date range (e.g., `2025-12-05 ~ 2025-12-11 vs 2025-11-28 ~ 2025-12-04`) when in Comparison Mode.
+
 ## v1.4.0 (2025-12-11) - Trend Comparison Chart
 - **New Feature**: Added collapsible "Trend Comparison Chart" section to Analytics page.
 - **Dynamic Metrics**: Chart dropdowns now dynamically include any metrics selected in the data table (e.g., CPAS, Funnel metrics).
