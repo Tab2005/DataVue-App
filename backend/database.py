@@ -1,5 +1,6 @@
-from sqlalchemy import create_engine, Column, String
+from sqlalchemy import create_engine, Column, String, DateTime, text
 from sqlalchemy.orm import sessionmaker, declarative_base
+from sqlalchemy.exc import OperationalError
 import os
 
 # Default to SQLite for local development
@@ -37,6 +38,28 @@ class User(Base):
     fb_access_token = Column(String, nullable=True)
     fb_app_id = Column(String, nullable=True)
     fb_app_secret = Column(String, nullable=True)
+    token_expires_at = Column(DateTime, nullable=True)
 
 def init_db():
     Base.metadata.create_all(bind=engine)
+    
+    # Auto-Migration: Add 'token_expires_at' if missing
+    try:
+        with engine.connect() as conn:
+            # Check if column exists
+            try:
+                conn.execute(text("SELECT token_expires_at FROM users LIMIT 1"))
+            except OperationalError:
+                print("⚠️ Column 'token_expires_at' not found. Migrating database...")
+                # Determine dialect for correct type
+                dialect = engine.dialect.name
+                col_type = "TIMESTAMP" if dialect == "postgresql" else "DATETIME"
+                
+                try:
+                    conn.execute(text(f"ALTER TABLE users ADD COLUMN token_expires_at {col_type}"))
+                    conn.commit()
+                    print(f"✅ Migration successful: Added 'token_expires_at' column ({col_type}).")
+                except Exception as migration_err:
+                    print(f"❌ Migration Failed: {migration_err}")
+    except Exception as e:
+        print(f"❌ Database Check Failed: {e}")

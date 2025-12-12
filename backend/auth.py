@@ -37,7 +37,7 @@ class TokenManager:
             return value
 
     @staticmethod
-    def save_user_token(google_id, long_lived_token, app_id=None, app_secret=None):
+    def save_user_token(google_id, long_lived_token, app_id=None, app_secret=None, expires_in=None):
         """Save or update user's Facebook token in the database (Encrypted)."""
         session = SessionLocal()
         try:
@@ -54,6 +54,13 @@ class TokenManager:
             if app_secret:
                 # Encrypt App Secret too
                 user.fb_app_secret = TokenManager._encrypt(app_secret)
+            
+            # Calculate and save expiration date if provided
+            if expires_in:
+                from datetime import datetime, timedelta, timezone
+                # expires_in is in seconds
+                expires_at = datetime.now(timezone.utc) + timedelta(seconds=int(expires_in))
+                user.token_expires_at = expires_at
             
             session.commit()
         except Exception as e:
@@ -98,7 +105,8 @@ class TokenManager:
                     google_id=user_id,
                     long_lived_token=data["access_token"],
                     app_id=app_id,
-                    app_secret=app_secret
+                    app_secret=app_secret,
+                    expires_in=data.get("expires_in") # Capture expiration
                 )
                 return True, "Token exchanged and saved successfully."
             else:

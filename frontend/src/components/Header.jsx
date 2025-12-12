@@ -1,9 +1,54 @@
 
-import React, { useState } from 'react';
-import { FiSearch, FiBell, FiUser, FiGlobe, FiSettings, FiLogOut, FiMenu } from 'react-icons/fi';
+import React, { useState, useEffect } from 'react';
+import { FiSearch, FiBell, FiUser, FiGlobe, FiSettings, FiLogOut, FiMenu, FiAlertTriangle } from 'react-icons/fi';
 
 const Header = ({ language, setLanguage, accounts = [], selectedAccountId, setSelectedAccountId, onGenerateReport, isSidebarCollapsed, setIsSidebarCollapsed, onLogout, user, isMobile }) => {
   const [showUserMenu, setShowUserMenu] = useState(false);
+  const [showNotifications, setShowNotifications] = useState(false);
+  const [tokenStatus, setTokenStatus] = useState(null);
+  const [hasUnread, setHasUnread] = useState(false);
+
+  // Check Token Status
+  useEffect(() => {
+    if (user) {
+      const checkToken = async () => {
+        try {
+          const idToken = localStorage.getItem('google_token');
+          const apiUrl = import.meta.env.VITE_API_URL || 'http://localhost:8000';
+          const res = await fetch(`${apiUrl}/api/auth/token-status`, {
+            headers: { 'Authorization': `Bearer ${idToken}` }
+          });
+          const json = await res.json();
+          setTokenStatus(json);
+        } catch (err) {
+          console.error("Token status check failed", err);
+        }
+      };
+      checkToken();
+    }
+  }, [user]);
+
+  // Check Read Status
+  useEffect(() => {
+    if (tokenStatus && tokenStatus.days_remaining !== null && tokenStatus.days_remaining <= 3) {
+      const lastRead = localStorage.getItem('token_warning_read_day');
+      // If we haven't read this specific day's warning yet, mark as unread
+      if (lastRead !== String(tokenStatus.days_remaining)) {
+        setHasUnread(true);
+      }
+    }
+  }, [tokenStatus]);
+
+  const handleNotificationClick = () => {
+    const newState = !showNotifications;
+    setShowNotifications(newState);
+
+    // Mark as read when opening
+    if (newState && hasUnread && tokenStatus) {
+      setHasUnread(false);
+      localStorage.setItem('token_warning_read_day', String(tokenStatus.days_remaining));
+    }
+  };
 
   return (
     <header className="glass-panel" style={{
@@ -143,22 +188,116 @@ const Header = ({ language, setLanguage, accounts = [], selectedAccountId, setSe
           </div>
         )}
 
-        {/* Bell */}
-        <div style={{
-          position: 'relative',
-          cursor: 'pointer',
-          color: 'var(--text-secondary)'
-        }}>
-          <FiBell size={20} />
-          <span style={{
-            position: 'absolute',
-            top: '-2px',
-            right: '-2px',
-            width: '8px',
-            height: '8px',
-            backgroundColor: 'red',
-            borderRadius: '50%'
-          }}></span>
+        {/* Notification Bell */}
+        <div style={{ position: 'relative' }}>
+          <div
+            onClick={handleNotificationClick}
+            style={{
+              position: 'relative',
+              cursor: 'pointer',
+              color: 'var(--text-secondary)',
+              display: 'flex', // Ensure alignment
+              alignItems: 'center'
+            }}
+          >
+            <FiBell size={20} />
+            {/* Conditional Red Dot */}
+            {hasUnread && (
+              <span style={{
+                position: 'absolute',
+                top: '-2px',
+                right: '-2px',
+                width: '8px',
+                height: '8px',
+                backgroundColor: '#ef4444',
+                borderRadius: '50%',
+                border: '1px solid var(--bg-secondary)' // Better contrast
+              }}></span>
+            )}
+          </div>
+
+          {/* Notification Dropdown */}
+          {showNotifications && (
+            <>
+              {/* Backdrop */}
+              <div
+                style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, zIndex: 998 }}
+                onClick={() => setShowNotifications(false)}
+              />
+
+              <div className="glass-panel" style={{
+                position: 'absolute',
+                top: '40px',
+                right: '-60px', // Center align roughly with bell or shift left
+                width: '300px',
+                background: 'var(--bg-secondary)',
+                border: '1px solid var(--glass-border)',
+                borderRadius: '8px',
+                boxShadow: '0 4px 20px rgba(0,0,0,0.4)',
+                padding: '0',
+                zIndex: 999,
+                overflow: 'hidden'
+              }}>
+                <div style={{ padding: '12px 16px', borderBottom: '1px solid var(--glass-border)', fontWeight: 'bold' }}>
+                  {language === 'zh' ? '通知' : 'Notifications'}
+                </div>
+
+                <div style={{ maxHeight: '300px', overflowY: 'auto' }}>
+                  {/* Token Warning Item */}
+                  {tokenStatus && tokenStatus.days_remaining !== null && tokenStatus.days_remaining <= 3 ? (
+                    <div
+                      onClick={() => {
+                        if (window.confirm(language === 'zh' ? '連結快過期，前往重新登入？' : 'Go to login page to renew?')) {
+                          onLogout && onLogout();
+                        }
+                      }}
+                      style={{
+                        padding: '12px 16px',
+                        borderBottom: '1px solid var(--glass-border)',
+                        cursor: 'pointer',
+                        background: 'rgba(239, 68, 68, 0.05)',
+                        transition: 'background 0.2s',
+                        display: 'flex',
+                        gap: '12px',
+                        alignItems: 'start'
+                      }}
+                      onMouseEnter={(e) => e.currentTarget.style.background = 'rgba(239, 68, 68, 0.1)'}
+                      onMouseLeave={(e) => e.currentTarget.style.background = 'rgba(239, 68, 68, 0.05)'}
+                    >
+                      <div style={{
+                        color: '#ef4444',
+                        marginTop: '2px',
+                        background: 'rgba(239, 68, 68, 0.1)',
+                        padding: '8px',
+                        borderRadius: '50%'
+                      }}>
+                        <FiAlertTriangle size={16} />
+                      </div>
+                      <div>
+                        <div style={{
+                          fontSize: '0.9rem',
+                          fontWeight: '600',
+                          color: 'var(--text-primary)',
+                          marginBottom: '4px'
+                        }}>
+                          {language === 'zh' ? 'Facebook 授權即將過期' : 'Facebook Token Expiring'}
+                        </div>
+                        <div style={{ fontSize: '0.8rem', color: 'var(--text-secondary)', lineHeight: 1.4 }}>
+                          {language === 'zh'
+                            ? `您的授權將於 ${tokenStatus.days_remaining} 天後失效，請點擊此處重新登入更新。`
+                            : `Your access token expires in ${tokenStatus.days_remaining} days. Click to renew.`}
+                        </div>
+                      </div>
+                    </div>
+                  ) : (
+                    <div style={{ padding: '24px', textAlign: 'center', color: 'var(--text-secondary)', fontSize: '0.9rem' }}>
+                      {language === 'zh' ? '目前沒有新通知' : 'No new notifications'}
+                    </div>
+                  )}
+                </div>
+              </div>
+            </>
+          )}
         </div>
 
         {/* User Avatar with Dropdown */}

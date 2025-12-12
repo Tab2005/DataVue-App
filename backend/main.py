@@ -11,7 +11,7 @@ from pydantic import BaseModel
 from auth import TokenManager
 # Robust Imports with Error Handling
 try:
-    from database import init_db, engine, SessionLocal
+    from database import init_db, engine, SessionLocal, User
     DB_STATUS = "OK"
 except Exception as e:
     print(f"❌ DATABASE IMPORT ERROR: {e}", file=sys.stderr)
@@ -19,7 +19,10 @@ except Exception as e:
     # Mock objects to prevent NameError later
     engine = None
     SessionLocal = None
+    User = None
     def init_db(): pass
+
+from datetime import datetime, timezone
 
 try:
     from services import FacebookService
@@ -110,6 +113,42 @@ def exchange_token_endpoint(request: ExchangeRequest, user_id: str = Depends(ver
     if not success:
         raise HTTPException(status_code=400, detail=message)
     return {"message": message}
+
+@app.get("/api/auth/token-status")
+def get_token_status(user_id: str = Depends(verify_google_token)):
+    """Check the expiration status of the user's Facebook token."""
+    session = SessionLocal()
+    try:
+        user = session.query(User).filter(User.google_id == user_id).first()
+        
+        if not user or not user.token_expires_at:
+             return {
+                 "expires_at": None,
+                 "days_remaining": None,
+                 "is_expired": False
+             }
+        
+        now = datetime.now(timezone.utc)
+        expires_at = user.token_expires_at
+        
+        # Ensure timezone awareness compatibility
+        if expires_at.tzinfo is None:
+             expires_at = expires_at.replace(tzinfo=timezone.utc)
+             
+        delta = expires_at - now
+        days_remaining = delta.days
+        
+        return {
+            "expires_at": expires_at.isoformat(),
+            "days_remaining": days_remaining,
+            "is_expired": days_remaining < 0
+        }
+    except Exception as e:
+        print(f"Error checking token status: {e}")
+        # Return DB error details for debugging
+        raise HTTPException(status_code=500, detail=f"Internal Server Error: {e}")
+    finally:
+        session.close()
 
 @app.get("/api/ad-accounts")
 def get_ad_accounts(user_id: str = Depends(verify_google_token)):
