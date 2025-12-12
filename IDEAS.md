@@ -476,53 +476,54 @@ A collapsible section or modal "自訂表格指標欄位 (Custom Table Metric Co
 5.  **手機優化 (Mobile Optimization)**:
     *   響應式設計，自動調整控制項排列與圖表高度。
 
-## 11. 使用者帳號管理系統規劃 (User Management System Planning)
+## 11. SaaS 商業化架構藍圖 (SaaS Commercialization & User Management)
 
-**日期**: 2025-12-11
-**主題**: 多人協作與權限管理架構設計
+**日期**: 2025-12-11 (Updated 2025-12-12)
+**主題**: 多人協作、權限管理與商業化架構設計
 
-若要從目前的「單人/無狀態」模式擴展為「多使用者管理系統」，需要引入資料庫與權限控制機制。
+### 1. 核心目標 (Core Objective)
+從目前的「單人/無狀態」工具，轉型為支援「多人協作」與「訂閱制」的商業化平台 (B2B SaaS)。
 
-### 1. 架構變更 (Architecture Changes)
+### 2. 架構演進 (Architecture Evolution)
 
-*   **資料庫 (Database)**:
-    *   **必要性**: 必須引入資料庫來儲存使用者資料、角色與設定。
-    *   **建議方案**:
-        *   **SQLAlchemy + SQLite (初期)**: 輕量、無需額外伺服器，適合 MVP。
-        *   **PostgreSQL (後期)**: 若需部署到 Cloud (如 Zeabur) 且有多個實例 (Scale out)，則需獨立 DB。
-*   **資料模型 (User Model)**:
-    *   `id`: UUID
-    *   `email`: String (Unique)
-    *   `name`: String
-    *   `role`: Enum (`admin`, `member`, `viewer`)
-    *   `status`: Enum (`active`, `suspended`)
-    *   `last_login`: DateTime
-    *   `created_at`: DateTime
+*   **Phase 1: 單人版 (Current)**
+    *   `User` (Google ID) -> `Token` (Local DB)
+    *   缺點：資料無法雲端同步，無法多人共管。
+*   **Phase 2: 多人管理 (User Management)** (Technical Foundation)
+    *   引入 PostgreSQL 資料庫。
+    *   建立 `User` 資料表：儲存 Name, Email, Role, Status。
+    *   實現 RBAC (Role-Based Access Control)：Admin vs Viewer。
+*   **Phase 3: 團隊協作 (Team Workspaces)** (Commercial Feature)
+    *   引入 `Workspace` (Team) 概念。
+    *   **Token 共享**：團隊 Admin 綁定一次 FB Token，所有成員皆可使用。
+    *   **權限隔離**：成員登入後進入特定工作區，數據互不干擾。
 
-### 2. 功能模組 (Features)
+### 3. 資料庫設計 (Database Schema)
+
+*   **`users`**:
+    *   `id` (UUID), `email`, `name`, `avatar_url`
+*   **`teams`** (New):
+    *   `id` (UUID), `name`, `owner_id`
+    *   `fb_token` (Encrypted, Shared)
+    *   `subscription_plan` (Free/Pro)
+*   **`team_members`** (Relation):
+    *   `team_id`, `user_id`, `role` (Admin/Editor/Viewer)
+
+### 4. 功能規劃 (Features)
 
 #### 後端 (Backend)
-1.  **Authentication & Authorization**:
-    *   擴充 `dependencies.py`，加入 `get_current_active_user` 與 `check_admin_role`。
-    *   JWT Token Payload 加入 `role` 欄位。
-2.  **User CRUD API**:
-    *   `GET /users`: 取得使用者列表 (Admin only)。
-    *   `POST /users`: 邀請/新增使用者 (Admin only)。
-    *   `PUT /users/{id}`: 修改角色或停用帳號 (Admin only)。
-    *   `DELETE /users/{id}`: 刪除帳號。
+1.  **Auth System**: 升級為 Session/JWT based auth，支援多租戶 (Multi-tenant) 檢查。
+2.  **Team API**: 支援 邀請成員 (Invite)、移除成員、切換工作區。
+3.  **Audit Logs**: 記錄誰修改了廣告設定 (商業版重要功能)。
 
 #### 前端 (Frontend)
-1.  **Admin Portal (管理後台)**:
-    *   新增 `/settings/users` 頁面。
-    *   **使用者列表表格**: 顯示頭像、姓名、Email、角色、狀態、最後登入時間。
-    *   **操作功能**:「新增成員」、「編輯權限」、「停用/啟用」。
-2.  **Role-Based UI (權限控管)**:
-    *   **Admin**: 擁有完整權限。
-    *   **Viewer**: 僅能查看報表 (`Analytics`), 無法執行「產生報表」或「匯出圖片」等耗能操作 (可設定)。
+1.  **Admin Portal**: 「成員管理」頁面，顯示列表與權限設定。
+2.  **Workspace Switcher**: Header 新增工作區切換下拉選單。
+3.  **Subscription Page**: 整合 Stripe 結帳頁面 (預備)。
 
-### 3. 實作階段 (Phasing)
+### 5. 開發階段 (Phasing)
 
-1.  **Phase 1: DB 初始化**: 設定 SQLAlchemy 與 Alembic (Migration)，建立 User Table。
-2.  **Phase 2: Seed Admin**: 系統啟動時自動建立第一位超級管理員 (Super Admin)。
-3.  **Phase 3: 後台介面**: 開發前端管理介面。
-4.  **Phase 4: 權限鎖定**: 將敏感 API (如 `delete`, `settings`) 加上 Admin Check 裝飾器。
+1.  **Phase 1 - DB & Auth**: 建立 PostgreSQL 與 User Table，完成 Google Login 的資料庫綁定。
+2.  **Phase 2 - Team Logic**: 實作 Team/Member 關聯與 Token 共享邏輯。
+3.  **Phase 3 - UI/UX**: 完成成員管理介面與權限防護。
+4.  **Phase 4 - Billing**: 串接 Stripe 金流。
