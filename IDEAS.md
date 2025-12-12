@@ -475,3 +475,54 @@ A collapsible section or modal "自訂表格指標欄位 (Custom Table Metric Co
     *   支援顯示上一期 (Previous Period) 數據（虛線呈現）。
 5.  **手機優化 (Mobile Optimization)**:
     *   響應式設計，自動調整控制項排列與圖表高度。
+
+## 11. 使用者帳號管理系統規劃 (User Management System Planning)
+
+**日期**: 2025-12-11
+**主題**: 多人協作與權限管理架構設計
+
+若要從目前的「單人/無狀態」模式擴展為「多使用者管理系統」，需要引入資料庫與權限控制機制。
+
+### 1. 架構變更 (Architecture Changes)
+
+*   **資料庫 (Database)**:
+    *   **必要性**: 必須引入資料庫來儲存使用者資料、角色與設定。
+    *   **建議方案**:
+        *   **SQLAlchemy + SQLite (初期)**: 輕量、無需額外伺服器，適合 MVP。
+        *   **PostgreSQL (後期)**: 若需部署到 Cloud (如 Zeabur) 且有多個實例 (Scale out)，則需獨立 DB。
+*   **資料模型 (User Model)**:
+    *   `id`: UUID
+    *   `email`: String (Unique)
+    *   `name`: String
+    *   `role`: Enum (`admin`, `member`, `viewer`)
+    *   `status`: Enum (`active`, `suspended`)
+    *   `last_login`: DateTime
+    *   `created_at`: DateTime
+
+### 2. 功能模組 (Features)
+
+#### 後端 (Backend)
+1.  **Authentication & Authorization**:
+    *   擴充 `dependencies.py`，加入 `get_current_active_user` 與 `check_admin_role`。
+    *   JWT Token Payload 加入 `role` 欄位。
+2.  **User CRUD API**:
+    *   `GET /users`: 取得使用者列表 (Admin only)。
+    *   `POST /users`: 邀請/新增使用者 (Admin only)。
+    *   `PUT /users/{id}`: 修改角色或停用帳號 (Admin only)。
+    *   `DELETE /users/{id}`: 刪除帳號。
+
+#### 前端 (Frontend)
+1.  **Admin Portal (管理後台)**:
+    *   新增 `/settings/users` 頁面。
+    *   **使用者列表表格**: 顯示頭像、姓名、Email、角色、狀態、最後登入時間。
+    *   **操作功能**:「新增成員」、「編輯權限」、「停用/啟用」。
+2.  **Role-Based UI (權限控管)**:
+    *   **Admin**: 擁有完整權限。
+    *   **Viewer**: 僅能查看報表 (`Analytics`), 無法執行「產生報表」或「匯出圖片」等耗能操作 (可設定)。
+
+### 3. 實作階段 (Phasing)
+
+1.  **Phase 1: DB 初始化**: 設定 SQLAlchemy 與 Alembic (Migration)，建立 User Table。
+2.  **Phase 2: Seed Admin**: 系統啟動時自動建立第一位超級管理員 (Super Admin)。
+3.  **Phase 3: 後台介面**: 開發前端管理介面。
+4.  **Phase 4: 權限鎖定**: 將敏感 API (如 `delete`, `settings`) 加上 Admin Check 裝飾器。

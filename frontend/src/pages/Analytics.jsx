@@ -64,13 +64,13 @@ const METRIC_GROUPS = [
         label_en: 'General Metrics',
         color: '#3b82f6', // Blue
         metrics: [
-            { key: 'link_clicks', label_zh: '連結點擊次數', label_en: 'Link Clicks', format: 'number' },
-            { key: 'reach', label_zh: '觸及人數', label_en: 'Reach', format: 'number' },
-            { key: 'cpc', label_zh: 'CPC (單次連結點擊成本)', label_en: 'CPC', format: 'currency', isInverse: true },
             { key: 'spend', label_zh: '花費金額', label_en: 'Spend', format: 'currency', isInverse: true },
-            { key: 'ctr', label_zh: '連結點擊率 (CTR)', label_en: 'CTR', format: 'percent' },
-            { key: 'cpm', label_zh: 'CPM (每千次廣告曝光成本)', label_en: 'CPM', format: 'currency', isInverse: true },
+            { key: 'reach', label_zh: '觸及人數', label_en: 'Reach', format: 'number' },
             { key: 'impressions', label_zh: '曝光次數', label_en: 'Impressions', format: 'number' },
+            { key: 'cpc', label_zh: 'CPC (單次點擊成本)', label_en: 'CPC', format: 'currency', isInverse: true },
+            { key: 'ctr', label_zh: 'CTR (連結點擊率)', label_en: 'CTR', format: 'percent' },
+            { key: 'cpm', label_zh: 'CPM (千次曝光成本)', label_en: 'CPM', format: 'currency', isInverse: true },
+            { key: 'link_clicks', label_zh: '連結點擊次數', label_en: 'Link Clicks', format: 'number' },
         ]
     },
     {
@@ -79,16 +79,16 @@ const METRIC_GROUPS = [
         label_en: 'E-commerce Metrics',
         color: '#8b5cf6', // Violet
         metrics: [
-            { key: 'add_payment_info', label_zh: '新增付款資訊次數', label_en: 'Add Payment Info', format: 'number' },
-            { key: 'atc_value', label_zh: '加到購物車的轉換值', label_en: 'ATC Value', format: 'currency' },
-            { key: 'initiate_checkout', label_zh: '開始結帳次數', label_en: 'Initiate Checkout', format: 'number' },
+            { key: 'roas', label_zh: '購買 ROAS', label_en: 'ROAS', format: 'decimal' },
+            { key: 'purchases', label_zh: '購買次數', label_en: 'Purchases', format: 'number' },
+            { key: 'purchase_value', label_zh: '購買轉換價值', label_en: 'Purchase Value', format: 'currency' },
             { key: 'cpa', label_zh: 'CPA (單次購買成本)', label_en: 'CPA', format: 'currency', isInverse: true },
             { key: 'add_to_cart', label_zh: '加到購物車次數', label_en: 'Add to Cart', format: 'number' },
-            { key: 'roas', label_zh: 'ROAS', label_en: 'ROAS', format: 'decimal' },
-            { key: 'cost_per_atc', label_zh: '每次加入購物車成本', label_en: 'Cost per ATC', format: 'currency', isInverse: true },
-            { key: 'purchase_value', label_zh: '購買轉換價值', label_en: 'Purchase Value', format: 'currency' },
-            { key: 'purchases', label_zh: '購買次數', label_en: 'Purchases', format: 'number' },
-            { key: 'view_content', label_zh: '內容查看次數', label_en: 'View Content', format: 'number' },
+            { key: 'atc_value', label_zh: '加到購物車的轉換值', label_en: 'ATC Value', format: 'currency' },
+            { key: 'cost_per_atc', label_zh: '加入購物車成本', label_en: 'Cost per ATC', format: 'currency', isInverse: true },
+            { key: 'initiate_checkout', label_zh: '開始結帳次數', label_en: 'Initiate Checkout', format: 'number' },
+            { key: 'add_payment_info', label_zh: '新增付款資訊次數', label_en: 'Add Payment Info', format: 'number' },
+
         ]
     },
     {
@@ -97,11 +97,11 @@ const METRIC_GROUPS = [
         label_en: 'Funnel Metrics',
         color: '#f59e0b', // Amber
         metrics: [
-            { key: 'cart_conversion', label_zh: '購物車購買率', label_en: 'Cart Purchase Rate', format: 'percent' },
-            { key: 'cart_value_realization', label_zh: '購物車價值實現率', label_en: 'Cart Value Realization', format: 'percent' },
-            { key: 'cart_dropoff', label_zh: '廣告購物車流失率', label_en: 'Cart Dropoff Rate', format: 'percent', isInverse: true },
             { key: 'view_to_cart', label_zh: '查看後購物車加入率', label_en: 'View to Cart Rate', format: 'percent' },
             { key: 'cvr', label_zh: '購買轉換率', label_en: 'Conversion Rate', format: 'percent' },
+            { key: 'cart_value_realization', label_zh: '購物車價值實現率', label_en: 'Cart Value Realization', format: 'percent' },
+            { key: 'cart_conversion', label_zh: '購物車購買率', label_en: 'Cart Purchase Rate', format: 'percent' },
+            { key: 'cart_dropoff', label_zh: '廣告購物車流失率', label_en: 'Cart Dropoff Rate', format: 'percent', isInverse: true },
         ]
     },
     {
@@ -163,7 +163,7 @@ const Analytics = () => {
             compareMode: "V.S 比較模式",
             comparePeriod: "比較期間",
             updateReport: "更新報表",
-            keyMetrics: "關鍵指標總覽",
+            keyMetrics: "指標總覽",
             customMetrics: "自訂表格指標欄位",
             levels: {
                 campaign: "按活動名稱",
@@ -218,7 +218,7 @@ const Analytics = () => {
             compareMode: "Comparison Mode",
             comparePeriod: "Compare Period",
             updateReport: "Run Report",
-            keyMetrics: "Key Metrics Overview",
+            keyMetrics: "Metrics Overview",
             customMetrics: "Custom Report Metrics",
             levels: {
                 campaign: "By Campaign",
@@ -285,12 +285,16 @@ const Analytics = () => {
     ));
 
     // View State
-    const [activeView, setActiveView] = useState('custom'); // Default to custom or summary? Stick to custom for now to not surprise user, or maybe summary? Let's use 'summary' as default to solve the overflow issue immediately.
+    const [activeView, setActiveView] = useState('summary');
 
-    // Filter State
+    // 1. Filter State
+
     const [filterKeyword, setFilterKeyword] = useState('');
-    const [filterMode, setFilterMode] = useState('include'); // 'include' | 'exclude'
+    const [filterMode, setFilterMode] = useState('include'); // include, exclude
     const [filterActiveOnly, setFilterActiveOnly] = useState(false);
+
+    // Sorting State
+    const [sortConfig, setSortConfig] = useState({ key: null, direction: 'desc' });
 
     // UI: Toggle Metric Panel
     const [showMetricPanel, setShowMetricPanel] = useState(false);
@@ -614,6 +618,48 @@ const Analytics = () => {
         if (format === 'decimal') return val.toFixed(2);
         return val.toLocaleString();
     };
+
+
+    // Sorting Logic
+    const handleSort = (key) => {
+        let direction = 'desc';
+        if (sortConfig.key === key && sortConfig.direction === 'desc') {
+            direction = 'asc';
+        }
+        setSortConfig({ key, direction });
+    };
+
+    const sortedData = React.useMemo(() => {
+        if (!filteredData) return [];
+        let sortableItems = [...filteredData];
+        if (sortConfig.key !== null) {
+            sortableItems.sort((a, b) => {
+                let aValue = a[sortConfig.key];
+                let bValue = b[sortConfig.key];
+
+                // Handle missing values
+                if (aValue === undefined || aValue === null) aValue = -Infinity; // Treat nulls as smallest
+                if (bValue === undefined || bValue === null) bValue = -Infinity;
+
+                // Numeric sort
+                if (typeof aValue === 'number' && typeof bValue === 'number') {
+                    return sortConfig.direction === 'asc' ? aValue - bValue : bValue - aValue;
+                }
+
+                // String sort (fallback)
+                aValue = String(aValue).toLowerCase();
+                bValue = String(bValue).toLowerCase();
+                if (aValue < bValue) {
+                    return sortConfig.direction === 'asc' ? -1 : 1;
+                }
+                if (aValue > bValue) {
+                    return sortConfig.direction === 'asc' ? 1 : -1;
+                }
+                return 0;
+            });
+        }
+        return sortableItems;
+    }, [filteredData, sortConfig]);
 
 
     // 6. Basic UI Components
@@ -1113,7 +1159,7 @@ const Analytics = () => {
                                     {/* Row 1: Metric Names */}
                                     <tr style={{ borderBottom: '1px solid var(--glass-border)', textAlign: 'center' }}>
                                         <th rowSpan={2} style={{
-                                            padding: '8px',
+                                            padding: '12px',
                                             minWidth: '200px',
                                             position: 'sticky',
                                             top: 0,
@@ -1124,15 +1170,28 @@ const Analytics = () => {
                                             borderRight: '1px solid var(--glass-border)'
                                         }}>{txt.table.headers[level] || txt.table.name}</th>
                                         {activeCols.map(col => (
-                                            <th key={col.uniqueKey} colSpan={4} style={{
-                                                padding: '8px',
-                                                borderLeft: '1px solid var(--glass-border)',
-                                                background: '#242526', // Use solid bg for headers
-                                                position: 'sticky',
-                                                top: 0,
-                                                zIndex: 40
-                                            }}>
+                                            <th
+                                                key={col.uniqueKey}
+                                                colSpan={4}
+                                                onClick={() => handleSort(col.key)}
+                                                style={{
+                                                    padding: '8px',
+                                                    borderLeft: '1px solid var(--glass-border)',
+                                                    background: '#242526', // Use solid bg for headers
+                                                    position: 'sticky',
+                                                    top: 0,
+                                                    zIndex: 40,
+                                                    cursor: 'pointer',
+                                                    userSelect: 'none',
+                                                    color: sortConfig.key === col.key ? 'var(--accent-primary)' : 'inherit'
+                                                }}
+                                            >
                                                 {language === 'zh' ? col.label_zh : col.label_en}
+                                                {sortConfig.key === col.key && (
+                                                    <span style={{ marginLeft: '4px' }}>
+                                                        {sortConfig.direction === 'asc' ? '↑' : '↓'}
+                                                    </span>
+                                                )}
                                             </th>
                                         ))}
                                     </tr>
@@ -1160,7 +1219,7 @@ const Analytics = () => {
                                 /* Standard Header */
                                 <tr style={{ borderBottom: '1px solid var(--glass-border)', textAlign: 'left' }}>
                                     <th style={{
-                                        padding: '8px',
+                                        padding: '12px',
                                         minWidth: '200px',
                                         position: 'sticky',
                                         top: 0,
@@ -1169,49 +1228,56 @@ const Analytics = () => {
                                         background: '#242526'
                                     }}>{txt.table.headers[level] || txt.table.name}</th>
                                     {activeCols.map(col => (
-                                        <th key={col.uniqueKey} style={{
-                                            padding: '8px',
-                                            minWidth: '100px',
-                                            position: 'sticky',
-                                            top: 0,
-                                            zIndex: 40,
-                                            background: '#242526'
-                                        }}>
+                                        <th
+                                            key={col.uniqueKey}
+                                            onClick={() => handleSort(col.key)}
+                                            style={{
+                                                padding: '8px',
+                                                minWidth: '100px',
+                                                position: 'sticky',
+                                                top: 0,
+                                                zIndex: 40,
+                                                background: '#242526',
+                                                cursor: 'pointer',
+                                                userSelect: 'none',
+                                                color: sortConfig.key === col.key ? 'var(--accent-primary)' : 'inherit'
+                                            }}
+                                        >
                                             {language === 'zh' ? col.label_zh : col.label_en}
+                                            {sortConfig.key === col.key && (
+                                                <span style={{ marginLeft: '4px' }}>
+                                                    {sortConfig.direction === 'asc' ? '↑' : '↓'}
+                                                </span>
+                                            )}
                                         </th>
                                     ))}
                                 </tr>
                             )}
                         </thead>
                         <tbody>
-                            {filteredData && filteredData.map((row, idx) => (
+                            {sortedData && sortedData.map((row, idx) => (
                                 <tr key={idx} style={{
                                     borderBottom: '1px solid rgba(255,255,255,0.05)',
                                     background: idx % 2 === 0 ? 'transparent' : 'rgba(255,255,255,0.02)'
                                 }}>
                                     {/* Name Column with Thumbnail */}
                                     <td style={{
-                                        padding: '8px',
+                                        padding: '12px',
                                         position: 'sticky',
                                         left: 0,
                                         zIndex: 30,
                                         background: '#242526',
                                         borderRight: '1px solid var(--glass-border)',
-                                        minWidth: '240px'
+                                        minWidth: '200px',
+                                        maxWidth: '200px'
                                     }}>
-                                        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                                        <div style={{ display: 'flex', alignItems: 'flex-start', gap: '12px' }}>
                                             {/* Thumbnail & Preview */}
                                             {row.image_url && (
                                                 <div
-                                                    style={{ position: 'relative' }}
+                                                    style={{ position: 'relative', flexShrink: 0, marginTop: '2px' }}
                                                     onMouseEnter={(e) => {
                                                         const rect = e.currentTarget.getBoundingClientRect();
-                                                        // Use a temporary state or just direct DOM/CSS for simple tooltip?
-                                                        // React way: Set state. But for performance in a table, CSS hover group is tricky with sticky/overflow.
-                                                        // Let's use a "Preview Portal" concept or just a fixed div that shows on hover if we track state.
-                                                        // Easiest: Simple CSS hover within the cell might convert to fixed? No, sticky cell clipping.
-                                                        // Strategy: Use a known fixed container ID or just state.
-                                                        // Let's retry: Simple state driven Preview.
                                                         document.getElementById('preview-img-container').style.display = 'block';
                                                         document.getElementById('preview-img').src = row.image_url;
                                                         document.getElementById('preview-img-container').style.top = `${rect.top}px`;
@@ -1236,7 +1302,16 @@ const Analytics = () => {
                                                 </div>
                                             )}
 
-                                            <div style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: '200px' }} title={row.name}>
+                                            <div style={{
+                                                display: '-webkit-box',
+                                                WebkitLineClamp: 2,
+                                                WebkitBoxOrient: 'vertical',
+                                                overflow: 'hidden',
+                                                textOverflow: 'ellipsis',
+                                                whiteSpace: 'normal',
+                                                lineHeight: '1.4',
+                                                wordBreak: 'break-word'
+                                            }} title={row.name}>
                                                 {row.name}
                                             </div>
                                         </div>

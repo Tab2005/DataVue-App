@@ -1,5 +1,18 @@
 # Changelog
 
+## v1.4.1 (2025-12-12) - Metrics Organization & Table Enhancements
+- **Metrics Refinement**:
+    - **General Metrics**: Reordered sequence (Spend -> CPM -> Link Clicks) and simplified names (CPC/CPM).
+    - **E-commerce Metrics**: Reordered to match funnel flow (ROAS -> Purchases -> ... -> View Content removed).
+    - **Funnel Metrics**: Reordered (View to Cart -> Cart Dropoff).
+    - **Renaming**: Changed "Key Metrics Overview" to "Metrics Overview" (指標總覽).
+- **Table Functionality**:
+    - **Sorting**: Implemented clickable column headers to toggle ascending/descending sort.
+    - **Table Header**: Added visual sort indicators (arrows) and active state styling.
+- **UI/UX Improvements**:
+    - **Column Width**: Adjusted first column (Name) width to 200px.
+    - **Readability**: Enabled multi-line text wrapping (max 2 lines) for long names in the first column.
+
 ## v1.4.0 (2025-12-11) - Trend Comparison Chart
 - **New Feature**: Added collapsible "Trend Comparison Chart" section to Analytics page.
 - **Dynamic Metrics**: Chart dropdowns now dynamically include any metrics selected in the data table (e.g., CPAS, Funnel metrics).
@@ -8,9 +21,11 @@
 - **Mobile Optimization**: Responsive layout for Trend Chart controls (vertical stacking, full-width dropdowns) on smaller screens.
 - **Backend Upgrade**: Updated `/api/analytics-trend` to calculate all available system metrics on a daily basis.
 
-## v1.3.7 (2025-12-11) - Collaborative Ads (CPAS) Metrics
+## v1.3.7 (2025-12-11) - Collaborative Ads (CPAS) Metrics & Dynamic Headers
 - **New Metrics**: Added "Collaborative Ads" category with 6 key metrics:
     - Shared Purchases, Shared Purchase Value, Shared ROAS, Shared ATC, Shared ATC Value, Shared View Content.
+- **Dynamic Table Headers**: 
+    - 數據表格第一欄標題現在會根據選擇的層級 (Campaign/AdSet/Ad/Account) 自動切換顯示名稱 (e.g., Campaign Name, AdSet Name)。
 - **Backend**: Enhanced `get_custom_report` to process `catalog_segment_value` and `catalog_segment_actions`.
 - **Frontend**: Updated Metric Selector and Summary logic to support CPAS data.
 
