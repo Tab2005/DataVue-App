@@ -1,6 +1,6 @@
 from sqlalchemy import create_engine, Column, String, DateTime, text
 from sqlalchemy.orm import sessionmaker, declarative_base
-from sqlalchemy.exc import OperationalError
+from sqlalchemy.exc import OperationalError, ProgrammingError
 import os
 
 # Default to SQLite for local development
@@ -49,7 +49,7 @@ def init_db():
             # Check if column exists
             try:
                 conn.execute(text("SELECT token_expires_at FROM users LIMIT 1"))
-            except OperationalError:
+            except (OperationalError, ProgrammingError):
                 print("⚠️ Column 'token_expires_at' not found. Migrating database...")
                 # Determine dialect for correct type
                 dialect = engine.dialect.name
