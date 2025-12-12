@@ -82,3 +82,27 @@
     *   如果顯示 "Failed to fetch"：檢查前端變數 `VITE_API_URL` 是否正確指向後端，且後端是否正常運作。
 
 祝佈署順利！
+
+---
+
+## 6. 建立測試環境 (Staging Environment Setup)
+
+為了開發商業化版本而不影響正式版，我們採用 **多環境佈署 (Multi-Environment)** 策略。
+
+### 作法
+1.  **進入 GitHub**: 確認您有 **`dev-saas`** 分支。
+2.  **進入 Zeabur**:
+    *   **新增服務**: 建議建立一個新的 Project (例如 `FB-Dashboard-Staging`) 或在原 Project 下新增 Service。
+    *   **選擇來源**: 同樣選擇 `Facebook-Dashboard-Web-App` Repository。
+    *   **關鍵設定 (Branch)**: 在 Settings > Git 中，將 Branch 從 `main` 改為 **`dev-saas`**。
+3.  **環境變數**:
+    *   設定方式與正式版相同，但 `DATABASE_URL` 建議使用一個**全新的資料庫**，以免開發測試時弄髒正式資料。
+4.  **網址區隔**:
+    *   正式版: `your-app.zeabur.app`
+    *   測試版: `your-app-dev.zeabur.app` (自訂 Domain)
+
+### 開發流程
+1.  本地端切換分支: `git checkout dev-saas`
+2.  寫程式 -> Commit -> Push。
+3.  Zeabur 測試版會自動更新。
+4.  測試無誤後，發起 Pull Request 合併回 `main`，正式版才會更新。
