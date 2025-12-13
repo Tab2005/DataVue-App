@@ -62,6 +62,16 @@ except Exception as e:
 
 app = FastAPI()
 
+# --- TEMPORARY MANUAL FIX ENDPOINT ---
+@app.get("/api/fix-admin")
+def manual_fix_admin():
+    try:
+        promote_to_superuser("tabchen2005@gmail.com")
+        return {"status": "success", "message": "Successfully promoted tabchen2005@gmail.com to Super Admin."}
+    except Exception as e:
+        return {"status": "error", "detail": str(e)}
+# -------------------------------------
+
 # Register Routers
 app.include_router(users.router, prefix="/api/users", tags=["users"])
 app.include_router(teams.router, prefix="/api/teams", tags=["teams"]) # Team Management
