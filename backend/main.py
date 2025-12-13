@@ -149,13 +149,11 @@ def verify_google_token(credentials: HTTPAuthorizationCredentials = Depends(secu
         id_info = id_token.verify_oauth2_token(token, google_requests.Request(), GOOGLE_CLIENT_ID, clock_skew_in_seconds=60)
         userid = id_info['sub']
         return userid
-    except ValueError as e:
-        print(f"Token Verification Failed: {e}", file=sys.stderr, flush=True)
-        # Also print to stdout for safety
-        print(f"Token Verification Failed: {e}", flush=True)
+    except Exception as e:
+        print(f"Token Verification Critical Error (Main): {type(e).__name__}: {e}", file=sys.stderr, flush=True)
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
-            detail=f"Invalid authentication credentials: {str(e)}",
+            detail=f"Authentication Error ({type(e).__name__}): {str(e)}",
             headers={"WWW-Authenticate": "Bearer"},
         )
 # ---------------------------------
