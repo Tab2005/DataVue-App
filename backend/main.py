@@ -66,6 +66,25 @@ except Exception as e:
 
 app = FastAPI()
 
+# --- GLOBAL DEBUG EXCEPTION HANDLER ---
+from fastapi import Request
+from fastapi.responses import JSONResponse
+import traceback
+
+@app.exception_handler(Exception)
+async def debug_exception_handler(request: Request, exc: Exception):
+    error_msg = f"INTERNAL SERVER ERROR: {str(exc)}"
+    print(error_msg, file=sys.stderr)
+    traceback.print_exc()
+    return JSONResponse(
+        status_code=500,
+        content={
+            "detail": error_msg,
+            "traceback": traceback.format_exc()
+        }
+    )
+# --------------------------------------
+
 # --- TEMPORARY MANUAL FIX ENDPOINT ---
 @app.get("/api/fix-admin")
 def manual_fix_admin():

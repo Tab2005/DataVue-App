@@ -77,6 +77,7 @@ def get_current_user(
     from datetime import datetime
     user.last_login = datetime.now()
     db.commit()
+    db.refresh(user)
     
     return user
 
