@@ -17,9 +17,13 @@ def get_base_url():
     import os
     return os.getenv("FRONTEND_URL", "http://localhost:5173")
 
+from fastapi import APIRouter, Depends, HTTPException, status, Request
+# ... imports ...
+
 @router.post("/teams/{team_id}/invites", response_model=InviteCreateResponse)
 def create_invite_link(
     team_id: str, 
+    request: Request,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
@@ -51,8 +55,15 @@ def create_invite_link(
     db.commit()
     db.refresh(invite)
 
-    # 4. Construct URL
-    url = f"{get_base_url()}/invite/{code}"
+    # 4. Construct URL dynamically based on Request Origin
+    # Priority: Origin Header > Env Var > Default Hardcoded (Dev SaaS)
+    origin = request.headers.get("origin")
+    if not origin:
+        # Fallback to env var or specific defaults
+        import os
+        origin = os.getenv("FRONTEND_URL", "https://fbdashboard-dev-saas.zeabur.app")
+        
+    url = f"{origin}/invite/{code}"
 
     return InviteCreateResponse(
         code=code,
