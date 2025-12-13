@@ -46,7 +46,7 @@ from routers import users, teams, invites, admin
 import auth
 from dependencies import get_current_team, get_db
 from contextlib import asynccontextmanager
-from fix_admin_permission import promote_to_superuser
+# from fix_admin_permission import promote_to_superuser
 
 # Initialize Database
 # Load environment variables FIRST
