@@ -75,11 +75,11 @@ def get_current_user(
                  user.name = name
                  # Not committing updates to avoid write-conflicts
         
-        # Update last login - DISABLED FOR STABILITY DEBUGGING
-        # from datetime import datetime
-        # user.last_login = datetime.now()
-        # db.commit()
-        # db.refresh(user)
+        # Update last login
+        from datetime import datetime
+        user.last_login = datetime.now()
+        db.commit()
+        db.refresh(user)
         
         return user
     except Exception as e:

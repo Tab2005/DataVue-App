@@ -91,51 +91,7 @@ async def debug_exception_handler(request: Request, exc: Exception):
 # --------------------------------------
 
 # --- TEMPORARY MANUAL FIX ENDPOINT ---
-# --- TEMPORARY DATABASE INSPECTION ENDPOINT ---
-@app.get("/api/debug-db")
-def debug_database_schema():
-    try:
-        from sqlalchemy import inspect
-        if not engine:
-            return {"status": "error", "message": "Database engine not initialized"}
-            
-        inspector = inspect(engine)
-        tables = inspector.get_table_names()
-        schema_info = {}
-        
-        for table in tables:
-            columns = inspector.get_columns(table)
-            schema_info[table] = [
-                {"name": c["name"], "type": str(c["type"])} 
-                for c in columns
-            ]
-            
-        return {
-            "status": "success", 
-            "tables": tables,
-            "schema": schema_info
-        }
-    except Exception as e:
-        return {"status": "error", "detail": str(e)}
-
-@app.get("/api/nuke-db")
-def nuke_database(confirmation: str = ""):
-    """
-    NUCLEAR OPTION: Drops 'users' table to force recreation.
-    Usage: /api/nuke-db?confirmation=YES
-    """
-    if confirmation != "YES":
-        return {"status": "error", "message": "Please providing query param ?confirmation=YES to execute."}
-    
-    try:
-        from sqlalchemy import text
-        with engine.connect() as conn:
-            conn.execute(text("DROP TABLE IF EXISTS users CASCADE"))
-            conn.commit()
-        return {"status": "success", "message": "Table 'users' dropped. Restart server to recreate."}
-    except Exception as e:
-        return {"status": "error", "detail": str(e)}
-# -------------------------------------
+# --------------------------------------
 # -------------------------------------
 
 # Register Routers
