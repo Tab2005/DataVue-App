@@ -42,44 +42,53 @@ def get_current_user(
     Fetch the full User object from DB based on the verified Google ID.
     Syncs basic profile info (Email, Name) from Google Token.
     """
-    google_id = id_info['sub']
-    email = id_info.get('email')
-    name = id_info.get('name')
-    
-    user = db.query(User).filter(User.google_id == google_id).first()
-    
-    if not user:
-        print(f"DEBUG: User {google_id} not found. Auto-Registering...", file=sys.stderr)
+    try:
+        google_id = id_info['sub']
+        email = id_info.get('email')
+        name = id_info.get('name')
         
-        # Check if this is the FIRST user ever (Global Super Admin candidate)
-        user_count = db.query(User).count()
-        new_role = UserRole.ADMIN if user_count == 0 else UserRole.VIEWER
+        user = db.query(User).filter(User.google_id == google_id).first()
         
-        user = User(
-            google_id=google_id, 
-            email=email,
-            name=name,
-            role=new_role,
-            status=UserStatus.ACTIVE,
-            is_super_admin=(user_count == 0) # First user is Super Admin
+        if not user:
+            print(f"DEBUG: User {google_id} not found. Auto-Registering...", file=sys.stderr)
+            
+            # Check if this is the FIRST user ever (Global Super Admin candidate)
+            user_count = db.query(User).count()
+            new_role = UserRole.ADMIN if user_count == 0 else UserRole.VIEWER
+            
+            user = User(
+                google_id=google_id, 
+                email=email,
+                name=name,
+                role=new_role,
+                status=UserStatus.ACTIVE,
+                is_super_admin=(user_count == 0) # First user is Super Admin
+            )
+            db.add(user)
+            db.commit()
+            db.refresh(user)
+            print(f"Auto-Registered: {name} ({email}) as {new_role}", file=sys.stderr)
+        else:
+            # Auto-Update Profile if missing or changed
+            if user.email != email or user.name != name:
+                 user.email = email
+                 user.name = name
+                 # Not committing updates to avoid write-conflicts
+        
+        # Update last login - DISABLED FOR STABILITY DEBUGGING
+        # from datetime import datetime
+        # user.last_login = datetime.now()
+        # db.commit()
+        # db.refresh(user)
+        
+        return user
+    except Exception as e:
+        print(f"CRITICAL ERROR in get_current_user: {str(e)}", file=sys.stderr, flush=True)
+        # Raise as 401/400 to break the 500 loop
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Login Logic Failed: {str(e)}"
         )
-        db.add(user)
-        db.commit()
-        db.refresh(user)
-        print(f"Auto-Registered: {name} ({email}) as {new_role}", file=sys.stderr)
-    else:
-        # Auto-Update Profile if missing or changed
-        if user.email != email or user.name != name:
-             user.email = email
-             user.name = name
-    
-    # Update last login - DISABLED FOR STABILITY DEBUGGING
-    # from datetime import datetime
-    # user.last_login = datetime.now()
-    # db.commit()
-    # db.refresh(user)
-    
-    return user
 
 def get_current_active_user(current_user: User = Depends(get_current_user)) -> User:
     if current_user.status != UserStatus.ACTIVE:
