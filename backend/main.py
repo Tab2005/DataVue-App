@@ -60,6 +60,11 @@ try:
     alembic_cfg = alembic.config.Config("alembic.ini")
     alembic.command.upgrade(alembic_cfg, "head")
     print("Database Migrations Applied.")
+    
+    # SAFETY NET: Force create tables if Alembic missed them (e.g. after nuke-db)
+    print("Verifying Schema Integrity...")
+    init_db() 
+    print("Schema Verified.")
 except Exception as e:
     print(f"Database Migration/Initialization Failed: {str(e)}")
 
