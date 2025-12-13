@@ -1,19 +1,27 @@
 import React, { useState, useEffect } from 'react';
 import { useOutletContext, useNavigate } from 'react-router-dom';
 import { TeamService } from '../services/teamService';
-import { FiSave, FiAlertTriangle, FiTrash2 } from 'react-icons/fi';
+import { FiSave, FiAlertTriangle, FiTrash2, FiUsers, FiSettings } from 'react-icons/fi';
+import UserManagement from './UserManagement';
 
 const TeamSettings = () => {
     const { language, selectedTeamId, user, teams, setTeams, setSelectedTeamId } = useOutletContext();
     const navigate = useNavigate();
 
+    // General Settings State
     const [teamName, setTeamName] = useState('');
     const [loading, setLoading] = useState(false);
     const [status, setStatus] = useState(null); // { type: 'success'|'error', msg }
 
     const t = {
-        title: language === 'zh' ? '一般設定' : 'General Settings',
-        subtitle: language === 'zh' ? '管理團隊的基本資訊' : 'Manage your team profile',
+        title: language === 'zh' ? '團隊設定' : 'Team Settings',
+        subtitle: language === 'zh' ? '管理您的團隊資訊與成員' : 'Manage your team profile and members',
+
+        // Section Headers
+        tab_general: language === 'zh' ? '一般設定' : 'General Settings',
+        tab_members: language === 'zh' ? '團隊成員' : 'Team Members',
+
+        // General Form
         team_name: language === 'zh' ? '團隊名稱' : 'Team Name',
         save: language === 'zh' ? '儲存變更' : 'Save Changes',
         danger_zone: language === 'zh' ? '危險區域' : 'Danger Zone',
@@ -64,20 +72,13 @@ const TeamSettings = () => {
         setLoading(true);
         try {
             await TeamService.deleteTeam(selectedTeamId);
-            // Remove from local list
             const remainingTeams = teams.filter(t => t.id !== selectedTeamId);
             setTeams(remainingTeams);
 
-            // Redirect
             if (remainingTeams.length > 0) {
-                // Switch to another team (e.g. first one)
                 setSelectedTeamId(remainingTeams[0].id);
-                // Also update URL to that team eventually, or just go home
-                // Actually setSelectedTeamId might not persist without calling backend switching api if fully realized?
-                // But for now context update + reload might be safe
-                // Let's just navigate home
                 navigate('/');
-                window.location.reload(); // Force refresh to clean state
+                window.location.reload();
             } else {
                 setSelectedTeamId(null);
                 navigate('/');
@@ -90,83 +91,223 @@ const TeamSettings = () => {
     };
 
     if (!selectedTeamId) {
-        return <div className="p-8">{language === 'zh' ? '請先選擇一個團隊' : 'Please select a team first.'}</div>;
+        return <div style={{ padding: '32px' }}>{language === 'zh' ? '請先選擇一個團隊' : 'Please select a team first.'}</div>;
     }
 
+    // Styles Objects (Replacements for Tailwind)
+    const styles = {
+        container: {
+            maxWidth: '1024px',
+            margin: '0 auto',
+            padding: '48px 32px',
+            display: 'flex',
+            flexDirection: 'column',
+            gap: '32px'
+        },
+        header: {
+            marginBottom: '8px'
+        },
+        sectionHeader: {
+            display: 'flex',
+            alignItems: 'center',
+            gap: '16px',
+            marginBottom: '24px'
+        },
+        iconBox: (color) => ({
+            padding: '12px',
+            borderRadius: '12px',
+            backgroundColor: color === 'blue' ? 'rgba(59, 130, 246, 0.1)' : 'rgba(168, 85, 247, 0.1)',
+            color: color === 'blue' ? '#3b82f6' : '#a855f7', // Blue-500 or Purple-500
+            border: `1px solid ${color === 'blue' ? 'rgba(59, 130, 246, 0.2)' : 'rgba(168, 85, 247, 0.2)'}`,
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center'
+        }),
+        divider: {
+            position: 'relative',
+            height: '1px',
+            width: '100%',
+            backgroundColor: 'var(--glass-border)'
+        },
+        input: {
+            width: '100%',
+            padding: '16px',
+            borderRadius: '12px',
+            border: '1px solid var(--glass-border)',
+            backgroundColor: 'rgba(0,0,0,0.2)',
+            color: 'var(--text-primary)',
+            fontSize: '1rem',
+            outline: 'none',
+            transition: 'all 0.2s',
+        },
+        buttonPrimary: {
+            display: 'flex',
+            alignItems: 'center',
+            padding: '14px 32px',
+            borderRadius: '12px',
+            fontWeight: 'bold',
+            backgroundColor: 'var(--accent-primary)',
+            color: 'white',
+            border: 'none',
+            cursor: loading ? 'not-allowed' : 'pointer',
+            opacity: (loading || teamName === currentTeam?.name) ? 0.5 : 1,
+            boxShadow: '0 4px 12px rgba(37, 99, 235, 0.2)',
+            transition: 'transform 0.1s'
+        },
+        buttonDanger: {
+            display: 'flex',
+            alignItems: 'center',
+            padding: '12px 24px',
+            borderRadius: '12px',
+            fontWeight: 'bold',
+            backgroundColor: 'rgba(239, 68, 68, 0.1)',
+            color: '#ef4444',
+            border: 'none',
+            cursor: loading ? 'not-allowed' : 'pointer',
+            transition: 'all 0.2s',
+            border: '1px solid transparent'
+        },
+        statusBox: (type) => ({
+            marginBottom: '24px',
+            padding: '16px',
+            borderRadius: '12px',
+            display: 'flex',
+            alignItems: 'center',
+            gap: '12px',
+            backgroundColor: type === 'success' ? 'rgba(34, 197, 94, 0.1)' : 'rgba(239, 68, 68, 0.1)',
+            color: type === 'success' ? '#22c55e' : '#ef4444',
+            border: `1px solid ${type === 'success' ? 'rgba(34, 197, 94, 0.2)' : 'rgba(239, 68, 68, 0.2)'}`
+        }),
+        dangerZone: {
+            backgroundColor: 'rgba(239, 68, 68, 0.03)',
+            borderRadius: '24px',
+            padding: '32px',
+            border: '1px solid rgba(239, 68, 68, 0.2)'
+        }
+    };
+
     return (
-        <div className="p-6 max-w-4xl mx-auto">
-            <h1 className="text-2xl font-bold mb-2" style={{ color: 'var(--text-primary)' }}>{t.title}</h1>
-            <p className="mb-8" style={{ color: 'var(--text-secondary)' }}>{t.subtitle}</p>
-
-            {/* General Section */}
-            <div className="rounded-xl p-6 mb-8 border border-gray-800" style={{ backgroundColor: 'var(--bg-secondary)', borderColor: 'var(--glass-border)' }}>
-                <form onSubmit={handleUpdate}>
-                    <div className="mb-4">
-                        <label className="block text-sm font-medium mb-2" style={{ color: 'var(--text-secondary)' }}>{t.team_name}</label>
-                        <input
-                            type="text"
-                            value={teamName}
-                            onChange={(e) => setTeamName(e.target.value)}
-                            disabled={!isOwner}
-                            className="w-full p-3 rounded-lg border bg-opacity-20 text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
-                            style={{
-                                backgroundColor: 'var(--bg-primary)',
-                                borderColor: 'var(--glass-border)',
-                                color: 'var(--text-primary)'
-                            }}
-                        />
-                    </div>
-
-                    {status && (
-                        <div className={`mb-4 p-3 rounded ${status.type === 'success' ? 'bg-green-500/10 text-green-500' : 'bg-red-500/10 text-red-500'}`}>
-                            {status.msg}
-                        </div>
-                    )}
-
-                    {isOwner && (
-                        <div className="flex justify-end">
-                            <button
-                                type="submit"
-                                disabled={loading || teamName === currentTeam?.name}
-                                className="flex items-center px-6 py-2 rounded-lg font-medium transition-colors"
-                                style={{
-                                    backgroundColor: 'var(--accent-primary)',
-                                    color: 'white',
-                                    opacity: (loading || teamName === currentTeam?.name) ? 0.5 : 1
-                                }}
-                            >
-                                <FiSave className="mr-2" />
-                                {loading ? t.processing : t.save}
-                            </button>
-                        </div>
-                    )}
-                </form>
+        <div style={styles.container}>
+            {/* Page Header */}
+            <div style={styles.header}>
+                <h1 style={{ fontSize: '1.875rem', fontWeight: 'bold', marginBottom: '8px', color: 'var(--text-primary)' }}>{t.title}</h1>
+                <p style={{ fontSize: '1.125rem', color: 'var(--text-secondary)' }}>{t.subtitle}</p>
             </div>
 
-            {/* Danger Zone */}
+            {/* SECTION 1: MEMBERS */}
+            <section className="animate-fade-in">
+                {/* Section Header */}
+                <div style={styles.sectionHeader}>
+                    <div style={styles.iconBox('blue')}>
+                        <FiUsers size={20} />
+                    </div>
+                    <div>
+                        <h2 style={{ fontSize: '1.25rem', fontWeight: 'bold', color: 'var(--text-primary)' }}>{t.tab_members}</h2>
+                        <p style={{ fontSize: '0.875rem', marginTop: '4px', color: 'var(--text-secondary)' }}>
+                            {language === 'zh' ? '管理團隊成員權限與邀請' : 'Manage team access and invitations'}
+                        </p>
+                    </div>
+                </div>
+
+                {/* Content */}
+                <UserManagement
+                    embedded={true}
+                    language={language}
+                    selectedTeamId={selectedTeamId}
+                    user={user}
+                    teams={teams}
+                />
+            </section>
+
+            {/* Divider */}
+            <div style={styles.divider}></div>
+
+            {/* SECTION 2: GENERAL SETTINGS */}
+            <section className="animate-fade-in">
+                {/* Section Header */}
+                <div style={styles.sectionHeader}>
+                    <div style={styles.iconBox('purple')}>
+                        <FiSettings size={20} />
+                    </div>
+                    <div>
+                        <h2 style={{ fontSize: '1.25rem', fontWeight: 'bold', color: 'var(--text-primary)' }}>{t.tab_general}</h2>
+                        <p style={{ fontSize: '0.875rem', marginTop: '4px', color: 'var(--text-secondary)' }}>
+                            {language === 'zh' ? '基本資料設定' : 'Basic profile settings'}
+                        </p>
+                    </div>
+                </div>
+
+                {/* Glass Panel Form */}
+                <div className="glass-panel" style={{ padding: '40px', borderRadius: '24px' }}>
+                    <form onSubmit={handleUpdate}>
+                        <div style={{ marginBottom: '32px', maxWidth: '576px' }}>
+                            <label style={{ display: 'block', fontSize: '0.875rem', fontWeight: '600', marginBottom: '12px', marginLeft: '4px', color: 'var(--text-secondary)' }}>
+                                {t.team_name}
+                            </label>
+                            <input
+                                type="text"
+                                value={teamName}
+                                onChange={(e) => setTeamName(e.target.value)}
+                                disabled={!isOwner}
+                                style={styles.input}
+                                onFocus={(e) => e.target.style.borderColor = 'var(--accent-primary)'}
+                                onBlur={(e) => e.target.style.borderColor = 'var(--glass-border)'}
+                            />
+                        </div>
+
+                        {status && (
+                            <div style={styles.statusBox(status.type)}>
+                                {status.type === 'success' ? <FiSave /> : <FiAlertTriangle />}
+                                <span style={{ fontWeight: '500' }}>{status.msg}</span>
+                            </div>
+                        )}
+
+                        {isOwner && (
+                            <div>
+                                <button
+                                    type="submit"
+                                    disabled={loading || teamName === currentTeam?.name}
+                                    style={styles.buttonPrimary}
+                                    onMouseOver={(e) => { if (!e.target.disabled) e.currentTarget.style.transform = 'translateY(-2px)' }}
+                                    onMouseOut={(e) => { e.currentTarget.style.transform = 'translateY(0)' }}
+                                >
+                                    <FiSave style={{ marginRight: '8px' }} />
+                                    {loading ? t.processing : t.save}
+                                </button>
+                            </div>
+                        )}
+                        {!isOwner && (
+                            <div style={{ padding: '16px', borderRadius: '12px', backgroundColor: 'rgba(31, 41, 55, 0.5)', color: '#9ca3af', fontSize: '0.875rem', border: '1px solid #374151', display: 'inline-block', fontWeight: '500' }}>
+                                {t.not_owner}
+                            </div>
+                        )}
+                    </form>
+                </div>
+            </section>
+
+            {/* SECTION 3: DANGER ZONE */}
             {isOwner && (
-                <div className="rounded-xl p-6 border border-red-900/30" style={{ backgroundColor: 'rgba(239, 68, 68, 0.05)' }}>
-                    <h2 className="text-xl font-bold mb-4 text-red-500 flex items-center">
-                        <FiAlertTriangle className="mr-2" />
-                        {t.danger_zone}
-                    </h2>
-                    <p className="mb-6 text-sm" style={{ color: 'var(--text-secondary)' }}>
-                        {t.disband_desc}
-                    </p>
-                    <button
-                        onClick={handleDisband}
-                        disabled={loading}
-                        className="flex items-center px-6 py-2 rounded-lg font-medium transition-colors bg-red-600 hover:bg-red-700 text-white"
-                    >
-                        <FiTrash2 className="mr-2" />
-                        {t.disband_team}
-                    </button>
-                </div>
-            )}
-            {!isOwner && (
-                <div className="p-4 rounded-lg bg-gray-800 text-gray-400 text-sm text-center">
-                    {t.not_owner}
-                </div>
+                <section className="animate-fade-in" style={{ paddingTop: '16px' }}>
+                    <div style={styles.dangerZone}>
+                        <h2 style={{ fontSize: '1.125rem', fontWeight: 'bold', marginBottom: '16px', color: '#ef4444', display: 'flex', alignItems: 'center' }}>
+                            <FiAlertTriangle style={{ marginRight: '12px' }} size={20} />
+                            {t.danger_zone}
+                        </h2>
+                        <p style={{ marginBottom: '32px', fontSize: '0.875rem', lineHeight: '1.625', maxWidth: '42rem', color: 'var(--text-secondary)', opacity: 0.8 }}>
+                            {t.disband_desc}
+                        </p>
+                        <button
+                            onClick={handleDisband}
+                            disabled={loading}
+                            style={styles.buttonDanger}
+                            onMouseOver={(e) => { e.currentTarget.style.backgroundColor = '#ef4444'; e.currentTarget.style.color = 'white'; }}
+                            onMouseOut={(e) => { e.currentTarget.style.backgroundColor = 'rgba(239, 68, 68, 0.1)'; e.currentTarget.style.color = '#ef4444'; }}
+                        >
+                            <FiTrash2 style={{ marginRight: '8px' }} />
+                            {t.disband_team}
+                        </button>
+                    </div>
+                </section>
             )}
         </div>
     );

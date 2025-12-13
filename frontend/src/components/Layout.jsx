@@ -176,6 +176,9 @@ const Layout = () => {
                 isMobile={isMobile}
                 selectedTeamId={selectedTeamId}
                 selectedTeamName={teams.find(t => t.id === selectedTeamId)?.name}
+                // New Props for Switcher
+                teams={teams}
+                setSelectedTeamId={setSelectedTeamId}
             />
             <div className="main-content" style={{
                 flex: 1,

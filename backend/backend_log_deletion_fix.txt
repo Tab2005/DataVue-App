@@ -5,3 +5,45 @@ Database connected: SQLite (Local Mode).
 Running Database Migrations...
 INFO  [alembic.runtime.migration] Context impl SQLiteImpl.
 INFO  [alembic.runtime.migration] Will assume non-transactional DDL.
+Token Verification Failed: Token expired, 1765609571 < 1765627140
+Token Verification Failed: Token expired, 1765609571 < 1765627140
+Token Verification Failed: Token expired, 1765609571 < 1765627186
+Token Verification Failed: Token expired, 1765609571 < 1765627187
+Token Verification Failed: Token expired, 1765609571 < 1765627191
+Token Verification Failed: Token expired, 1765609571 < 1765627192
+Token Verification Failed: Token expired, 1765609571 < 1765627204
+Token Verification Failed: Token expired, 1765609571 < 1765627218
+Token Verification Failed: Token expired, 1765609571 < 1765627219
+Token Verification Failed: Token expired, 1765609571 < 1765627219
+Token Verification Failed: Token expired, 1765609571 < 1765627219
+Token Verification Failed: Token expired, 1765609571 < 1765627219
+Token Verification Failed: Token expired, 1765609571 < 1765627219
+Token Verification Failed: Token expired, 1765609571 < 1765627222
+Token Verification Failed: Token expired, 1765609571 < 1765627222
+Token Verification Failed: Token expired, 1765609571 < 1765627222
+Database Migrations Applied.
+Token Verification Failed: Token expired, 1765609571 < 1765627222
+Token Verification Failed: Token expired, 1765609571 < 1765627222
+Token Verification Failed: Token expired, 1765609571 < 1765627222
+Token Verification Failed: Token expired, 1765609571 < 1765627222
+Token Verification Failed: Token expired, 1765609571 < 1765627222
+Token Verification Failed: Token expired, 1765609571 < 1765627222
+Token Verification Failed: Token expired, 1765609571 < 1765627222
+Token Verification Failed: Token expired, 1765609571 < 1765627222
+Token Verification Failed: Token expired, 1765609571 < 1765627222
+Token Verification Failed: Token expired, 1765609571 < 1765627222
+Token Verification Failed: Token expired, 1765609571 < 1765627223
+Token Verification Failed: Token expired, 1765609571 < 1765627223
+Token Verification Failed: Token expired, 1765633004 < 1765665310
+Token Verification Failed: Token expired, 1765633004 < 1765665310
+Token Verification Failed: Token expired, 1765633004 < 1765665310
+Token Verification Failed: Token expired, 1765633004 < 1765665310
+Token Verification Failed: Token expired, 1765633004 < 1765665310
+Token Verification Failed: Token expired, 1765633004 < 1765665310
+Token Verification Failed: Token expired, 1765633004 < 1765665310
+Token Verification Failed: Token expired, 1765633004 < 1765665310
+Token Verification Failed: Token expired, 1765633004 < 1765665310
+Token Verification Failed: Token expired, 1765633004 < 1765665310
+Token Verification Failed: Token expired, 1765633004 < 1765665310
+Token Verification Failed: Token expired, 1765633004 < 1765665310
+Token Verification Failed: Token expired, 1765633004 < 1765665310

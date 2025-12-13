@@ -1,14 +1,10 @@
 import React, { useEffect, useState } from 'react';
-import { useOutletContext } from 'react-router-dom';
 import { UserService } from '../services/userService';
 import { TeamService } from '../services/teamService';
 import InviteModal from '../components/InviteModal';
-import { FaUserPlus, FaEdit, FaTrash, FaShieldAlt, FaUserSlash, FaCheckCircle, FaTimesCircle } from 'react-icons/fa';
+import { FaUserPlus, FaEdit, FaTrash, FaShieldAlt, FaCheckCircle, FaTimesCircle } from 'react-icons/fa';
 
-const UserManagement = () => {
-    // 1. Get language & Team Context from Layout
-    const { language, selectedTeamId, user, teams } = useOutletContext();
-
+const UserManagement = ({ language, selectedTeamId, user, teams, embedded = false }) => {
     // 2. Define Translations
     const translations = {
         en: {
@@ -58,25 +54,21 @@ const UserManagement = () => {
             failed_delete: "移除失敗",
             failed_save: "儲存失敗",
 
-            // Table Headers
             th_user: "成員",
             th_role: "角色權限",
             th_status: "狀態",
             th_joined: "加入時間",
             th_actions: "操作",
 
-            // Empty/Unknown
             unknown: "未知",
             no_email: "無 Email",
 
-            // Modal
             modal_title: "編輯權限",
             modal_role: "角色",
             modal_status: "狀態",
             btn_cancel: "取消",
             btn_save: "儲存變更",
 
-            // Attributes
             role_viewer: "檢視者",
             role_member: "成員",
             role_admin: "管理員",
@@ -91,7 +83,7 @@ const UserManagement = () => {
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState(null);
     const [isModalOpen, setIsModalOpen] = useState(false);
-    const [isInviteModalOpen, setIsInviteModalOpen] = useState(false); // New Invite Modal State
+    const [isInviteModalOpen, setIsInviteModalOpen] = useState(false);
     const [editingUser, setEditingUser] = useState(null);
 
     // Form State
@@ -100,27 +92,137 @@ const UserManagement = () => {
         status: 'active'
     });
 
+    // --- STYLES (Vanilla CSS replacement for Tailwind) ---
+    const styles = {
+        container: {
+            width: '100%',
+            height: '100%',
+            overflowY: embedded ? 'visible' : 'auto',
+            padding: embedded ? '0' : '24px',
+            maxWidth: embedded ? 'none' : '1280px',
+            margin: embedded ? '0' : '0 auto'
+        },
+        header: {
+            marginBottom: '24px',
+            display: 'flex',
+            justifyContent: 'space-between',
+            alignItems: 'center'
+        },
+        inviteBtnContainer: {
+            marginBottom: '16px',
+            display: 'flex',
+            justifyContent: 'flex-end'
+        },
+        inviteBtn: {
+            display: 'flex',
+            alignItems: 'center',
+            color: 'white',
+            padding: '10px 20px',
+            borderRadius: '8px',
+            fontWeight: '500',
+            backgroundColor: 'var(--accent-primary)',
+            border: 'none',
+            cursor: 'pointer',
+            boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06)',
+            transition: 'transform 0.1s'
+        },
+        errorBox: {
+            backgroundColor: 'rgba(239, 68, 68, 0.1)',
+            borderLeft: '4px solid #ef4444',
+            padding: '16px',
+            marginBottom: '24px',
+            color: '#ef4444',
+            fontWeight: 'bold'
+        },
+        tableContainer: {
+            borderRadius: '16px',
+            overflow: 'hidden',
+            border: '1px solid var(--glass-border)',
+            padding: 0,
+            background: embedded ? 'transparent' : 'var(--glass-bg)', // Use full glass only if not embedded (embedded parent has styles)
+        },
+        table: {
+            width: '100%',
+            textAlign: 'left',
+            borderCollapse: 'collapse'
+        },
+        th: {
+            padding: '16px',
+            fontSize: '0.875rem',
+            fontWeight: '600',
+            color: 'var(--text-secondary)',
+            background: '#242526', // Dark header
+            borderBottom: '1px solid var(--glass-border)'
+        },
+        td: {
+            padding: '16px',
+            borderBottom: '1px solid rgba(255,255,255,0.05)'
+        },
+        badge: (bgColor, textColor) => ({
+            padding: '4px 8px',
+            borderRadius: '9999px',
+            fontSize: '0.75rem',
+            fontWeight: '600',
+            backgroundColor: bgColor,
+            color: textColor,
+            display: 'inline-block'
+        }),
+        actionBtn: {
+            padding: '8px',
+            borderRadius: '6px',
+            background: 'transparent',
+            border: 'none',
+            cursor: 'pointer',
+            color: 'var(--text-secondary)',
+            transition: 'background 0.2s',
+            marginLeft: '8px'
+        },
+        modalOverlay: {
+            position: 'fixed',
+            inset: 0,
+            backgroundColor: 'rgba(0, 0, 0, 0.7)',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            zIndex: 50,
+            backdropFilter: 'blur(4px)'
+        },
+        modalContent: {
+            width: '384px', // w-96
+            padding: '24px',
+            borderRadius: '16px',
+            border: '1px solid var(--glass-border)',
+            boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.25)'
+        },
+        input: {
+            width: '100%',
+            borderRadius: '8px',
+            padding: '12px',
+            outline: 'none',
+            backgroundColor: 'rgba(255,255,255,0.05)',
+            color: 'var(--text-primary)',
+            border: '1px solid var(--glass-border)',
+            marginTop: '8px'
+        }
+    };
+
     const fetchUsers = async () => {
         try {
             setLoading(true);
             let data = [];
 
             if (selectedTeamId) {
-                // Fetch Team Members
                 const members = await TeamService.getTeamMembers(selectedTeamId);
-                // Map to flat structure for table
                 data = members.map(m => ({
-                    id: m.user_id, // Key ID
+                    id: m.user_id,
                     name: m.user?.name,
                     email: m.user?.email,
-                    role: m.role, // Team Role
+                    role: m.role,
                     status: m.user?.status,
                     created_at: m.joined_at,
-                    // Store original for edit
                     _member: m
                 }));
             } else {
-                // Fetch All Users (Super Admin)
                 data = await UserService.getAllUsers();
             }
 
@@ -135,8 +237,10 @@ const UserManagement = () => {
     };
 
     useEffect(() => {
-        fetchUsers();
-    }, [language, selectedTeamId]); // Reload if language or Team changes
+        if (selectedTeamId || !embedded) {
+            fetchUsers();
+        }
+    }, [language, selectedTeamId]);
 
     const handleEdit = (user) => {
         setEditingUser(user);
@@ -153,10 +257,8 @@ const UserManagement = () => {
 
         try {
             if (selectedTeamId) {
-                // Remove from Team
                 await TeamService.removeMember(selectedTeamId, userId);
             } else {
-                // Delete System User
                 await UserService.deleteUser(userId);
             }
             setUsers(users.filter(u => u.id !== userId));
@@ -171,19 +273,13 @@ const UserManagement = () => {
         try {
             if (editingUser) {
                 if (selectedTeamId) {
-                    // Update Team Role
-                    // Note: Team Member doesn't have 'status', only 'role'
                     await TeamService.updateMemberRole(selectedTeamId, editingUser.id, formData.role);
-
-                    // Update user list state locally
                     setUsers(users.map(u => u.id === editingUser.id ? { ...u, role: formData.role } : u));
                 } else {
-                    // Update System User
                     const updatedUser = await UserService.updateUser(editingUser.id, formData);
                     setUsers(users.map(u => u.id === editingUser.id ? updatedUser : u));
                 }
             } else {
-                // Create/Invite logic
                 alert(t.invite_alert);
                 return;
             }
@@ -196,224 +292,181 @@ const UserManagement = () => {
     };
 
     const RoleBadge = ({ role }) => {
-        const colors = {
-            admin: 'bg-red-100 text-red-800',
-            member: 'bg-blue-100 text-blue-800',
-            viewer: 'bg-gray-100 text-gray-800'
-        };
+        let bg = '#f3f4f6'; // gray-100
+        let text = '#1f2937'; // gray-800
+
+        if (role === 'admin') {
+            bg = '#fee2e2'; // red-100
+            text = '#991b1b'; // red-800
+        } else if (role === 'member') {
+            bg = '#dbeafe'; // blue-100
+            text = '#1e40af'; // blue-800
+        }
+
         return (
-            <span className={`px-2 py-1 rounded-full text-xs font-semibold ${colors[role] || colors.viewer}`}>
+            <span style={styles.badge(bg, text)}>
                 {role.toUpperCase()}
             </span>
         );
     };
 
     const StatusBadge = ({ status }) => {
-        return status === 'active' ? (
-            <span className="flex items-center text-green-600 font-medium">
-                <FaCheckCircle className="mr-1" /> {t.status_active}
-            </span>
-        ) : (
-            <span className="flex items-center text-red-600 font-medium">
-                <FaTimesCircle className="mr-1" /> {t.status_suspended}
+        const isActive = status === 'active';
+        return (
+            <span style={{ display: 'flex', alignItems: 'center', color: isActive ? '#16a34a' : '#dc2626', fontWeight: '500' }}>
+                {isActive ? <FaCheckCircle style={{ marginRight: '4px' }} /> : <FaTimesCircle style={{ marginRight: '4px' }} />}
+                {isActive ? t.status_active : t.status_suspended}
             </span>
         );
     };
 
-
-
-    // Calculate Permissions
     const currentTeam = teams?.find(t => t.id === selectedTeamId);
     const myMemberInfo = users.find(u => u.id === user?.id);
     const isTeamAdmin = myMemberInfo?.role === 'admin';
-    // Logic: 
-    // - If NO selectedTeamId (System Mode) -> Only Super Admin sees this page anyway (protected route?) actually super admin dashboard is distinct. 
-    //   Wait, UserManagement is linked from Settings -> Users. 
-    //   If I am a regular user, I shouldn't see System Users. 
-    //   If I am in Team Mode, I see Team Members.
     const canManage = !selectedTeamId ? user?.is_super_admin : isTeamAdmin;
 
-    if (loading) return <div className="p-8 text-center" style={{ color: 'var(--text-secondary)' }}>{t.loading}</div>;
+    if (loading && !users.length) return <div style={{ padding: '32px', textAlign: 'center', color: 'var(--text-secondary)' }}>{t.loading}</div>;
 
     return (
-        <div className="p-6 max-w-7xl mx-auto h-full overflow-y-auto">
-            <div className="flex justify-between items-center mb-6">
-                <div>
-                    <h1 className="text-2xl font-bold" style={{ color: 'var(--text-primary)' }}>{t.title}</h1>
-                    <p style={{ color: 'var(--text-secondary)' }}>{t.subtitle}</p>
+        <div style={styles.container}>
+            {!embedded && (
+                <div style={styles.header}>
+                    <div>
+                        <h1 style={{ fontSize: '1.5rem', fontWeight: 'bold', color: 'var(--text-primary)' }}>{t.title}</h1>
+                        <p style={{ color: 'var(--text-secondary)' }}>{t.subtitle}</p>
+                    </div>
                 </div>
-            </div>
-            {/* Invite Button - Simplified prompt for now */}
-            {canManage && (
-                <button
-                    onClick={() => {
-                        if (selectedTeamId) {
-                            setIsInviteModalOpen(true);
-                        } else {
-                            alert(t.invite_alert);
-                        }
-                    }}
-                    className="flex items-center text-white px-4 py-2 rounded-lg transition"
-                    style={{ backgroundColor: 'var(--accent-primary)' }}
-                >
-                    <FaUserPlus className="mr-2" /> {t.invite}
-                </button>
             )}
 
+            {/* Invite Button */}
+            {canManage && (
+                <div style={styles.inviteBtnContainer}>
+                    <button
+                        onClick={() => {
+                            if (selectedTeamId) {
+                                setIsInviteModalOpen(true);
+                            } else {
+                                alert(t.invite_alert);
+                            }
+                        }}
+                        style={styles.inviteBtn}
+                        onMouseOver={(e) => e.currentTarget.style.transform = 'translateY(-2px)'}
+                        onMouseOut={(e) => e.currentTarget.style.transform = 'translateY(0)'}
+                    >
+                        <FaUserPlus style={{ marginRight: '8px' }} /> {t.invite}
+                    </button>
+                </div>
+            )}
 
-            {
-                error && (
-                    <div className="bg-red-500 bg-opacity-10 border-l-4 border-red-500 p-4 mb-6">
-                        <p className="text-red-500 font-bold">{error}</p>
-                    </div>
-                )
-            }
+            {error && <div style={styles.errorBox}>{error}</div>}
 
-            <div className="rounded-xl shadow-sm overflow-hidden" style={{ backgroundColor: 'var(--bg-secondary)', border: '1px solid var(--glass-border)' }}>
-                <table className="w-full text-left border-collapse">
-                    <thead style={{ borderBottom: '1px solid var(--glass-border)' }}>
-                        <tr>
-                            <th className="p-4 text-sm font-semibold" style={{ color: 'var(--text-secondary)' }}>{t.th_user}</th>
-                            <th className="p-4 text-sm font-semibold" style={{ color: 'var(--text-secondary)' }}>{t.th_role}</th>
-                            <th className="p-4 text-sm font-semibold" style={{ color: 'var(--text-secondary)' }}>{t.th_status}</th>
-                            <th className="p-4 text-sm font-semibold" style={{ color: 'var(--text-secondary)' }}>{t.th_joined}</th>
-                            <th className="p-4 text-sm font-semibold" style={{ color: 'var(--text-secondary)' }}>{t.th_status}</th>
-                            <th className="p-4 text-sm font-semibold" style={{ color: 'var(--text-secondary)' }}>{t.th_joined}</th>
-                            {canManage && <th className="p-4 text-sm font-semibold text-right" style={{ color: 'var(--text-secondary)' }}>{t.th_actions}</th>}
-                        </tr>
-                    </thead>
-                    <tbody className="divide-y divide-gray-800" style={{ borderColor: 'var(--glass-border)' }}>
-                        {users.map(user => (
-                            <tr key={user.id} className="transition" style={{ borderBottom: '1px solid var(--glass-border)' }}
-                                onMouseEnter={(e) => e.currentTarget.style.backgroundColor = 'var(--bg-hover)'}
-                                onMouseLeave={(e) => e.currentTarget.style.backgroundColor = 'transparent'}
-                            >
-                                <td className="p-4">
-                                    <div className="flex items-center">
-                                        <div className="h-10 w-10 rounded-full flex items-center justify-center font-bold mr-3"
-                                            style={{ backgroundColor: 'rgba(45, 136, 255, 0.2)', color: 'var(--accent-primary)' }}>
-                                            {user.name ? user.name.charAt(0).toUpperCase() : '?'}
-                                        </div>
-                                        <div>
-                                            <div className="font-medium" style={{ color: 'var(--text-primary)' }}>{user.name || t.unknown}</div>
-                                            <div className="text-sm" style={{ color: 'var(--text-secondary)' }}>{user.email || t.no_email}</div>
-                                        </div>
-                                    </div>
-                                </td>
-                                <td className="p-4"><RoleBadge role={user.role} /></td>
-                                <td className="p-4"><StatusBadge status={user.status} /></td>
-                                <td className="p-4 text-sm" style={{ color: 'var(--text-secondary)' }}>
-                                    {user.created_at ? new Date(user.created_at).toLocaleDateString() : '-'}
-                                </td>
-                                {canManage && (
-                                    <td className="p-4 text-right">
-                                        {/* Cannot edit/delete Owner */}
-                                        {selectedTeamId && currentTeam?.owner_id === user.id ? (
-                                            <span className="text-xs text-gray-500 italic">Owner</span>
-                                        ) : (
-                                            <>
-                                                <button
-                                                    onClick={() => handleEdit(user)}
-                                                    className="mx-2 transition"
-                                                    style={{ color: 'var(--text-secondary)' }}
-                                                    title="Edit Role"
-                                                    onMouseEnter={(e) => e.currentTarget.style.color = 'var(--accent-primary)'}
-                                                    onMouseLeave={(e) => e.currentTarget.style.color = 'var(--text-secondary)'}
-                                                >
-                                                    <FaEdit />
-                                                </button>
-                                                <button
-                                                    onClick={() => handleDelete(user.id)}
-                                                    className="mx-2 transition hover:text-red-500"
-                                                    style={{ color: 'var(--text-secondary)' }}
-                                                    title="Delete User"
-                                                >
-                                                    <FaTrash />
-                                                </button>
-                                            </>
-                                        )}
-                                    </td>
-                                )}
+            <div className="glass-panel" style={styles.tableContainer}>
+                <div style={{ overflowX: 'auto' }}>
+                    <table style={styles.table}>
+                        <thead>
+                            <tr>
+                                <th style={styles.th}>{t.th_user}</th>
+                                <th style={styles.th}>{t.th_role}</th>
+                                <th style={styles.th}>{t.th_status}</th>
+                                <th style={styles.th}>{t.th_joined}</th>
+                                {canManage && <th style={{ ...styles.th, textAlign: 'right' }}>{t.th_actions}</th>}
                             </tr>
-                        ))}
-                    </tbody>
-                </table>
+                        </thead>
+                        <tbody>
+                            {users.map((user, idx) => (
+                                <tr key={user.id} style={{
+                                    ...styles.td,
+                                    backgroundColor: idx % 2 === 0 ? 'transparent' : 'rgba(255,255,255,0.02)'
+                                }}>
+                                    <td style={styles.td}>
+                                        <div style={{ display: 'flex', alignItems: 'center' }}>
+                                            <div style={{
+                                                height: '40px', width: '40px', borderRadius: '50%',
+                                                display: 'flex', alignItems: 'center', justifyContent: 'center',
+                                                fontWeight: 'bold', marginRight: '12px',
+                                                backgroundColor: 'rgba(45, 136, 255, 0.2)',
+                                                color: 'var(--accent-primary)',
+                                                border: '1px solid rgba(45, 136, 255, 0.3)'
+                                            }}>
+                                                {user.name ? user.name.charAt(0).toUpperCase() : '?'}
+                                            </div>
+                                            <div>
+                                                <div style={{ fontWeight: '500', color: 'var(--text-primary)' }}>{user.name || t.unknown}</div>
+                                                <div style={{ fontSize: '0.75rem', marginTop: '2px', color: 'var(--text-secondary)' }}>{user.email || t.no_email}</div>
+                                            </div>
+                                        </div>
+                                    </td>
+                                    <td style={styles.td}><RoleBadge role={user.role} /></td>
+                                    <td style={styles.td}><StatusBadge status={user.status} /></td>
+                                    <td style={{ ...styles.td, fontSize: '0.875rem', color: 'var(--text-secondary)' }}>
+                                        {user.created_at ? new Date(user.created_at).toLocaleDateString() : '-'}
+                                    </td>
+                                    {canManage && (
+                                        <td style={{ ...styles.td, textAlign: 'right' }}>
+                                            {selectedTeamId && currentTeam?.owner_id === user.id ? (
+                                                <span style={{ fontSize: '0.75rem', padding: '2px 8px', borderRadius: '4px', backgroundColor: '#374151', color: '#9ca3af', border: '1px solid #4b5563' }}>Owner</span>
+                                            ) : (
+                                                <div style={{ display: 'flex', justifyContent: 'flex-end', alignItems: 'center', gap: '8px' }}>
+                                                    <button onClick={() => handleEdit(user)} style={styles.actionBtn} title="Edit">
+                                                        <FaEdit size={16} />
+                                                    </button>
+                                                    <button onClick={() => handleDelete(user.id)} style={styles.actionBtn} title="Delete">
+                                                        <FaTrash size={16} />
+                                                    </button>
+                                                </div>
+                                            )}
+                                        </td>
+                                    )}
+                                </tr>
+                            ))}
+                        </tbody>
+                    </table>
+                </div>
             </div>
 
             {/* Edit Modal */}
-            {
-                isModalOpen && (
-                    <div className="fixed inset-0 bg-black bg-opacity-70 flex items-center justify-center z-50 backdrop-blur-sm">
-                        <div className="rounded-lg p-6 w-96 shadow-xl" style={{ backgroundColor: 'var(--bg-secondary)', border: '1px solid var(--glass-border)' }}>
-                            <h2 className="text-xl font-bold mb-4" style={{ color: 'var(--text-primary)' }}>
-                                {selectedTeamId ? (language === 'zh' ? '編輯成員權限' : 'Edit Team Role') : t.modal_title}
-                            </h2>
-                            <form onSubmit={handleSave}>
-                                <div className="mb-4">
-                                    <label className="block text-sm font-medium mb-1" style={{ color: 'var(--text-secondary)' }}>{t.modal_role}</label>
-                                    <select
-                                        value={formData.role}
-                                        onChange={(e) => setFormData({ ...formData, role: e.target.value })}
-                                        className="w-full rounded-md p-2 outline-none"
-                                        style={{
-                                            backgroundColor: 'var(--bg-primary)',
-                                            color: 'var(--text-primary)',
-                                            borderColor: 'var(--glass-border)',
-                                            borderWidth: '1px'
-                                        }}
-                                    >
-                                        <option value="viewer">{t.role_viewer}</option>
-                                        <option value="member">{t.role_member}</option>
-                                        <option value="admin">{t.role_admin}</option>
-                                    </select>
-                                </div>
-                                <div className="mb-6">
-                                    {/* Only show Status for System Admin (Global User Edit) */}
-                                    {!selectedTeamId && (
-                                        <>
-                                            <label className="block text-sm font-medium mb-1" style={{ color: 'var(--text-secondary)' }}>{t.modal_status}</label>
-                                            <select
-                                                value={formData.status}
-                                                onChange={(e) => setFormData({ ...formData, status: e.target.value })}
-                                                className="w-full rounded-md p-2 outline-none"
-                                                style={{
-                                                    backgroundColor: 'var(--bg-primary)',
-                                                    color: 'var(--text-primary)',
-                                                    borderColor: 'var(--glass-border)',
-                                                    borderWidth: '1px'
-                                                }}
-                                            >
-                                                <option value="active">{t.status_active}</option>
-                                                <option value="suspended">{t.status_suspended}</option>
-                                            </select>
-                                        </>
-                                    )}
-                                </div>
-                                <div className="flex justify-end space-x-2">
-                                    <button
-                                        type="button"
-                                        onClick={() => setIsModalOpen(false)}
-                                        className="px-4 py-2 rounded-md transition"
-                                        style={{ color: 'var(--text-secondary)', backgroundColor: 'transparent' }}
-                                        onMouseEnter={(e) => e.currentTarget.style.color = 'var(--text-primary)'}
-                                        onMouseLeave={(e) => e.currentTarget.style.color = 'var(--text-secondary)'}
-                                    >
-                                        {t.btn_cancel}
-                                    </button>
-                                    <button
-                                        type="submit"
-                                        className="px-4 py-2 text-white rounded-md transition"
-                                        style={{ backgroundColor: 'var(--accent-primary)' }}
-                                    >
-                                        {t.btn_save}
-                                    </button>
-                                </div>
-                            </form>
-                        </div>
+            {isModalOpen && (
+                <div style={styles.modalOverlay}>
+                    <div className="glass-panel" style={styles.modalContent}>
+                        <h2 style={{ fontSize: '1.25rem', fontWeight: 'bold', marginBottom: '24px', display: 'flex', alignItems: 'center', gap: '8px', color: 'var(--text-primary)' }}>
+                            <FaShieldAlt style={{ color: '#3b82f6' }} />
+                            {selectedTeamId ? (language === 'zh' ? '編輯成員權限' : 'Edit Team Role') : t.modal_title}
+                        </h2>
+                        <form onSubmit={handleSave}>
+                            <div style={{ marginBottom: '24px' }}>
+                                <label style={{ display: 'block', fontSize: '0.875rem', fontWeight: '600', marginBottom: '8px', color: 'var(--text-secondary)' }}>{t.modal_role}</label>
+                                <select
+                                    value={formData.role}
+                                    onChange={(e) => setFormData({ ...formData, role: e.target.value })}
+                                    style={styles.input}
+                                >
+                                    <option value="viewer" style={{ color: 'black' }}>{t.role_viewer}</option>
+                                    <option value="member" style={{ color: 'black' }}>{t.role_member}</option>
+                                    <option value="admin" style={{ color: 'black' }}>{t.role_admin}</option>
+                                </select>
+                            </div>
+
+                            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: '12px', paddingTop: '16px', borderTop: '1px solid rgba(255,255,255,0.1)' }}>
+                                <button
+                                    type="button"
+                                    onClick={() => setIsModalOpen(false)}
+                                    style={{ padding: '8px 16px', borderRadius: '8px', background: 'transparent', color: 'var(--text-secondary)', border: 'none', cursor: 'pointer' }}
+                                >
+                                    {t.btn_cancel}
+                                </button>
+                                <button
+                                    type="submit"
+                                    style={{ padding: '8px 24px', borderRadius: '8px', background: 'var(--accent-primary)', color: 'white', border: 'none', cursor: 'pointer', fontWeight: 'bold' }}
+                                >
+                                    {t.btn_save}
+                                </button>
+                            </div>
+                        </form>
                     </div>
-                )
-            }
-            {/* Invite Modal */}
+                </div>
+            )}
+
+            {/* Invite Modal uses its own styles? Let's assume it might break too but one step at a time. */}
             <InviteModal
                 isOpen={isInviteModalOpen}
                 onClose={() => setIsInviteModalOpen(false)}

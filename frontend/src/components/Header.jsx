@@ -2,7 +2,6 @@ import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { FiSearch, FiBell, FiUser, FiGlobe, FiSettings, FiLogOut, FiMenu, FiAlertTriangle, FiPlus, FiBriefcase, FiShield } from 'react-icons/fi';
 import { FaShieldAlt } from 'react-icons/fa'; // Using FaShieldAlt for better visual
-import CreateTeamModal from './CreateTeamModal';
 
 const Header = ({ language, setLanguage, accounts = [], selectedAccountId, setSelectedAccountId, onGenerateReport, isSidebarCollapsed, setIsSidebarCollapsed, onLogout, user, isMobile, teams = [], selectedTeamId, setSelectedTeamId }) => {
   const navigate = useNavigate();
@@ -104,54 +103,7 @@ const Header = ({ language, setLanguage, accounts = [], selectedAccountId, setSe
 
       <div style={{ display: 'flex', alignItems: 'center', gap: isMobile ? '12px' : '24px' }}>
 
-        {/* --- Team Switcher --- */}
-        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-          <div style={{
-            display: 'flex',
-            alignItems: 'center',
-            gap: '6px',
-            background: 'var(--bg-hover)',
-            padding: '4px 8px',
-            borderRadius: '8px',
-            border: '1px solid var(--glass-border)'
-          }}>
-            <FiBriefcase color="var(--accent-primary)" />
-            <select
-              value={selectedTeamId || ''}
-              onChange={(e) => {
-                if (e.target.value === 'NEW') {
-                  setOpenCreateTeam(true);
-                } else {
-                  setSelectedTeamId(e.target.value);
-                }
-              }}
-              style={{
-                background: 'transparent',
-                border: 'none',
-                color: 'white',
-                outline: 'none',
-                maxWidth: isMobile ? '100px' : '140px',
-                fontSize: '0.9rem',
-                fontWeight: 'bold',
-                cursor: 'pointer'
-              }}
-            >
-              <option value="" style={{ color: 'black', fontWeight: 'bold' }}>
-                {language === 'zh' ? '👤 個人工作區' : '👤 Personal Workspace'}
-              </option>
-              <option disabled>──────────</option>
-              {teams.map(team => (
-                <option key={team.id} value={team.id} style={{ color: 'black' }}>
-                  {team.name}
-                </option>
-              ))}
-              <option disabled>──────────</option>
-              <option value="NEW" style={{ color: 'var(--accent-primary)', fontWeight: 'bold' }}>
-                + {language === 'zh' ? '建立新團隊' : 'Create Team'}
-              </option>
-            </select>
-          </div>
-        </div>
+
 
         {/* Account Selector: Visible on ALL screens now */}
         <div style={{ display: 'flex', gap: '8px' }}>
@@ -498,19 +450,7 @@ const Header = ({ language, setLanguage, accounts = [], selectedAccountId, setSe
 
       </div>
 
-      <CreateTeamModal
-        isOpen={openCreateTeam}
-        onClose={() => setOpenCreateTeam(false)}
-        language={language}
-        onTeamCreated={(newTeam) => {
-          // Force reload or update teams list via parent?
-          // Since we passed teams prop, we can't update it directly.
-          // But we can just reload the page for now or let the useEffect in Layout catch it?
-          // Ideally we need a setTeams prop or callback from Layout.
-          // For MVP: window.location.reload() is simplest to refetch everything
-          window.location.reload();
-        }}
-      />
+
     </header>
   );
 };

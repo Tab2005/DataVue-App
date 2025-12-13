@@ -17,7 +17,7 @@ const InviteModal = ({ isOpen, onClose, teamId, language }) => {
             const data = await TeamService.createInviteLink(teamId);
             setInviteData(data);
         } catch (err) {
-            setError(err.message || 'Failed');
+            setError(err.message || (language === 'en' ? 'Failed' : '發生錯誤'));
         } finally {
             setLoading(false);
         }
@@ -35,14 +35,14 @@ const InviteModal = ({ isOpen, onClose, teamId, language }) => {
     // Let's require button click for now to avoid spamming tokens.
 
     const t = {
-        title: language === 'zh' ? '邀請成員' : 'Invite Member',
-        desc: language === 'zh' ? '產生一個 24 小時有效的邀請連結，將此連結傳給成員即可。' : 'Generate a link valid for 24 hours. Share it to invite members.',
-        generate: language === 'zh' ? '產生連結' : 'Generate Link',
-        generating: language === 'zh' ? '產生中...' : 'Generating...',
-        copy: language === 'zh' ? '複製連結' : 'Copy Link',
-        copied: language === 'zh' ? '已複製！' : 'Copied!',
-        expires: language === 'zh' ? '過期時間' : 'Expires at',
-        close: language === 'zh' ? '關閉' : 'Close'
+        title: language === 'en' ? 'Invite Member' : '邀請成員',
+        desc: language === 'en' ? 'Generate a link valid for 24 hours. Share it to invite members.' : '產生一個 24 小時有效的邀請連結，將此連結傳給成員即可。',
+        generate: language === 'en' ? 'Generate Link' : '產生連結',
+        generating: language === 'en' ? 'Generating...' : '產生中...',
+        copy: language === 'en' ? 'Copy Link' : '複製連結',
+        copied: language === 'en' ? 'Copied!' : '已複製！',
+        expires: language === 'en' ? 'Expires at' : '過期時間',
+        close: language === 'en' ? 'Close' : '關閉'
     };
 
     return (
@@ -130,7 +130,7 @@ const InviteModal = ({ isOpen, onClose, teamId, language }) => {
 
                         <div style={{ marginTop: '16px', textAlign: 'right' }}>
                             <button onClick={() => setInviteData(null)} style={{ background: 'transparent', border: 'none', color: 'var(--accent-primary)', cursor: 'pointer', fontSize: '0.9rem' }}>
-                                {language === 'zh' ? '產生新的...' : 'Generate New...'}
+                                {language === 'en' ? 'Generate New...' : '產生新的...'}
                             </button>
                         </div>
                     </div>

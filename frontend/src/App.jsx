@@ -24,8 +24,7 @@ function App() {
           <Route element={<ProtectedRoute><Layout /></ProtectedRoute>}>
             <Route path="/" element={<Dashboard />} />
             <Route path="/analytics" element={<Analytics />} />
-            <Route path="/settings/users" element={<UserManagement />} />
-            <Route path="/settings/general" element={<TeamSettings />} />
+            <Route path="/settings/team" element={<TeamSettings />} />
             <Route path="/admin" element={<AdminDashboard />} />
           </Route>
         </Routes>

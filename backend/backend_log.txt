@@ -1,7 +1,0 @@
-\U0001f680 Starting Main Application...
-\u2705 FastAPI imported
-\U0001f4c2 Current Debug Dir: C:\Users\netgm\OneDrive\文件\Python\Facebook-Dashboard-Web-App\backend
-Database connected: SQLite (Local Mode).
-Running Database Migrations...
-INFO  [alembic.runtime.migration] Context impl SQLiteImpl.
-INFO  [alembic.runtime.migration] Will assume non-transactional DDL.

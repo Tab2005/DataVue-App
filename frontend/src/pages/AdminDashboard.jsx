@@ -1,14 +1,115 @@
 import React, { useState, useEffect } from 'react';
-import { FaUsers, FaBuilding, FaTrash, FaShieldAlt } from 'react-icons/fa';
+import { useOutletContext } from 'react-router-dom';
+import { FaUsers, FaBuilding, FaTrash, FaShieldAlt, FaSearch, FaChevronLeft, FaChevronRight } from 'react-icons/fa';
 import { AdminService } from '../services/adminService';
 
 const AdminDashboard = () => {
+    // 1. Get language from context
+    const { language } = useOutletContext();
+
+    // Data State
     const [stats, setStats] = useState({ user_count: 0, team_count: 0 });
     const [users, setUsers] = useState([]);
     const [teams, setTeams] = useState([]);
     const [loading, setLoading] = useState(true);
-    const [activeTab, setActiveTab] = useState('users');
     const [error, setError] = useState('');
+
+    // Pagination & Search State
+    const [userSearch, setUserSearch] = useState('');
+    const [userPage, setUserPage] = useState(1);
+    const [teamSearch, setTeamSearch] = useState('');
+    const [teamPage, setTeamPage] = useState(1);
+    const itemsPerPage = 10;
+
+    // 2. Define Translations
+    const translations = {
+        en: {
+            title: "Super Admin Dashboard",
+            subtitle: "Platform-wide management and statistics",
+            loading: "Loading Admin Dashboard...",
+            retry: "Retry",
+            access_error: "Access Error",
+
+            // Stats
+            total_users: "Total Users",
+            total_teams: "Total Teams",
+
+            // Shared
+            search_placeholder: "Search by name or ID...",
+            prev: "Previous",
+            next: "Next",
+            page: "Page",
+
+            // Section: Users
+            section_users: "All Users",
+            desc_users: "Manage all registered users on the platform",
+            th_name: "Name",
+            th_email: "Email",
+            th_role: "Role",
+            th_joined: "Joined",
+            th_actions: "Actions",
+            no_users: "No users found matching your search.",
+
+            // Section: Teams
+            section_teams: "All Teams",
+            desc_teams: "Overview of all active teams and their owners",
+            th_team_name: "Team Name",
+            th_owner_id: "Owner ID",
+            th_created_at: "Created At",
+            th_members: "Members",
+            no_teams: "No teams found matching your search.",
+
+            // Actions
+            confirm_delete: "Are you sure? This action is irreversible.",
+            role_super: "SUPER ADMIN",
+            role_user: "USER",
+            delete_title: "Force Delete User"
+        },
+        zh: {
+            title: "超級管理員後台",
+            subtitle: "平台全域管理與數據統計",
+            loading: "載入管理後台...",
+            retry: "重試",
+            access_error: "存取錯誤",
+
+            // Stats
+            total_users: "總使用者數",
+            total_teams: "總團隊數",
+
+            // Shared
+            search_placeholder: "搜尋名稱或 ID...",
+            prev: "上一頁",
+            next: "下一頁",
+            page: "頁次",
+
+            // Section: Users
+            section_users: "所有使用者",
+            desc_users: "管理平台所有註冊用戶",
+            th_name: "姓名",
+            th_email: "Email",
+            th_role: "角色",
+            th_joined: "加入時間",
+            th_actions: "操作",
+            no_users: "找不到符合搜尋條件的使用者。",
+
+            // Section: Teams
+            section_teams: "所有團隊",
+            desc_teams: "瀏覽所有活躍團隊與擁有者",
+            th_team_name: "團隊名稱",
+            th_owner_id: "擁有者 ID",
+            th_created_at: "建立時間",
+            th_members: "成員數",
+            no_teams: "找不到符合搜尋條件的團隊。",
+
+            // Actions
+            confirm_delete: "您確定嗎？此操作無法復原。",
+            role_super: "超級管理員",
+            role_user: "一般用戶",
+            delete_title: "強制刪除用戶"
+        }
+    };
+
+    const t = translations[language] || translations.zh;
 
     useEffect(() => {
         fetchData();
@@ -27,7 +128,6 @@ const AdminDashboard = () => {
             setTeams(Array.isArray(teamsData) ? teamsData : []);
         } catch (err) {
             console.error("Dashboard Load Error:", err);
-            // Fix: Store error as string to prevent React crash
             setError(err instanceof Error ? err.message : String(err));
         } finally {
             setLoading(false);
@@ -35,7 +135,7 @@ const AdminDashboard = () => {
     };
 
     const handleDeleteUser = async (userId) => {
-        if (!window.confirm("Are you sure? This action is irreversible.")) return;
+        if (!window.confirm(t.confirm_delete)) return;
         try {
             await AdminService.deleteUser(userId);
             setUsers(users.filter(u => u.id !== userId));
@@ -45,111 +145,289 @@ const AdminDashboard = () => {
         }
     };
 
+    // --- Filter & Pagination Logic ---
+
+    // Users
+    const filteredUsers = users.filter(u =>
+        (u.name && u.name.toLowerCase().includes(userSearch.toLowerCase())) ||
+        (u.email && u.email.toLowerCase().includes(userSearch.toLowerCase()))
+    );
+    const totalUserPages = Math.ceil(filteredUsers.length / itemsPerPage);
+    const currentUserItems = filteredUsers.slice((userPage - 1) * itemsPerPage, userPage * itemsPerPage);
+
+    // Teams
+    const filteredTeams = teams.filter(tm =>
+        (tm.name && tm.name.toLowerCase().includes(teamSearch.toLowerCase())) ||
+        (tm.owner_id && tm.owner_id.toLowerCase().includes(teamSearch.toLowerCase()))
+    );
+    const totalTeamPages = Math.ceil(filteredTeams.length / itemsPerPage);
+    const currentTeamItems = filteredTeams.slice((teamPage - 1) * itemsPerPage, teamPage * itemsPerPage);
+
+    useEffect(() => { setUserPage(1); }, [userSearch]); // Reset page on search
+    useEffect(() => { setTeamPage(1); }, [teamSearch]); // Reset page on search
+
+
+    // --- STYLES ---
+    const styles = {
+        container: {
+            maxWidth: '1280px',
+            margin: '0 auto',
+            padding: '48px 32px',
+            display: 'flex',
+            flexDirection: 'column',
+            gap: '32px'
+        },
+        header: { marginBottom: '8px' },
+        sectionHeader: {
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between', // Changed for Search Bar
+            flexWrap: 'wrap',
+            gap: '16px',
+            marginBottom: '24px'
+        },
+        headerLeft: {
+            display: 'flex',
+            alignItems: 'center',
+            gap: '16px',
+        },
+        iconBox: (color) => ({
+            padding: '12px',
+            borderRadius: '12px',
+            backgroundColor: color === 'blue' ? 'rgba(59, 130, 246, 0.1)' : color === 'purple' ? 'rgba(168, 85, 247, 0.1)' : 'rgba(234, 179, 8, 0.1)',
+            color: color === 'blue' ? '#3b82f6' : color === 'purple' ? '#a855f7' : '#eab308',
+            border: `1px solid ${color === 'blue' ? 'rgba(59, 130, 246, 0.2)' : color === 'purple' ? 'rgba(168, 85, 247, 0.2)' : 'rgba(234, 179, 8, 0.2)'}`,
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center'
+        }),
+        statsGrid: {
+            display: 'grid',
+            gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))',
+            gap: '24px',
+            marginBottom: '48px'
+        },
+        statCard: {
+            padding: '24px',
+            borderRadius: '16px',
+            backgroundColor: 'rgba(255,255,255,0.03)',
+            border: '1px solid var(--glass-border)',
+            display: 'flex',
+            justifyContent: 'space-between',
+            alignItems: 'center'
+        },
+        tableContainer: {
+            borderRadius: '16px',
+            overflow: 'hidden',
+            border: '1px solid var(--glass-border)',
+            padding: 0,
+            background: 'var(--glass-bg)',
+            marginBottom: '16px'
+        },
+        table: {
+            width: '100%',
+            textAlign: 'left',
+            borderCollapse: 'collapse'
+        },
+        th: {
+            padding: '16px',
+            fontSize: '0.875rem',
+            fontWeight: '600',
+            color: 'var(--text-secondary)',
+            background: '#242526',
+            borderBottom: '1px solid var(--glass-border)'
+        },
+        td: {
+            padding: '16px',
+            borderBottom: '1px solid rgba(255,255,255,0.05)',
+            color: 'var(--text-primary)'
+        },
+        divider: {
+            position: 'relative',
+            height: '1px',
+            width: '100%',
+            backgroundColor: 'var(--glass-border)'
+        },
+        badge: (role) => {
+            const isSuper = role === 'SUPER ADMIN';
+            return {
+                padding: '4px 8px',
+                borderRadius: '9999px',
+                fontSize: '0.75rem',
+                fontWeight: '600',
+                backgroundColor: isSuper ? 'rgba(234, 179, 8, 0.1)' : 'rgba(107, 114, 128, 0.1)',
+                color: isSuper ? '#eab308' : '#9ca3af',
+                display: 'inline-block'
+            };
+        },
+        // Search Input Style
+        searchContainer: {
+            position: 'relative',
+            minWidth: '250px'
+        },
+        searchInput: {
+            width: '100%',
+            padding: '10px 16px 10px 40px',
+            borderRadius: '12px',
+            backgroundColor: 'rgba(255,255,255,0.05)',
+            border: '1px solid var(--glass-border)',
+            color: 'var(--text-primary)',
+            outline: 'none',
+            fontSize: '0.875rem'
+        },
+        searchIcon: {
+            position: 'absolute',
+            left: '12px',
+            top: '50%',
+            transform: 'translateY(-50%)',
+            color: 'var(--text-secondary)'
+        },
+        // Pagination
+        pagination: {
+            display: 'flex',
+            justifyContent: 'center',
+            alignItems: 'center',
+            gap: '16px',
+            color: 'var(--text-secondary)',
+            fontSize: '0.875rem'
+        },
+        pageBtn: {
+            padding: '8px 16px',
+            borderRadius: '8px',
+            backgroundColor: 'rgba(255,255,255,0.05)',
+            border: '1px solid var(--glass-border)',
+            color: 'var(--text-primary)',
+            cursor: 'pointer',
+            display: 'flex',
+            alignItems: 'center',
+            gap: '8px'
+        }
+    };
+
     if (loading) return (
-        <div className="p-8 text-center text-gray-400 flex flex-col items-center justify-center h-full">
+        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', height: '100vh', color: 'var(--text-secondary)' }}>
             <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-blue-500 mb-4"></div>
-            Loading Admin Dashboard...
+            {t.loading}
         </div>
     );
 
     if (error) return (
-        <div className="p-8 text-center">
-            <h2 className="text-2xl text-red-500 font-bold mb-2">Access Error</h2>
-            <p className="text-gray-400 mb-4">{error}</p>
+        <div style={{ padding: '32px', textAlign: 'center' }}>
+            <h2 style={{ fontSize: '1.5rem', fontWeight: 'bold', marginBottom: '8px', color: '#ef4444' }}>{t.access_error}</h2>
+            <p style={{ color: 'var(--text-secondary)', marginBottom: '16px' }}>{error}</p>
             <button
                 onClick={fetchData}
-                className="px-4 py-2 bg-blue-600 rounded hover:bg-blue-700 transition text-white"
+                style={{ padding: '8px 16px', backgroundColor: '#2563eb', color: 'white', borderRadius: '8px', border: 'none', cursor: 'pointer' }}
             >
-                Retry
+                {t.retry}
             </button>
         </div>
     );
 
     return (
-        <div className="p-6 max-w-7xl mx-auto h-full overflow-y-auto">
-            <div className="flex items-center mb-6">
-                <FaShieldAlt className="text-blue-400 text-3xl mr-3" />
-                <h1 className="text-2xl font-bold" style={{ color: 'var(--text-primary)' }}>Super Admin Dashboard</h1>
+        <div style={styles.container}>
+            {/* Page Header */}
+            <div style={styles.header}>
+                <h1 style={{ fontSize: '1.875rem', fontWeight: 'bold', marginBottom: '8px', color: 'var(--text-primary)' }}>{t.title}</h1>
+                <p style={{ fontSize: '1.125rem', color: 'var(--text-secondary)' }}>{t.subtitle}</p>
             </div>
 
             {/* Stats Cards */}
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-8">
-                <div className="glass-panel p-6 rounded-xl flex items-center justify-between" style={{ backgroundColor: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.1)' }}>
+            <div style={styles.statsGrid}>
+                <div style={styles.statCard}>
                     <div>
-                        <p className="text-sm font-medium text-gray-400">Total Users</p>
-                        <p className="text-3xl font-bold text-white">{stats.user_count}</p>
+                        <p style={{ fontSize: '0.875rem', fontWeight: '500', color: 'var(--text-secondary)', marginBottom: '4px' }}>{t.total_users}</p>
+                        <p style={{ fontSize: '2.25rem', fontWeight: 'bold', color: 'var(--text-primary)' }}>{stats.user_count}</p>
                     </div>
-                    <div className="p-4 rounded-full bg-blue-500 bg-opacity-10">
-                        <FaUsers className="text-2xl text-blue-500" />
+                    <div style={styles.iconBox('blue')}>
+                        <FaUsers size={24} />
                     </div>
                 </div>
 
-                <div className="glass-panel p-6 rounded-xl flex items-center justify-between" style={{ backgroundColor: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.1)' }}>
+                <div style={styles.statCard}>
                     <div>
-                        <p className="text-sm font-medium text-gray-400">Total Teams</p>
-                        <p className="text-3xl font-bold text-white">{stats.team_count}</p>
+                        <p style={{ fontSize: '0.875rem', fontWeight: '500', color: 'var(--text-secondary)', marginBottom: '4px' }}>{t.total_teams}</p>
+                        <p style={{ fontSize: '2.25rem', fontWeight: 'bold', color: 'var(--text-primary)' }}>{stats.team_count}</p>
                     </div>
-                    <div className="p-4 rounded-full bg-purple-500 bg-opacity-10">
-                        <FaBuilding className="text-2xl text-purple-500" />
+                    <div style={styles.iconBox('purple')}>
+                        <FaBuilding size={24} />
                     </div>
                 </div>
             </div>
 
-            {/* Tabs */}
-            <div className="flex space-x-4 mb-6 border-b border-gray-700">
-                <button
-                    onClick={() => setActiveTab('users')}
-                    className={`pb-2 px-4 transition font-medium ${activeTab === 'users' ? 'border-b-2 border-blue-500 text-blue-500' : 'text-gray-400 hover:text-gray-300'}`}
-                >
-                    All Users
-                </button>
-                <button
-                    onClick={() => setActiveTab('teams')}
-                    className={`pb-2 px-4 transition font-medium ${activeTab === 'teams' ? 'border-b-2 border-purple-500 text-purple-500' : 'text-gray-400 hover:text-gray-300'}`}
-                >
-                    All Teams
-                </button>
-            </div>
+            {/* Divider */}
+            <div style={styles.divider}></div>
 
-            {/* Content Table */}
-            <div className="rounded-xl shadow-sm overflow-hidden" style={{ backgroundColor: 'rgba(0,0,0,0.2)', border: '1px solid rgba(255,255,255,0.05)' }}>
-                {activeTab === 'users' ? (
-                    <div className="overflow-x-auto">
-                        <table className="w-full text-left">
-                            <thead className="bg-black bg-opacity-20 text-gray-400 uppercase text-xs tracking-wider">
+            {/* SECTION 1: USERS */}
+            <section className="animate-fade-in">
+                {/* Section Header with Search */}
+                <div style={styles.sectionHeader}>
+                    <div style={styles.headerLeft}>
+                        <div style={styles.iconBox('blue')}>
+                            <FaUsers size={20} />
+                        </div>
+                        <div>
+                            <h2 style={{ fontSize: '1.25rem', fontWeight: 'bold', color: 'var(--text-primary)' }}>{t.section_users}</h2>
+                            <p style={{ fontSize: '0.875rem', marginTop: '4px', color: 'var(--text-secondary)' }}>
+                                {t.desc_users}
+                            </p>
+                        </div>
+                    </div>
+                    {/* Search Bar */}
+                    <div style={styles.searchContainer}>
+                        <FaSearch style={styles.searchIcon} />
+                        <input
+                            type="text"
+                            placeholder={t.search_placeholder}
+                            value={userSearch}
+                            onChange={(e) => setUserSearch(e.target.value)}
+                            style={styles.searchInput}
+                        />
+                    </div>
+                </div>
+
+                {/* Users Table */}
+                <div className="glass-panel" style={styles.tableContainer}>
+                    <div style={{ overflowX: 'auto' }}>
+                        <table style={styles.table}>
+                            <thead>
                                 <tr>
-                                    <th className="p-4">Name</th>
-                                    <th className="p-4">Email</th>
-                                    <th className="p-4">Role</th>
-                                    <th className="p-4">Joined</th>
-                                    <th className="p-4 text-right">Actions</th>
+                                    <th style={styles.th}>{t.th_name}</th>
+                                    <th style={styles.th}>{t.th_email}</th>
+                                    <th style={styles.th}>{t.th_role}</th>
+                                    <th style={styles.th}>{t.th_joined}</th>
+                                    <th style={{ ...styles.th, textAlign: 'right' }}>{t.th_actions}</th>
                                 </tr>
                             </thead>
-                            <tbody className="divide-y divide-gray-800">
-                                {users.length > 0 ? users.map(user => (
-                                    <tr key={user.id} className="hover:bg-white hover:bg-opacity-5 transition group">
-                                        <td className="p-4 font-medium text-white flex items-center gap-2">
-                                            {user.is_super_admin && <FaShieldAlt className="text-yellow-500" title="Super Admin" />}
-                                            {user.name}
+                            <tbody>
+                                {currentUserItems.length > 0 ? currentUserItems.map((user, idx) => (
+                                    <tr key={user.id} style={{
+                                        ...styles.td,
+                                        backgroundColor: idx % 2 === 0 ? 'transparent' : 'rgba(255,255,255,0.02)'
+                                    }}>
+                                        <td style={styles.td}>
+                                            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                                                {user.is_super_admin && <FaShieldAlt style={{ color: '#eab308' }} title={t.role_super} />}
+                                                <span style={{ fontWeight: '500' }}>{user.name}</span>
+                                            </div>
                                         </td>
-                                        <td className="p-4 text-gray-300">{user.email}</td>
-                                        <td className="p-4">
-                                            <span className={`px-2 py-1 rounded text-xs font-semibold ${user.is_super_admin ? 'bg-yellow-900 text-yellow-200' :
-                                                    user.role === 'admin' ? 'bg-red-900 text-red-200' :
-                                                        'bg-gray-700 text-gray-300'
-                                                }`}>
-                                                {user.is_super_admin ? 'SUPER ADMIN' : (user.role || 'VIEWER').toUpperCase()}
+                                        <td style={{ ...styles.td, color: 'var(--text-secondary)' }}>{user.email}</td>
+                                        <td style={styles.td}>
+                                            <span style={styles.badge(user.is_super_admin ? 'SUPER ADMIN' : 'USER')}>
+                                                {user.is_super_admin ? t.role_super : t.role_user}
                                             </span>
                                         </td>
-                                        <td className="p-4 text-gray-400 text-sm">
+                                        <td style={{ ...styles.td, fontSize: '0.875rem', color: 'var(--text-secondary)' }}>
                                             {user.created_at ? new Date(user.created_at).toLocaleDateString() : '-'}
                                         </td>
-                                        <td className="p-4 text-right">
+                                        <td style={{ ...styles.td, textAlign: 'right' }}>
                                             {!user.is_super_admin && (
                                                 <button
                                                     onClick={() => handleDeleteUser(user.id)}
-                                                    className="text-gray-600 hover:text-red-400 transition opacity-0 group-hover:opacity-100"
-                                                    title="Force Delete User"
+                                                    style={{ background: 'transparent', border: 'none', cursor: 'pointer', color: 'var(--text-secondary)', padding: '8px' }}
+                                                    onMouseOver={(e) => { e.currentTarget.style.color = '#ef4444' }}
+                                                    onMouseOut={(e) => { e.currentTarget.style.color = 'var(--text-secondary)' }}
+                                                    title={t.delete_title}
                                                 >
                                                     <FaTrash />
                                                 </button>
@@ -158,46 +436,129 @@ const AdminDashboard = () => {
                                     </tr>
                                 )) : (
                                     <tr>
-                                        <td colSpan="5" className="p-8 text-center text-gray-500">No users found</td>
+                                        <td colSpan="5" style={{ padding: '32px', textAlign: 'center', color: 'var(--text-secondary)' }}>
+                                            {loading ? t.loading : t.no_users}
+                                        </td>
                                     </tr>
                                 )}
                             </tbody>
                         </table>
                     </div>
-                ) : (
-                    <div className="overflow-x-auto">
-                        <table className="w-full text-left">
-                            <thead className="bg-black bg-opacity-20 text-gray-400 uppercase text-xs tracking-wider">
+                </div>
+
+                {/* Pagination Controls */}
+                {totalUserPages > 1 && (
+                    <div style={styles.pagination}>
+                        <button
+                            onClick={() => setUserPage(p => Math.max(1, p - 1))}
+                            disabled={userPage === 1}
+                            style={{ ...styles.pageBtn, opacity: userPage === 1 ? 0.5 : 1 }}
+                        >
+                            <FaChevronLeft /> {t.prev}
+                        </button>
+                        <span>{t.page} {userPage} / {totalUserPages}</span>
+                        <button
+                            onClick={() => setUserPage(p => Math.min(totalUserPages, p + 1))}
+                            disabled={userPage === totalUserPages}
+                            style={{ ...styles.pageBtn, opacity: userPage === totalUserPages ? 0.5 : 1 }}
+                        >
+                            {t.next} <FaChevronRight />
+                        </button>
+                    </div>
+                )}
+            </section>
+
+            {/* Divider */}
+            <div style={styles.divider}></div>
+
+            {/* SECTION 2: TEAMS */}
+            <section className="animate-fade-in">
+                {/* Section Header with Search */}
+                <div style={styles.sectionHeader}>
+                    <div style={styles.headerLeft}>
+                        <div style={styles.iconBox('purple')}>
+                            <FaBuilding size={20} />
+                        </div>
+                        <div>
+                            <h2 style={{ fontSize: '1.25rem', fontWeight: 'bold', color: 'var(--text-primary)' }}>{t.section_teams}</h2>
+                            <p style={{ fontSize: '0.875rem', marginTop: '4px', color: 'var(--text-secondary)' }}>
+                                {t.desc_teams}
+                            </p>
+                        </div>
+                    </div>
+                    {/* Search Bar */}
+                    <div style={styles.searchContainer}>
+                        <FaSearch style={styles.searchIcon} />
+                        <input
+                            type="text"
+                            placeholder={t.search_placeholder}
+                            value={teamSearch}
+                            onChange={(e) => setTeamSearch(e.target.value)}
+                            style={styles.searchInput}
+                        />
+                    </div>
+                </div>
+
+                {/* Teams Table */}
+                <div className="glass-panel" style={styles.tableContainer}>
+                    <div style={{ overflowX: 'auto' }}>
+                        <table style={styles.table}>
+                            <thead>
                                 <tr>
-                                    <th className="p-4">Team Name</th>
-                                    <th className="p-4">Owner ID</th>
-                                    <th className="p-4">Created At</th>
-                                    <th className="p-4 text-right">Members</th>
+                                    <th style={styles.th}>{t.th_team_name}</th>
+                                    <th style={styles.th}>{t.th_owner_id}</th>
+                                    <th style={styles.th}>{t.th_created_at}</th>
+                                    <th style={{ ...styles.th, textAlign: 'right' }}>{t.th_members}</th>
                                 </tr>
                             </thead>
-                            <tbody className="divide-y divide-gray-800">
-                                {teams.length > 0 ? teams.map(team => (
-                                    <tr key={team.id} className="hover:bg-white hover:bg-opacity-5 transition">
-                                        <td className="p-4 font-bold text-white">{team.name}</td>
-                                        <td className="p-4 text-gray-500 font-mono text-xs">{team.owner_id}</td>
-                                        <td className="p-4 text-gray-400 text-sm">
+                            <tbody>
+                                {currentTeamItems.length > 0 ? currentTeamItems.map((team, idx) => (
+                                    <tr key={team.id} style={{
+                                        ...styles.td,
+                                        backgroundColor: idx % 2 === 0 ? 'transparent' : 'rgba(255,255,255,0.02)'
+                                    }}>
+                                        <td style={{ ...styles.td, fontWeight: 'bold' }}>{team.name}</td>
+                                        <td style={{ ...styles.td, fontFamily: 'monospace', fontSize: '0.75rem', color: 'var(--text-secondary)' }}>{team.owner_id}</td>
+                                        <td style={{ ...styles.td, fontSize: '0.875rem', color: 'var(--text-secondary)' }}>
                                             {team.created_at ? new Date(team.created_at).toLocaleString() : '-'}
                                         </td>
-                                        <td className="p-4 text-right text-gray-400">
-                                            {/* Could add member count here if available */}
+                                        <td style={{ ...styles.td, textAlign: 'right', color: 'var(--text-secondary)' }}>
                                             -
                                         </td>
                                     </tr>
                                 )) : (
                                     <tr>
-                                        <td colSpan="4" className="p-8 text-center text-gray-500">No teams found</td>
+                                        <td colSpan="4" style={{ padding: '32px', textAlign: 'center', color: 'var(--text-secondary)' }}>
+                                            {loading ? t.loading : t.no_teams}
+                                        </td>
                                     </tr>
                                 )}
                             </tbody>
                         </table>
                     </div>
+                </div>
+
+                {/* Pagination Controls */}
+                {totalTeamPages > 1 && (
+                    <div style={styles.pagination}>
+                        <button
+                            onClick={() => setTeamPage(p => Math.max(1, p - 1))}
+                            disabled={teamPage === 1}
+                            style={{ ...styles.pageBtn, opacity: teamPage === 1 ? 0.5 : 1 }}
+                        >
+                            <FaChevronLeft /> {t.prev}
+                        </button>
+                        <span>{t.page} {teamPage} / {totalTeamPages}</span>
+                        <button
+                            onClick={() => setTeamPage(p => Math.min(totalTeamPages, p + 1))}
+                            disabled={teamPage === totalTeamPages}
+                            style={{ ...styles.pageBtn, opacity: teamPage === totalTeamPages ? 0.5 : 1 }}
+                        >
+                            {t.next} <FaChevronRight />
+                        </button>
+                    </div>
                 )}
-            </div>
+            </section>
         </div>
     );
 };
