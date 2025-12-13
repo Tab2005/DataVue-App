@@ -26,8 +26,15 @@ const Login = () => {
             console.error('Failed to decode JWT', error);
         }
 
-        // Redirect to dashboard
-        navigate('/');
+        // Check for return_to param
+        const params = new URLSearchParams(window.location.search);
+        const returnTo = params.get('return_to');
+
+        if (returnTo) {
+            navigate(decodeURIComponent(returnTo));
+        } else {
+            navigate('/');
+        }
     };
 
     const handleError = () => {

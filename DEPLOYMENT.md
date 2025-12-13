@@ -81,6 +81,38 @@
     *   如果登入成功但沒數據：檢查後端 Log，看是否有 `✅ Database connected: PostgreSQL detected`。
     *   如果顯示 "Failed to fetch"：檢查前端變數 `VITE_API_URL` 是否正確指向後端，且後端是否正常運作。
 
+
+---
+
+## 6. 部署分支版本 (Deploying Branch Versions)
+
+如果您需要部署非 `main` 分支 (例如 `dev-saas` 或其他測試分支)，請依照以下步驟：
+
+### 步驟 1：本地端推送 (Local Push)
+確保您已將目標分支推送到 GitHub：
+
+```bash
+# 切換到目標分支 (例如 dev-saas)
+git checkout dev-saas
+git pull origin dev-saas
+
+# 推送更新到 GitHub
+git push origin dev-saas
+```
+
+### 步驟 2：Zeabur 設定 (Zeabur Dashboard)
+1. 進入 [Zeabur Dashboard](https://dash.zeabur.com) 並點選您的專案。
+2. 針對 **Backend** 與 **Frontend** 服務分別執行：
+   - 點擊服務進入 **Settings (設定)**。
+   - 找到 **Source** 區塊的 **Branch** 選項。
+   - 切換為您想部署的分支 (例如 `dev-saas`)。
+   - Zeabur 將會自動觸發重新部署 (Redeploy)。
+
+> [!TIP]
+> **多環境部署**：建議在 Zeabur 建立一個新的 Service (例如 `frontend-staging`) 並連結到測試分支，這樣您可以同時保有 `main` (正式站) 與 `dev-saas` (測試站) 兩個運作中的環境。
+
+---
+
 祝佈署順利！
 
 ---

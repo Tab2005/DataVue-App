@@ -6,19 +6,23 @@ class FacebookService:
     BASE_URL = "https://graph.facebook.com/v24.0"
 
     @staticmethod
-    def get_headers(user_id):
-        token = TokenManager.get_user_token(user_id)
+    def get_headers(user_id, team_id=None):
+        if team_id:
+            token = TokenManager.get_team_token(team_id)
+        else:
+            token = TokenManager.get_user_token(user_id)
+        
         if not token:
             return None
         return {"Authorization": f"Bearer {token}"}
 
     @staticmethod
-    def get_all_ad_accounts(user_id):
+    def get_all_ad_accounts(user_id, team_id=None):
         """
         Fetches all ad accounts for the dropdown selector.
         Returns a list of dicts: {'id': 'act_123', 'name': 'My Account'}
         """
-        headers = FacebookService.get_headers(user_id)
+        headers = FacebookService.get_headers(user_id, team_id)
         if not headers:
             return [], "No access token found for this user."
 
@@ -49,11 +53,11 @@ class FacebookService:
             return [], str(e)
 
     @staticmethod
-    def get_account_insights(account_id, user_id, days=7):
+    def get_account_insights(account_id, user_id, days=7, team_id=None):
         """
         Fetches insights for the given account with comparison data.
         """
-        headers = FacebookService.get_headers(user_id)
+        headers = FacebookService.get_headers(user_id, team_id)
         if not headers:
             return None
             
@@ -333,12 +337,12 @@ class FacebookService:
         return formatted
 
     @staticmethod
-    def get_custom_report(account_id, user_id, since, until, level="account"):
+    def get_custom_report(account_id, user_id, since, until, level="account", team_id=None):
         """
         Flexible report fetcher for Analytics Page.
         Supports custom dates and different levels (campaign, adset, ad).
         """
-        headers = FacebookService.get_headers(user_id)
+        headers = FacebookService.get_headers(user_id, team_id)
         if not headers:
             return None
             
@@ -516,13 +520,13 @@ class FacebookService:
             return None
 
     @staticmethod
-    def get_analytics_trend(account_id, user_id, since, until, prev_since=None, prev_until=None):
+    def get_analytics_trend(account_id, user_id, since, until, prev_since=None, prev_until=None, team_id=None):
         """
         Fetches DAILY trend data for current and optional previous period.
         Merges them by relative Day Index.
         Calculates ALL metrics (CPAS, Funnel, Engagement) to match Table data.
         """
-        headers = FacebookService.get_headers(user_id)
+        headers = FacebookService.get_headers(user_id, team_id)
         if not headers:
             return None
 

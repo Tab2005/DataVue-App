@@ -4,6 +4,10 @@ import { GoogleOAuthProvider } from '@react-oauth/google';
 import Login from './pages/Login';
 import Dashboard from './pages/Dashboard';
 import Analytics from './pages/Analytics';
+import UserManagement from './pages/UserManagement';
+import InvitePage from './pages/InvitePage';
+import AdminDashboard from './pages/AdminDashboard';
+import TeamSettings from './pages/TeamSettings';
 import Layout from './components/Layout';
 import ProtectedRoute from './components/ProtectedRoute';
 
@@ -16,10 +20,13 @@ function App() {
       <Router>
         <Routes>
           <Route path="/login" element={<Login />} />
-          <Route path="/login" element={<Login />} />
+          <Route path="/invite/:code" element={<InvitePage />} />
           <Route element={<ProtectedRoute><Layout /></ProtectedRoute>}>
             <Route path="/" element={<Dashboard />} />
             <Route path="/analytics" element={<Analytics />} />
+            <Route path="/settings/users" element={<UserManagement />} />
+            <Route path="/settings/general" element={<TeamSettings />} />
+            <Route path="/admin" element={<AdminDashboard />} />
           </Route>
         </Routes>
       </Router>

@@ -526,4 +526,111 @@ A collapsible section or modal "自訂表格指標欄位 (Custom Table Metric Co
 1.  **Phase 1 - DB & Auth**: 建立 PostgreSQL 與 User Table，完成 Google Login 的資料庫綁定。
 2.  **Phase 2 - Team Logic**: 實作 Team/Member 關聯與 Token 共享邏輯。
 3.  **Phase 3 - UI/UX**: 完成成員管理介面與權限防護。
-4.  **Phase 4 - Billing**: 串接 Stripe 金流。
+
+## 12. Phase 5: SaaS Multi-Tenant Architecture (SaaS 多租戶架構)
+
+**日期**: 2025-12-12
+**狀態**: 已確認需求 (Requirements Confirmed) -> 規劃中
+## 12. Phase 5: Hybrid SaaS Architecture (混合式 SaaS 架構)
+
+**日期**: 2025-12-13
+**狀態**: ✅ 已完成 (Completed) - v1.5.0
+**核心理念**: **「個人優先，團隊為輔 (Individual First, Team Optional)」**
+
+### 1. 用戶模型 (User Model)
+*   **預設狀態 (Independent)**: 每個註冊用戶都是獨立的個體。
+    *   擁有自己的 `fb_access_token` (存在 `users` 表)。
+    *   預設進入 **「個人工作區 (Personal Workspace)」**。
+    *   可以看到自己的廣告數據。
+
+### 2. 團隊協作機制 (Team Collaboration Mechanics)
+
+#### A. 邀請方式 (Invitation Method)
+*   **方法**: **邀請連結 (Invite Link)**。
+*   **流程**:
+    1.  A (團隊管理員) 在後台點擊「產生邀請連結」。
+    2.  系統產生一個帶有 Token 的 URL (e.g., `.../invite?code=xyz`).
+    3.  A 將連結複製傳給 B (Line/Slack/Email)。
+    4.  B 點擊連結 -> Google 登入 -> 系統自動將 B 加入該團隊。
+    5.  **安全機制**: 連結預設 **24小時後失效**，過期需重新產生。
+    *   **狀態**: ✅ 已實作 (Implemented)
+
+#### B. 數據權限 (Data Visibility)
+*   **核心邏輯**: **Token 繼承 (Token Inheritance)**。
+*   **答案**: **是的，B 可以看到 A 設定的廣告帳號。**
+*   **運作原理**:
+    *   當 A 設定好團隊的 Facebook Token 後，這個 Token 是綁定在 `Team` 物件上的。
+    *   當 B 切換到這個團隊時，後端 API 統一使用該 `Team` 的 Token 去向 Facebook 要資料。
+    *   **結果**: B 不需要擁有自己的 Facebook 廣告帳號，他只是「透過 A 的授權」來查看數據。這正是企業版協作的核心價值。
+    *   **安全性**: B (若為一般成員) **無法修改/移除** 這個 Token，只有 A (管理員) 可以。
+    *   **狀態**: ✅ 已實作 (Implemented)
+
+### 3. 超級管理員 (Super Admin)
+*   **全域管理**: 創始人擁有一個獨立的分頁 (Admin Portal)。
+*   **功能**:
+    *   條列所有註冊用戶 (User List)。
+    *   條列所有已建立的團隊 (Team List)。
+    *   管理用戶狀態 (停權/刪除)。
+    *   **狀態**: ✅ 已實作基礎版 (Basic Implementation)
+
+### 4. 介面呈現 (UI Presentation)
+*   **Header Switcher**:
+    *   預設選項: `👤 個人工作區 (My Workspace)`
+    *   其他選項: `🏢 行銷部 A 組 (Marketing Team A)`
+*   **Settings**:
+    *   在個人工作區時，設定的是 `User Token`。
+    *   在團隊工作區時，設定的是 `Team Token` (僅 Admin 可見)。
+    *   **狀態**: ✅ 已實作 (Implemented)
+
+這個架構保留了 Phase 1 的簡單性 (註冊即用)，同時疊加了 Phase 5 的團隊擴充性。
+
+## 13. 角色與權限階級制度 (Role Hierarchy & Permissions)
+
+**日期**: 2025-12-13
+**狀態**: ✅ 已實作 (Implemented)
+
+本系統採用 **雙層級權限架構**：系統層級 (System Level) 與 團隊層級 (Team Level)。
+
+### 1. 系統層級 (System Level)
+決定使用者對整個平台的控制權。
+
+*   **SUPER ADMIN (超級管理員)**
+    *   **定義**: 系統的最高管理者 (System God)。
+    *   **權限**:
+        *   可存取 `/admin` 儀表板。
+        *   可查看系統中所有使用者 (All Users) 與所有團隊 (All Teams)。
+        *   可強制刪除任何使用者帳號。
+        *   **不受團隊權限限制** (即便是非成員也能查看團隊資訊)。
+    *   **目前帳號**: `tabchen2005@gmail.com`
+
+*   **USER (一般使用者)**
+    *   **定義**: 註冊進來的普通成員。
+    *   **權限**: 僅能管理自己的個人資料、建立團隊、或接受邀請加入團隊。
+
+### 2. 團隊層級 (Team Level)
+當使用者進入特定團隊 (Workspace) 後，適用該團隊的角色規則。
+
+*   **OWNER (團隊擁有者)**
+    *   **定義**: 團隊的創建者。
+    *   **特性**:
+        *   **不可被移除**: 擁有至高無上的地位，即便是其他管理員也無法將其踢出。
+        *   **最高權限**: 可解散團隊、管理所有成員。
+        *   **繼承**: 自動擁有 ADMIN 的所有權限。
+
+*   **ADMIN (團隊管理員)**
+    *   **定義**: 由 Owner 指派的協助管理者。
+    *   **權限**:
+        *   **邀請成員**: 可產生邀請連結。
+        *   **移除成員**: 可將 MEMBER 或其他 ADMIN 踢出團隊 (但在系統中帳號保留)。
+        *   **編輯角色**: 可調整成員的權限 (e.g., 升級 Member 為 Admin)。
+        *   **Token 管理**: 可設定團隊共用的 Facebook Token。
+    *   **限制**: **無法移除 OWNER**。
+
+*   **MEMBER (一般成員)**
+    *   **定義**: 被邀請加入團隊的協作者。
+    *   **權限**:
+        *   **唯讀**: 只能查看數據 (Dashboard, Analytics)。
+        *   **隱藏**: 看不到「成員管理」頁面中的操作按鈕 (Delete/Edit)。
+        *   **被動**: 無法管理 Token，使用的是團隊共享的 Token。
+
+

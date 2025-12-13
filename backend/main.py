@@ -9,9 +9,12 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from pydantic import BaseModel
 from auth import TokenManager
+import alembic.config
+import alembic.command
+
 # Robust Imports with Error Handling
 try:
-    from database import init_db, engine, SessionLocal, User
+    from database import init_db, engine, SessionLocal, User, Team
     DB_STATUS = "OK"
 except Exception as e:
     print(f"❌ DATABASE IMPORT ERROR: {e}", file=sys.stderr)
@@ -34,23 +37,44 @@ from dotenv import load_dotenv
 from google.oauth2 import id_token
 from google.auth.transport import requests as google_requests
 
+# Import Routers
+from routers import users, teams, invites, admin
+from dependencies import get_current_team
+
 # Initialize Database
 # Load environment variables FIRST
 load_dotenv()
 
 # Initialize Database with Error Handling
 try:
-    init_db()
+    # AUTO MIGRATION FOR ZEABUR
+    # Run alembic upgrade head programmatically
+    print("Running Database Migrations...")
+    alembic_cfg = alembic.config.Config("alembic.ini")
+    alembic.command.upgrade(alembic_cfg, "head")
+    print("Database Migrations Applied.")
 except Exception as e:
-    print(f"❌ Database Initialization Failed: {str(e)}")
+    print(f"Database Migration/Initialization Failed: {str(e)}")
 
 
 app = FastAPI()
 
+# Register Routers
+app.include_router(users.router, prefix="/api/users", tags=["users"])
+app.include_router(teams.router, prefix="/api/teams", tags=["teams"]) # Team Management
+app.include_router(invites.router, prefix="/api", tags=["invites"]) # Invites (Root api prefix for /invites)
+app.include_router(admin.router) # Admin Router (prefix defined in router)
+
 # Configure CORS
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"], 
+    # allow_origins=["*"],  # Wildcard is not allowed with allow_credentials=True
+    allow_origins=[
+        "http://localhost:5173",
+        "http://127.0.0.1:5173",
+        "http://localhost:3000",
+        "https://facebook-dashboard-web-app.zeabur.app" # Production URL if known, adding placeholder
+    ],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -67,7 +91,7 @@ def health_check():
         "status": "online", 
         "database_status": DB_STATUS,
         "database_type": db_info,
-        "message": "Backend is running (Safe Mode)"
+        "message": "Backend is running (Safe Mode) with User Management"
     }
 
 # --- Google Token Verification ---
@@ -77,15 +101,20 @@ security = HTTPBearer()
 def verify_google_token(credentials: HTTPAuthorizationCredentials = Depends(security)):
     token = credentials.credentials
     try:
-        # P.S. Ideally cache the validation or use a library that handles caching certs
-        # DEBUG LOGGING
-        print(f"🔐 Verifying Token: {token[:10]}... ClientID: {GOOGLE_CLIENT_ID}", file=sys.stderr)
+        # Debug: Check Client ID
+        if not GOOGLE_CLIENT_ID:
+            print("CRITICAL: GOOGLE_CLIENT_ID is missing from env!", file=sys.stderr, flush=True)
+
+        # print(f"🔐 Verifying Token: {token[:10]}... ClientID: {GOOGLE_CLIENT_ID}", file=sys.stderr)
         
-        id_info = id_token.verify_oauth2_token(token, google_requests.Request(), GOOGLE_CLIENT_ID)
+        # Add clock skew tolerance (e.g., 60 seconds) to handle local time discrepancies
+        id_info = id_token.verify_oauth2_token(token, google_requests.Request(), GOOGLE_CLIENT_ID, clock_skew_in_seconds=60)
         userid = id_info['sub']
         return userid
     except ValueError as e:
-        print(f"❌ Token Verification Failed: {e}", file=sys.stderr)
+        print(f"Token Verification Failed: {e}", file=sys.stderr, flush=True)
+        # Also print to stdout for safety
+        print(f"Token Verification Failed: {e}", flush=True)
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail=f"Invalid authentication credentials: {str(e)}",
@@ -93,10 +122,13 @@ def verify_google_token(credentials: HTTPAuthorizationCredentials = Depends(secu
         )
 # ---------------------------------
 
+from typing import Optional
+
 class ExchangeRequest(BaseModel):
     app_id: str
     app_secret: str
     short_token: str
+    team_id: Optional[str] = None
 
 @app.get("/")
 def read_root():
@@ -108,7 +140,8 @@ def exchange_token_endpoint(request: ExchangeRequest, user_id: str = Depends(ver
         request.app_id, 
         request.app_secret, 
         request.short_token,
-        user_id # Pass user_id
+        user_id, # Pass user_id
+        team_id=request.team_id # Pass team_id
     )
     if not success:
         raise HTTPException(status_code=400, detail=message)
@@ -151,18 +184,28 @@ def get_token_status(user_id: str = Depends(verify_google_token)):
         session.close()
 
 @app.get("/api/ad-accounts")
-def get_ad_accounts(user_id: str = Depends(verify_google_token)):
-    # Pass user_id
-    accounts, error = FacebookService.get_all_ad_accounts(user_id)
+def get_ad_accounts(
+    user_id: str = Depends(verify_google_token),
+    team: Team = Depends(get_current_team)
+):
+    team_id = team.id if team else None
+    # Pass user_id and team_id
+    accounts, error = FacebookService.get_all_ad_accounts(user_id, team_id=team_id)
     if error:
         return []
     return accounts
 
 @app.get("/api/dashboard-data")
-def get_dashboard_data(account_id: str = None, days: int = 7, user_id: str = Depends(verify_google_token)):
+def get_dashboard_data(
+    account_id: str = None, 
+    days: int = 7, 
+    user_id: str = Depends(verify_google_token), 
+    team: Team = Depends(get_current_team)
+):
+    team_id = team.id if team else None
     if account_id:
-        # Pass user_id and days
-        insights = FacebookService.get_account_insights(account_id, user_id, days)
+        # Pass user_id, days, and team_id
+        insights = FacebookService.get_account_insights(account_id, user_id, days, team_id=team_id)
         if insights:
             return {
                 "source": "real",
@@ -192,13 +235,15 @@ def get_analytics_data(
     since: str, 
     until: str, 
     level: str = "account", 
-    user_id: str = Depends(verify_google_token)
+    user_id: str = Depends(verify_google_token),
+    team: Team = Depends(get_current_team)
 ):
     """
     Endpoint for the Advanced Analytics page.
     Requires account_id, custom date range (since/until), and aggregation level.
     """
-    report_data = FacebookService.get_custom_report(account_id, user_id, since, until, level)
+    team_id = team.id if team else None
+    report_data = FacebookService.get_custom_report(account_id, user_id, since, until, level, team_id=team_id)
     
     if report_data is None:
          raise HTTPException(status_code=400, detail="Failed to fetch analytics data")
@@ -218,12 +263,14 @@ def get_analytics_trend_data(
     until: str,
     prev_since: str = None,
     prev_until: str = None,
-    user_id: str = Depends(verify_google_token)
+    user_id: str = Depends(verify_google_token),
+    team: Team = Depends(get_current_team)
 ):
     """
     Endpoint for daily trend chart data.
     """
-    trend_data = FacebookService.get_analytics_trend(account_id, user_id, since, until, prev_since, prev_until)
+    team_id = team.id if team else None
+    trend_data = FacebookService.get_analytics_trend(account_id, user_id, since, until, prev_since, prev_until, team_id=team_id)
     if trend_data is None:
          # Return empty list instead of 400 to avoid breaking UI if just no data
          return []
@@ -233,6 +280,6 @@ def get_analytics_trend_data(
 if __name__ == "__main__":
     import uvicorn
     print("🚀 STARTING UVICORN SERVER...", file=sys.stderr)
-    # Use 'app' object directly instead of string to avoid re-import issues
-    # Disable reload for production stability
-    uvicorn.run(app, host="0.0.0.0", port=8000)
+    # Enable reload for development
+    # Forced Reload Trigger [Timestamp: 1450]
+    uvicorn.run("main:app", host="0.0.0.0", port=8000, reload=True)

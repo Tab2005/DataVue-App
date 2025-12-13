@@ -1,5 +1,26 @@
 # Changelog
 
+## v1.5.0 (2025-12-13) - Hybrid SaaS Architecture & Team Management
+### New Features
+- **Team Management System**:
+    - **CRUD Operations**: Support for Creating, Updating (with rename), and Disbanding teams.
+    - **Cascade Deletion**: safely removes all associated members and invite links when a team is disbanded.
+- **Invitation System**:
+    - **Secure Links**: Generate time-limited (24h) invitation links for easy team onboarding.
+    - **Role Assignment**: Automatically assigns 'Member' role to joined users.
+- **Role-Based Access Control (RBAC)**:
+    - **Dual Hierarchy**: Implemented System-Level (Super Admin) vs. Team-Level (Owner, Admin, Member, Viewer) roles.
+    - **Permission Barriers**: UI elements (e.g., Delete Button, Invite Button) hide/disable based on user role.
+- **API Connection Manager**:
+    - **Context Aware**: 'API Settings' modal now intelligently switches between "Personal Token" and "Team Token" modes based on active workspace.
+    - **Token Inheritance**: Team members automatically inherit access to the Team's Facebook Token without needing their own ad account access.
+
+### Improvements
+- **Localization**:
+    - **Bilingual Alerts**: Critical system alerts (e.g., "Final Warning" before team deletion) now support English/Chinese switching.
+- **Stability**:
+    - **Windows Compatibility**: Fixed a major server crash caused by Unicode Emoji characters (`ℹ️`, `🚀`) in console logs on Windows environments.
+
 ## v1.4.3 (2025-12-12) - Facebook Token Expiration Notification
 - **New Feature**:
     - **Token Expiration Warning**: Implemented a notification system to alert users when their Facebook Access Token is expiring within 3 days.

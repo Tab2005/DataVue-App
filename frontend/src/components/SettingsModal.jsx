@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 
-const SettingsModal = ({ isOpen, onClose, language }) => {
+const SettingsModal = ({ isOpen, onClose, language, teamId, teamName }) => {
     const [formData, setFormData] = useState({
         appId: '',
         appSecret: '',
@@ -12,7 +12,7 @@ const SettingsModal = ({ isOpen, onClose, language }) => {
     if (!isOpen) return null;
 
     const t = {
-        title: language === 'zh' ? '設定 API 連線' : 'API Connection Settings',
+        title: teamId ? (language === 'zh' ? `設定 API: ${teamName}` : `Setup API: ${teamName}`) : (language === 'zh' ? '設定 API 連線' : 'API Connection Settings'),
         appId: 'App ID',
         appSecret: 'App Secret',
         shortToken: language === 'zh' ? '短期權杖 (Short-Lived Token)' : 'Short-Lived Token',
@@ -33,17 +33,23 @@ const SettingsModal = ({ isOpen, onClose, language }) => {
             const apiUrl = import.meta.env.VITE_API_URL || 'http://localhost:8000';
             const token = localStorage.getItem('google_token');
 
+            const payload = {
+                app_id: formData.appId,
+                app_secret: formData.appSecret,
+                short_token: formData.shortToken
+            };
+
+            if (teamId) {
+                payload.team_id = teamId;
+            }
+
             const response = await fetch(`${apiUrl}/api/auth/exchange-token`, {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',
                     'Authorization': `Bearer ${token}`
                 },
-                body: JSON.stringify({
-                    app_id: formData.appId,
-                    app_secret: formData.appSecret,
-                    short_token: formData.shortToken
-                }),
+                body: JSON.stringify(payload),
             });
 
             // Handle Token Expiry (401)
@@ -134,6 +140,23 @@ const SettingsModal = ({ isOpen, onClose, language }) => {
                 </button>
 
                 <h2 style={{ marginBottom: '24px', fontSize: '1.5rem' }}>{t.title}</h2>
+
+                {teamId && (
+                    <div style={{
+                        marginBottom: '20px',
+                        padding: '12px',
+                        borderRadius: '8px',
+                        backgroundColor: 'rgba(59, 130, 246, 0.1)',
+                        border: '1px solid rgba(59, 130, 246, 0.3)',
+                        color: '#60a5fa',
+                        fontSize: '0.9rem',
+                        lineHeight: '1.5'
+                    }}>
+                        {language === 'zh'
+                            ? `⚠️ 您正在為團隊「${teamName}」設定 API。此 Token 將授權給團隊所有成員查看廣告數據。`
+                            : `⚠️ You are setting API for team "${teamName}". This token will allow all team members to view ad data.`}
+                    </div>
+                )}
 
                 <form onSubmit={handleSubmit} style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
                     <div>

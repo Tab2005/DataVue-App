@@ -1,9 +1,10 @@
 import React, { useState } from 'react';
-import { FiHome, FiBarChart2, FiUsers, FiSettings, FiActivity, FiChevronLeft, FiChevronRight } from 'react-icons/fi';
+import { FiHome, FiBarChart2, FiUsers, FiSettings, FiActivity, FiChevronLeft, FiChevronRight, FiShield } from 'react-icons/fi';
 import { Link, useLocation } from 'react-router-dom';
 import SettingsModal from './SettingsModal';
 
-const Sidebar = ({ language, isCollapsed, setIsCollapsed, isMobile }) => {
+const Sidebar = ({ language, isCollapsed, setIsCollapsed, isMobile, selectedTeamId, selectedTeamName }) => {
+
     const [isSettingsOpen, setIsSettingsOpen] = useState(false);
     const location = useLocation();
 
@@ -16,7 +17,9 @@ const Sidebar = ({ language, isCollapsed, setIsCollapsed, isMobile }) => {
         { icon: <FiBarChart2 size={20} />, label: 'Analytics', path: '/analytics' },
         { icon: <FiUsers size={20} />, label: 'Audience', path: '#' },
         { icon: <FiActivity size={20} />, label: 'Activity', path: '#' },
-        { icon: <FiSettings size={20} />, label: 'Settings', action: () => setIsSettingsOpen(true) },
+        { icon: <FiUsers size={20} />, label: 'Members', path: '/settings/users' },
+        { icon: <FiSettings size={20} />, label: 'Team Settings', path: '/settings/general' },
+        { icon: <FiShield size={20} />, label: 'API Connection', action: () => setIsSettingsOpen(true) },
     ];
 
     return (
@@ -180,6 +183,8 @@ const Sidebar = ({ language, isCollapsed, setIsCollapsed, isMobile }) => {
                 isOpen={isSettingsOpen}
                 onClose={() => setIsSettingsOpen(false)}
                 language={language || 'zh'}
+                teamId={selectedTeamId}
+                teamName={selectedTeamName}
             />
         </>
     );

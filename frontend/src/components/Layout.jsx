@@ -2,11 +2,18 @@ import React, { useState, useEffect } from 'react';
 import { Outlet } from 'react-router-dom';
 import Sidebar from './Sidebar';
 import Header from './Header';
+import { TeamService } from '../services/teamService';
 
 const Layout = () => {
     // Global State
     const [accounts, setAccounts] = useState([]);
     const [selectedAccountId, setSelectedAccountId] = useState('');
+
+    // Team State
+    const [teams, setTeams] = useState([]);
+    const [selectedTeamId, setSelectedTeamId] = useState('');
+    const [visibleError, setVisibleError] = useState('');
+
     const [user, setUser] = useState({ name: 'User', avatar: '', access_token: '' });
     const [language, setLanguage] = useState('zh');
     const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
@@ -29,6 +36,36 @@ const Layout = () => {
 
         return () => window.removeEventListener('resize', handleResize);
     }, []);
+
+    // Fetch Teams Logic
+    useEffect(() => {
+        const fetchTeams = async () => {
+            try {
+                const myTeams = await TeamService.getMyTeams();
+                setTeams(myTeams);
+
+                // Restore selection or default to first
+                const savedTeamId = localStorage.getItem('selected_team_id');
+                if (savedTeamId && myTeams.find(t => t.id === savedTeamId)) {
+                    setSelectedTeamId(savedTeamId);
+                } else if (myTeams.length > 0) {
+                    setSelectedTeamId(myTeams[0].id);
+                }
+            } catch (err) {
+                console.error("Failed to fetch teams", err);
+            }
+        };
+        fetchTeams();
+    }, [user.access_token]); // Re-fetch when user/token changes
+
+    // Persist Team Selection
+    useEffect(() => {
+        if (selectedTeamId) {
+            localStorage.setItem('selected_team_id', selectedTeamId);
+        } else {
+            localStorage.removeItem('selected_team_id');
+        }
+    }, [selectedTeamId]);
 
     // Fetch Accounts Logic (Moved from Dashboard)
     useEffect(() => {
@@ -56,10 +93,15 @@ const Layout = () => {
             }
 
             try {
+                const headers = {
+                    'Authorization': `Bearer ${token}`
+                };
+                if (selectedTeamId) {
+                    headers['X-Team-ID'] = selectedTeamId;
+                }
+
                 const response = await fetch(`${apiUrl}/api/ad-accounts`, {
-                    headers: {
-                        'Authorization': `Bearer ${token}`
-                    }
+                    headers: headers
                 });
 
                 if (!response.ok) {
@@ -76,8 +118,10 @@ const Layout = () => {
                 if (Array.isArray(accList)) {
                     setAccounts(accList);
                     if (accList.length > 0) {
-                        // Maintain selection if exists, else default to first
-                        setSelectedAccountId(prev => prev || accList[0].id);
+                        // Reset selection on account list refresh
+                        setSelectedAccountId(accList[0].id);
+                    } else {
+                        setSelectedAccountId('');
                     }
                 }
             } catch (err) {
@@ -89,7 +133,32 @@ const Layout = () => {
         };
 
         fetchAccounts();
-    }, []);
+    }, [selectedTeamId, user.access_token]); // Re-fetch on Team Change or Token Change
+
+    // Fetch Real User Profile (Backend)
+    useEffect(() => {
+        if (user.access_token) {
+            const fetchUserProfile = async () => {
+                try {
+                    const apiUrl = import.meta.env.VITE_API_URL || 'http://localhost:8000';
+                    const response = await fetch(`${apiUrl}/api/users/me`, {
+                        headers: { 'Authorization': `Bearer ${user.access_token}` }
+                    });
+                    if (response.ok) {
+                        const profile = await response.json();
+                        // Update user with backend data (role, is_super_admin)
+                        setUser(prev => ({ ...prev, ...profile }));
+                    } else {
+                        setVisibleError(`Fetch Profile Failed: ${response.status}`);
+                    }
+                } catch (err) {
+                    console.error("Failed to fetch user profile", err);
+                    setVisibleError(`Fetch Profile Error: ${err.message}`);
+                }
+            };
+            fetchUserProfile();
+        }
+    }, [user.access_token]);
 
     const handleLogout = () => {
         localStorage.removeItem('google_token');
@@ -105,6 +174,8 @@ const Layout = () => {
                 isCollapsed={isSidebarCollapsed}
                 setIsCollapsed={setIsSidebarCollapsed}
                 isMobile={isMobile}
+                selectedTeamId={selectedTeamId}
+                selectedTeamName={teams.find(t => t.id === selectedTeamId)?.name}
             />
             <div className="main-content" style={{
                 flex: 1,
@@ -119,6 +190,11 @@ const Layout = () => {
                     accounts={accounts}
                     selectedAccountId={selectedAccountId}
                     setSelectedAccountId={setSelectedAccountId}
+                    // Team Props
+                    teams={teams}
+                    selectedTeamId={selectedTeamId}
+                    setSelectedTeamId={setSelectedTeamId}
+
                     onGenerateReport={() => { }}
                     isSidebarCollapsed={isSidebarCollapsed}
                     setIsSidebarCollapsed={setIsSidebarCollapsed}
@@ -128,8 +204,9 @@ const Layout = () => {
                 />
 
                 <div style={{ padding: '0', flex: 1, marginTop: '70px', minWidth: 0, overflowX: 'hidden' }}>
-                    <Outlet context={{ selectedAccountId, user, accounts, language, isSidebarCollapsed, isMobile }} />
+                    <Outlet context={{ selectedAccountId, user, accounts, language, isSidebarCollapsed, isMobile, teams, setTeams, selectedTeamId, setSelectedTeamId }} />
                 </div>
+
             </div>
         </div>
     );
