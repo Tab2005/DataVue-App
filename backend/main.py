@@ -86,7 +86,9 @@ app.add_middleware(
         "http://localhost:5173",
         "http://127.0.0.1:5173",
         "http://localhost:3000",
-        "https://facebook-dashboard-web-app.zeabur.app" # Production URL if known, adding placeholder
+        "https://facebook-dashboard-web-app.zeabur.app", # Production URL
+        "https://fbdashboard-dev-saas.zeabur.app", # Dev SAAS URL
+        "https://fbbackend-dev-saas.zeabur.app" # Backend self (optional)
     ],
     allow_credentials=True,
     allow_methods=["*"],
