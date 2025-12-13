@@ -38,7 +38,8 @@ from google.oauth2 import id_token
 from google.auth.transport import requests as google_requests
 
 # Import Routers
-from routers import users, teams, invites, admin, auth
+from routers import users, teams, invites, admin
+import auth
 from dependencies import get_current_team, get_db
 from contextlib import asynccontextmanager
 from fix_admin_permission import promote_to_superuser
