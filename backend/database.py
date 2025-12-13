@@ -14,13 +14,21 @@ DATABASE_URL = os.getenv("DATABASE_URL")
 if DATABASE_URL:
     # PostgreSQL Configuration
     # Use pg8000 (Pure Python Driver) to avoid C-extension segfaults in Docker
-    if DATABASE_URL.startswith("postgres://"):
-        DATABASE_URL = DATABASE_URL.replace("postgres://", "postgresql+pg8000://", 1)
-    elif DATABASE_URL.startswith("postgresql://"):
-        DATABASE_URL = DATABASE_URL.replace("postgresql://", "postgresql+pg8000://", 1)
-    
-    engine = create_engine(DATABASE_URL)
-    print(f"✅ Database connected: PostgreSQL (via pg8000).")
+    print(f"DEBUG: Found DATABASE_URL, configuring PostgreSQL...", flush=True)
+    try:
+        if DATABASE_URL.startswith("postgres://"):
+            DATABASE_URL = DATABASE_URL.replace("postgres://", "postgresql+pg8000://", 1)
+        elif DATABASE_URL.startswith("postgresql://"):
+            DATABASE_URL = DATABASE_URL.replace("postgresql://", "postgresql+pg8000://", 1)
+        
+        engine = create_engine(DATABASE_URL)
+        # Test connection immediately
+        with engine.connect() as connection:
+            print(f"✅ Database connected successfully: PostgreSQL (via pg8000).", flush=True)
+    except Exception as e:
+        print(f"❌ DATABASE CONNECTION FAILED: {e}", flush=True)
+        # Fallback to avoid crash on import, but requests will fail later
+        engine = None
 else:
     # SQLite Configuration (Local)
     engine = create_engine(
