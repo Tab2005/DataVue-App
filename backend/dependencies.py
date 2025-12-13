@@ -73,11 +73,11 @@ def get_current_user(
              user.email = email
              user.name = name
     
-    # Update last login
-    from datetime import datetime
-    user.last_login = datetime.now()
-    db.commit()
-    db.refresh(user)
+    # Update last login - DISABLED FOR STABILITY DEBUGGING
+    # from datetime import datetime
+    # user.last_login = datetime.now()
+    # db.commit()
+    # db.refresh(user)
     
     return user
 
