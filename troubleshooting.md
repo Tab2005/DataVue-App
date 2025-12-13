@@ -57,3 +57,26 @@ If Backend returns 500/Crash:
 2.  **Check DB Connection**: Can a simple script connect?
 3.  **Trap the Error**: Wrap key functions (like `get_current_user`) in `try...except` to force the server to print the *real* error message (Traceback) instead of a generic "Internal Server Error".
 4.  **Inspect Schema**: If code says "Column not found", believe it. The DB is wrong.
+
+## Incident: 502 Bad Gateway / System Crash on Login
+**Date:** 2025-12-13
+**Symptoms:** 
+- "Super Admin" permissions disappearing occasionally.
+- API returning `502 Bad Gateway` and `CORS Error` on `GET /users/me`.
+**Root Cause:**
+- **Database Locking**: The `last_login` update logic was executing on *every* authenticated request.
+- When multiple requests (User, Team, Account) fired simultaneously on page load, they all tried to WRITE to the same user row.
+- This caused row-level locking, leading to timeout or connection pool exhaustion.
+**Solution:**
+- **Disable Write-on-Read**: Permanently commented out the `user.last_login = datetime.now()` line in `dependencies.py`.
+- **Trade-off**: We sacrificed the "Last Login Time" feature for system stability.
+
+## Incident: Invite Links Generating as 'localhost'
+**Date:** 2025-12-13
+**Symptoms:**
+- Invite links on Zeabur environment looked like `http://localhost:5173/invite/...`.
+**Root Cause:**
+- `backend/routers/invites.py` had a hardcoded default URL.
+**Solution:**
+- **Dynamic Origin Detection**: Updated code to use `request.headers.get("origin")`.
+- This ensures links automatically match the user's current domain (whether Localhost or Zeabur).
