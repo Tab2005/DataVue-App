@@ -26,11 +26,11 @@ def verify_google_token_basic(credentials: HTTPAuthorizationCredentials = Depend
         # P.S. Ideally cache the validation or use a library that handles caching certs
         id_info = id_token.verify_oauth2_token(token, google_requests.Request(), GOOGLE_CLIENT_ID, clock_skew_in_seconds=60)
         return id_info
-    except ValueError as e:
-        print(f"Token Verification Failed: {e}", file=sys.stderr)
+    except Exception as e:
+        print(f"Token Verification Critical Error: {type(e).__name__}: {e}", file=sys.stderr, flush=True)
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
-            detail=f"Invalid authentication credentials: {str(e)}",
+            detail=f"Authentication Error ({type(e).__name__}): {str(e)}",
             headers={"WWW-Authenticate": "Bearer"},
         )
 
