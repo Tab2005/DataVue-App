@@ -13,7 +13,7 @@ cryptography
 dnspython
 email-validator
 fastapi>=0.115.0
-google-auth
+google-auth>=2.30.0
 greenlet
 h11
 idna
