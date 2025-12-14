@@ -696,3 +696,48 @@ A collapsible section or modal "自訂表格指標欄位 (Custom Table Metric Co
 *   位置：`TeamSettings` -> `General` 或獨立的 `Ad Accounts` 分頁。
 
 
+
+## 16. 部署問題與解決方案 (Deployment Issues & Solutions)
+**日期**: 2025-12-14
+**狀態**: ✅ 已解決 (Resolved)
+
+在本次 2025-12-14 的正式機部署與團隊功能測試中，發現並修復了以下三個關鍵問題。
+
+### 1. 資料庫結構同步問題 (Schema Drift)
+*   **症狀**: 建立團隊時發生 `500 Internal Server Error`，Log 顯示 `UndefinedColumn: visible_ad_account_ids`。
+*   **原因**: 正式機資料庫使用舊版 Schema 建立，缺少了新功能所需的欄位 (`fb_access_token`, `visible_ad_account_ids`)。
+*   **解法**:
+    1.  緊急：在 `main.py` 加入「自動 Schema 修補 (Auto-Patching)」邏輯，啟動時自動檢測並 `ALTER TABLE` 新增遺失欄位。
+    2.  長遠：建立了 `docs/database_migration_guide.md`，未來應嚴格遵守 Alembic Migration 流程。
+
+### 2. 邀請頁面無限登入循環 (Infinite Login Loop)
+*   **症狀**: 使用者點擊「登入並接受」，登入 Google 後又跳回邀請頁，按鈕仍顯示「登入並接受」，無法完成加入。
+*   **原因**: 變數命名不一致。
+    *   `Login.jsx` 將 Token 存為 `google_token`。
+    *   `InvitePage.jsx` 卻檢查 `id_token`。
+*   **解法**: 統一前端所有頁面使用 `google_token`。
+
+### 3. 廣告帳號選單空白 (Empty Ad Account Selector)
+*   **症狀**: 團隊擁有者進入「團隊設定」要勾選廣告帳號時，選單顯示空白。但 Dashboard 的下拉選單卻有資料。
+*   **原因**:
+    *   新團隊建立時沒有 `fb_access_token`。
+    *   後端邏輯嘗試使用「團隊 Token」去抓取列表，結果為空。
+    *   雖然有 fallback 到 Owner，但程式誤判「您不是 Owner」或是「Owner 個人 Token 抓取失敗」。
+*   **解法**: 
+    1.  實作 **「雙重保險 (Double Fallback)」** 機制。
+    2.  優先強制使用 Owner 的 **User Token** 抓取 (最乾淨)。
+    3.  若失敗，自動退回使用 **Team Token Logic** (後備)。
+    4.  修正權限判斷，確保 Owner 絕對不會被白名單過濾器擋住。
+
+### 4. 跨團隊權限洩漏 (Cross-Team Token Leak)
+*   **症狀**: 當新建立團隊的 Owner (尚未綁定 FB) 進入設定頁時，竟然看到平台管理員 (Super Admin) 的廣告帳號列表。
+*   **原因**: `TokenManager.get_user_token` 有一個設計用於協作的「Admin Fallback」機制 (若找不到 Token 就借用 Admin 的)。這在「設定團隊」場景下是不適當的，造成資料洩漏。
+*   **解法**:
+    1.  引入 `strict_token` (嚴格模式) 參數。
+    2.  在團隊設定頁面抓取帳號時，強制開啟嚴格模式，禁止借用 Admin Token。
+    3.  確保 Owner 若無 Token，就真的看到空白列表 (Empty State)，而非錯誤的資料。
+
+### 5. 前端狀態錯亂 (Frontend Race Condition)
+*   **症狀**: 快速切換團隊 (A -> B) 時，B 團隊的設定頁面短暫顯示 A 團隊的權限設定。
+*   **原因**: 前端 `localStorage` 的更新速度慢於頁面載入速度。API 請求時使用了舊的 `Team ID` (從 Storage 讀取)，導致後端回傳了舊團隊的資料。
+*   **解法**: 修改 `TeamService` 與 `AdAccountSelector`，強制在 API 請求時傳入當前頁面的 `teamId` 作為 Header，不再依賴全域 Storage 狀態。
