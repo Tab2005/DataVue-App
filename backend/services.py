@@ -7,23 +7,24 @@ class FacebookService:
     BASE_URL = "https://graph.facebook.com/v24.0"
 
     @staticmethod
-    def get_headers(user_id, team_id=None):
+    def get_headers(user_id, team_id=None, allow_fallback=True):
         if team_id:
             token = TokenManager.get_team_token(team_id)
         else:
-            token = TokenManager.get_user_token(user_id)
+            token = TokenManager.get_user_token(user_id, allow_fallback=allow_fallback)
         
         if not token:
             return None
         return {"Authorization": f"Bearer {token}"}
 
     @staticmethod
-    def get_all_ad_accounts(user_id, team_id=None):
+    def get_all_ad_accounts(user_id, team_id=None, strict_token=False):
         """
         Fetches all ad accounts for the dropdown selector.
         Returns a list of dicts: {'id': 'act_123', 'name': 'My Account'}
+        strict_token: If True, blocks fallback to Admin Token (Prevents data leak)
         """
-        headers = FacebookService.get_headers(user_id, team_id)
+        headers = FacebookService.get_headers(user_id, team_id, allow_fallback=not strict_token)
         if not headers:
             print("get_all_ad_accounts: No headers (Token missing).", file=sys.stderr)
             return [], "No access token found for this user."

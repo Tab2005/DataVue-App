@@ -140,13 +140,12 @@ class TokenManager:
             session.close()
 
     @staticmethod
-    def get_user_token(google_id):
-        # ... (Remains existing logic for now, until we fully switch to context-based)
+    def get_user_token(google_id, allow_fallback=True):
         """
         Retrieve the long-lived token.
         **New Logic (Collaborative Mode)**: 
         1. Try to get the CURRENT user's token.
-        2. If missing, look for an ADMIN's token (Shared Workspace concept).
+        2. If missing AND allow_fallback is True, look for an ADMIN's token (Shared Workspace concept).
         This allows invited members to view data setup by the Admin.
         """
         session = SessionLocal()
@@ -156,6 +155,9 @@ class TokenManager:
             if user and user.fb_access_token:
                 return TokenManager._decrypt(user.fb_access_token)
             
+            if not allow_fallback:
+                return None
+
             # 2. Fallback: Search for any ADMIN with a valid token
             # We prioritize the "first" admin found with a token.
             admin_user = session.query(User).filter(

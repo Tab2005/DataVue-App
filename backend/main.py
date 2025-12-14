@@ -267,7 +267,9 @@ def get_ad_accounts(
     if is_owner:
         fetch_team_id = None # Force User Token for Owner
         
-    accounts, error = FacebookService.get_all_ad_accounts(user_id, team_id=fetch_team_id)
+    # Use strict_token=True for Owner to PREVENT Admin Fallback (Data Leak)
+    # If Owner has no token, they should see NOTHING, not Admin's accounts.
+    accounts, error = FacebookService.get_all_ad_accounts(user_id, team_id=fetch_team_id, strict_token=is_owner)
     
     # 3. Fallback for Owner: If primary fetch failed (empty/error), retry with Team Token logic
     # This covers edge cases where get_user_token fails but get_team_token (Owner Fallback) works
