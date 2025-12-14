@@ -35,7 +35,7 @@ const AdAccountSelector = ({ teamId, initialSelected, language, styles, teamName
         const fetchAccounts = async () => {
             setLoading(true);
             try {
-                const accts = await TeamService.getAllAdAccounts();
+                const accts = await TeamService.getAllAdAccounts(teamId);
                 setAllAccounts(accts);
             } catch (err) {
                 console.error("Failed to fetch ad accounts", err);

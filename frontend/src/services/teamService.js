@@ -199,9 +199,16 @@ export const TeamService = {
     /**
      * Get All Ad Accounts (for Whitelist Selector)
      * Calls the standard /api/ad-accounts endpoint which returns ALL for Owner.
+     * @param {string} teamId Optional. If provided, ensures context is correct.
      */
-    getAllAdAccounts: async () => {
+    getAllAdAccounts: async (teamId = null) => {
         const headers = getAuthHeaders();
+
+        // Override X-Team-ID if explicitly provided to avoid localStorage race conditions
+        if (teamId) {
+            headers['X-Team-ID'] = teamId;
+        }
+
         const response = await fetch(`${API_BASE_URL}/ad-accounts`, {
             headers: headers
         });
