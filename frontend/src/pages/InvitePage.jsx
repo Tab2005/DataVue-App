@@ -15,7 +15,7 @@ const InvitePage = () => {
     const [processing, setProcessing] = useState(false);
 
     // Auth Check
-    const token = localStorage.getItem('id_token');
+    const token = localStorage.getItem('google_token');
 
     // Translation Dictionary
     const t = {
