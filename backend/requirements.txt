@@ -21,7 +21,7 @@ Mako
 MarkupSafe
 numpy
 pandas
-pg8000
+psycopg2-binary
 pyasn1
 pyasn1_modules
 pycparser

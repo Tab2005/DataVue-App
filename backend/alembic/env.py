@@ -34,11 +34,9 @@ def get_url():
     # Use environment variable if available (Zeabur/Production)
     if ENV_DATABASE_URL:
         url = ENV_DATABASE_URL
-        # Ensure pg8000 driver is used
+        # Ensure proper postgresql:// protocol
         if url.startswith("postgres://"):
-            url = url.replace("postgres://", "postgresql+pg8000://", 1)
-        elif url.startswith("postgresql://"):
-             url = url.replace("postgresql://", "postgresql+pg8000://", 1)
+            url = url.replace("postgres://", "postgresql://", 1)
         return url
     
     # Fallback to config file (Local SQLite)
