@@ -9,6 +9,13 @@ const InvitePage = () => {
 
     // Language State (Default ZH)
     const [language, setLanguage] = useState('zh');
+    const [loading, setLoading] = useState(true);
+    const [error, setError] = useState(null);
+    const [inviteInfo, setInviteInfo] = useState(null);
+    const [processing, setProcessing] = useState(false);
+
+    // Auth Check
+    const token = localStorage.getItem('id_token');
 
     // Translation Dictionary
     const t = {
