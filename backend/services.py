@@ -1,6 +1,7 @@
 import requests
 from datetime import datetime, timedelta
 from auth import TokenManager
+import sys
 
 class FacebookService:
     BASE_URL = "https://graph.facebook.com/v24.0"
@@ -24,6 +25,7 @@ class FacebookService:
         """
         headers = FacebookService.get_headers(user_id, team_id)
         if not headers:
+            print("get_all_ad_accounts: No headers (Token missing).", file=sys.stderr)
             return [], "No access token found for this user."
 
         url = f"{FacebookService.BASE_URL}/me/adaccounts"
@@ -33,10 +35,14 @@ class FacebookService:
         }
 
         try:
-            response = requests.get(url, headers=headers, params=params)
+            print(f"Fetching Ad Accounts from: {url}", file=sys.stderr)
+            response = requests.get(url, headers=headers, params=params, timeout=10)
+            print(f"Facebook API Response Status: {response.status_code}", file=sys.stderr)
             data = response.json()
-            
+            # print(f"Facebook API Response Body: {data}", file=sys.stderr) # Debug only
+
             if "error" in data:
+                print(f"Facebook API Error: {data['error']}", file=sys.stderr)
                 return [], data["error"].get("message")
 
             accounts = data.get("data", [])
@@ -59,6 +65,10 @@ class FacebookService:
         """
         headers = FacebookService.get_headers(user_id, team_id)
         if not headers:
+            try:
+                with open("debug_insights_error.log", "a", encoding="utf-8") as f:
+                    f.write(f"[{datetime.now()}] Missing Headers for {account_id}\n")
+            except: pass
             return None
             
         # Determine Date Presets
@@ -83,7 +93,11 @@ class FacebookService:
             # Current Data
             cur_res = requests.get(url, headers=headers, params=current_params).json()
             if "error" in cur_res:
-                print(f"FB API Error (Current): {cur_res['error']}")
+                # print(f"FB API Error (Current): {cur_res['error']}")
+                try:
+                    with open("debug_insights_error.log", "a", encoding="utf-8") as f:
+                        f.write(f"[{datetime.now()}] API Error: {cur_res['error']}\n")
+                except: pass
                 return None
                 
             cur_data_list = cur_res.get("data", [])
@@ -150,7 +164,11 @@ class FacebookService:
             }
 
         except Exception as e:
-            print(f"Error fetching insights: {e}")
+            # print(f"Error fetching insights: {e}")
+            try:
+                with open("debug_insights_error.log", "a", encoding="utf-8") as f:
+                    f.write(f"[{datetime.now()}] Insight Error: {e}\n")
+            except: pass
             return None
 
     @staticmethod

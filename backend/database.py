@@ -89,6 +89,10 @@ class Team(Base):
     fb_access_token = Column(String, nullable=True)
     fb_app_id = Column(String, nullable=True)
     
+    # Ad Account Whitelist (JSON list of IDs stored as string)
+    # e.g. '["act_123", "act_456"]'
+    visible_ad_account_ids = Column(String, nullable=True)
+    
     created_at = Column(DateTime, default=text("CURRENT_TIMESTAMP"))
     
     # Cascade Delete for Invites

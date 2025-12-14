@@ -46,7 +46,6 @@ from routers import users, teams, invites, admin
 import auth
 from dependencies import get_current_team, get_db
 from contextlib import asynccontextmanager
-# from fix_admin_permission import promote_to_superuser
 
 # Initialize Database
 # Load environment variables FIRST
@@ -61,9 +60,9 @@ try:
     alembic.command.upgrade(alembic_cfg, "head")
     print("Database Migrations Applied.")
     
-    # SAFETY NET: Force create tables if Alembic missed them (e.g. after nuke-db)
     print("Verifying Schema Integrity...")
     init_db() 
+    
     print("Schema Verified.")
 except Exception as e:
     print(f"Database Migration/Initialization Failed: {str(e)}")
@@ -90,47 +89,6 @@ async def debug_exception_handler(request: Request, exc: Exception):
     )
 # --------------------------------------
 
-# --- TEMPORARY MANUAL FIX ENDPOINT ---
-# --------------------------------------
-# -------------------------------------
-
-# Register Routers
-app.include_router(users.router, prefix="/api/users", tags=["users"])
-app.include_router(teams.router, prefix="/api/teams", tags=["teams"]) # Team Management
-app.include_router(invites.router, prefix="/api", tags=["invites"]) # Invites (Root api prefix for /invites)
-app.include_router(admin.router) # Admin Router (prefix defined in router)
-
-# Configure CORS
-app.add_middleware(
-    CORSMiddleware,
-    # allow_origins=["*"],  # Wildcard is not allowed with allow_credentials=True
-    allow_origins=[
-        "http://localhost:5173",
-        "http://127.0.0.1:5173",
-        "http://localhost:3000",
-        "https://facebook-dashboard-web-app.zeabur.app", # Production URL
-        "https://fbdashboard-dev-saas.zeabur.app", # Dev SAAS URL
-        "https://fbbackend-dev-saas.zeabur.app" # Backend self (optional)
-    ],
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
-
-@app.get("/")
-def health_check():
-    """Health check endpoint to verify service status and DB connection."""
-    db_info = "Unknown"
-    if engine:
-        db_info = "PostgreSQL" if "postgresql" in str(engine.url) else "SQLite"
-    
-    return {
-        "status": "online", 
-        "database_status": DB_STATUS,
-        "database_type": db_info,
-        "message": "Backend is running (Safe Mode) with User Management"
-    }
-
 # --- Google Token Verification ---
 GOOGLE_CLIENT_ID = os.getenv("GOOGLE_CLIENT_ID")
 security = HTTPBearer()
@@ -142,8 +100,6 @@ def verify_google_token(credentials: HTTPAuthorizationCredentials = Depends(secu
         if not GOOGLE_CLIENT_ID:
             print("CRITICAL: GOOGLE_CLIENT_ID is missing from env!", file=sys.stderr, flush=True)
 
-        # print(f"🔐 Verifying Token: {token[:10]}... ClientID: {GOOGLE_CLIENT_ID}", file=sys.stderr)
-        
         # Add clock skew tolerance (e.g., 60 seconds) to handle local time discrepancies
         id_info = id_token.verify_oauth2_token(token, google_requests.Request(), GOOGLE_CLIENT_ID, clock_skew_in_seconds=60)
         userid = id_info['sub']
@@ -165,10 +121,7 @@ class ExchangeRequest(BaseModel):
     short_token: str
     team_id: Optional[str] = None
 
-@app.get("/")
-def read_root():
-    return {"message": "Hello from FastAPI"}
-
+# --- Auth Endpoints ---
 @app.post("/api/auth/exchange-token")
 def exchange_token_endpoint(request: ExchangeRequest, user_id: str = Depends(verify_google_token)):
     success, message = TokenManager.exchange_for_long_lived_token(
@@ -218,16 +171,91 @@ def get_token_status(user_id: str = Depends(verify_google_token)):
     finally:
         session.close()
 
+# --- Include Routers ---
+app.include_router(users.router, prefix="/api/users", tags=["users"])
+app.include_router(teams.router, prefix="/api/teams", tags=["teams"]) # Team Management
+app.include_router(invites.router, prefix="/api", tags=["invites"]) # Invites
+app.include_router(admin.router) # Admin Router (prefix defined in router)
+
+@app.middleware("http")
+async def log_requests(request: Request, call_next):
+    print(f"📥 REQUEST: {request.method} {request.url}", file=sys.stderr)
+    try:
+        response = await call_next(request)
+        print(f"📤 RESPONSE: {response.status_code} for {request.url}", file=sys.stderr)
+        return response
+    except Exception as e:
+        print(f"💥 REQUEST FAILED: {e}", file=sys.stderr)
+        raise e
+
+# Configure CORS
+app.add_middleware(
+    CORSMiddleware,
+    allow_origin_regex='https?://.*', # Allow ALL origins (Dev Mode)
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+@app.get("/")
+def health_check():
+    """Health check endpoint to verify service status and DB connection."""
+    db_info = "Unknown"
+    if engine:
+        db_info = "PostgreSQL" if "postgresql" in str(engine.url) else "SQLite"
+    
+    return {
+        "status": "online", 
+        "database_status": DB_STATUS,
+        "database_type": db_info,
+        "message": "Backend is running (Safe Mode) with User Management"
+    }
+
 @app.get("/api/ad-accounts")
 def get_ad_accounts(
     user_id: str = Depends(verify_google_token),
-    team: Team = Depends(get_current_team)
+    team: Team = Depends(get_current_team),
+    db: SessionLocal = Depends(get_db)
 ):
     team_id = team.id if team else None
+    
     # Pass user_id and team_id
     accounts, error = FacebookService.get_all_ad_accounts(user_id, team_id=team_id)
+    
     if error:
+        print(f"❌ Error from FacebookService: {error}", file=sys.stderr)
         return []
+        
+    # Team Ad Account Isolation Logic
+    if team:
+        # Resolve Internal User ID from Google ID for comparison
+        # (verify_google_token returns Google ID, but team.owner_id is Internal ID)
+        current_db_user = db.query(User).filter(User.google_id == user_id).first()
+        current_internal_id = current_db_user.id if current_db_user else None
+        
+        # If user is NOT owner, apply whitelist
+        is_owner = (str(team.owner_id) == str(current_internal_id))
+        
+        if not is_owner:
+            print(f"🔒 Non-Owner Access. Whitelist: {team.visible_ad_account_ids}", file=sys.stderr)
+            # Check Whitelist
+            if team.visible_ad_account_ids:
+                try:
+                    import json
+                    whitelist = json.loads(team.visible_ad_account_ids) # List of IDs
+                    if isinstance(whitelist, list):
+                        # Filter accounts
+                        accounts = [acc for acc in accounts if acc['id'] in whitelist]
+                    else:
+                        print("⚠ Whitelist is not a list. Blocking all.", file=sys.stderr)
+                        accounts = []
+                except Exception as e:
+                    print(f"❌ Whitelist Parse Error: {e}", file=sys.stderr)
+                    accounts = []
+            else:
+                # STRICT MODE: If no whitelist, Member sees NOTHING.
+                accounts = []
+
     return accounts
 
 @app.get("/api/dashboard-data")
@@ -250,17 +278,49 @@ def get_dashboard_data(
                 "date_range": insights.get("date_range")
             }
         else:
-            print(f"❌ Dashboard Data Fetch Failed for {account_id}", file=sys.stderr)
-            raise HTTPException(status_code=400, detail="Failed to fetch insights for this account")
+            print(f"Dashboard Data Fetch Failed for {account_id} - Returning Zeros", file=sys.stderr)
+            
+            # Generate Zero Data for UI
+            from datetime import timedelta
+            
+            zero_metric = {
+                "value": "0", "previous": "(0)", "diff": "0", 
+                "change": "0.0%", "is_increase": False, "raw_value": 0
+            }
+            zero_metric_curr = {**zero_metric, "value": "$0", "previous": "($0)"} # Currency
+            zero_metric_pct = {**zero_metric, "value": "0.00%", "previous": "(0.00%)"} # Percent
+
+            kpi_zero = {
+                "impressions": zero_metric,
+                "link_clicks": zero_metric,
+                "ctr": zero_metric_pct,
+                "cpc": zero_metric_curr,
+                "spend": zero_metric_curr,
+                "purchases": zero_metric,
+                "add_to_cart": zero_metric,
+                "roas": {**zero_metric, "value": "0.00", "previous": "(0.00)"}
+            }
+            
+            # Generate 7 days of zero chart data
+            today = datetime.now()
+            chart_zero = []
+            for i in range(7):
+                d = today - timedelta(days=6-i)
+                chart_zero.append({"name": d.strftime("%m-%d"), "value": 0})
+
+            return {
+                "source": "empty_fallback",
+                "kpi": kpi_zero, 
+                "chart_data": chart_zero,
+                "date_range": {
+                    "start": (today - timedelta(days=6)).strftime("%Y-%m-%d"), 
+                    "stop": today.strftime("%Y-%m-%d")
+                }
+            }
 
     return {
         "source": "mock_fallback",
-        "kpi": [
-            {"label": "Total Followers", "value": "---", "change": "---"},
-            {"label": "Engagement Rate", "value": "---", "change": "---"},
-            {"label": "Impressions", "value": "---", "change": "---"},
-            {"label": "Reach", "value": "---", "change": "---"},
-        ],
+        "kpi": [],
         "chart_data": []
     }
 
@@ -275,7 +335,6 @@ def get_analytics_data(
 ):
     """
     Endpoint for the Advanced Analytics page.
-    Requires account_id, custom date range (since/until), and aggregation level.
     """
     team_id = team.id if team else None
     report_data = FacebookService.get_custom_report(account_id, user_id, since, until, level, team_id=team_id)
@@ -307,7 +366,6 @@ def get_analytics_trend_data(
     team_id = team.id if team else None
     trend_data = FacebookService.get_analytics_trend(account_id, user_id, since, until, prev_since, prev_until, team_id=team_id)
     if trend_data is None:
-         # Return empty list instead of 400 to avoid breaking UI if just no data
          return []
     return trend_data
 
@@ -315,6 +373,4 @@ def get_analytics_trend_data(
 if __name__ == "__main__":
     import uvicorn
     print("🚀 STARTING UVICORN SERVER...", file=sys.stderr)
-    # Enable reload for development
-    # Forced Reload Trigger [Timestamp: 1450]
     uvicorn.run("main:app", host="0.0.0.0", port=8000, reload=True)

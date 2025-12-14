@@ -5,7 +5,7 @@ import TrendsChart from '../components/TrendsChart';
 
 function Dashboard() {
     // 1. Get Context from Layout
-    const { selectedAccountId, user, language, isMobile } = useOutletContext();
+    const { selectedAccountId, user, language, isMobile, selectedTeamId } = useOutletContext();
 
     const [days, setDays] = useState(7);
     const [dashboardData, setDashboardData] = useState(null);
@@ -42,8 +42,16 @@ function Dashboard() {
             try {
                 const apiUrl = import.meta.env.VITE_API_URL || 'http://localhost:8000';
                 const token = localStorage.getItem('google_token');
+
+                const headers = {
+                    'Authorization': `Bearer ${token}`
+                };
+                if (selectedTeamId) {
+                    headers['X-Team-ID'] = selectedTeamId;
+                }
+
                 const res = await fetch(`${apiUrl}/api/dashboard-data?account_id=${selectedAccountId}&days=${days}`, {
-                    headers: { 'Authorization': `Bearer ${token}` }
+                    headers: headers
                 });
                 if (!res.ok) {
                     if (res.status === 401) {

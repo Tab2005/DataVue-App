@@ -172,5 +172,43 @@ export const TeamService = {
             throw new Error(err.detail || "Failed to delete team");
         }
         return true;
+    },
+
+    /**
+     * Update Team Ad Account Whitelist
+     * @param {string} teamId 
+     * @param {string[]} adAccountIds List of Account IDs
+     */
+    updateAdAccounts: async (teamId, adAccountIds) => {
+        const headers = getAuthHeaders();
+        const response = await fetch(`${API_BASE_URL}/teams/${teamId}/ad_accounts`, {
+            method: 'PUT',
+            headers: {
+                ...headers,
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({ ad_account_ids: adAccountIds })
+        });
+        if (!response.ok) {
+            const err = await response.json();
+            throw new Error(err.detail || "Failed to update ad accounts");
+        }
+        return await response.json();
+    },
+
+    /**
+     * Get All Ad Accounts (for Whitelist Selector)
+     * Calls the standard /api/ad-accounts endpoint which returns ALL for Owner.
+     */
+    getAllAdAccounts: async () => {
+        const headers = getAuthHeaders();
+        const response = await fetch(`${API_BASE_URL}/ad-accounts`, {
+            headers: headers
+        });
+        if (!response.ok) {
+            // If 404/400, return empty or throw
+            return [];
+        }
+        return await response.json();
     }
 };

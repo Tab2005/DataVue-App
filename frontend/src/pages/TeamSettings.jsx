@@ -3,6 +3,7 @@ import { useOutletContext, useNavigate } from 'react-router-dom';
 import { TeamService } from '../services/teamService';
 import { FiSave, FiAlertTriangle, FiTrash2, FiUsers, FiSettings } from 'react-icons/fi';
 import UserManagement from './UserManagement';
+import AdAccountSelector from '../components/AdAccountSelector';
 
 const TeamSettings = () => {
     const { language, selectedTeamId, user, teams, setTeams, setSelectedTeamId } = useOutletContext();
@@ -149,10 +150,9 @@ const TeamSettings = () => {
             backgroundColor: 'var(--accent-primary)',
             color: 'white',
             border: 'none',
-            cursor: loading ? 'not-allowed' : 'pointer',
-            opacity: (loading || teamName === currentTeam?.name) ? 0.5 : 1,
+            cursor: 'pointer',
             boxShadow: '0 4px 12px rgba(37, 99, 235, 0.2)',
-            transition: 'transform 0.1s'
+            transition: 'transform 0.1s, opacity 0.2s'
         },
         buttonDanger: {
             display: 'flex',
@@ -267,7 +267,11 @@ const TeamSettings = () => {
                                 <button
                                     type="submit"
                                     disabled={loading || teamName === currentTeam?.name}
-                                    style={styles.buttonPrimary}
+                                    style={{
+                                        ...styles.buttonPrimary,
+                                        cursor: (loading || teamName === currentTeam?.name) ? 'not-allowed' : 'pointer',
+                                        opacity: (loading || teamName === currentTeam?.name) ? 0.5 : 1
+                                    }}
                                     onMouseOver={(e) => { if (!e.target.disabled) e.currentTarget.style.transform = 'translateY(-2px)' }}
                                     onMouseOut={(e) => { e.currentTarget.style.transform = 'translateY(0)' }}
                                 >
@@ -283,33 +287,65 @@ const TeamSettings = () => {
                         )}
                     </form>
                 </div>
-            </section>
+
+            </section >
+
+            {/* SECTION 2.5: AD ACCOUNT ACCESS (Owner Only) */}
+            {
+                isOwner && (
+                    <section className="animate-fade-in">
+                        <div style={styles.sectionHeader}>
+                            <div style={styles.iconBox('blue')}>
+                                <FiSettings size={20} />
+                            </div>
+                            <div>
+                                <h2 style={{ fontSize: '1.25rem', fontWeight: 'bold', color: 'var(--text-primary)' }}>{t.tab_ad_accounts || (language === 'zh' ? '廣告帳號授權' : 'Ad Account Access')}</h2>
+                                <p style={{ fontSize: '0.875rem', marginTop: '4px', color: 'var(--text-secondary)' }}>
+                                    {language === 'zh' ? '選擇團隊成員可見的廣告帳號' : 'Select ad accounts visible to team members'}
+                                </p>
+                            </div>
+                        </div>
+
+                        <div className="glass-panel" style={{ padding: '40px', borderRadius: '24px' }}>
+                            <AdAccountSelector
+                                teamId={selectedTeamId}
+                                initialSelected={currentTeam?.visible_ad_account_ids}
+                                teamName={teamName} // Trigger reload if needed
+                                language={language}
+                                styles={styles}
+                            />
+                        </div>
+                    </section>
+                )
+            }
 
             {/* SECTION 3: DANGER ZONE */}
-            {isOwner && (
-                <section className="animate-fade-in" style={{ paddingTop: '16px' }}>
-                    <div style={styles.dangerZone}>
-                        <h2 style={{ fontSize: '1.125rem', fontWeight: 'bold', marginBottom: '16px', color: '#ef4444', display: 'flex', alignItems: 'center' }}>
-                            <FiAlertTriangle style={{ marginRight: '12px' }} size={20} />
-                            {t.danger_zone}
-                        </h2>
-                        <p style={{ marginBottom: '32px', fontSize: '0.875rem', lineHeight: '1.625', maxWidth: '42rem', color: 'var(--text-secondary)', opacity: 0.8 }}>
-                            {t.disband_desc}
-                        </p>
-                        <button
-                            onClick={handleDisband}
-                            disabled={loading}
-                            style={styles.buttonDanger}
-                            onMouseOver={(e) => { e.currentTarget.style.backgroundColor = '#ef4444'; e.currentTarget.style.color = 'white'; }}
-                            onMouseOut={(e) => { e.currentTarget.style.backgroundColor = 'rgba(239, 68, 68, 0.1)'; e.currentTarget.style.color = '#ef4444'; }}
-                        >
-                            <FiTrash2 style={{ marginRight: '8px' }} />
-                            {t.disband_team}
-                        </button>
-                    </div>
-                </section>
-            )}
-        </div>
+            {
+                isOwner && (
+                    <section className="animate-fade-in" style={{ paddingTop: '16px' }}>
+                        <div style={styles.dangerZone}>
+                            <h2 style={{ fontSize: '1.125rem', fontWeight: 'bold', marginBottom: '16px', color: '#ef4444', display: 'flex', alignItems: 'center' }}>
+                                <FiAlertTriangle style={{ marginRight: '12px' }} size={20} />
+                                {t.danger_zone}
+                            </h2>
+                            <p style={{ marginBottom: '32px', fontSize: '0.875rem', lineHeight: '1.625', maxWidth: '42rem', color: 'var(--text-secondary)', opacity: 0.8 }}>
+                                {t.disband_desc}
+                            </p>
+                            <button
+                                onClick={handleDisband}
+                                disabled={loading}
+                                style={styles.buttonDanger}
+                                onMouseOver={(e) => { e.currentTarget.style.backgroundColor = '#ef4444'; e.currentTarget.style.color = 'white'; }}
+                                onMouseOut={(e) => { e.currentTarget.style.backgroundColor = 'rgba(239, 68, 68, 0.1)'; e.currentTarget.style.color = '#ef4444'; }}
+                            >
+                                <FiTrash2 style={{ marginRight: '8px' }} />
+                                {t.disband_team}
+                            </button>
+                        </div>
+                    </section>
+                )
+            }
+        </div >
     );
 };
 

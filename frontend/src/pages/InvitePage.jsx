@@ -7,13 +7,40 @@ const InvitePage = () => {
     const { code } = useParams();
     const navigate = useNavigate();
 
-    const [loading, setLoading] = useState(true);
-    const [inviteInfo, setInviteInfo] = useState(null);
-    const [error, setError] = useState(null);
-    const [processing, setProcessing] = useState(false);
+    // Language State (Default ZH)
+    const [language, setLanguage] = useState('zh');
 
-    // Check if user is logged in (Simple check)
-    const token = localStorage.getItem('google_token');
+    // Translation Dictionary
+    const t = {
+        zh: {
+            loading: "正在讀取邀請資訊...",
+            errorTitle: "邀請連結已失效",
+            errorDesc: "此邀請連結已過期或無法使用，請聯繫管理員重新發送。",
+            goHome: "回首頁",
+            joinTitle: "加入團隊",
+            invitedText: "您已受邀加入此工作區。",
+            invitedBy: "邀請人：",
+            joining: "正在加入...",
+            accept: "接受邀請",
+            loginAccept: "登入並接受",
+            success: "成功加入團隊！"
+        },
+        en: {
+            loading: "Loading Invite...",
+            errorTitle: "Invite Expired or Invalid",
+            errorDesc: "This invitation link is no longer valid. Please ask the administrator for a new one.",
+            goHome: "Go Home",
+            joinTitle: "Join Team",
+            invitedText: "You have been invited to join this workspace.",
+            invitedBy: "Invited by:",
+            joining: "Joining...",
+            accept: "Accept Invite",
+            loginAccept: "Login to Accept",
+            success: "Successfully joined team!"
+        }
+    };
+
+    const txt = t[language] || t.zh;
 
     useEffect(() => {
         // Robust Code Extraction
@@ -23,9 +50,6 @@ const InvitePage = () => {
             const parts = window.location.pathname.split('/');
             inviteCode = parts[parts.length - 1];
         }
-
-        // Debug: Log what we see
-        console.log("Raw Code:", code, "Extracted:", inviteCode);
 
         const check = async () => {
             try {
@@ -47,7 +71,6 @@ const InvitePage = () => {
     const handleJoin = async () => {
         if (!token) {
             // Redirect to login with return path
-            // Encode current path to return after login
             const returnUrl = encodeURIComponent(window.location.pathname);
             window.location.href = `/login?return_to=${returnUrl}`;
             return;
@@ -56,13 +79,11 @@ const InvitePage = () => {
         setProcessing(true);
         try {
             const res = await TeamService.acceptInvite(code);
-            // Switch to that team automatically?
             if (res.team_id) {
                 localStorage.setItem('selected_team_id', res.team_id);
             }
-            alert("Successfully joined team!");
+            alert(txt.success);
             navigate('/');
-            // Force reload to update context
             window.location.reload();
         } catch (err) {
             alert(err.message);
@@ -73,7 +94,7 @@ const InvitePage = () => {
     if (loading) {
         return (
             <div style={{ height: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', background: '#111827', color: 'white' }}>
-                Loading Invite...
+                {txt.loading}
             </div>
         );
     }
@@ -83,12 +104,12 @@ const InvitePage = () => {
             <div style={{ height: '100vh', display: 'flex', alignItems: 'center', justifyContent: 'center', background: '#111827', color: 'white' }}>
                 <div className="glass-panel" style={{ padding: '40px', textAlign: 'center', maxWidth: '400px', borderRadius: '12px', border: '1px solid var(--glass-border)', background: 'var(--bg-secondary)' }}>
                     <FiAlertTriangle size={48} color="#ef4444" style={{ margin: '0 auto 16px' }} />
-                    <h2 style={{ fontSize: '1.5rem', marginBottom: '8px' }}>Invite Expired or Invalid</h2>
+                    <h2 style={{ fontSize: '1.5rem', marginBottom: '8px' }}>{txt.errorTitle}</h2>
                     <p style={{ color: 'var(--text-secondary)', marginBottom: '24px' }}>
-                        This invitation link is no longer valid. Please ask the administrator for a new one.
+                        {txt.errorDesc}
                     </p>
                     <button onClick={() => navigate('/')} style={{ padding: '10px 24px', borderRadius: '8px', background: 'var(--glass-border)', border: 'none', color: 'white', cursor: 'pointer' }}>
-                        Go Home
+                        {txt.goHome}
                     </button>
                 </div>
             </div>
@@ -103,12 +124,12 @@ const InvitePage = () => {
                     <FiUsers size={32} color="#3b82f6" />
                 </div>
 
-                <h2 style={{ fontSize: '1.8rem', marginBottom: '8px' }}>Join Team</h2>
+                <h2 style={{ fontSize: '1.8rem', marginBottom: '8px' }}>{txt.joinTitle}</h2>
                 <h3 style={{ fontSize: '1.4rem', color: 'var(--accent-primary)', marginBottom: '16px' }}>{inviteInfo.team_name}</h3>
 
                 <p style={{ color: 'var(--text-secondary)', marginBottom: '32px', lineHeight: 1.6 }}>
-                    You have been invited to join this workspace. <br />
-                    Invited by: <b>{inviteInfo.inviter_name || 'Admin'}</b>
+                    {txt.invitedText} <br />
+                    {txt.invitedBy} <b>{inviteInfo.inviter_name || 'Admin'}</b>
                 </p>
 
                 <button
@@ -127,7 +148,7 @@ const InvitePage = () => {
                         opacity: processing ? 0.7 : 1
                     }}
                 >
-                    {processing ? 'Joining...' : (token ? 'Accept Invite' : 'Login to Accept')}
+                    {processing ? txt.joining : (token ? txt.accept : txt.loginAccept)}
                 </button>
             </div>
         </div>

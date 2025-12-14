@@ -126,6 +126,7 @@ const Layout = () => {
                 }
             } catch (err) {
                 console.error(`Failed to fetch accounts (Retries left: ${retries})`, err);
+                setVisibleError(`Account Fetch Error: ${err.message}`); // Show error to user
                 if (retries > 0) {
                     setTimeout(() => fetchAccounts(retries - 1), 1500);
                 }

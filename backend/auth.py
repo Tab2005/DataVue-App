@@ -5,10 +5,34 @@ from database import SessionLocal, User, UserRole, Team, TeamMember
 
 # ... (Previous imports remain same, just single line update above)
 
-# ... (Encryption setup remains same)
+# Encryption Setup
+from cryptography.fernet import Fernet
+import sys
+
+def get_encryption_key():
+    key = os.getenv("ENCRYPTION_KEY")
+    if not key:
+        # For Dev/Demo Only: Generate a volatile key if missing to prevent crash
+        key = Fernet.generate_key().decode()
+        print(f"⚠ WARNING: ENCRYPTION_KEY not set. Using volatile key: {key}", file=sys.stderr)
+    return key
 
 class TokenManager:
-    # ... (Encryption methods remain same)
+    @staticmethod
+    def _encrypt(message):
+        if not message: return None
+        f = Fernet(get_encryption_key())
+        return f.encrypt(message.encode()).decode()
+
+    @staticmethod
+    def _decrypt(token):
+        if not token: return None
+        try:
+            f = Fernet(get_encryption_key())
+            return f.decrypt(token.encode()).decode()
+        except Exception as e:
+            print(f"Decryption failed: {e}")
+            return None
 
     @staticmethod
     def save_user_token(google_id, long_lived_token, app_id=None, app_secret=None, expires_in=None):
@@ -148,12 +172,28 @@ class TokenManager:
 
     @staticmethod
     def get_team_token(team_id):
-        """Retrieve the TEAM's long-lived token (Decrypted)."""
+        """
+        Retrieve the TEAM's long-lived token.
+        Fallback: If Team has no token, use the Team Owner's token.
+        """
         session = SessionLocal()
         try:
             team = session.query(Team).filter(Team.id == team_id).first()
-            if team and team.fb_access_token:
+            if not team:
+                return None
+            
+            # 1. Check Team-Level Token
+            if team.fb_access_token:
                 return TokenManager._decrypt(team.fb_access_token)
+            
+            # 2. Fallback: Check Team Owner's Token
+            # This is critical for "Team Ad Account Isolation" where the Owner provides the connection.
+            if team.owner_id:
+                owner = session.query(User).filter(User.id == team.owner_id).first()
+                if owner and owner.fb_access_token:
+                    print(f"Using Team Owner's Token for Team: {team.name}")
+                    return TokenManager._decrypt(owner.fb_access_token)
+
             return None
         finally:
             session.close()

@@ -643,4 +643,56 @@ A collapsible section or modal "自訂表格指標欄位 (Custom Table Metric Co
     *   **正確做法**: 若不希望某成員存取團隊資料，直接將其「**移除 (Remove)**」出團隊即可。
     *   **停用權限**: 請參閱 [1. 系統層級] -> **SUPER ADMIN**，只有超級管理員才有權限執行平台層級的帳號停權。
 
+## 14. 超級管理員後台 2.0 (Admin Dashboard 2.0)
+**日期**: 2025-12-14
+**狀態**: ✅ 已完成 (Completed)
+
+針對超級管理員後台介面優化，已完成下列改進：
+
+1.  **介面風格統一 (UI Unification)**:
+    *   移除舊版 Tab 分頁設計，改為「單頁式垂直滾動 (Single View)」。
+    *   全面套用 **Glassmorphism (玻璃擬態)** 風格，與 `TeamSettings` 一致。
+    *   表格與卡片採用半透明背景與深色表頭。
+
+2.  **使用者體驗優化 (UX Enhancement)**:
+    *   **即時搜尋 (Search)**: 為「所有使用者 (All Users)」與「所有團隊 (All Teams)」新增搜尋欄，支援即時過濾。
+    *   **智慧分頁 (Pagination)**: 當資料超過 10 筆自動分頁，並整合搜尋結果。
+    *   **國際化 (i18n)**: 支援中/英雙語切換，預設為繁體中文 (Traditional Chinese)。
+
+3.  **技術細節**:
+    *   移除 Tailwind Class，改用 Vanilla CSS (Inline Styles) 以避免樣式衝突。
+
+## 15. 團隊廣告帳號隔離機制 (Team Ad Account Isolation)
+**日期**: 2025-12-14
+**狀態**: 🚧 規劃中 (Planning)
+
+**需求背景**:
+目前團隊綁定 Facebook Access Token 後，系統會列出該 Token 權限下「所有」的廣告帳號。
+但在團隊協作情境中，我們不希望團隊成員看到 Owner 個人或其他不相關的廣告帳號。
+
+**解決方案 (Solution)**:
+建立「廣告帳號白名單 (Whitelist)」機制。
+
+### 1. 資料庫設計 (Schema Change)
+需新增一個關聯表或是欄位來儲存「團隊」與「廣告帳號」的對應關係。
+*   **Table**: `team_ad_accounts` (或在 `teams` 表中新增 JSON 欄位 `visible_ad_account_ids`)
+*   **Columns**:
+    *   `team_id` (FK)
+    *   `ad_account_id` (String, e.g., "act_12345678")
+    *   `ad_account_name` (Snapshot string)
+
+### 2. 運作邏輯 (Logic Flow)
+1.  **授權 (Auth)**: Team Owner 完成 Facebook 授權。
+2.  **擷取 (Fetch)**: 後端從 FB API 抓回該 Token 能看到的所有帳號 (e.g., 20 個帳號)。
+3.  **過濾 (Filter)**:
+    *   **預設**: 抓回來的帳號列表，預設對團隊是「不可見 (Hidden)」或是尚未選取。
+    *   **設定**: Team Owner 進入「團隊設定」->「廣告帳號管理」，勾選「這個團隊可以操作這些帳號：[A, B, C]」。
+4.  **展示 (Display)**:
+    *   當團隊成員 (Admin/Member) 進入 Dashboard，前端呼叫 API 時。
+    *   後端只回傳「被勾選 (Whitelisted)」的 [A, B, C] 帳號資訊。
+
+### 3. UI 介面
+*   新增「廣告帳號選擇器 (Ad Account Selector)」：複選 Checkbox List。
+*   位置：`TeamSettings` -> `General` 或獨立的 `Ad Accounts` 分頁。
+
 

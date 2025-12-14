@@ -46,10 +46,14 @@ class TeamResponse(TeamBase):
     id: str
     owner_id: Optional[str] = None
     created_at: Optional[datetime] = None
+    visible_ad_account_ids: Optional[str] = None # JSON string
     # Don't return fb_access_token to frontend by default for security
 
     class Config:
         from_attributes = True
+
+class TeamAdAccountsUpdate(BaseModel):
+    ad_account_ids: List[str]
 
 class TeamMemberResponse(BaseModel):
     team_id: str

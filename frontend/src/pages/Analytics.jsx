@@ -147,7 +147,7 @@ const METRIC_GROUPS = [
 
 const Analytics = () => {
     // 1. Get shared context
-    const { selectedAccountId, user, language, isSidebarCollapsed } = useOutletContext();
+    const { selectedAccountId, user, language, isSidebarCollapsed, selectedTeamId } = useOutletContext();
 
     // 2. Translations
     const t = {
@@ -414,8 +414,15 @@ const Analytics = () => {
                 level: level,
             });
 
+            const headers = {
+                'Authorization': `Bearer ${idToken}`
+            };
+            if (selectedTeamId) {
+                headers['X-Team-ID'] = selectedTeamId;
+            }
+
             const res = await fetch(`${apiUrl}/api/analytics-data?${currentQuery}`, {
-                headers: { 'Authorization': `Bearer ${idToken}` }
+                headers: headers
             });
 
             if (!res.ok) {
@@ -454,7 +461,7 @@ const Analytics = () => {
                 });
 
                 const prevRes = await fetch(`${apiUrl}/api/analytics-data?${prevQuery}`, {
-                    headers: { 'Authorization': `Bearer ${idToken}` }
+                    headers: headers
                 });
 
                 if (prevRes.ok) {

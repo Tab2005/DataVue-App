@@ -216,6 +216,30 @@ def delete_team(team_id: str, db: Session = Depends(get_db), current_user: User 
     if team.owner_id != current_user.id and not getattr(current_user, 'is_super_admin', False):
          raise HTTPException(status_code=403, detail="Only the Team Owner can delete the team")
     
-    db.delete(team)
+
+from schemas import TeamAdAccountsUpdate
+import json
+
+@router.put("/{team_id}/ad_accounts", response_model=TeamResponse)
+def update_team_ad_accounts(
+    team_id: str,
+    update_data: TeamAdAccountsUpdate,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    team = db.query(Team).filter(Team.id == team_id).first()
+    if not team:
+        raise HTTPException(status_code=404, detail="Team not found")
+    
+    # Check Permission: Only Owner can manage ad accounts
+    if team.owner_id != current_user.id:
+         raise HTTPException(status_code=403, detail="Only the Team Owner can manage ad account visibility")
+
+    # Serialize List -> JSON String
+    # Start of list e.g. ["act_123", "act_45"]
+    team.visible_ad_account_ids = json.dumps(update_data.ad_account_ids)
+    
     db.commit()
-    return {"detail": "Team deleted successfully"}
+    db.refresh(team)
+    return team
+
