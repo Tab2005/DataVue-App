@@ -60,7 +60,42 @@ try:
     alembic.command.upgrade(alembic_cfg, "head")
     print("Database Migrations Applied.")
     
+    print("Database Migrations Applied.")
+    
     print("Verifying Schema Integrity...")
+    # SQLALCHEMY AUTO-PATCHING (For environments where migration history is lost/broken)
+    try:
+        from sqlalchemy import text, inspect
+        inspector = inspect(engine)
+        if inspector.has_table("teams"):
+            columns = [c["name"] for c in inspector.get_columns("teams")]
+            print(f"DEBUG: Current Teams Columns: {columns}")
+            
+            # Patch 1: visible_ad_account_ids
+            if "visible_ad_account_ids" not in columns:
+                print("⚠️ Schema Drift Detected: Adding 'visible_ad_account_ids' to teams table...")
+                with engine.connect() as conn:
+                    conn.execute(text("ALTER TABLE teams ADD COLUMN visible_ad_account_ids VARCHAR"))
+                    conn.commit()
+                print("✅ Schema Patched: visible_ad_account_ids added.")
+                
+            # Patch 2: fb_app_id
+            if "fb_app_id" not in columns:
+                 print("⚠️ Schema Drift: Adding 'fb_app_id'...")
+                 with engine.connect() as conn:
+                    conn.execute(text("ALTER TABLE teams ADD COLUMN fb_app_id VARCHAR"))
+                    conn.commit()
+            
+            # Patch 3: fb_access_token
+            if "fb_access_token" not in columns:
+                 print("⚠️ Schema Drift: Adding 'fb_access_token'...")
+                 with engine.connect() as conn:
+                    conn.execute(text("ALTER TABLE teams ADD COLUMN fb_access_token VARCHAR"))
+                    conn.commit()
+                    
+    except Exception as e:
+        print(f"⚠️ Schema Patching Warning: {e}")
+
     init_db() 
     
     print("Schema Verified.")
