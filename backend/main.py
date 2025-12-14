@@ -269,8 +269,15 @@ def get_ad_accounts(
         
     accounts, error = FacebookService.get_all_ad_accounts(user_id, team_id=fetch_team_id)
     
+    # 3. Fallback for Owner: If primary fetch failed (empty/error), retry with Team Token logic
+    # This covers edge cases where get_user_token fails but get_team_token (Owner Fallback) works
+    if (not accounts or error) and is_owner:
+        print(f"DEBUG: Primary fetch failed for owner ({error}), retrying with Team Token Scope...", file=sys.stderr)
+        accounts, error = FacebookService.get_all_ad_accounts(user_id, team_id=team_id)
+    
     if error:
         print(f"❌ Error from FacebookService: {error}", file=sys.stderr)
+        # If both failed, return empty but don't error out entirely to allow UI to render
         return []
         
     # Team Ad Account Isolation Logic
