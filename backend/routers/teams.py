@@ -215,6 +215,15 @@ def delete_team(team_id: str, db: Session = Depends(get_db), current_user: User 
     # Note: team.owner_id is the string ID of the owner
     if team.owner_id != current_user.id and not getattr(current_user, 'is_super_admin', False):
          raise HTTPException(status_code=403, detail="Only the Team Owner can delete the team")
+
+    # Manually delete related records to ensure clean deletion
+    # (Even if cascade is set, explicit deletion handles DBs without FK enforcement like SQLite default)
+    db.query(TeamMember).filter(TeamMember.team_id == team_id).delete()
+    db.query(TeamInvite).filter(TeamInvite.team_id == team_id).delete()
+    
+    db.delete(team)
+    db.commit()
+    return {"message": "Team deleted successfully"}
     
 
 from schemas import TeamAdAccountsUpdate
