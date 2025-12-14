@@ -1,7 +1,7 @@
 from fastapi import APIRouter, Depends, HTTPException, status, Header
 from sqlalchemy.orm import Session
 from typing import List, Optional
-from database import User, Team, TeamMember, UserRole
+from database import User, Team, TeamMember, TeamInvite, UserRole
 from schemas import TeamCreate, TeamResponse, TeamMemberResponse, TeamMemberUpdate, TeamUpdate
 from dependencies import get_db, get_current_user, get_admin_user
 
