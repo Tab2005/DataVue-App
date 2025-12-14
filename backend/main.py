@@ -254,8 +254,20 @@ def get_ad_accounts(
 ):
     team_id = team.id if team else None
     
-    # Pass user_id and team_id
-    accounts, error = FacebookService.get_all_ad_accounts(user_id, team_id=team_id)
+    # 1. Resolve Owner Status FIRST
+    current_db_user = db.query(User).filter(User.google_id == user_id).first()
+    current_internal_id = current_db_user.id if current_db_user else None
+    
+    is_owner = False
+    if team:
+        is_owner = (str(team.owner_id) == str(current_internal_id))
+
+    # 2. Determine Scope
+    fetch_team_id = team_id
+    if is_owner:
+        fetch_team_id = None # Force User Token for Owner
+        
+    accounts, error = FacebookService.get_all_ad_accounts(user_id, team_id=fetch_team_id)
     
     if error:
         print(f"❌ Error from FacebookService: {error}", file=sys.stderr)
@@ -263,13 +275,7 @@ def get_ad_accounts(
         
     # Team Ad Account Isolation Logic
     if team:
-        # Resolve Internal User ID from Google ID for comparison
-        # (verify_google_token returns Google ID, but team.owner_id is Internal ID)
-        current_db_user = db.query(User).filter(User.google_id == user_id).first()
-        current_internal_id = current_db_user.id if current_db_user else None
-        
-        # If user is NOT owner, apply whitelist
-        is_owner = (str(team.owner_id) == str(current_internal_id))
+        # (Already calculated is_owner above)
         
         if not is_owner:
             print(f"🔒 Non-Owner Access. Whitelist: {team.visible_ad_account_ids}", file=sys.stderr)
