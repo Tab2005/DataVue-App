@@ -53,7 +53,7 @@ def create_user(
     db.refresh(new_user)
     return new_user
 
-@router.get("/me")
+@router.get("/me", response_model=UserResponse)
 def read_users_me(current_user: User = Depends(get_current_user)):
     """
     Get current user profile. Accessible by any authenticated user.
