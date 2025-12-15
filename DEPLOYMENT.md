@@ -138,3 +138,21 @@ git push origin dev-saas
 2.  寫程式 -> Commit -> Push。
 3.  Zeabur 測試版會自動更新。
 4.  測試無誤後，發起 Pull Request 合併回 `main`，正式版才會更新。
+
+---
+
+## 7. 設定超級管理員權限 (Setting Up Super Admin)
+
+為了確保您擁有系統的最高管理權限 (即使資料庫被清空也能隨時取回)，請在 Zeabur 上設定專屬的環境變數。
+
+### 步驟
+1.  進入 [Zeabur Dashboard](https://dash.zeabur.com) 並點選您的專案。
+2.  選擇 **Backend (後端)** 服務。
+3.  切換到 **"Variables"** 分頁。
+4.  新增變數：
+    *   **Key**: `SUPER_ADMIN_EMAIL`
+    *   **Value**: 您的 Google Email (例如 `yourname@gmail.com`)
+5.  儲存變數。Zeabur 會自動重新部署服務。
+
+### 驗證
+重新部署完成後，使用該 Email 登入。如果成功，您應該能在選單中看到「超級管理員後台」的選項。
