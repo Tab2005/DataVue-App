@@ -771,5 +771,51 @@ A collapsible section or modal "自訂表格指標欄位 (Custom Table Metric Co
 *   **Super Admin Check**: 修復本地開發環境下，因 Session 快取導致 Super Admin 選單偶發性消失的問題。
 *   **Auto-Refresh**: 修復 API Key 設定後，Ad Account 列表未自動刷新的 UX 瑕疵。
 
+## 18. 進階指標客製化系統 (Advanced Metric Customization System)
+**日期**: 2025-12-15
+**狀態**: 🚀 規劃中 (Future Roadmap)
+**參考**: FB Ads Manager Column Customization (User Screenshots)
+
+為了滿足不同產業用戶（電商、App、影音、名單）的多元需求，將從目前的「硬編碼指標」轉型為「模組化指標庫」。
+
+### 1. 核心概念 (Core Concepts)
+*   **指標超市 (Metric Library)**: 
+    *   建立一個完整的指標定義檔 (JSON/DB)，包含分類 (Category)、API 欄位 (Field Key)、顯示名稱 (Label)、計算公式 (Formula)。
+    *   不再預設載入所有數據，而是讓用戶「進超市挑選」。
+*   **動態抓取 (Dynamic Fetching)**:
+    *   後端 API (`services.py`) 需重構，不再使用固定的 `base_fields`。
+    *   改為接收前端傳來的 `requested_fields` 陣列，動態組裝 Facebook API URL。
+    *   **優點**: 大幅降低 API 負載，只抓需要的資料。
+
+### 2. 功能模組 (Features)
+
+#### A. 自訂欄位視窗 (Customize Columns Modal)
+*   **介面參考**: 類似 Facebook 廣告後台的「自訂直欄」視窗。
+*   **功能**:
+    *   **搜尋 (Search)**: 支援關鍵字搜尋 (e.g., "ROAS", "Cost").
+    *   **分類瀏覽**: 左側導航列 (Performance, Engagement, Conversions, Settings).
+    *   **拖排序 (Drag & Drop)**: 右側面板顯示「已選欄位」，允許拖曳調整順序。
+    *   **全選/全消**: 針對特定分類的快速操作。
+
+#### B. 儲存視圖 (Saved Views / Presets)
+*   **痛點解決**: 避免用戶每次都要重新勾選 20 個指標。
+*   **功能**:
+    *   **Save as Preset**: 將目前的欄位配置儲存為「我的最愛 (e.g., 老闆週報, 影片成效)」。
+    *   **Set as Default**: 設定某個 Preset 為登入後的預設值。
+    *   **預設範本**: 系統內建幾款經典範本 (E-commerce Default, Video Engagement, App Growth)。
+
+### 3. 技術實作建議 (Technical Strategy)
+1.  **Frontend**:
+    *   擴充 `MetricSelector` 元件，從單純的 Popover 改為 Modal 形式。
+    *   實作 `ColumnOrder` state 管理欄位順序。
+2.  **Backend**:
+    *   實作 `MetricRegistry` class，管理 Field Mapping。
+    *   API `/api/analytics/report` 新增參數 `metrics=["spend", "video_p75_watched_actions", ...]`.
+
+### 4. 預期效益
+*   **高彈性**: 完美適應各種非電商產業 (Gaming, B2B)。
+*   **高效能**: 減少不必要的資料傳輸與處理。
+*   **SaaS 化基礎**: 這是邁向通用型行銷工具的關鍵一步。
+
  
  
