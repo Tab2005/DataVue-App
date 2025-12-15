@@ -883,5 +883,24 @@ A collapsible section or modal "自訂表格指標欄位 (Custom Table Metric Co
 *   **成本 (Cost)**: LLM Token 成本較高，需作為加值付費功能 (Add-on)。
 *   **模型**: 建議使用具備強大推理能力的模型 (e.g., GPT-4o, Claude 3.5 Sonnet) 以確保分析精準度。
 
+## 21. 隱藏受眾挖掘器 (Hidden Interest Discovery)
+**日期**: 2025-12-15
+**狀態**: 🚀 規劃中 (Future Roadmap)
+**價值**: 提供 FB 官方介面未顯示的「長尾興趣」，幫助用戶尋找藍海受眾，降低 CPM。
+
+### 1. 核心功能 (Core Features)
+*   **關鍵字擴充搜尋**: 
+    *   使用者輸入單一關鍵字 (e.g., "Golf")。
+    *   系統呼叫 API 列出所有 500+ 個相關標籤 (官方後台通常只顯示前 25 個熱門選項)。
+*   **數據透視**: 即時顯示每個興趣的 **受眾規模 (Audience Size)** 與 **路徑 (Topic Path)**。
+*   **一鍵複製**: 用戶勾選心儀的「小眾標籤」後，複製 ID 或名稱，貼回 FB 後台或直接在本平台建立廣告組。
+
+### 2. 技術原理 (Technical)
+*   **API Endpoint**: `GET /search`
+    *   Parameters: `type=adinterest`, `q={keyword}`, `limit=1000`.
+    *   也可使用 `targetingvalidation` 確認標籤有效性。
+*   **權限需求**: 使用現有的標準 User Access Token 即可，無需額外審查。
+*   **應用場景**: 作為強大的 **Lead Magnet (引流工具)**，吸引免費戶註冊使用，再轉化為付費會員。
+
  
  
