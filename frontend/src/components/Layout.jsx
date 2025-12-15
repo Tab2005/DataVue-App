@@ -68,70 +68,71 @@ const Layout = () => {
     }, [selectedTeamId]);
 
     // Fetch Accounts Logic (Moved from Dashboard)
+    const fetchAccounts = async (retries = 3) => {
+        const apiUrl = import.meta.env.VITE_API_URL || 'http://localhost:8000';
+        const token = localStorage.getItem('google_token');
+        const userInfoStr = localStorage.getItem('user_info');
+
+        if (token) {
+            let userData = { access_token: token };
+            if (userInfoStr) {
+                try {
+                    const parsedUser = JSON.parse(userInfoStr);
+                    userData = {
+                        ...userData,
+                        name: parsedUser.name || 'User',
+                        email: parsedUser.email || '',
+                        avatar: parsedUser.picture || parsedUser.avatar || ''
+                    };
+                } catch (e) {
+                    console.error("Failed to parse user info", e);
+                }
+            }
+            setUser(prev => ({ ...prev, ...userData }));
+        }
+
+        try {
+            const headers = {
+                'Authorization': `Bearer ${token}`
+            };
+            if (selectedTeamId) {
+                headers['X-Team-ID'] = selectedTeamId;
+            }
+
+            const response = await fetch(`${apiUrl}/api/ad-accounts`, {
+                headers: headers
+            });
+
+            if (!response.ok) {
+                if (response.status === 401) {
+                    console.warn("Token expired or invalid in Layout, logging out...");
+                    handleLogout();
+                    return;
+                }
+                throw new Error(`HTTP error! status: ${response.status}`);
+            }
+
+            const accList = await response.json();
+
+            if (Array.isArray(accList)) {
+                setAccounts(accList);
+                if (accList.length > 0) {
+                    // Reset selection on account list refresh
+                    setSelectedAccountId(accList[0].id);
+                } else {
+                    setSelectedAccountId('');
+                }
+            }
+        } catch (err) {
+            console.error(`Failed to fetch accounts (Retries left: ${retries})`, err);
+            setVisibleError(`Account Fetch Error: ${err.message}`); // Show error to user
+            if (retries > 0) {
+                setTimeout(() => fetchAccounts(retries - 1), 1500);
+            }
+        }
+    };
+
     useEffect(() => {
-        const fetchAccounts = async (retries = 3) => {
-            const apiUrl = import.meta.env.VITE_API_URL || 'http://localhost:8000';
-            const token = localStorage.getItem('google_token');
-            const userInfoStr = localStorage.getItem('user_info');
-
-            if (token) {
-                let userData = { access_token: token };
-                if (userInfoStr) {
-                    try {
-                        const parsedUser = JSON.parse(userInfoStr);
-                        userData = {
-                            ...userData,
-                            name: parsedUser.name || 'User',
-                            email: parsedUser.email || '',
-                            avatar: parsedUser.picture || parsedUser.avatar || ''
-                        };
-                    } catch (e) {
-                        console.error("Failed to parse user info", e);
-                    }
-                }
-                setUser(prev => ({ ...prev, ...userData }));
-            }
-
-            try {
-                const headers = {
-                    'Authorization': `Bearer ${token}`
-                };
-                if (selectedTeamId) {
-                    headers['X-Team-ID'] = selectedTeamId;
-                }
-
-                const response = await fetch(`${apiUrl}/api/ad-accounts`, {
-                    headers: headers
-                });
-
-                if (!response.ok) {
-                    if (response.status === 401) {
-                        console.warn("Token expired or invalid in Layout, logging out...");
-                        handleLogout();
-                        return;
-                    }
-                    throw new Error(`HTTP error! status: ${response.status}`);
-                }
-
-                const accList = await response.json();
-
-                if (Array.isArray(accList)) {
-                    setAccounts(accList);
-                    if (accList.length > 0) {
-                        // Reset selection on account list refresh
-                        setSelectedAccountId(accList[0].id);
-                    } else {
-                        setSelectedAccountId('');
-                    }
-                }
-            } catch (err) {
-                console.error(`Failed to fetch accounts (Retries left: ${retries})`, err);
-                setVisibleError(`Account Fetch Error: ${err.message}`); // Show error to user
-                if (retries > 0) {
-                    setTimeout(() => fetchAccounts(retries - 1), 1500);
-                }
-            }
-        };
 
         fetchAccounts();
     }, [selectedTeamId, user.access_token]); // Re-fetch on Team Change or Token Change
@@ -180,6 +181,7 @@ const Layout = () => {
                 // New Props for Switcher
                 teams={teams}
                 setSelectedTeamId={setSelectedTeamId}
+                onRefresh={() => fetchAccounts()} // Pass fetch trigger
             />
             <div className="main-content" style={{
                 flex: 1,

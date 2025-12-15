@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 
-const SettingsModal = ({ isOpen, onClose, language, teamId, teamName }) => {
+const SettingsModal = ({ isOpen, onClose, language, teamId, teamName, onSuccess }) => {
     const [formData, setFormData] = useState({
         appId: '',
         appSecret: '',
@@ -64,6 +64,7 @@ const SettingsModal = ({ isOpen, onClose, language, teamId, teamName }) => {
             if (response.ok) {
                 setStatus({ type: 'success', message: t.success });
                 setFormData({ appId: '', appSecret: '', shortToken: '' });
+                if (onSuccess) onSuccess();
             } else {
                 const errorDetail = data.detail || JSON.stringify(data);
                 setStatus({ type: 'error', message: `${t.error} ${errorDetail}` });

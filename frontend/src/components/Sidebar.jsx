@@ -4,7 +4,7 @@ import { Link, useLocation } from 'react-router-dom';
 import SettingsModal from './SettingsModal';
 import CreateTeamModal from './CreateTeamModal';
 
-const Sidebar = ({ language, isCollapsed, setIsCollapsed, isMobile, selectedTeamId, selectedTeamName, teams = [], setSelectedTeamId }) => {
+const Sidebar = ({ language, isCollapsed, setIsCollapsed, isMobile, selectedTeamId, selectedTeamName, teams = [], setSelectedTeamId, onRefresh }) => {
 
     const [isSettingsOpen, setIsSettingsOpen] = useState(false);
     // Track expanded submenus by label key
@@ -437,6 +437,7 @@ const Sidebar = ({ language, isCollapsed, setIsCollapsed, isMobile, selectedTeam
                 language={language || 'zh'}
                 teamId={selectedTeamId}
                 teamName={selectedTeamName}
+                onSuccess={onRefresh} // Trigger refresh on success
             />
         </>
     );
