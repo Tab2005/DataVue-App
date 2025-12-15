@@ -854,5 +854,34 @@ A collapsible section or modal "自訂表格指標欄位 (Custom Table Metric Co
 *   **Onboarding Tour**: 新用戶第一次登入時的「逐步教學導覽 (Step-by-step Walkthrough)」。
 *   **Video Tutorials**: 嵌入 30秒短影片教學。
 
+## 20. AI 智慧投手引擎 (AI Intelligence Engine)
+**日期**: 2025-12-15
+**狀態**: 🧪 創新實驗 (Experimental / Future)
+**目標**: 將產品從「被動的報表工具」升級為「主動的 AI 廣告顧問」。
+
+### 1. 三階段演進 (Three-Phase Evolution)
+
+#### Phase 1: 診斷報告 (The Analyst) - **MVP 起點**
+*   **概念**: 「一鍵體檢」。
+*   **流程**: 用戶點擊「分析本週成效」 -> 後端撈取數據 -> 整理成 JSON -> 送給 LLM (GPT-4o/Gemini) -> 產生文字報告。
+*   **能解決的問題**:
+    *   **素材疲乏 (Ad Fatigue)**: "廣告 A 的頻率超過 3.0 且 CTR 正在下降，建議更換素材。"
+    *   **受眾飽和**: "CPM 上漲 40% 但轉換率不變，競爭變激烈了。"
+
+#### Phase 2: 對話助手 (The Copilot)
+*   **概念**: 隨身數據助理 (Chatbot)。
+*   **情境**: 用戶問「為什麼昨天 ROAS 掉了？」，AI 自動比對昨天 vs 前天數據，回答「主要是 CPM 暴漲導致」。
+*   **技術**: RAG (Retrieval-Augmented Generation) + Function Calling (讓 AI 呼叫我們的 API 查數據)。
+
+#### Phase 3: 自動巡航 (The Autopilot) - **SaaS Pro Feature**
+*   **概念**: 24小時自動盯盤。
+*   **功能**: 結合自動化規則 (Automation Rules)。
+    *   *e.g., "如果 CPA > $50 且 ROAS < 1.0，自動關閉該廣告組。"*
+
+### 2. 技術考量 (Technical Considerations)
+*   **隱私 (Privacy)**: 送往 LLM 的數據需進行去識別化 (移除 User ID, Account ID)，僅保留數據趨勢與廣告名稱特徵。
+*   **成本 (Cost)**: LLM Token 成本較高，需作為加值付費功能 (Add-on)。
+*   **模型**: 建議使用具備強大推理能力的模型 (e.g., GPT-4o, Claude 3.5 Sonnet) 以確保分析精準度。
+
  
  
