@@ -46,7 +46,6 @@ def get_current_user(
         google_id = id_info['sub']
         email = id_info.get('email')
         name = id_info.get('name')
-        
         user = db.query(User).filter(User.google_id == google_id).first()
         
         if not user:
