@@ -817,5 +817,42 @@ A collapsible section or modal "自訂表格指標欄位 (Custom Table Metric Co
 *   **高效能**: 減少不必要的資料傳輸與處理。
 *   **SaaS 化基礎**: 這是邁向通用型行銷工具的關鍵一步。
 
+## 19. 用戶教育與支援系統 (User Education & Support System)
+**日期**: 2025-12-15
+**狀態**: 🚀 規劃中 (Future Roadmap)
+
+為了降低 SaaS 產品的使用門檻，建立一套分層級的教學引導系統。採用 **「混和模式 (Hybrid Model)」**：
+
+### 1. 核心架構 (Core Architecture)
+
+#### A. 獨立教學中心 (Dedicated Help Center) - *深度學習*
+*   **入口**: 左側 Sidebar 新增 `📘 使用指南 (Help)`。
+*   **形式**: 靜態頁面 (Static Page) 為主，無需複雜 CMS。
+*   **內容規劃**:
+    1.  **快速入門 (Quick Start)**: 如何註冊、取得 FB Token、連結廣告帳號。
+    2.  **團隊協作 (Collaboration)**: 如何邀請成員、權限說明。
+    3.  **常見問題 (FAQ)**: 數據更新頻率？為什麼數據對不上？
+
+#### B. 情境式提示 (Contextual Tooltips) - *即時解惑*
+*   **痛點**: 用戶看到 "ROAS", "CPM" 不懂意思。
+*   **實作**: 在專有名詞旁新增 `(i)` 或 `?` 小圖示。
+*   **互動**: 滑鼠懸停 (Hover) 或點擊時，顯示簡易定義。
+    *   *e.g., "ROAS: 廣告投資報酬率 (購買價值 / 花費)"*
+
+### 2. 實作階段 (Implementation Phases)
+
+#### Phase 1: 靜態內容 (Static Content) - **推薦優先執行**
+*   **技術**: 直接將教學內容寫在前端 Component 中 (Hardcoded or Markdown files)。
+*   **優點**: 開發極快，零維護成本，適合內容變動不頻繁的初期階段。
+*   **缺點**: 修改文字需重新部署 (Acceptable for MVP)。
+
+#### Phase 2: 動態 CMS (Dynamic CMS) - **未來擴充**
+*   **時機**: 當文章數量超過 50 篇，或需要非技術人員維護時。
+*   **技術**: 串接 Headless CMS (e.g., Strapi, Contentful) 或自建後台。
+
+### 3. 未來優化 (Future Enhancements)
+*   **Onboarding Tour**: 新用戶第一次登入時的「逐步教學導覽 (Step-by-step Walkthrough)」。
+*   **Video Tutorials**: 嵌入 30秒短影片教學。
+
  
  
