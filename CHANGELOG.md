@@ -1,5 +1,23 @@
 # Changelog
 
+## v1.5.1 (2025-12-15) - Mobile UX Enhancements & Hotfixes
+### Improvements
+- **Mobile Experience**:
+    - **Smart Sidebar**: 
+        - Sidebar now automatically collapses when switching workspaces, creating new teams, or navigating to pages on mobile devices.
+        - Fixed `z-index` layering issue where the mobile sidebar blocked the header's workspace switcher.
+    - **Responsive Team Settings**:
+        - Optimized padding and layout for Team Settings page on mobile.
+        - **Card View**: Replaced the wide user table with a vertical "Card View" for `UserManagement` on mobile screens to prevent horizontal scrolling.
+    - **Header Profile Menu**:
+        - **Portal Implementation**: Re-engineered the user dropdown menu using `React Portal`. This resolves `z-index` and clipping issues caused by backdrop filters, ensuring the menu covers the entire screen and closes reliably when clicking anywhere outside.
+
+### Fixed
+- **Local Environment**:
+    - **Super Admin Visibility**: Resolved an issue where Super Admin menus were hidden in local development environments due to stale user session checking logic.
+- **Workflow**:
+    - **Auto-Refresh**: Fixed a bug where Ad Accounts list wouldn't automatically refresh after a user successfully set their Facebook API key.
+
 ## v1.5.0 (2025-12-13) - Hybrid SaaS Architecture & Team Management
 ### New Features
 - **Team Management System**:

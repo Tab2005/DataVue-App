@@ -741,3 +741,35 @@ A collapsible section or modal "自訂表格指標欄位 (Custom Table Metric Co
 *   **症狀**: 快速切換團隊 (A -> B) 時，B 團隊的設定頁面短暫顯示 A 團隊的權限設定。
 *   **原因**: 前端 `localStorage` 的更新速度慢於頁面載入速度。API 請求時使用了舊的 `Team ID` (從 Storage 讀取)，導致後端回傳了舊團隊的資料。
 *   **解法**: 修改 `TeamService` 與 `AdAccountSelector`，強制在 API 請求時傳入當前頁面的 `teamId` 作為 Header，不再依賴全域 Storage 狀態。
+
+## 17. 手機版使用者體驗優化 (Mobile Experience Optimization)
+**日期**: 2025-12-15
+**狀態**: ✅ 已完成 (Completed) - v1.5.1
+
+針對日益增長的手機端管理需求，進行了全站的響應式改版與行為優化。
+
+### 1. 智慧側邊欄 (Smart Sidebar)
+*   **問題**: 舊版側邊欄在手機上佔用空間，且切換工作區後不會自動收合，遮擋視線。
+*   **解法**:
+    *   **Auto-Collapse**: 實作自動收合邏輯。當使用者點擊「導覽連結」、「工作區切換」、「建立團隊」等動作時，Sidebar 自動隱藏。
+    *   **Z-Index Fix**: 修復圖層堆疊問題，確保 Sidebar 高於 Header，但低於 Modal。
+
+### 2. 表頭個人選單 (Header Profile Menu)
+*   **問題**: 受限於 Header 的 `overflow: hidden` 與 `backdrop-filter` 屬性，下拉選單無法延伸到 Header 之外，且點擊外部無法順利收合。
+*   **解法 (React Portal)**:
+    *   使用 `React.createPortal` 將下拉選單直接渲染到 `document.body` (Root Level)。
+    *   徹底解決 CSS Stacking Context 問題。
+    *   實作全螢幕透明遮罩 (Backdrop)，點擊畫面任意處皆可關閉選單。
+
+### 3. 團隊設定頁面 (Responsive Team Settings)
+*   **問題**: 表格在手機寬度下會造成橫向捲動，且 Padding 過大導致內容擠壓。
+*   **解法**:
+    *   **Card View**: 成員列表在手機版自動切換為「卡片式佈局 (Card View)」，垂直排列資訊。
+    *   **Adaptive Padding**: 根據螢幕寬度動態調整頁面邊距 (48px -> 16px)。
+
+### 4. 系統穩定性 (System Stability)
+*   **Super Admin Check**: 修復本地開發環境下，因 Session 快取導致 Super Admin 選單偶發性消失的問題。
+*   **Auto-Refresh**: 修復 API Key 設定後，Ad Account 列表未自動刷新的 UX 瑕疵。
+
+ 
+ 
