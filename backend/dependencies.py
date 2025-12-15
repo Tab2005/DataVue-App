@@ -64,6 +64,15 @@ def get_current_user(
                 status=UserStatus.ACTIVE,
                 is_super_admin=(user_count == 0) # First user is Super Admin
             )
+            
+            # [Security hardening] Check Environment Variable for Forced Super Admin
+            # This ensures that even if the DB is not empty, the owner can reclaim Super Admin status
+            super_admin_email = os.getenv("SUPER_ADMIN_EMAIL")
+            if super_admin_email and email and super_admin_email.strip().lower() == email.strip().lower():
+                print(f"🔒 SUPER_ADMIN_EMAIL match detected! Promoting {email} to Super Admin.", file=sys.stderr)
+                user.is_super_admin = True
+                user.role = UserRole.ADMIN # Ensure they are also an Admin
+            
             db.add(user)
             db.commit()
             db.refresh(user)
@@ -74,6 +83,17 @@ def get_current_user(
                  user.email = email
                  user.name = name
                  # Not committing updates to avoid write-conflicts
+            
+            # [Security hardening] Recursive Check for Existing Users
+            # If an existing user logs in and their email matches SUPER_ADMIN_EMAIL, promote them dynamically.
+            super_admin_email = os.getenv("SUPER_ADMIN_EMAIL")
+            if super_admin_email and email and super_admin_email.strip().lower() == email.strip().lower():
+                if not user.is_super_admin:
+                    print(f"🔒 SUPER_ADMIN_EMAIL match detected for Existing User! Promoting {email}...", file=sys.stderr)
+                    user.is_super_admin = True
+                    user.role = UserRole.ADMIN
+                    db.commit()
+                    db.refresh(user)
         
         # Update last login - DISABLED PERMANENTLY FOR STABILITY (Concurrency Crash prevention)
         # from datetime import datetime
