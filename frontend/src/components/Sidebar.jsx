@@ -172,7 +172,11 @@ const Sidebar = ({ language, isCollapsed, setIsCollapsed, isMobile, selectedTeam
                                 {language === 'zh' ? '個人' : 'Personal'}
                             </div>
                             <div
-                                onClick={() => setSelectedTeamId('')}
+                                onClick={() => {
+                                    setSelectedTeamId('');
+                                    setIsSwitcherOpen(false);
+                                    if (isMobile) setIsCollapsed(true);
+                                }}
                                 style={{
                                     padding: '8px',
                                     borderRadius: '6px',
@@ -195,7 +199,11 @@ const Sidebar = ({ language, isCollapsed, setIsCollapsed, isMobile, selectedTeam
                             {teams.map(team => (
                                 <div
                                     key={team.id}
-                                    onClick={() => setSelectedTeamId(team.id)}
+                                    onClick={() => {
+                                        setSelectedTeamId(team.id);
+                                        setIsSwitcherOpen(false);
+                                        if (isMobile) setIsCollapsed(true);
+                                    }}
                                     style={{
                                         padding: '8px',
                                         borderRadius: '6px',
@@ -216,7 +224,11 @@ const Sidebar = ({ language, isCollapsed, setIsCollapsed, isMobile, selectedTeam
                             <div style={{ height: '1px', background: 'var(--glass-border)', margin: '8px 0' }}></div>
 
                             <div
-                                onClick={() => setOpenCreateTeam(true)}
+                                onClick={() => {
+                                    setOpenCreateTeam(true);
+                                    setIsSwitcherOpen(false);
+                                    if (isMobile) setIsCollapsed(true);
+                                }}
                                 style={{
                                     padding: '8px',
                                     borderRadius: '6px',

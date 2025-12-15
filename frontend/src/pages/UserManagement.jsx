@@ -4,7 +4,7 @@ import { TeamService } from '../services/teamService';
 import InviteModal from '../components/InviteModal';
 import { FaUserPlus, FaEdit, FaTrash, FaShieldAlt, FaCheckCircle, FaTimesCircle } from 'react-icons/fa';
 
-const UserManagement = ({ language, selectedTeamId, user, teams, embedded = false }) => {
+const UserManagement = ({ language, selectedTeamId, user, teams, embedded = false, isMobile }) => {
     // 2. Define Translations
     const translations = {
         en: {
@@ -361,67 +361,125 @@ const UserManagement = ({ language, selectedTeamId, user, teams, embedded = fals
             {error && <div style={styles.errorBox}>{error}</div>}
 
             <div className="glass-panel" style={styles.tableContainer}>
-                <div style={{ overflowX: 'auto' }}>
-                    <table style={styles.table}>
-                        <thead>
-                            <tr>
-                                <th style={styles.th}>{t.th_user}</th>
-                                <th style={styles.th}>{t.th_role}</th>
-                                <th style={styles.th}>{t.th_status}</th>
-                                <th style={styles.th}>{t.th_joined}</th>
-                                {canManage && <th style={{ ...styles.th, textAlign: 'right' }}>{t.th_actions}</th>}
-                            </tr>
-                        </thead>
-                        <tbody>
-                            {users.map((user, idx) => (
-                                <tr key={user.id} style={{
-                                    ...styles.td,
-                                    backgroundColor: idx % 2 === 0 ? 'transparent' : 'rgba(255,255,255,0.02)'
-                                }}>
-                                    <td style={styles.td}>
-                                        <div style={{ display: 'flex', alignItems: 'center' }}>
-                                            <div style={{
-                                                height: '40px', width: '40px', borderRadius: '50%',
-                                                display: 'flex', alignItems: 'center', justifyContent: 'center',
-                                                fontWeight: 'bold', marginRight: '12px',
-                                                backgroundColor: 'rgba(45, 136, 255, 0.2)',
-                                                color: 'var(--accent-primary)',
-                                                border: '1px solid rgba(45, 136, 255, 0.3)'
-                                            }}>
-                                                {user.name ? user.name.charAt(0).toUpperCase() : '?'}
-                                            </div>
-                                            <div>
-                                                <div style={{ fontWeight: '500', color: 'var(--text-primary)' }}>{user.name || t.unknown}</div>
-                                                <div style={{ fontSize: '0.75rem', marginTop: '2px', color: 'var(--text-secondary)' }}>{user.email || t.no_email}</div>
-                                            </div>
-                                        </div>
-                                    </td>
-                                    <td style={styles.td}><RoleBadge role={user.role} /></td>
-                                    <td style={styles.td}><StatusBadge status={user.status} /></td>
-                                    <td style={{ ...styles.td, fontSize: '0.875rem', color: 'var(--text-secondary)' }}>
-                                        {user.created_at ? new Date(user.created_at).toLocaleDateString() : '-'}
-                                    </td>
-                                    {canManage && (
-                                        <td style={{ ...styles.td, textAlign: 'right' }}>
-                                            {selectedTeamId && currentTeam?.owner_id === user.id ? (
-                                                <span style={{ fontSize: '0.75rem', padding: '2px 8px', borderRadius: '4px', backgroundColor: '#374151', color: '#9ca3af', border: '1px solid #4b5563' }}>Owner</span>
-                                            ) : (
-                                                <div style={{ display: 'flex', justifyContent: 'flex-end', alignItems: 'center', gap: '8px' }}>
-                                                    <button onClick={() => handleEdit(user)} style={styles.actionBtn} title="Edit">
-                                                        <FaEdit size={16} />
-                                                    </button>
-                                                    <button onClick={() => handleDelete(user.id)} style={styles.actionBtn} title="Delete">
-                                                        <FaTrash size={16} />
-                                                    </button>
-                                                </div>
-                                            )}
-                                        </td>
-                                    )}
+                {isMobile ? (
+                    // Mobile Card View
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '12px', padding: '16px' }}>
+                        {users.map((user) => (
+                            <div key={user.id} style={{
+                                padding: '16px',
+                                backgroundColor: 'rgba(255,255,255,0.03)',
+                                borderRadius: '12px',
+                                border: '1px solid var(--glass-border)'
+                            }}>
+                                <div style={{ display: 'flex', alignItems: 'center', marginBottom: '12px' }}>
+                                    <div style={{
+                                        height: '40px', width: '40px', borderRadius: '50%',
+                                        display: 'flex', alignItems: 'center', justifyContent: 'center',
+                                        fontWeight: 'bold', marginRight: '12px',
+                                        backgroundColor: 'rgba(45, 136, 255, 0.2)',
+                                        color: 'var(--accent-primary)',
+                                        border: '1px solid rgba(45, 136, 255, 0.3)'
+                                    }}>
+                                        {user.name ? user.name.charAt(0).toUpperCase() : '?'}
+                                    </div>
+                                    <div>
+                                        <div style={{ fontWeight: '500', color: 'var(--text-primary)' }}>{user.name || t.unknown}</div>
+                                        <div style={{ fontSize: '0.75rem', marginTop: '2px', color: 'var(--text-secondary)' }}>{user.email || t.no_email}</div>
+                                    </div>
+                                </div>
+
+                                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
+                                    <span style={{ fontSize: '0.8rem', color: 'var(--text-secondary)' }}>{t.th_role}</span>
+                                    <RoleBadge role={user.role} />
+                                </div>
+                                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
+                                    <span style={{ fontSize: '0.8rem', color: 'var(--text-secondary)' }}>{t.th_status}</span>
+                                    <StatusBadge status={user.status} />
+                                </div>
+
+                                {canManage && (
+                                    <div style={{ marginTop: '12px', paddingTop: '12px', borderTop: '1px solid var(--glass-border)', display: 'flex', justifyContent: 'flex-end', gap: '8px' }}>
+                                        {selectedTeamId && currentTeam?.owner_id === user.id ? (
+                                            <span style={{ fontSize: '0.75rem', padding: '2px 8px', borderRadius: '4px', backgroundColor: '#374151', color: '#9ca3af', border: '1px solid #4b5563' }}>Owner</span>
+                                        ) : (
+                                            <>
+                                                <button onClick={() => handleEdit(user)} style={{ ...styles.actionBtn, backgroundColor: 'rgba(255,255,255,0.05)', padding: '6px 12px' }} title="Edit">
+                                                    <FaEdit size={14} style={{ marginRight: '4px' }} /> {language === 'zh' ? '編輯' : 'Edit'}
+                                                </button>
+                                                <button onClick={() => handleDelete(user.id)} style={{ ...styles.actionBtn, backgroundColor: 'rgba(239, 68, 68, 0.1)', color: '#ef4444', padding: '6px 12px' }} title="Delete">
+                                                    <FaTrash size={14} style={{ marginRight: '4px' }} /> {language === 'zh' ? '移除' : 'Remove'}
+                                                </button>
+                                            </>
+                                        )}
+                                    </div>
+                                )}
+                            </div>
+                        ))}
+                    </div>
+                ) : (
+                    // Desktop Table View
+                    <div style={{ overflowX: 'auto' }}>
+                        <table style={styles.table}>
+                            <thead>
+                                <tr>
+                                    <th style={styles.th}>{t.th_user}</th>
+                                    <th style={styles.th}>{t.th_role}</th>
+                                    <th style={styles.th}>{t.th_status}</th>
+                                    <th style={styles.th}>{t.th_joined}</th>
+                                    {canManage && <th style={{ ...styles.th, textAlign: 'right' }}>{t.th_actions}</th>}
                                 </tr>
-                            ))}
-                        </tbody>
-                    </table>
-                </div>
+                            </thead>
+                            <tbody>
+                                {users.map((user, idx) => (
+                                    <tr key={user.id} style={{
+                                        ...styles.td,
+                                        backgroundColor: idx % 2 === 0 ? 'transparent' : 'rgba(255,255,255,0.02)'
+                                    }}>
+                                        <td style={styles.td}>
+                                            <div style={{ display: 'flex', alignItems: 'center' }}>
+                                                <div style={{
+                                                    height: '40px', width: '40px', borderRadius: '50%',
+                                                    display: 'flex', alignItems: 'center', justifyContent: 'center',
+                                                    fontWeight: 'bold', marginRight: '12px',
+                                                    backgroundColor: 'rgba(45, 136, 255, 0.2)',
+                                                    color: 'var(--accent-primary)',
+                                                    border: '1px solid rgba(45, 136, 255, 0.3)'
+                                                }}>
+                                                    {user.name ? user.name.charAt(0).toUpperCase() : '?'}
+                                                </div>
+                                                <div>
+                                                    <div style={{ fontWeight: '500', color: 'var(--text-primary)' }}>{user.name || t.unknown}</div>
+                                                    <div style={{ fontSize: '0.75rem', marginTop: '2px', color: 'var(--text-secondary)' }}>{user.email || t.no_email}</div>
+                                                </div>
+                                            </div>
+                                        </td>
+                                        <td style={styles.td}><RoleBadge role={user.role} /></td>
+                                        <td style={styles.td}><StatusBadge status={user.status} /></td>
+                                        <td style={{ ...styles.td, fontSize: '0.875rem', color: 'var(--text-secondary)' }}>
+                                            {user.created_at ? new Date(user.created_at).toLocaleDateString() : '-'}
+                                        </td>
+                                        {canManage && (
+                                            <td style={{ ...styles.td, textAlign: 'right' }}>
+                                                {selectedTeamId && currentTeam?.owner_id === user.id ? (
+                                                    <span style={{ fontSize: '0.75rem', padding: '2px 8px', borderRadius: '4px', backgroundColor: '#374151', color: '#9ca3af', border: '1px solid #4b5563' }}>Owner</span>
+                                                ) : (
+                                                    <div style={{ display: 'flex', justifyContent: 'flex-end', alignItems: 'center', gap: '8px' }}>
+                                                        <button onClick={() => handleEdit(user)} style={styles.actionBtn} title="Edit">
+                                                            <FaEdit size={16} />
+                                                        </button>
+                                                        <button onClick={() => handleDelete(user.id)} style={styles.actionBtn} title="Delete">
+                                                            <FaTrash size={16} />
+                                                        </button>
+                                                    </div>
+                                                )}
+                                            </td>
+                                        )}
+                                    </tr>
+                                ))}
+                            </tbody>
+                        </table>
+                    </div>
+                )}
             </div>
 
             {/* Edit Modal */}

@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { createPortal } from 'react-dom';
 import { useNavigate } from 'react-router-dom';
 import { FiSearch, FiBell, FiUser, FiGlobe, FiSettings, FiLogOut, FiMenu, FiAlertTriangle, FiPlus, FiBriefcase, FiShield } from 'react-icons/fi';
 import { FaShieldAlt } from 'react-icons/fa'; // Using FaShieldAlt for better visual
@@ -330,27 +331,27 @@ const Header = ({ language, setLanguage, accounts = [], selectedAccountId, setSe
             )}
           </div>
 
-          {/* Dropdown Menu */}
-          {showUserMenu && (
+          {/* Dropdown Menu - Portaled to Body to escape Header's stacking context/clip */}
+          {showUserMenu && createPortal(
             <>
               {/* Backdrop to close */}
               <div
-                style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, zIndex: 998 }}
+                style={{ position: 'fixed', inset: 0, zIndex: 2000 }} // High z-index to cover everything
                 onClick={() => setShowUserMenu(false)}
               />
 
               {/* Menu Card */}
               <div className="glass-panel" style={{
-                position: 'absolute',
-                top: '48px',
-                right: 0,
+                position: 'fixed',
+                top: '75px', // 70px header + 5px gap
+                right: isMobile ? '16px' : '32px', // Align with header padding
                 width: '280px',
                 background: 'var(--bg-secondary)',
                 border: '1px solid var(--glass-border)',
                 borderRadius: '8px',
                 boxShadow: '0 4px 20px rgba(0,0,0,0.4)',
                 padding: '0',
-                zIndex: 999,
+                zIndex: 2001, // Above backdrop
                 overflow: 'hidden'
               }}>
                 {/* User Info Section */}
@@ -367,7 +368,10 @@ const Header = ({ language, setLanguage, accounts = [], selectedAccountId, setSe
                 {user?.is_super_admin && (
                   <div style={{ padding: '8px', borderBottom: '1px solid var(--glass-border)' }}>
                     <button
-                      onClick={() => navigate('/admin')}
+                      onClick={() => {
+                        navigate('/admin');
+                        setShowUserMenu(false);
+                      }}
                       style={{
                         width: '100%',
                         textAlign: 'left',
@@ -407,7 +411,10 @@ const Header = ({ language, setLanguage, accounts = [], selectedAccountId, setSe
                   }}
                     onMouseEnter={(e) => e.currentTarget.style.background = 'rgba(255,255,255,0.05)'}
                     onMouseLeave={(e) => e.currentTarget.style.background = 'transparent'}
-                    onClick={() => alert(language === 'zh' ? '修改密碼功能即將推出' : 'Change Password Coming Soon')}
+                    onClick={() => {
+                      alert(language === 'zh' ? '修改密碼功能即將推出' : 'Change Password Coming Soon');
+                      setShowUserMenu(false);
+                    }}
                   >
                     <FiSettings />
                     <span style={{ fontSize: '0.9rem' }}>{language === 'zh' ? '修改密碼' : 'Password'}</span>
@@ -435,6 +442,7 @@ const Header = ({ language, setLanguage, accounts = [], selectedAccountId, setSe
                     onMouseLeave={(e) => e.currentTarget.style.background = 'transparent'}
                     onClick={() => {
                       if (window.confirm(language === 'zh' ? '確定要登出嗎？' : 'Logout?')) {
+                        setShowUserMenu(false);
                         onLogout && onLogout();
                       }
                     }}
@@ -444,7 +452,8 @@ const Header = ({ language, setLanguage, accounts = [], selectedAccountId, setSe
                   </button>
                 </div>
               </div>
-            </>
+            </>,
+            document.body
           )}
         </div>
 

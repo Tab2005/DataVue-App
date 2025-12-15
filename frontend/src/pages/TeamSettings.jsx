@@ -6,7 +6,7 @@ import UserManagement from './UserManagement';
 import AdAccountSelector from '../components/AdAccountSelector';
 
 const TeamSettings = () => {
-    const { language, selectedTeamId, user, teams, setTeams, setSelectedTeamId } = useOutletContext();
+    const { language, selectedTeamId, user, teams, setTeams, setSelectedTeamId, isMobile } = useOutletContext();
     const navigate = useNavigate();
 
     // General Settings State
@@ -100,7 +100,8 @@ const TeamSettings = () => {
         container: {
             maxWidth: '1024px',
             margin: '0 auto',
-            padding: '48px 32px',
+            margin: '0 auto',
+            padding: isMobile ? '16px' : '48px 32px',
             display: 'flex',
             flexDirection: 'column',
             gap: '32px'
@@ -181,7 +182,7 @@ const TeamSettings = () => {
         dangerZone: {
             backgroundColor: 'rgba(239, 68, 68, 0.03)',
             borderRadius: '24px',
-            padding: '32px',
+            padding: isMobile ? '20px' : '32px',
             border: '1px solid rgba(239, 68, 68, 0.2)'
         }
     };
@@ -216,6 +217,7 @@ const TeamSettings = () => {
                     selectedTeamId={selectedTeamId}
                     user={user}
                     teams={teams}
+                    isMobile={isMobile}
                 />
             </section>
 
@@ -238,7 +240,7 @@ const TeamSettings = () => {
                 </div>
 
                 {/* Glass Panel Form */}
-                <div className="glass-panel" style={{ padding: '40px', borderRadius: '24px' }}>
+                <div className="glass-panel" style={{ padding: isMobile ? '20px' : '40px', borderRadius: '24px' }}>
                     <form onSubmit={handleUpdate}>
                         <div style={{ marginBottom: '32px', maxWidth: '576px' }}>
                             <label style={{ display: 'block', fontSize: '0.875rem', fontWeight: '600', marginBottom: '12px', marginLeft: '4px', color: 'var(--text-secondary)' }}>
@@ -306,7 +308,7 @@ const TeamSettings = () => {
                             </div>
                         </div>
 
-                        <div className="glass-panel" style={{ padding: '40px', borderRadius: '24px' }}>
+                        <div className="glass-panel" style={{ padding: isMobile ? '20px' : '40px', borderRadius: '24px' }}>
                             <AdAccountSelector
                                 teamId={selectedTeamId}
                                 initialSelected={currentTeam?.visible_ad_account_ids}
