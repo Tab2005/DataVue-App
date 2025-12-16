@@ -24,18 +24,18 @@ const Sidebar = ({ language, isCollapsed, setIsCollapsed, isMobile, selectedTeam
         }
     };
 
+    const t = (en, zh) => language === 'zh' ? zh : en;
+
     const menuItems = [
-        { icon: <FiHome size={20} />, label: 'Overview', path: '/' },
-        { icon: <FiBarChart2 size={20} />, label: 'Analytics', path: '/analytics' },
-        { icon: <FiUsers size={20} />, label: 'Audience', path: '#' },
-        { icon: <FiActivity size={20} />, label: 'Activity', path: '#' },
+        { icon: <FiHome size={20} />, label: t('Overview', '總覽'), path: '/' },
+        { icon: <FiBarChart2 size={20} />, label: t('Analytics', '成效分析'), path: '/analytics' },
         // Grouped Team Settings
         {
             icon: <FiSettings size={20} />,
-            label: 'Team Settings',
+            label: t('Team Settings', '團隊設定'),
             path: '/settings/team'
         },
-        { icon: <FiShield size={20} />, label: 'API Connection', action: () => setIsSettingsOpen(true) },
+        { icon: <FiShield size={20} />, label: t('API Connection', 'API 連線'), action: () => setIsSettingsOpen(true) },
     ];
 
 

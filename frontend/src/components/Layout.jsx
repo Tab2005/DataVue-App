@@ -44,12 +44,10 @@ const Layout = () => {
                 const myTeams = await TeamService.getMyTeams();
                 setTeams(myTeams);
 
-                // Restore selection or default to first
+                // Restore selection or default to Personal (empty string)
                 const savedTeamId = localStorage.getItem('selected_team_id');
                 if (savedTeamId && myTeams.find(t => t.id === savedTeamId)) {
                     setSelectedTeamId(savedTeamId);
-                } else if (myTeams.length > 0) {
-                    setSelectedTeamId(myTeams[0].id);
                 }
             } catch (err) {
                 console.error("Failed to fetch teams", err);
