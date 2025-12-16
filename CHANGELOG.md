@@ -142,6 +142,11 @@
 - **Formatting**: 
   - **Overview Cards**: 將「花費 (Spend)」與其他金額指標調整為整數顯示 (無小數點)，提升閱讀性 (CPA 保留小數位)。
 
+## [v1.5.2] - 2025-12-16
+### Improved
+- **API Settings UI**: Added real-time token expiration display (Date & Days Remaining) in the Settings Modal for better visibility.
+- **API 設定介面**: 在設定視窗中新增即時權杖到期日顯示（日期與剩餘天數），方便用戶確認連線狀態。
+
 ## [1.3.2] - 2025-12-10
 ### Added
 - **Analytics UI**: 

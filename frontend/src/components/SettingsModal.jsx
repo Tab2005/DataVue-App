@@ -8,6 +8,33 @@ const SettingsModal = ({ isOpen, onClose, language, teamId, teamName, onSuccess 
     });
     const [status, setStatus] = useState(null); // { type: 'success' | 'error', message: '' }
     const [loading, setLoading] = useState(false);
+    const [tokenInfo, setTokenInfo] = useState(null); // { expires_at, days_remaining, is_expired }
+
+    const fetchTokenStatus = async () => {
+        // Only fetch for Personal Settings (No Team ID)
+        if (teamId) return;
+
+        try {
+            const token = localStorage.getItem('google_token');
+            const apiUrl = import.meta.env.VITE_API_URL || 'http://localhost:8000';
+            const res = await fetch(`${apiUrl}/api/auth/token-status`, {
+                headers: { 'Authorization': `Bearer ${token}` }
+            });
+            if (res.ok) {
+                const data = await res.json();
+                setTokenInfo(data);
+            }
+        } catch (err) {
+            console.error("Failed to fetch token status", err);
+        }
+    };
+
+    React.useEffect(() => {
+        if (isOpen) {
+            fetchTokenStatus();
+            setStatus(null); // Reset detailed status on open
+        }
+    }, [isOpen, teamId]);
 
     if (!isOpen) return null;
 
@@ -64,6 +91,7 @@ const SettingsModal = ({ isOpen, onClose, language, teamId, teamName, onSuccess 
             if (response.ok) {
                 setStatus({ type: 'success', message: t.success });
                 setFormData({ appId: '', appSecret: '', shortToken: '' });
+                fetchTokenStatus();
                 if (onSuccess) onSuccess();
             } else {
                 const errorDetail = data.detail || JSON.stringify(data);
@@ -158,6 +186,41 @@ const SettingsModal = ({ isOpen, onClose, language, teamId, teamName, onSuccess 
                             : `⚠️ You are setting API for team "${teamName}". This token will allow all team members to view ad data.`}
                     </div>
                 )}
+
+                {/* Token Status Widget (Personal Only) */}
+                {!teamId && tokenInfo?.expires_at && (
+                    <div style={{
+                        marginBottom: '20px',
+                        padding: '12px',
+                        borderRadius: '8px',
+                        backgroundColor: 'rgba(74, 222, 128, 0.1)',
+                        border: '1px solid rgba(74, 222, 128, 0.2)',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'space-between'
+                    }}>
+                        <div>
+                            <div style={{ color: '#4ade80', fontWeight: 'bold', fontSize: '0.9rem', marginBottom: '4px' }}>
+                                {language === 'zh' ? '● 目前權杖狀態正常' : '● Active Token Found'}
+                            </div>
+                            <div style={{ color: 'var(--text-secondary)', fontSize: '0.8rem' }}>
+                                {language === 'zh' ? '到期時間: ' : 'Exp: '}
+                                {new Date(tokenInfo.expires_at).toLocaleDateString()}
+                            </div>
+                        </div>
+                        <div style={{
+                            background: '#4ade80',
+                            color: 'black',
+                            padding: '4px 8px',
+                            borderRadius: '4px',
+                            fontSize: '0.75rem',
+                            fontWeight: 'bold'
+                        }}>
+                            {tokenInfo.days_remaining} {language === 'zh' ? '天後到期' : 'Days Left'}
+                        </div>
+                    </div>
+                )}
+
 
                 <form onSubmit={handleSubmit} style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
                     <div>
