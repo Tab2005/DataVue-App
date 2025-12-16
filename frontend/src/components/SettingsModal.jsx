@@ -1,19 +1,66 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 
 const SettingsModal = ({ isOpen, onClose, language, teamId, teamName, onSuccess }) => {
-    const [formData, setFormData] = useState({
+    // Tabs: 'facebook' | 'ai'
+    const [activeTab, setActiveTab] = useState('facebook');
+
+    // Facebook Form Data
+    const [fbData, setFbData] = useState({
         appId: '',
         appSecret: '',
         shortToken: ''
     });
+
+    // AI Form Data
+    const [aiData, setAiData] = useState({
+        provider: 'google', // Default
+        apiKey: '',
+        model: 'gemini-2.5-flash'
+    });
+
+    // Status & Loading
     const [status, setStatus] = useState(null); // { type: 'success' | 'error', message: '' }
     const [loading, setLoading] = useState(false);
-    const [tokenInfo, setTokenInfo] = useState(null); // { expires_at, days_remaining, is_expired }
 
+    // Token Info (Facebook)
+    const [tokenInfo, setTokenInfo] = useState(null);
+
+    // Zeabur / AI Status
+    const [aiConnectionStatus, setAiConnectionStatus] = useState('unknown'); // unknown, connected_zeabur, connected_user, disconnected
+
+    const t = {
+        title: language === 'zh' ? '整合中心 (Integration Center)' : 'Integration Center',
+        tabs: {
+            facebook: 'Facebook Ads',
+            ai: 'AI Intelligence'
+        },
+        fb: {
+            appId: 'App ID',
+            appSecret: 'App Secret',
+            shortToken: language === 'zh' ? '短期權杖 (Short-Lived Token)' : 'Short-Lived Token',
+            save: language === 'zh' ? '連線並交換權杖' : 'Connect & Exchange Token',
+        },
+        ai: {
+            provider: 'Provider',
+            apiKey: 'API Key',
+            model: 'Model',
+            test: language === 'zh' ? '測試連線' : 'Test Connection',
+            zeaburDetected: language === 'zh' ? '🟢 系統託管模式 (Zeabur AI Hub)' : '🟢 Managed Mode (Zeabur AI Hub)',
+            zeaburDesc: language === 'zh' ? '系統已自動偵測到託管的金鑰，您無需設定即可使用 AI 功能。' : 'System has detected a managed key. You can use AI features without configuration.',
+            manualDesc: language === 'zh' ? '請輸入您的 Google Gemini API Key (我們會安全地儲存在您的瀏覽器中)。' : 'Please enter your Google Gemini API Key (securely stored in your browser).',
+            saveKey: language === 'zh' ? '儲存金鑰' : 'Save Key (Local)',
+        },
+        common: {
+            cancel: language === 'zh' ? '關閉' : 'Close',
+            processing: language === 'zh' ? '處理中...' : 'Processing...',
+            success: language === 'zh' ? '設定已儲存！' : 'Settings Saved!',
+            error: language === 'zh' ? '錯誤：' : 'Error: '
+        }
+    };
+
+    // --- Facebook Logic ---
     const fetchTokenStatus = async () => {
-        // Only fetch for Personal Settings (No Team ID)
         if (teamId) return;
-
         try {
             const token = localStorage.getItem('google_token');
             const apiUrl = import.meta.env.VITE_API_URL || 'http://localhost:8000';
@@ -29,46 +76,21 @@ const SettingsModal = ({ isOpen, onClose, language, teamId, teamName, onSuccess 
         }
     };
 
-    React.useEffect(() => {
-        if (isOpen) {
-            fetchTokenStatus();
-            setStatus(null); // Reset detailed status on open
-        }
-    }, [isOpen, teamId]);
-
-    if (!isOpen) return null;
-
-    const t = {
-        title: teamId ? (language === 'zh' ? `設定 API: ${teamName}` : `Setup API: ${teamName}`) : (language === 'zh' ? '設定 API 連線' : 'API Connection Settings'),
-        appId: 'App ID',
-        appSecret: 'App Secret',
-        shortToken: language === 'zh' ? '短期權杖 (Short-Lived Token)' : 'Short-Lived Token',
-        save: language === 'zh' ? '連線並交換權杖' : 'Connect & Exchange Token',
-        cancel: language === 'zh' ? '取消' : 'Cancel',
-        processing: language === 'zh' ? '處理中...' : 'Processing...',
-        success: language === 'zh' ? '連線成功！權杖已安全儲存。' : 'Connected successfully! Token saved securely.',
-        error: language === 'zh' ? '連線失敗：' : 'Connection failed: '
-    };
-
-    const handleSubmit = async (e) => {
+    const handleFbSubmit = async (e) => {
         e.preventDefault();
         setLoading(true);
         setStatus(null);
 
         try {
-            // 取得 API 網址
             const apiUrl = import.meta.env.VITE_API_URL || 'http://localhost:8000';
             const token = localStorage.getItem('google_token');
 
             const payload = {
-                app_id: formData.appId,
-                app_secret: formData.appSecret,
-                short_token: formData.shortToken
+                app_id: fbData.appId,
+                app_secret: fbData.appSecret,
+                short_token: fbData.shortToken
             };
-
-            if (teamId) {
-                payload.team_id = teamId;
-            }
+            if (teamId) payload.team_id = teamId;
 
             const response = await fetch(`${apiUrl}/api/auth/exchange-token`, {
                 method: 'POST',
@@ -79,7 +101,6 @@ const SettingsModal = ({ isOpen, onClose, language, teamId, teamName, onSuccess 
                 body: JSON.stringify(payload),
             });
 
-            // Handle Token Expiry (401)
             if (response.status === 401) {
                 localStorage.removeItem('google_token');
                 window.location.href = '/login';
@@ -89,240 +110,323 @@ const SettingsModal = ({ isOpen, onClose, language, teamId, teamName, onSuccess 
             const data = await response.json();
 
             if (response.ok) {
-                setStatus({ type: 'success', message: t.success });
-                setFormData({ appId: '', appSecret: '', shortToken: '' });
+                setStatus({ type: 'success', message: t.common.success });
+                setFbData({ appId: '', appSecret: '', shortToken: '' });
                 fetchTokenStatus();
                 if (onSuccess) onSuccess();
             } else {
                 const errorDetail = data.detail || JSON.stringify(data);
-                setStatus({ type: 'error', message: `${t.error} ${errorDetail}` });
+                setStatus({ type: 'error', message: `${t.common.error} ${errorDetail}` });
             }
         } catch (err) {
-            console.error("Settings connection error:", err);
-            setStatus({ type: 'error', message: `${t.error} ${err.message}` });
+            setStatus({ type: 'error', message: `${t.common.error} ${err.message}` });
         } finally {
             setLoading(false);
         }
     };
 
+    // --- AI Logic ---
+    const checkAiConnection = async () => {
+        setLoading(true);
+        // 1. Check LocalStorage for user key
+        const localKey = localStorage.getItem('ai_api_key');
+        if (localKey) {
+            setAiData(prev => ({ ...prev, apiKey: localKey }));
+        }
+
+        // 2. Test Connection (Backend will check Zeabur env if key is null)
+        try {
+            const token = localStorage.getItem('google_token');
+            const apiUrl = import.meta.env.VITE_API_URL || 'http://localhost:8000';
+
+            // First, test with NO key to see if Zeabur is active
+            const res = await fetch(`${apiUrl}/api/ai/test-connection`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Authorization': `Bearer ${token}`
+                },
+                body: JSON.stringify({ api_key: null })
+            });
+
+            if (res.ok) {
+                setAiConnectionStatus('connected_zeabur');
+            } else {
+                // If Zeabur failed, try with Local Key if exists
+                if (localKey) {
+                    const res2 = await fetch(`${apiUrl}/api/ai/test-connection`, {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json',
+                            'Authorization': `Bearer ${token}`
+                        },
+                        body: JSON.stringify({ api_key: localKey })
+                    });
+                    if (res2.ok) {
+                        setAiConnectionStatus('connected_user');
+                    } else {
+                        setAiConnectionStatus('disconnected');
+                    }
+                } else {
+                    setAiConnectionStatus('disconnected');
+                }
+            }
+
+        } catch (err) {
+            console.error("AI Check Failed", err);
+            setAiConnectionStatus('disconnected');
+        } finally {
+            setLoading(false);
+        }
+    };
+
+    const handleSaveAiKey = () => {
+        if (aiData.apiKey) {
+            localStorage.setItem('ai_api_key', aiData.apiKey);
+            // Re-test
+            checkAiConnection();
+            setStatus({ type: 'success', message: 'API Key Saved Locally!' });
+        }
+    };
+
+    const handleClearAiKey = () => {
+        localStorage.removeItem('ai_api_key');
+        setAiData(prev => ({ ...prev, apiKey: '' }));
+        checkAiConnection();
+        setStatus(null);
+    }
+
+    useEffect(() => {
+        if (isOpen) {
+            // Reset
+            setStatus(null);
+            fetchTokenStatus();
+
+            // Determine default tab? No, keep existing behavior or default to facebook
+            if (activeTab === 'ai') {
+                checkAiConnection();
+            }
+        }
+    }, [isOpen, teamId]);
+
+    // Switch to AI tab triggers check
+    useEffect(() => {
+        if (isOpen && activeTab === 'ai') {
+            checkAiConnection();
+        }
+    }, [activeTab]);
+
+
+    if (!isOpen) return null;
+
     return (
         <div
             onClick={onClose}
             style={{
-                position: 'fixed',
-                top: 0,
-                left: 0,
-                right: 0,
-                bottom: 0,
-                backgroundColor: 'rgba(0,0,0,0.7)',
-                backdropFilter: 'blur(5px)',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                zIndex: 1000,
-                cursor: 'default'
+                position: 'fixed', inset: 0,
+                backgroundColor: 'rgba(0,0,0,0.7)', backdropFilter: 'blur(5px)',
+                display: 'flex', alignItems: 'center', justifyContent: 'center',
+                zIndex: 1000, cursor: 'default'
             }}
         >
             <div
                 className="glass-panel"
                 onClick={(e) => e.stopPropagation()}
                 style={{
-                    width: '500px',
+                    width: '600px', // Wider for tabs
                     padding: '32px',
                     borderRadius: 'var(--radius-xl)',
                     backgroundColor: '#242526',
-                    position: 'relative' // For absolute positioning of close button
+                    position: 'relative',
+                    maxHeight: '85vh',
+                    overflowY: 'auto'
                 }}
             >
-                {/* Close Button X */}
-                <button
-                    onClick={onClose}
-                    style={{
-                        position: 'absolute',
-                        top: '20px',
-                        right: '20px',
-                        background: 'transparent',
-                        border: 'none',
-                        color: 'var(--text-secondary)',
-                        fontSize: '24px',
-                        cursor: 'pointer',
-                        lineHeight: '1',
-                        width: '32px',
-                        height: '32px',
-                        borderRadius: '50%',
-                        display: 'flex',
-                        alignItems: 'center',
-                        justifyContent: 'center',
-                        transition: 'background 0.2s, color 0.2s'
-                    }}
-                    onMouseEnter={(e) => {
-                        e.currentTarget.style.color = 'white';
-                        e.currentTarget.style.background = 'rgba(255,255,255,0.1)';
-                    }}
-                    onMouseLeave={(e) => {
-                        e.currentTarget.style.color = 'var(--text-secondary)';
-                        e.currentTarget.style.background = 'transparent';
-                    }}
-                    aria-label="Close"
-                >
-                    ×
-                </button>
+                {/* Header & Tabs */}
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '24px' }}>
+                    <h2 style={{ fontSize: '1.5rem', margin: 0 }}>{t.title}</h2>
+                    <button onClick={onClose} style={{ background: 'transparent', border: 'none', color: 'var(--text-secondary)', fontSize: '24px', cursor: 'pointer' }}>×</button>
+                </div>
 
-                <h2 style={{ marginBottom: '24px', fontSize: '1.5rem' }}>{t.title}</h2>
-
-                {teamId && (
-                    <div style={{
-                        marginBottom: '20px',
-                        padding: '12px',
-                        borderRadius: '8px',
-                        backgroundColor: 'rgba(59, 130, 246, 0.1)',
-                        border: '1px solid rgba(59, 130, 246, 0.3)',
-                        color: '#60a5fa',
-                        fontSize: '0.9rem',
-                        lineHeight: '1.5'
-                    }}>
-                        {language === 'zh'
-                            ? `⚠️ 您正在為團隊「${teamName}」設定 API。此 Token 將授權給團隊所有成員查看廣告數據。`
-                            : `⚠️ You are setting API for team "${teamName}". This token will allow all team members to view ad data.`}
-                    </div>
-                )}
-
-                {/* Token Status Widget (Personal Only) */}
-                {!teamId && tokenInfo?.expires_at && (
-                    <div style={{
-                        marginBottom: '20px',
-                        padding: '12px',
-                        borderRadius: '8px',
-                        backgroundColor: 'rgba(74, 222, 128, 0.1)',
-                        border: '1px solid rgba(74, 222, 128, 0.2)',
-                        display: 'flex',
-                        alignItems: 'center',
-                        justifyContent: 'space-between'
-                    }}>
-                        <div>
-                            <div style={{ color: '#4ade80', fontWeight: 'bold', fontSize: '0.9rem', marginBottom: '4px' }}>
-                                {language === 'zh' ? '● 目前權杖狀態正常' : '● Active Token Found'}
-                            </div>
-                            <div style={{ color: 'var(--text-secondary)', fontSize: '0.8rem' }}>
-                                {language === 'zh' ? '到期時間: ' : 'Exp: '}
-                                {new Date(tokenInfo.expires_at).toLocaleDateString()}
-                            </div>
-                        </div>
-                        <div style={{
-                            background: '#4ade80',
-                            color: 'black',
-                            padding: '4px 8px',
-                            borderRadius: '4px',
-                            fontSize: '0.75rem',
-                            fontWeight: 'bold'
-                        }}>
-                            {tokenInfo.days_remaining} {language === 'zh' ? '天後到期' : 'Days Left'}
-                        </div>
-                    </div>
-                )}
-
-
-                <form onSubmit={handleSubmit} style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
-                    <div>
-                        <label style={{ display: 'block', marginBottom: '8px', color: 'var(--text-secondary)' }}>{t.appId}</label>
-                        <input
-                            type="text"
-                            required
-                            value={formData.appId}
-                            onChange={(e) => setFormData({ ...formData, appId: e.target.value })}
+                {/* Tabs Config */}
+                <div style={{ display: 'flex', gap: '8px', marginBottom: '24px', borderBottom: '1px solid var(--glass-border)' }}>
+                    {Object.keys(t.tabs).map(key => (
+                        <button
+                            key={key}
+                            onClick={() => { setActiveTab(key); setStatus(null); }}
                             style={{
-                                width: '100%',
-                                padding: '12px',
-                                borderRadius: '8px',
-                                border: '1px solid var(--glass-border)',
-                                background: 'rgba(255,255,255,0.05)',
-                                color: 'white',
-                                outline: 'none'
+                                padding: '12px 24px',
+                                background: 'transparent',
+                                border: 'none',
+                                borderBottom: activeTab === key ? '2px solid var(--accent-primary)' : '2px solid transparent',
+                                color: activeTab === key ? 'var(--accent-primary)' : 'var(--text-secondary)',
+                                fontWeight: activeTab === key ? 'bold' : 'normal',
+                                cursor: 'pointer',
+                                transition: 'all 0.2s',
+                                fontSize: '1rem'
                             }}
-                        />
-                    </div>
+                        >
+                            {t.tabs[key]}
+                        </button>
+                    ))}
+                </div>
 
-                    <div>
-                        <label style={{ display: 'block', marginBottom: '8px', color: 'var(--text-secondary)' }}>{t.appSecret}</label>
-                        <input
-                            type="password"
-                            required
-                            value={formData.appSecret}
-                            onChange={(e) => setFormData({ ...formData, appSecret: e.target.value })}
-                            style={{
-                                width: '100%',
-                                padding: '12px',
-                                borderRadius: '8px',
-                                border: '1px solid var(--glass-border)',
-                                background: 'rgba(255,255,255,0.05)',
-                                color: 'white',
-                                outline: 'none'
-                            }}
-                        />
-                    </div>
+                {/* Content Area */}
+                <div style={{ minHeight: '300px' }}>
 
-                    <div>
-                        <label style={{ display: 'block', marginBottom: '8px', color: 'var(--text-secondary)' }}>{t.shortToken}</label>
-                        <input
-                            type="password"
-                            required
-                            value={formData.shortToken}
-                            onChange={(e) => setFormData({ ...formData, shortToken: e.target.value })}
-                            style={{
-                                width: '100%',
-                                padding: '12px',
-                                borderRadius: '8px',
-                                border: '1px solid var(--glass-border)',
-                                background: 'rgba(255,255,255,0.05)',
-                                color: 'white',
-                                outline: 'none'
-                            }}
-                        />
-                    </div>
+                    {/* --- FACEBOOK TAB --- */}
+                    {activeTab === 'facebook' && (
+                        <>
+                            {teamId && (
+                                <div style={{
+                                    marginBottom: '20px', padding: '12px', borderRadius: '8px',
+                                    backgroundColor: 'rgba(59, 130, 246, 0.1)', border: '1px solid rgba(59, 130, 246, 0.3)', color: '#60a5fa', fontSize: '0.9rem'
+                                }}>
+                                    {language === 'zh'
+                                        ? `⚠️ 您正在為團隊「${teamName}」設定 API。此 Token 將授權給團隊所有成員查看廣告數據。`
+                                        : `⚠️ You are setting API for team "${teamName}". This token will allow all team members to view ad data.`}
+                                </div>
+                            )}
 
-                    {status && (
-                        <div style={{
-                            padding: '12px',
-                            borderRadius: '8px',
-                            backgroundColor: status.type === 'success' ? 'rgba(74, 222, 128, 0.1)' : 'rgba(248, 113, 113, 0.1)',
-                            color: status.type === 'success' ? '#4ade80' : '#f87171',
-                            border: `1px solid ${status.type === 'success' ? 'rgba(74, 222, 128, 0.2)' : 'rgba(248, 113, 113, 0.2)'}`
-                        }}>
-                            {status.message}
-                        </div>
+                            {/* Token Status Widget */}
+                            {!teamId && tokenInfo?.expires_at && (
+                                <div style={{
+                                    marginBottom: '20px', padding: '12px', borderRadius: '8px',
+                                    backgroundColor: 'rgba(74, 222, 128, 0.1)', border: '1px solid rgba(74, 222, 128, 0.2)',
+                                    display: 'flex', alignItems: 'center', justifyContent: 'space-between'
+                                }}>
+                                    <div>
+                                        <div style={{ color: '#4ade80', fontWeight: 'bold', fontSize: '0.9rem', marginBottom: '4px' }}>
+                                            {language === 'zh' ? '● 目前權杖狀態正常' : '● Active Token Found'}
+                                        </div>
+                                        <div style={{ color: 'var(--text-secondary)', fontSize: '0.8rem' }}>
+                                            {language === 'zh' ? '到期時間: ' : 'Exp: '}
+                                            {new Date(tokenInfo.expires_at).toLocaleDateString()}
+                                        </div>
+                                    </div>
+                                    <div style={{
+                                        background: '#4ade80', color: 'black', padding: '4px 8px', borderRadius: '4px', fontSize: '0.75rem', fontWeight: 'bold'
+                                    }}>
+                                        {tokenInfo.days_remaining} {language === 'zh' ? '天後到期' : 'Days Left'}
+                                    </div>
+                                </div>
+                            )}
+
+                            <form onSubmit={handleFbSubmit} style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+                                <div>
+                                    <label style={{ display: 'block', marginBottom: '8px', color: 'var(--text-secondary)' }}>{t.fb.appId}</label>
+                                    <input type="text" required value={fbData.appId} onChange={(e) => setFbData({ ...fbData, appId: e.target.value })}
+                                        style={{ width: '100%', padding: '12px', borderRadius: '8px', border: '1px solid var(--glass-border)', background: 'rgba(255,255,255,0.05)', color: 'white' }} />
+                                </div>
+                                <div>
+                                    <label style={{ display: 'block', marginBottom: '8px', color: 'var(--text-secondary)' }}>{t.fb.appSecret}</label>
+                                    <input type="password" required value={fbData.appSecret} onChange={(e) => setFbData({ ...fbData, appSecret: e.target.value })}
+                                        style={{ width: '100%', padding: '12px', borderRadius: '8px', border: '1px solid var(--glass-border)', background: 'rgba(255,255,255,0.05)', color: 'white' }} />
+                                </div>
+                                <div>
+                                    <label style={{ display: 'block', marginBottom: '8px', color: 'var(--text-secondary)' }}>{t.fb.shortToken}</label>
+                                    <input type="password" required value={fbData.shortToken} onChange={(e) => setFbData({ ...fbData, shortToken: e.target.value })}
+                                        style={{ width: '100%', padding: '12px', borderRadius: '8px', border: '1px solid var(--glass-border)', background: 'rgba(255,255,255,0.05)', color: 'white' }} />
+                                </div>
+
+                                <div style={{ display: 'flex', gap: '12px', marginTop: '16px', justifyContent: 'flex-end' }}>
+                                    <button type="submit" disabled={loading}
+                                        style={{ padding: '10px 20px', borderRadius: '8px', border: 'none', background: loading ? 'gray' : 'var(--accent-primary)', color: 'white', cursor: loading ? 'not-allowed' : 'pointer' }}>
+                                        {loading ? t.common.processing : t.fb.save}
+                                    </button>
+                                </div>
+                            </form>
+                        </>
                     )}
 
-                    <div style={{ display: 'flex', gap: '12px', marginTop: '16px', justifyContent: 'flex-end' }}>
-                        <button
-                            type="button"
-                            onClick={onClose}
-                            style={{
-                                padding: '10px 20px',
-                                borderRadius: '8px',
-                                border: 'none',
-                                background: 'rgba(255,255,255,0.1)',
-                                color: 'var(--text-primary)',
-                                cursor: 'pointer'
-                            }}
-                        >
-                            {t.cancel}
-                        </button>
-                        <button
-                            type="submit"
-                            disabled={loading}
-                            style={{
-                                padding: '10px 20px',
-                                borderRadius: '8px',
-                                border: 'none',
-                                background: loading ? 'gray' : 'var(--accent-primary)',
-                                color: 'white',
-                                cursor: loading ? 'not-allowed' : 'pointer'
-                            }}
-                        >
-                            {loading ? t.processing : t.save}
-                        </button>
+                    {/* --- AI TAB --- */}
+                    {activeTab === 'ai' && (
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
+
+                            {/* Status Indicator */}
+                            <div style={{
+                                padding: '16px', borderRadius: '8px',
+                                border: aiConnectionStatus.startsWith('connected') ? '1px solid rgba(74, 222, 128, 0.2)' : '1px solid rgba(248, 113, 113, 0.2)',
+                                background: aiConnectionStatus.startsWith('connected') ? 'rgba(74, 222, 128, 0.05)' : 'rgba(248, 113, 113, 0.05)',
+                                display: 'flex', alignItems: 'center', gap: '12px'
+                            }}>
+                                <div style={{ fontSize: '24px' }}>
+                                    {aiConnectionStatus.startsWith('connected') ? '🤖' : '🔌'}
+                                </div>
+                                <div>
+                                    <div style={{ fontWeight: 'bold', color: aiConnectionStatus.startsWith('connected') ? '#4ade80' : '#f87171' }}>
+                                        {aiConnectionStatus === 'connected_zeabur' && t.ai.zeaburDetected}
+                                        {aiConnectionStatus === 'connected_user' && (language === 'zh' ? '🟢 已連線 (用戶自訂 Key)' : '🟢 Connected (User Key)')}
+                                        {aiConnectionStatus === 'disconnected' && (language === 'zh' ? '🔴 未連線' : '🔴 Disconnected')}
+                                        {aiConnectionStatus === 'unknown' && t.common.processing}
+                                    </div>
+                                    <div style={{ fontSize: '0.85rem', color: 'var(--text-secondary)', marginTop: '4px' }}>
+                                        {aiConnectionStatus === 'connected_zeabur' && t.ai.zeaburDesc}
+                                        {aiConnectionStatus !== 'connected_zeabur' && t.ai.manualDesc}
+                                    </div>
+                                </div>
+                            </div>
+
+                            {/* Manual Configuration (Only if not Zeabur Managed) */}
+                            {aiConnectionStatus !== 'connected_zeabur' && (
+                                <div style={{ display: 'flex', flexDirection: 'column', gap: '16px', opacity: loading ? 0.5 : 1 }}>
+                                    <div>
+                                        <label style={{ display: 'block', marginBottom: '8px', color: 'var(--text-secondary)' }}>{t.ai.provider}</label>
+                                        <select
+                                            value={aiData.provider}
+                                            onChange={(e) => setAiData({ ...aiData, provider: e.target.value })}
+                                            style={{ width: '100%', padding: '12px', borderRadius: '8px', border: '1px solid var(--glass-border)', background: 'rgba(255,255,255,0.05)', color: 'white' }}
+                                        >
+                                            <option value="google">Google Gemini</option>
+                                        </select>
+                                    </div>
+
+                                    <div>
+                                        <label style={{ display: 'block', marginBottom: '8px', color: 'var(--text-secondary)' }}>{t.ai.apiKey}</label>
+                                        <input
+                                            type="password"
+                                            placeholder="sk-..."
+                                            value={aiData.apiKey}
+                                            onChange={(e) => setAiData({ ...aiData, apiKey: e.target.value })}
+                                            style={{ width: '100%', padding: '12px', borderRadius: '8px', border: '1px solid var(--glass-border)', background: 'rgba(255,255,255,0.05)', color: 'white' }}
+                                        />
+                                    </div>
+
+                                    <div style={{ display: 'flex', gap: '12px', justifyContent: 'flex-end' }}>
+                                        {aiData.apiKey && (
+                                            <button
+                                                onClick={handleClearAiKey}
+                                                style={{ padding: '10px 20px', borderRadius: '8px', border: '1px solid var(--glass-border)', background: 'transparent', color: '#f87171', cursor: 'pointer' }}
+                                            >
+                                                {language === 'zh' ? '清除' : 'Clear'}
+                                            </button>
+                                        )}
+                                        <button
+                                            onClick={handleSaveAiKey}
+                                            disabled={loading || !aiData.apiKey}
+                                            style={{ padding: '10px 20px', borderRadius: '8px', border: 'none', background: 'var(--accent-primary)', color: 'white', cursor: loading ? 'not-allowed' : 'pointer' }}
+                                        >
+                                            {loading ? t.common.processing : t.ai.test}
+                                        </button>
+                                    </div>
+                                </div>
+                            )}
+
+                        </div>
+                    )}
+                </div>
+
+                {/* Status Message Overlay */}
+                {status && (
+                    <div style={{
+                        marginTop: '16px', padding: '12px', borderRadius: '8px',
+                        backgroundColor: status.type === 'success' ? 'rgba(74, 222, 128, 0.1)' : 'rgba(248, 113, 113, 0.1)',
+                        color: status.type === 'success' ? '#4ade80' : '#f87171',
+                        border: `1px solid ${status.type === 'success' ? 'rgba(74, 222, 128, 0.2)' : 'rgba(248, 113, 113, 0.2)'}`
+                    }}>
+                        {status.message}
                     </div>
-                </form>
+                )}
             </div>
         </div>
     );

@@ -42,7 +42,7 @@ from google.oauth2 import id_token
 from google.auth.transport import requests as google_requests
 
 # Import Routers
-from routers import users, teams, invites, admin
+from routers import users, teams, invites, admin, ai
 import auth
 from dependencies import get_current_team, get_db
 from contextlib import asynccontextmanager
@@ -210,6 +210,7 @@ def get_token_status(user_id: str = Depends(verify_google_token)):
 app.include_router(users.router, prefix="/api/users", tags=["users"])
 app.include_router(teams.router, prefix="/api/teams", tags=["teams"]) # Team Management
 app.include_router(invites.router, prefix="/api", tags=["invites"]) # Invites
+app.include_router(ai.router, prefix="/api/ai", tags=["ai"]) # AI Intelligence
 app.include_router(admin.router) # Admin Router (prefix defined in router)
 
 @app.middleware("http")

@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useOutletContext } from 'react-router-dom';
 import html2canvas from 'html2canvas';
+import { FiHome, FiBarChart2, FiUsers, FiSettings, FiActivity, FiChevronLeft, FiChevronRight, FiShield, FiChevronDown, FiChevronUp, FiPlus, FiDownload, FiFilter, FiX, FiCpu, FiZap, FiRefreshCcw } from 'react-icons/fi';
 import { format, subDays, startOfWeek, endOfWeek, startOfMonth, endOfMonth, subMonths, subYears, differenceInDays } from 'date-fns';
 import KPICard from '../components/KPICard';
 import TrendSection from '../components/TrendSection';
@@ -26,30 +27,30 @@ const COMPARE_PRESETS = [
 
 const VIEW_PRESETS = {
     summary: {
-        label_zh: '📊 總覽 (Summary)',
+        label_zh: '📊 總覽',
         label_en: '📊 Summary',
         // Creating a match with Dashboard Overview: Impressions, Link Clicks, CTR, CPC, Spend, Purchases, Add to Cart, ROAS
         metrics: ['impressions', 'link_clicks', 'ctr', 'cpc', 'spend', 'purchases', 'add_to_cart', 'roas']
     },
     ecommerce: {
-        label_zh: '🛒 電商詳情 (E-commerce)',
+        label_zh: '🛒 電商詳情',
         label_en: '🛒 E-commerce',
         // User requested 7 specific metrics: ATC Value, CPA, ATC, ROAS, Cost per ATC, Purchase Value, Purchases
         // Reordered for logical funnel flow: ATC -> Cost/ATC -> ATC Value -> Purchases -> CPA -> Purchase Value -> ROAS
         metrics: ['add_to_cart', 'cost_per_atc', 'atc_value', 'purchases', 'cpa', 'purchase_value', 'roas']
     },
     engagement: {
-        label_zh: '❤️ 互動指標 (Engagement)',
+        label_zh: '❤️ 互動指標',
         label_en: '❤️ Engagement',
         metrics: ['post_comments', 'post_saves', 'post_shares', 'post_engagement', 'post_reactions', 'page_likes']
     },
     funnel: {
-        label_zh: '🌪️ 漏斗分析 (Funnel)',
+        label_zh: '🌪️ 漏斗分析',
         label_en: '🌪️ Funnel',
         metrics: ['cvr', 'view_to_cart', 'cart_conversion', 'cart_dropoff', 'cart_value_realization']
     },
     custom: {
-        label_zh: '⚙️ 自訂 (Custom)',
+        label_zh: '⚙️ 自訂',
         label_en: '⚙️ Custom',
         metrics: [] // User defined
     }
@@ -339,6 +340,12 @@ const Analytics = () => {
     }, []);
 
     const handleViewChange = (view) => {
+        // Toggle logic if clicking "Custom" while already on "Custom"
+        if (view === 'custom' && activeView === 'custom') {
+            setShowMetricPanel(prev => !prev);
+            return;
+        }
+
         setActiveView(view);
         if (view !== 'custom') {
             const presetMetrics = VIEW_PRESETS[view].metrics;
@@ -360,7 +367,7 @@ const Analytics = () => {
             setSelectedMetrics(newSet);
             setShowMetricPanel(false); // Hide panel when using preset
         } else {
-            // When switching to custom, maybe open the panel?
+            // When switching to custom, always show the panel initially
             setShowMetricPanel(true);
         }
     };
@@ -391,6 +398,76 @@ const Analytics = () => {
 
     // 3. Data State
     const [reportData, setReportData] = useState(null);
+    // AI Analyst State
+    const [showAiPanel, setShowAiPanel] = useState(false);
+    const [isAnalyzing, setIsAnalyzing] = useState(false);
+    const [analysisResult, setAnalysisResult] = useState('');
+    const [aiError, setAiError] = useState(null);
+
+    const handleStartAnalysis = async () => {
+        setIsAnalyzing(true);
+        setAnalysisResult('');
+        setAiError(null);
+
+        try {
+            // 1. Prepare Data context
+            // Truncate table data to avoid token limits (Top 20 rows?)
+            const topRows = filteredData.slice(0, 20); // Top 20 by current sort
+
+            const contextData = {
+                period: `${dateRange.since} to ${dateRange.until}`,
+                level: level,
+                metrics_summary: {
+                    total_spend: currentSummaryData?.spend,
+                    total_roas: currentSummaryData?.roas,
+                    total_purchases: currentSummaryData?.purchases,
+                },
+                rows: topRows
+            };
+
+            const token = localStorage.getItem('google_token');
+            const localKey = localStorage.getItem('ai_api_key');
+            const apiUrl = import.meta.env.VITE_API_URL || 'http://localhost:8000';
+
+            const payload = {
+                data: contextData,
+                context: `Analyzing ${level} performance for period: ${dateRange.since} to ${dateRange.until}. Language: ${language}`,
+                api_key: localKey || null // Send local key if exists (Dual Mode)
+            };
+
+            const response = await fetch(`${apiUrl}/api/ai/analyze`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Authorization': `Bearer ${token}`
+                },
+                body: JSON.stringify(payload)
+            });
+
+            if (!response.ok) {
+                const err = await response.json();
+                throw new Error(err.detail || 'Analysis Failed');
+            }
+
+            // Stream Reader
+            const reader = response.body.getReader();
+            const decoder = new TextDecoder();
+
+            while (true) {
+                const { done, value } = await reader.read();
+                if (done) break;
+                const chunk = decoder.decode(value, { stream: true });
+                setAnalysisResult(prev => prev + chunk);
+            }
+
+        } catch (err) {
+            console.error("AI Analysis Error", err);
+            setAiError(err.message);
+        } finally {
+            setIsAnalyzing(false);
+        }
+    };
+
     const [prevReportData, setPrevReportData] = useState(null);
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState(null);
@@ -809,133 +886,174 @@ const Analytics = () => {
                                     {language === 'zh' ? preset.label_zh : preset.label_en}
                                 </button>
                             ))}
+
+                            {/* AI Analyst Button */}
+                            <button
+                                onClick={() => setShowAiPanel(true)}
+                                style={{
+                                    display: 'flex', alignItems: 'center', gap: '6px',
+                                    padding: '6px 16px', borderRadius: '20px',
+                                    background: 'linear-gradient(135deg, #6366f1, #a855f7)', // Indigo to Purple
+                                    border: 'none', color: 'white',
+                                    fontSize: '0.9rem', fontWeight: 'bold', cursor: 'pointer',
+                                    boxShadow: '0 4px 12px rgba(99, 102, 241, 0.3)',
+                                    transition: 'transform 0.2s',
+                                }}
+                                onMouseEnter={e => e.currentTarget.style.transform = 'translateY(-2px)'}
+                                onMouseLeave={e => e.currentTarget.style.transform = 'translateY(0)'}
+                            >
+                                🤖 {language === 'zh' ? 'AI 廣告分析' : 'AI Analyst'}
+                            </button>
                         </div>
+                    </div>
 
-                        {/* Row 2: Filter Toolbar (Moved here) */}
-                        <div style={{
-                            display: 'flex',
-                            flexDirection: isMobile ? 'column' : 'row',
-                            gap: '16px',
-                            alignItems: isMobile ? 'stretch' : 'center',
-                            marginBottom: '16px',
-                            background: 'rgba(255,255,255,0.03)',
-                            padding: '12px',
-                            borderRadius: '12px',
-                            border: '1px solid var(--glass-border)'
-                        }}>
-                            {/* Keyword Search */}
-                            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flex: 1 }}>
-                                <span style={{ fontSize: '1.2rem' }}>🔍</span>
-                                <input
-                                    type="text"
-                                    placeholder={language === 'zh' ? "搜尋關鍵字..." : "Search keyword..."}
-                                    value={filterKeyword}
-                                    onChange={(e) => setFilterKeyword(e.target.value)}
-                                    style={{
-                                        background: 'transparent',
-                                        border: 'none',
-                                        color: 'var(--text-primary)',
-                                        fontSize: '1rem',
-                                        width: '100%',
-                                        outline: 'none'
-                                    }}
-                                />
-                            </div>
-
-                            <div style={{ width: '1px', height: '24px', background: 'var(--glass-border)' }}></div>
-
-                            {/* Filter Mode */}
-                            <select
-                                value={filterMode}
-                                onChange={(e) => setFilterMode(e.target.value)}
+                    {/* Row 2: Filter Toolbar (Moved here) */}
+                    <div style={{
+                        display: 'flex',
+                        flexDirection: isMobile ? 'column' : 'row',
+                        gap: '16px',
+                        alignItems: isMobile ? 'stretch' : 'center',
+                        marginBottom: '16px',
+                        background: 'rgba(255,255,255,0.03)',
+                        padding: '12px',
+                        borderRadius: '12px',
+                        border: '1px solid var(--glass-border)'
+                    }}>
+                        {/* Keyword Search */}
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flex: 1 }}>
+                            <span style={{ fontSize: '1.2rem' }}>🔍</span>
+                            <input
+                                type="text"
+                                placeholder={language === 'zh' ? "搜尋關鍵字..." : "Search keyword..."}
+                                value={filterKeyword}
+                                onChange={(e) => setFilterKeyword(e.target.value)}
                                 style={{
                                     background: 'transparent',
                                     border: 'none',
-                                    color: 'var(--text-secondary)',
-                                    fontSize: '0.9rem',
-                                    cursor: 'pointer',
+                                    color: 'var(--text-primary)',
+                                    fontSize: '1rem',
+                                    width: '100%',
                                     outline: 'none'
                                 }}
-                            >
-                                <option value="include">{language === 'zh' ? '包含 (Include)' : 'Include'}</option>
-                                <option value="exclude">{language === 'zh' ? '排除 (Exclude)' : 'Exclude'}</option>
-                            </select>
-
-                            <div style={{ width: '1px', height: '24px', background: 'var(--glass-border)' }}></div>
-
-                            {/* Active Only Toggle */}
-                            <label style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer' }}>
-                                <span style={{ fontSize: '0.9rem', color: filterActiveOnly ? '#4ade80' : 'var(--text-secondary)', fontWeight: filterActiveOnly ? 600 : 400 }}>
-                                    ⚡ {language === 'zh' ? '只看快篩 (Active)' : 'Active Only'}
-                                </span>
-                                <div className="switch" style={{ position: 'relative', display: 'inline-block', width: '36px', height: '20px' }}>
-                                    <input type="checkbox" checked={filterActiveOnly} onChange={(e) => setFilterActiveOnly(e.target.checked)} style={{ opacity: 0, width: 0, height: 0 }} />
-                                    <span style={{
-                                        position: 'absolute', cursor: 'pointer', top: 0, left: 0, right: 0, bottom: 0,
-                                        backgroundColor: filterActiveOnly ? '#4ade80' : '#4b5563', borderRadius: '20px', transition: '.4s'
-                                    }}>
-                                        <span style={{
-                                            position: 'absolute', content: "", height: '14px', width: '14px', left: '3px', bottom: '3px',
-                                            backgroundColor: 'white', transition: '.4s', borderRadius: '50%',
-                                            transform: filterActiveOnly ? 'translateX(16px)' : 'translateX(0)'
-                                        }}></span>
-                                    </span>
-                                </div>
-                            </label>
+                            />
                         </div>
 
-                        {activeView === 'custom' && (
-                            <div style={{ marginTop: '16px', animation: 'fadeIn 0.3s' }}>
-                                {METRIC_GROUPS.map(group => (
-                                    <div key={group.id} style={{ marginBottom: '16px' }}>
-                                        <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '8px' }}>
-                                            <div style={{ fontSize: '0.85rem', color: group.color || 'var(--accent-primary)', fontWeight: 'bold' }}>
-                                                {language === 'zh' ? group.label_zh : group.label_en}
-                                            </div>
-                                            <div style={{ fontSize: '0.75rem', display: 'flex', gap: '8px' }}>
-                                                <span
-                                                    onClick={() => {
-                                                        const newSet = new Set(selectedMetrics);
-                                                        // Use composite keys
-                                                        group.metrics.forEach(m => newSet.add(`${group.id}:${m.key}`));
-                                                        setSelectedMetrics(newSet);
-                                                    }}
-                                                    style={{ color: 'var(--accent-primary)', cursor: 'pointer', textDecoration: 'underline' }}
-                                                >
-                                                    {language === 'zh' ? '全選' : 'Select All'}
-                                                </span>
-                                                <span style={{ color: 'var(--text-tertiary)' }}>|</span>
-                                                <span
-                                                    onClick={() => {
-                                                        const newSet = new Set(selectedMetrics);
-                                                        group.metrics.forEach(m => newSet.delete(`${group.id}:${m.key}`));
-                                                        setSelectedMetrics(newSet);
-                                                    }}
-                                                    style={{ color: 'var(--accent-primary)', cursor: 'pointer', textDecoration: 'underline' }}
-                                                >
-                                                    {language === 'zh' ? '全消' : 'Deselect All'}
-                                                </span>
-                                            </div>
+                        <div style={{ width: '1px', height: '24px', background: 'var(--glass-border)' }}></div>
+
+                        {/* Filter Mode */}
+                        <select
+                            value={filterMode}
+                            onChange={(e) => setFilterMode(e.target.value)}
+                            style={{
+                                background: 'transparent',
+                                border: 'none',
+                                color: 'var(--text-secondary)',
+                                fontSize: '0.9rem',
+                                cursor: 'pointer',
+                                outline: 'none'
+                            }}
+                        >
+                            <option value="include">{language === 'zh' ? '包含 (Include)' : 'Include'}</option>
+                            <option value="exclude">{language === 'zh' ? '排除 (Exclude)' : 'Exclude'}</option>
+                        </select>
+
+                        <div style={{ width: '1px', height: '24px', background: 'var(--glass-border)' }}></div>
+
+                        {/* Active Only Toggle */}
+                        <label style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer' }}>
+                            <span style={{ fontSize: '0.9rem', color: filterActiveOnly ? '#4ade80' : 'var(--text-secondary)', fontWeight: filterActiveOnly ? 600 : 400 }}>
+                                ⚡ {language === 'zh' ? '只看快篩 (Active)' : 'Active Only'}
+                            </span>
+                            <div className="switch" style={{ position: 'relative', display: 'inline-block', width: '36px', height: '20px' }}>
+                                <input type="checkbox" checked={filterActiveOnly} onChange={(e) => setFilterActiveOnly(e.target.checked)} style={{ opacity: 0, width: 0, height: 0 }} />
+                                <span style={{
+                                    position: 'absolute', cursor: 'pointer', top: 0, left: 0, right: 0, bottom: 0,
+                                    backgroundColor: filterActiveOnly ? '#4ade80' : '#4b5563', borderRadius: '20px', transition: '.4s'
+                                }}>
+                                    <span style={{
+                                        position: 'absolute', content: "", height: '14px', width: '14px', left: '3px', bottom: '3px',
+                                        backgroundColor: 'white', transition: '.4s', borderRadius: '50%',
+                                        transform: filterActiveOnly ? 'translateX(16px)' : 'translateX(0)'
+                                    }}></span>
+                                </span>
+                            </div>
+                        </label>
+                    </div>
+
+                    {activeView === 'custom' && showMetricPanel && (
+                        <div style={{ marginTop: '16px', animation: 'fadeIn 0.3s' }}>
+                            {METRIC_GROUPS.map(group => (
+                                <div key={group.id} style={{ marginBottom: '16px' }}>
+                                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '8px' }}>
+                                        <div style={{ fontSize: '0.85rem', color: group.color || 'var(--accent-primary)', fontWeight: 'bold' }}>
+                                            {language === 'zh' ? group.label_zh : group.label_en}
                                         </div>
-                                        <div style={{ display: 'flex', flexWrap: 'wrap', gap: '12px' }}>
-                                            {group.metrics.map(metric => (
-                                                <label key={metric.key} style={{ display: 'flex', alignItems: 'center', gap: '6px', cursor: 'pointer', fontSize: '0.9rem', color: 'var(--text-secondary)' }}>
-                                                    <input
-                                                        type="checkbox"
-                                                        checked={selectedMetrics.has(`${group.id}:${metric.key}`)}
-                                                        onChange={() => toggleMetric(group.id, metric.key)}
-                                                        style={{ accentColor: 'var(--accent-primary)' }}
-                                                    />
-                                                    {language === 'zh' ? metric.label_zh : metric.label_en}
-                                                </label>
-                                            ))}
+                                        <div style={{ fontSize: '0.75rem', display: 'flex', gap: '8px' }}>
+                                            <span
+                                                onClick={() => {
+                                                    const newSet = new Set(selectedMetrics);
+                                                    // Use composite keys
+                                                    group.metrics.forEach(m => newSet.add(`${group.id}:${m.key}`));
+                                                    setSelectedMetrics(newSet);
+                                                }}
+                                                style={{ color: 'var(--accent-primary)', cursor: 'pointer', textDecoration: 'underline' }}
+                                            >
+                                                {language === 'zh' ? '全選' : 'Select All'}
+                                            </span>
+                                            <span style={{ color: 'var(--text-tertiary)' }}>|</span>
+                                            <span
+                                                onClick={() => {
+                                                    const newSet = new Set(selectedMetrics);
+                                                    group.metrics.forEach(m => newSet.delete(`${group.id}:${m.key}`));
+                                                    setSelectedMetrics(newSet);
+                                                }}
+                                                style={{ color: 'var(--accent-primary)', cursor: 'pointer', textDecoration: 'underline' }}
+                                            >
+                                                {language === 'zh' ? '全消' : 'Deselect All'}
+                                            </span>
                                         </div>
                                     </div>
-                                ))}
+                                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: '12px' }}>
+                                        {group.metrics.map(metric => (
+                                            <label key={metric.key} style={{ display: 'flex', alignItems: 'center', gap: '6px', cursor: 'pointer', fontSize: '0.9rem', color: 'var(--text-secondary)' }}>
+                                                <input
+                                                    type="checkbox"
+                                                    checked={selectedMetrics.has(`${group.id}:${metric.key}`)}
+                                                    onChange={() => toggleMetric(group.id, metric.key)}
+                                                    style={{ accentColor: 'var(--accent-primary)' }}
+                                                />
+                                                {language === 'zh' ? metric.label_zh : metric.label_en}
+                                            </label>
+                                        ))}
+                                    </div>
+                                </div>
+                            ))}
+
+                            {/* Done / Collapse Button */}
+                            <div style={{ display: 'flex', justifyContent: 'center', marginTop: '16px', paddingTop: '16px', borderTop: '1px solid var(--glass-border)' }}>
+                                <button
+                                    onClick={() => setShowMetricPanel(false)}
+                                    style={{
+                                        padding: '8px 24px',
+                                        borderRadius: '20px',
+                                        background: 'rgba(255,255,255,0.1)',
+                                        border: '1px solid var(--glass-border)',
+                                        color: 'white',
+                                        fontSize: '0.9rem',
+                                        cursor: 'pointer',
+                                        transition: 'all 0.2s',
+                                        display: 'flex', alignItems: 'center', gap: '8px'
+                                    }}
+                                    onMouseEnter={e => e.currentTarget.style.background = 'rgba(255,255,255,0.2)'}
+                                    onMouseLeave={e => e.currentTarget.style.background = 'rgba(255,255,255,0.1)'}
+                                >
+                                    <FiChevronUp /> {language === 'zh' ? '完成並收合' : 'Done & Collapse'}
+                                </button>
                             </div>
-                        )}
-                    </div>
+                        </div>
+                    )}
                 </div>
+
 
                 {/* Right Panel: Actions */}
                 <div className="glass-panel" style={{ padding: '24px', borderRadius: '16px', display: 'flex', flexDirection: 'column', justifyContent: 'space-between' }}>
@@ -1012,163 +1130,166 @@ const Analytics = () => {
                 </div>
             </div>
 
-            {/* KPI Cards Section (Middle) - Now Dynamic! */}
-            {currentSummaryData && (
-
-                <div ref={kpiRef} className="glass-panel" style={{ marginBottom: '32px', padding: '24px', borderRadius: '16px', position: 'relative' }}>
-                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '24px', borderBottom: '1px solid var(--glass-border)', paddingBottom: '16px' }}>
-                        <h2 style={{
-                            fontSize: '1.2rem',
-                            color: '#fbbf24',
-                            display: 'flex',
-                            flexDirection: 'row', // Always row, let wrap handle it
-                            flexWrap: 'wrap',
-                            alignItems: 'baseline',
-                            gap: '8px',
-                            margin: 0,
-                            lineHeight: 1.5
-                        }}>
-                            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', whiteSpace: 'nowrap' }}>
-                                ⭐ {txt.keyMetrics}
-                            </div>
-                            <span style={{
-                                fontSize: isMobile ? '0.8rem' : '0.9rem',
-                                color: 'var(--text-secondary)',
-                                fontWeight: 'normal',
-                                lineHeight: isMobile ? '1.4' : 'inherit'
+            {/* KPI Section */}
+            <div>
+                {currentSummaryData && (
+                    <div ref={kpiRef} className="glass-panel" style={{ marginBottom: '32px', padding: '24px', borderRadius: '16px', position: 'relative' }}>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '24px', borderBottom: '1px solid var(--glass-border)', paddingBottom: '16px' }}>
+                            <h2 style={{
+                                fontSize: '1.2rem',
+                                color: '#fbbf24',
+                                display: 'flex',
+                                flexDirection: 'row', // Always row, let wrap handle it
+                                flexWrap: 'wrap',
+                                alignItems: 'baseline',
+                                gap: '8px',
+                                margin: 0,
+                                lineHeight: 1.5
                             }}>
-                                ({dateRange.since} ~ {dateRange.until}
-                                {isCompareMode && prevDateRange.since ? ` vs ${prevDateRange.since} ~ ${prevDateRange.until}` : ''})
-                            </span>
-                        </h2>
-
-                        {/* More Options Menu */}
-                        <div style={{ position: 'relative' }} data-html2canvas-ignore="true">
-                            <button
-                                onClick={() => setShowKpiMenu(!showKpiMenu)}
-                                style={{
-                                    background: 'transparent',
-                                    border: 'none',
-                                    color: 'var(--text-secondary)',
-                                    fontSize: '1.2rem',
-                                    cursor: 'pointer',
-                                    padding: '4px',
-                                    borderRadius: '50%',
-                                    display: 'flex',
-                                    alignItems: 'center',
-                                    justifyContent: 'center',
-                                    transition: 'background 0.2s'
-                                }}
-                                onMouseEnter={(e) => e.target.style.background = 'rgba(255,255,255,0.1)'}
-                                onMouseLeave={(e) => e.target.style.background = 'transparent'}
-                            >
-                                ⋮
-                            </button>
-
-                            {showKpiMenu && (
-                                <div style={{
-                                    position: 'absolute',
-                                    top: '100%',
-                                    right: 0,
-                                    marginTop: '8px',
-                                    background: '#242526',
-                                    border: '1px solid var(--glass-border)',
-                                    borderRadius: '8px',
-                                    padding: '4px',
-                                    zIndex: 100,
-                                    boxShadow: '0 4px 12px rgba(0,0,0,0.5)',
-                                    minWidth: '140px'
-                                }}>
-                                    <button
-                                        onClick={handleExportImage}
-                                        style={{
-                                            display: 'flex',
-                                            alignItems: 'center',
-                                            gap: '8px',
-                                            width: '100%',
-                                            padding: '8px 12px',
-                                            background: 'transparent',
-                                            border: 'none',
-                                            color: 'var(--text-primary)',
-                                            fontSize: '0.9rem',
-                                            cursor: 'pointer',
-                                            borderRadius: '4px',
-                                            textAlign: 'left'
-                                        }}
-                                        onMouseEnter={(e) => e.target.style.background = 'rgba(255,255,255,0.1)'}
-                                        onMouseLeave={(e) => e.target.style.background = 'transparent'}
-                                    >
-                                        ⬇️ {language === 'zh' ? '匯出圖片' : 'Export Image'}
-                                    </button>
+                                <div style={{ display: 'flex', alignItems: 'center', gap: '8px', whiteSpace: 'nowrap' }}>
+                                    ⭐ {txt.keyMetrics}
                                 </div>
-                            )}
+                                <span style={{
+                                    fontSize: isMobile ? '0.8rem' : '0.9rem',
+                                    color: 'var(--text-secondary)',
+                                    fontWeight: 'normal',
+                                    lineHeight: isMobile ? '1.4' : 'inherit'
+                                }}>
+                                    ({dateRange.since} ~ {dateRange.until}
+                                    {isCompareMode && prevDateRange.since ? ` vs ${prevDateRange.since} ~ ${prevDateRange.until}` : ''})
+                                </span>
+                            </h2>
+
+                            {/* More Options Menu */}
+                            <div style={{ position: 'relative' }} data-html2canvas-ignore="true">
+                                <button
+                                    onClick={() => setShowKpiMenu(!showKpiMenu)}
+                                    style={{
+                                        background: 'transparent',
+                                        border: 'none',
+                                        color: 'var(--text-secondary)',
+                                        fontSize: '1.2rem',
+                                        cursor: 'pointer',
+                                        padding: '4px',
+                                        borderRadius: '50%',
+                                        display: 'flex',
+                                        alignItems: 'center',
+                                        justifyContent: 'center',
+                                        transition: 'background 0.2s'
+                                    }}
+                                    onMouseEnter={(e) => e.target.style.background = 'rgba(255,255,255,0.1)'}
+                                    onMouseLeave={(e) => e.target.style.background = 'transparent'}
+                                >
+                                    ⋮
+                                </button>
+
+                                {showKpiMenu && (
+                                    <div style={{
+                                        position: 'absolute',
+                                        top: '100%',
+                                        right: 0,
+                                        marginTop: '8px',
+                                        background: '#242526',
+                                        border: '1px solid var(--glass-border)',
+                                        borderRadius: '8px',
+                                        padding: '4px',
+                                        zIndex: 100,
+                                        boxShadow: '0 4px 12px rgba(0,0,0,0.5)',
+                                        minWidth: '140px'
+                                    }}>
+                                        <button
+                                            onClick={handleExportImage}
+                                            style={{
+                                                display: 'flex',
+                                                alignItems: 'center',
+                                                gap: '8px',
+                                                width: '100%',
+                                                padding: '8px 12px',
+                                                background: 'transparent',
+                                                border: 'none',
+                                                color: 'var(--text-primary)',
+                                                fontSize: '0.9rem',
+                                                cursor: 'pointer',
+                                                borderRadius: '4px',
+                                                textAlign: 'left'
+                                            }}
+                                            onMouseEnter={(e) => e.target.style.background = 'rgba(255,255,255,0.1)'}
+                                            onMouseLeave={(e) => e.target.style.background = 'transparent'}
+                                        >
+                                            ⬇️ {language === 'zh' ? '匯出圖片' : 'Export Image'}
+                                        </button>
+                                    </div>
+                                )}
+                            </div>
+                        </div>
+
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: '24px' }}>
+                            {METRIC_GROUPS.map((group, gIdx) => {
+                                // Filter metrics for this group that are currently selected using composite key
+                                const activeGroupMetrics = group.metrics.filter(m => selectedMetrics.has(`${group.id}:${m.key}`));
+
+                                // If no metrics in this group are selected, don't render the group title or container
+                                if (activeGroupMetrics.length === 0) return null;
+
+                                return (
+                                    <div key={gIdx}>
+                                        <h3 style={{ fontSize: '1rem', color: group.color || '#3b82f6', marginBottom: '12px', borderLeft: `3px solid ${group.color || '#3b82f6'}`, paddingLeft: '8px' }}>
+                                            {language === 'zh' ? group.label_zh : group.label_en}
+                                        </h3>
+                                        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(200px, 1fr))', gap: '12px' }}>
+                                            {activeGroupMetrics.map(m => {
+                                                const currentVal = currentSummaryData ? (currentSummaryData[m.key] || 0) : 0;
+                                                const prevVal = prevSummaryData ? (prevSummaryData[m.key] || 0) : null;
+
+                                                // Diff calculation
+                                                let diff = null;
+                                                let percent = null;
+                                                let isIncrease = false;
+
+                                                if (prevSummaryData) {
+                                                    const d = currentVal - prevVal;
+                                                    isIncrease = d >= 0;
+
+                                                    // Format Difference
+                                                    if (m.format === 'currency') diff = `${d >= 0 ? '+' : ''}$${Math.abs(d).toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}`;
+                                                    else if (m.format === 'percent') diff = `${d >= 0 ? '+' : ''}${d.toFixed(2)}%`;
+                                                    else if (m.format === 'decimal') diff = `${d >= 0 ? '+' : ''}${d.toFixed(2)}`;
+                                                    else diff = `${d >= 0 ? '+' : ''}${Math.abs(d).toLocaleString()}`;
+
+                                                    // Calculate Percent Change
+                                                    if (prevVal !== 0) {
+                                                        const p = (d / prevVal) * 100;
+                                                        percent = `${p >= 0 ? '+' : ''}${p.toFixed(1)}%`;
+                                                    } else if (currentVal !== 0) {
+                                                        percent = '+100%';
+                                                    } else {
+                                                        percent = '0%';
+                                                    }
+                                                }
+
+                                                return (
+                                                    <KPICard
+                                                        key={m.key}
+                                                        title={language === 'zh' ? m.label_zh : m.label_en}
+                                                        value={renderMetricValue(currentVal, m.format)}
+                                                        sub_value={prevSummaryData ? `(${renderMetricValue(prevVal, m.format)})` : ''}
+                                                        diff={diff}
+                                                        percent={percent}
+                                                        is_increase={isIncrease}
+                                                        is_inverse={m.isInverse || false}
+                                                    />
+                                                );
+                                            })}
+                                        </div>
+                                    </div>
+                                );
+                            })}
                         </div>
                     </div>
+                )
+                }
+            </div>
 
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: '24px' }}>
-                        {METRIC_GROUPS.map((group, gIdx) => {
-                            // Filter metrics for this group that are currently selected using composite key
-                            const activeGroupMetrics = group.metrics.filter(m => selectedMetrics.has(`${group.id}:${m.key}`));
-
-                            // If no metrics in this group are selected, don't render the group title or container
-                            if (activeGroupMetrics.length === 0) return null;
-
-                            return (
-                                <div key={gIdx}>
-                                    <h3 style={{ fontSize: '1rem', color: group.color || '#3b82f6', marginBottom: '12px', borderLeft: `3px solid ${group.color || '#3b82f6'}`, paddingLeft: '8px' }}>
-                                        {language === 'zh' ? group.label_zh : group.label_en}
-                                    </h3>
-                                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(200px, 1fr))', gap: '12px' }}>
-                                        {activeGroupMetrics.map(m => {
-                                            const currentVal = currentSummaryData ? (currentSummaryData[m.key] || 0) : 0;
-                                            const prevVal = prevSummaryData ? (prevSummaryData[m.key] || 0) : null;
-
-                                            // Diff calculation
-                                            let diff = null;
-                                            let percent = null;
-                                            let isIncrease = false;
-
-                                            if (prevSummaryData) {
-                                                const d = currentVal - prevVal;
-                                                isIncrease = d >= 0;
-
-                                                // Format Difference
-                                                if (m.format === 'currency') diff = `${d >= 0 ? '+' : ''}$${Math.abs(d).toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}`;
-                                                else if (m.format === 'percent') diff = `${d >= 0 ? '+' : ''}${d.toFixed(2)}%`;
-                                                else if (m.format === 'decimal') diff = `${d >= 0 ? '+' : ''}${d.toFixed(2)}`;
-                                                else diff = `${d >= 0 ? '+' : ''}${Math.abs(d).toLocaleString()}`;
-
-                                                // Calculate Percent Change
-                                                if (prevVal !== 0) {
-                                                    const p = (d / prevVal) * 100;
-                                                    percent = `${p >= 0 ? '+' : ''}${p.toFixed(1)}%`;
-                                                } else if (currentVal !== 0) {
-                                                    percent = '+100%';
-                                                } else {
-                                                    percent = '0%';
-                                                }
-                                            }
-
-                                            return (
-                                                <KPICard
-                                                    key={m.key}
-                                                    title={language === 'zh' ? m.label_zh : m.label_en}
-                                                    value={renderMetricValue(currentVal, m.format)}
-                                                    sub_value={prevSummaryData ? `(${renderMetricValue(prevVal, m.format)})` : ''}
-                                                    diff={diff}
-                                                    percent={percent}
-                                                    is_increase={isIncrease}
-                                                    is_inverse={m.isInverse || false}
-                                                />
-                                            );
-                                        })}
-                                    </div>
-                                </div>
-                            );
-                        })}
-                    </div>
-                </div>
-            )}
 
             {/* NEW: Trend Section (Collapsible) */}
             <TrendSection
@@ -1182,44 +1303,119 @@ const Analytics = () => {
             />
 
             {/* Data Table */}
-            {loading ? (
-                <div style={{ textAlign: 'center', padding: '40px', color: 'var(--text-secondary)' }}>載入數據中...</div>
-            ) : error ? (
-                <div style={{ textAlign: 'center', padding: '40px', color: '#f87171' }}>{error}</div>
-            ) : (
-                <div className="glass-panel" style={{
-                    padding: '0',
-                    borderRadius: '16px',
-                    overflowX: 'auto',
-                    maxHeight: '600px',
-                    overflowY: 'auto',
-                    // Dynamic Width: 
-                    // Mobile: Full width minus padding (32px)
-                    // Desktop: Viewport minus Sidebar (240/80) - Padding (60)
-                    maxWidth: isMobile
-                        ? 'calc(100vw - 32px)'
-                        : (isSidebarCollapsed ? 'calc(100vw - 140px)' : 'calc(100vw - 300px)'),
-                    width: '100%',
-                    display: 'block',
-                    transition: 'max-width 0.3s ease'
-                }}>
-                    <table style={{ width: '100%', borderCollapse: 'collapse', color: 'var(--text-primary)', fontSize: '0.9rem' }}>
-                        <thead>
-                            {/* Comparison Mode Header */}
-                            {isCompareMode ? (
-                                <>
-                                    {/* Row 1: Metric Names */}
-                                    <tr style={{ borderBottom: '1px solid var(--glass-border)', textAlign: 'center' }}>
-                                        <th rowSpan={2} style={{
+            {
+                loading ? (
+                    <div style={{ textAlign: 'center', padding: '40px', color: 'var(--text-secondary)' }}>載入數據中...</div>
+                ) : error ? (
+                    <div style={{ textAlign: 'center', padding: '40px', color: '#f87171' }}>{error}</div>
+                ) : (
+                    <div className="glass-panel" style={{
+                        padding: '0',
+                        borderRadius: '16px',
+                        overflowX: 'auto',
+                        maxHeight: '600px',
+                        overflowY: 'auto',
+                        // Dynamic Width: 
+                        // Mobile: Full width minus padding (32px)
+                        // Desktop: Viewport minus Sidebar (240/80) - Padding (60)
+                        maxWidth: isMobile
+                            ? 'calc(100vw - 32px)'
+                            : (isSidebarCollapsed ? 'calc(100vw - 140px)' : 'calc(100vw - 300px)'),
+                        width: '100%',
+                        display: 'block',
+                        transition: 'max-width 0.3s ease'
+                    }}>
+                        <table style={{ width: '100%', borderCollapse: 'collapse', color: 'var(--text-primary)', fontSize: '0.9rem' }}>
+                            <thead>
+                                {/* Comparison Mode Header */}
+                                {isCompareMode ? (
+                                    <>
+                                        {/* Row 1: Metric Names */}
+                                        <tr style={{ borderBottom: '1px solid var(--glass-border)', textAlign: 'center' }}>
+                                            <th rowSpan={2} style={{
+                                                padding: '12px',
+                                                minWidth: '200px',
+                                                position: 'sticky',
+                                                top: 0,
+                                                left: 0,
+                                                zIndex: 50,
+                                                background: '#242526',
+                                                textAlign: 'left',
+                                                borderRight: '1px solid var(--glass-border)'
+                                            }}>
+                                                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                                                    <input
+                                                        type="checkbox"
+                                                        checked={filteredData.length > 0 && selectedRowIds.size === filteredData.length}
+                                                        onChange={(e) => {
+                                                            if (e.target.checked) {
+                                                                setSelectedRowIds(new Set(filteredData.map(d => d.id)));
+                                                            } else {
+                                                                setSelectedRowIds(new Set());
+                                                            }
+                                                        }}
+                                                        style={{ cursor: 'pointer' }}
+                                                    />
+                                                    {txt.table.headers[level] || txt.table.name}
+                                                </div>
+                                            </th>
+                                            {activeCols.map(col => (
+                                                <th
+                                                    key={col.uniqueKey}
+                                                    colSpan={4}
+                                                    onClick={() => handleSort(col.key)}
+                                                    style={{
+                                                        padding: '8px',
+                                                        borderLeft: '1px solid var(--glass-border)',
+                                                        background: '#242526', // Use solid bg for headers
+                                                        position: 'sticky',
+                                                        top: 0,
+                                                        zIndex: 40,
+                                                        cursor: 'pointer',
+                                                        userSelect: 'none',
+                                                        color: sortConfig.key === col.key ? 'var(--accent-primary)' : 'inherit'
+                                                    }}
+                                                >
+                                                    {language === 'zh' ? col.label_zh : col.label_en}
+                                                    {sortConfig.key === col.key && (
+                                                        <span style={{ marginLeft: '4px' }}>
+                                                            {sortConfig.direction === 'asc' ? '↑' : '↓'}
+                                                        </span>
+                                                    )}
+                                                </th>
+                                            ))}
+                                        </tr>
+                                        {/* Row 2: Sub-columns */}
+                                        <tr style={{ borderBottom: '1px solid var(--glass-border)', textAlign: 'right', fontSize: '0.8rem', color: 'var(--text-secondary)' }}>
+                                            {activeCols.map(col => (
+                                                <React.Fragment key={col.uniqueKey}>
+                                                    <th style={{ padding: '8px', minWidth: '90px', background: '#242526', borderLeft: '1px solid var(--glass-border)', position: 'sticky', top: '38px', zIndex: 39 }}>
+                                                        {dateRange.since}<br />~ {dateRange.until?.slice(5)}
+                                                    </th>
+                                                    <th style={{ padding: '8px', minWidth: '90px', background: '#242526', position: 'sticky', top: '38px', zIndex: 39 }}>
+                                                        {prevDateRange.since}<br />~ {prevDateRange.until?.slice(5)}
+                                                    </th>
+                                                    <th style={{ padding: '8px', minWidth: '80px', background: '#242526', position: 'sticky', top: '38px', zIndex: 39 }}>
+                                                        {language === 'zh' ? '變化' : 'Change'}
+                                                    </th>
+                                                    <th style={{ padding: '8px', minWidth: '80px', background: '#242526', position: 'sticky', top: '38px', zIndex: 39 }}>
+                                                        {language === 'zh' ? '變化 (%)' : 'Change (%)'}
+                                                    </th>
+                                                </React.Fragment>
+                                            ))}
+                                        </tr>
+                                    </>
+                                ) : (
+                                    /* Standard Header */
+                                    <tr style={{ borderBottom: '1px solid var(--glass-border)', textAlign: 'left' }}>
+                                        <th style={{
                                             padding: '12px',
                                             minWidth: '200px',
                                             position: 'sticky',
                                             top: 0,
                                             left: 0,
                                             zIndex: 50,
-                                            background: '#242526',
-                                            textAlign: 'left',
-                                            borderRight: '1px solid var(--glass-border)'
+                                            background: '#242526'
                                         }}>
                                             <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                                                 <input
@@ -1240,15 +1436,14 @@ const Analytics = () => {
                                         {activeCols.map(col => (
                                             <th
                                                 key={col.uniqueKey}
-                                                colSpan={4}
                                                 onClick={() => handleSort(col.key)}
                                                 style={{
                                                     padding: '8px',
-                                                    borderLeft: '1px solid var(--glass-border)',
-                                                    background: '#242526', // Use solid bg for headers
+                                                    minWidth: '100px',
                                                     position: 'sticky',
                                                     top: 0,
                                                     zIndex: 40,
+                                                    background: '#242526',
                                                     cursor: 'pointer',
                                                     userSelect: 'none',
                                                     color: sortConfig.key === col.key ? 'var(--accent-primary)' : 'inherit'
@@ -1263,242 +1458,170 @@ const Analytics = () => {
                                             </th>
                                         ))}
                                     </tr>
-                                    {/* Row 2: Sub-columns */}
-                                    <tr style={{ borderBottom: '1px solid var(--glass-border)', textAlign: 'right', fontSize: '0.8rem', color: 'var(--text-secondary)' }}>
-                                        {activeCols.map(col => (
-                                            <React.Fragment key={col.uniqueKey}>
-                                                <th style={{ padding: '8px', minWidth: '90px', background: '#242526', borderLeft: '1px solid var(--glass-border)', position: 'sticky', top: '38px', zIndex: 39 }}>
-                                                    {dateRange.since}<br />~ {dateRange.until?.slice(5)}
-                                                </th>
-                                                <th style={{ padding: '8px', minWidth: '90px', background: '#242526', position: 'sticky', top: '38px', zIndex: 39 }}>
-                                                    {prevDateRange.since}<br />~ {prevDateRange.until?.slice(5)}
-                                                </th>
-                                                <th style={{ padding: '8px', minWidth: '80px', background: '#242526', position: 'sticky', top: '38px', zIndex: 39 }}>
-                                                    {language === 'zh' ? '變化' : 'Change'}
-                                                </th>
-                                                <th style={{ padding: '8px', minWidth: '80px', background: '#242526', position: 'sticky', top: '38px', zIndex: 39 }}>
-                                                    {language === 'zh' ? '變化 (%)' : 'Change (%)'}
-                                                </th>
-                                            </React.Fragment>
-                                        ))}
-                                    </tr>
-                                </>
-                            ) : (
-                                /* Standard Header */
-                                <tr style={{ borderBottom: '1px solid var(--glass-border)', textAlign: 'left' }}>
-                                    <th style={{
-                                        padding: '12px',
-                                        minWidth: '200px',
-                                        position: 'sticky',
-                                        top: 0,
-                                        left: 0,
-                                        zIndex: 50,
-                                        background: '#242526'
+                                )}
+                            </thead>
+                            <tbody>
+                                {sortedData && sortedData.map((row, idx) => (
+                                    <tr key={idx} style={{
+                                        borderBottom: '1px solid rgba(255,255,255,0.05)',
+                                        background: idx % 2 === 0 ? 'transparent' : 'rgba(255,255,255,0.02)'
                                     }}>
-                                        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                                            <input
-                                                type="checkbox"
-                                                checked={filteredData.length > 0 && selectedRowIds.size === filteredData.length}
-                                                onChange={(e) => {
-                                                    if (e.target.checked) {
-                                                        setSelectedRowIds(new Set(filteredData.map(d => d.id)));
-                                                    } else {
-                                                        setSelectedRowIds(new Set());
-                                                    }
-                                                }}
-                                                style={{ cursor: 'pointer' }}
-                                            />
-                                            {txt.table.headers[level] || txt.table.name}
-                                        </div>
-                                    </th>
-                                    {activeCols.map(col => (
-                                        <th
-                                            key={col.uniqueKey}
-                                            onClick={() => handleSort(col.key)}
-                                            style={{
-                                                padding: '8px',
-                                                minWidth: '100px',
-                                                position: 'sticky',
-                                                top: 0,
-                                                zIndex: 40,
-                                                background: '#242526',
-                                                cursor: 'pointer',
-                                                userSelect: 'none',
-                                                color: sortConfig.key === col.key ? 'var(--accent-primary)' : 'inherit'
-                                            }}
-                                        >
-                                            {language === 'zh' ? col.label_zh : col.label_en}
-                                            {sortConfig.key === col.key && (
-                                                <span style={{ marginLeft: '4px' }}>
-                                                    {sortConfig.direction === 'asc' ? '↑' : '↓'}
-                                                </span>
-                                            )}
-                                        </th>
-                                    ))}
-                                </tr>
-                            )}
-                        </thead>
-                        <tbody>
-                            {sortedData && sortedData.map((row, idx) => (
-                                <tr key={idx} style={{
-                                    borderBottom: '1px solid rgba(255,255,255,0.05)',
-                                    background: idx % 2 === 0 ? 'transparent' : 'rgba(255,255,255,0.02)'
-                                }}>
-                                    {/* Name Column with Thumbnail */}
-                                    <td style={{
-                                        padding: '12px',
-                                        position: 'sticky',
-                                        left: 0,
-                                        zIndex: 30,
-                                        background: '#242526',
-                                        borderRight: '1px solid var(--glass-border)',
-                                        minWidth: '200px',
-                                        maxWidth: '200px'
-                                    }}>
-                                        <div style={{ display: 'flex', alignItems: 'flex-start', gap: '8px' }}>
-                                            {/* Row Selection Checkbox */}
-                                            <div style={{ marginTop: '2px', flexShrink: 0 }}>
-                                                <input
-                                                    type="checkbox"
-                                                    checked={selectedRowIds.has(row.id)}
-                                                    onChange={(e) => {
-                                                        const newSet = new Set(selectedRowIds);
-                                                        if (e.target.checked) {
-                                                            newSet.add(row.id);
-                                                        } else {
-                                                            newSet.delete(row.id);
-                                                        }
-                                                        setSelectedRowIds(newSet);
-                                                    }}
-                                                    style={{ cursor: 'pointer' }}
-                                                />
-                                            </div>
-
-                                            {/* Thumbnail & Preview */}
-                                            {row.image_url && (
-                                                <div
-                                                    style={{ position: 'relative', flexShrink: 0, marginTop: '2px' }}
-                                                    onMouseEnter={(e) => {
-                                                        const rect = e.currentTarget.getBoundingClientRect();
-                                                        document.getElementById('preview-img-container').style.display = 'block';
-                                                        document.getElementById('preview-img').src = row.image_url;
-                                                        document.getElementById('preview-img-container').style.top = `${rect.top}px`;
-                                                        document.getElementById('preview-img-container').style.left = `${rect.right + 10}px`;
-                                                    }}
-                                                    onMouseLeave={() => {
-                                                        document.getElementById('preview-img-container').style.display = 'none';
-                                                    }}
-                                                >
-                                                    <img
-                                                        src={row.image_url}
-                                                        alt="Ad"
-                                                        style={{
-                                                            width: '40px',
-                                                            height: '40px',
-                                                            objectFit: 'cover',
-                                                            borderRadius: '4px',
-                                                            cursor: 'zoom-in',
-                                                            border: '1px solid var(--glass-border)'
+                                        {/* Name Column with Thumbnail */}
+                                        <td style={{
+                                            padding: '12px',
+                                            position: 'sticky',
+                                            left: 0,
+                                            zIndex: 30,
+                                            background: '#242526',
+                                            borderRight: '1px solid var(--glass-border)',
+                                            minWidth: '200px',
+                                            maxWidth: '200px'
+                                        }}>
+                                            <div style={{ display: 'flex', alignItems: 'flex-start', gap: '8px' }}>
+                                                {/* Row Selection Checkbox */}
+                                                <div style={{ marginTop: '2px', flexShrink: 0 }}>
+                                                    <input
+                                                        type="checkbox"
+                                                        checked={selectedRowIds.has(row.id)}
+                                                        onChange={(e) => {
+                                                            const newSet = new Set(selectedRowIds);
+                                                            if (e.target.checked) {
+                                                                newSet.add(row.id);
+                                                            } else {
+                                                                newSet.delete(row.id);
+                                                            }
+                                                            setSelectedRowIds(newSet);
                                                         }}
+                                                        style={{ cursor: 'pointer' }}
                                                     />
                                                 </div>
-                                            )}
 
-                                            <div style={{
-                                                display: '-webkit-box',
-                                                WebkitLineClamp: 2,
-                                                WebkitBoxOrient: 'vertical',
-                                                overflow: 'hidden',
-                                                textOverflow: 'ellipsis',
-                                                whiteSpace: 'normal',
-                                                lineHeight: '1.4',
-                                                wordBreak: 'break-word'
-                                            }} title={row.name}>
-                                                {row.name}
+                                                {/* Thumbnail & Preview */}
+                                                {row.image_url && (
+                                                    <div
+                                                        style={{ position: 'relative', flexShrink: 0, marginTop: '2px' }}
+                                                        onMouseEnter={(e) => {
+                                                            const rect = e.currentTarget.getBoundingClientRect();
+                                                            document.getElementById('preview-img-container').style.display = 'block';
+                                                            document.getElementById('preview-img').src = row.image_url;
+                                                            document.getElementById('preview-img-container').style.top = `${rect.top}px`;
+                                                            document.getElementById('preview-img-container').style.left = `${rect.right + 10}px`;
+                                                        }}
+                                                        onMouseLeave={() => {
+                                                            document.getElementById('preview-img-container').style.display = 'none';
+                                                        }}
+                                                    >
+                                                        <img
+                                                            src={row.image_url}
+                                                            alt="Ad"
+                                                            style={{
+                                                                width: '40px',
+                                                                height: '40px',
+                                                                objectFit: 'cover',
+                                                                borderRadius: '4px',
+                                                                cursor: 'zoom-in',
+                                                                border: '1px solid var(--glass-border)'
+                                                            }}
+                                                        />
+                                                    </div>
+                                                )}
+
+                                                <div style={{
+                                                    display: '-webkit-box',
+                                                    WebkitLineClamp: 2,
+                                                    WebkitBoxOrient: 'vertical',
+                                                    overflow: 'hidden',
+                                                    textOverflow: 'ellipsis',
+                                                    whiteSpace: 'normal',
+                                                    lineHeight: '1.4',
+                                                    wordBreak: 'break-word'
+                                                }} title={row.name}>
+                                                    {row.name}
+                                                </div>
                                             </div>
-                                        </div>
-                                    </td>
+                                        </td>
 
-                                    {/* Data Columns */}
-                                    {activeCols.map(col => {
-                                        const currentVal = row[col.key];
+                                        {/* Data Columns */}
+                                        {activeCols.map(col => {
+                                            const currentVal = row[col.key];
 
-                                        // Formatting Helper
-                                        const formatVal = (v, format) => {
-                                            if (v === undefined || v === null) return '-';
-                                            if (format === 'percent') return `${v.toFixed(2)}%`;
-                                            if (format === 'currency') return `$${v.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}`;
-                                            if (format === 'decimal') return v.toFixed(2);
-                                            return v.toLocaleString();
-                                        };
+                                            // Formatting Helper
+                                            const formatVal = (v, format) => {
+                                                if (v === undefined || v === null) return '-';
+                                                if (format === 'percent') return `${v.toFixed(2)}%`;
+                                                if (format === 'currency') return `$${v.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}`;
+                                                if (format === 'decimal') return v.toFixed(2);
+                                                return v.toLocaleString();
+                                            };
 
-                                        if (isCompareMode && prevReportData) {
-                                            // Comparison Logic
-                                            let prevVal = 0;
-                                            let diff = 0;
-                                            let percentStr = '-';
-                                            let diffColor = 'inherit';
+                                            if (isCompareMode && prevReportData) {
+                                                // Comparison Logic
+                                                let prevVal = 0;
+                                                let diff = 0;
+                                                let percentStr = '-';
+                                                let diffColor = 'inherit';
 
-                                            const idField = level === 'account' ? (row.date_start ? 'date_start' : 'index') : `${level}_id`;
+                                                const idField = level === 'account' ? (row.date_start ? 'date_start' : 'index') : `${level}_id`;
 
-                                            // Matching Logic
-                                            let prevRow;
-                                            if (level === 'account') {
-                                                // If 'account' overview (single row), assume index 0 match
-                                                if (!row.date_start) prevRow = prevReportData[0];
-                                                // If daily breakdown, match by date_start (TODO: verify this if breakdown used)
-                                            } else {
-                                                prevRow = prevReportData.find(p => p[idField] === row[idField]);
-                                            }
-
-                                            if (prevRow) {
-                                                prevVal = prevRow[col.key] || 0;
-                                                diff = (currentVal || 0) - prevVal;
-
-                                                if (prevVal !== 0) {
-                                                    const p = (diff / prevVal) * 100;
-                                                    percentStr = `${p >= 0 ? '▲' : '▼'} ${Math.abs(p).toFixed(2)}%`;
-                                                } else if (currentVal !== 0) {
-                                                    percentStr = '▲ 100%';
+                                                // Matching Logic
+                                                let prevRow;
+                                                if (level === 'account') {
+                                                    // If 'account' overview (single row), assume index 0 match
+                                                    if (!row.date_start) prevRow = prevReportData[0];
+                                                    // If daily breakdown, match by date_start (TODO: verify this if breakdown used)
+                                                } else {
+                                                    prevRow = prevReportData.find(p => p[idField] === row[idField]);
                                                 }
 
-                                                // Color
-                                                if (diff !== 0) {
-                                                    const isIncrease = diff >= 0;
-                                                    if (col.isInverse) {
-                                                        diffColor = isIncrease ? '#fb7185' : '#4ade80';
-                                                    } else {
-                                                        diffColor = isIncrease ? '#4ade80' : '#fb7185';
+                                                if (prevRow) {
+                                                    prevVal = prevRow[col.key] || 0;
+                                                    diff = (currentVal || 0) - prevVal;
+
+                                                    if (prevVal !== 0) {
+                                                        const p = (diff / prevVal) * 100;
+                                                        percentStr = `${p >= 0 ? '▲' : '▼'} ${Math.abs(p).toFixed(2)}%`;
+                                                    } else if (currentVal !== 0) {
+                                                        percentStr = '▲ 100%';
                                                     }
+
+                                                    // Color
+                                                    if (diff !== 0) {
+                                                        const isIncrease = diff >= 0;
+                                                        if (col.isInverse) {
+                                                            diffColor = isIncrease ? '#fb7185' : '#4ade80';
+                                                        } else {
+                                                            diffColor = isIncrease ? '#4ade80' : '#fb7185';
+                                                        }
+                                                    }
+                                                } else {
+                                                    // No Prev Data found for this ID
+                                                    diff = currentVal;
+                                                    percentStr = '-'; // Don't show confusing 100% if likely data mismatch
                                                 }
+
+                                                return (
+                                                    <React.Fragment key={col.uniqueKey}>
+                                                        <td style={{ padding: '8px', textAlign: 'right', borderLeft: '1px solid var(--glass-border)' }}>{formatVal(currentVal, col.format)}</td>
+                                                        <td style={{ padding: '8px', textAlign: 'right', color: 'var(--text-secondary)' }}>{prevRow ? formatVal(prevVal, col.format) : '-'}</td>
+                                                        <td style={{ padding: '8px', textAlign: 'right' }}>{formatVal(diff, col.format)}</td>
+                                                        <td style={{ padding: '8px', textAlign: 'right', color: diffColor, fontWeight: 500 }}>{percentStr}</td>
+                                                    </React.Fragment>
+                                                );
+
                                             } else {
-                                                // No Prev Data found for this ID
-                                                diff = currentVal;
-                                                percentStr = '-'; // Don't show confusing 100% if likely data mismatch
+                                                // Standard Mode
+                                                return (
+                                                    <td key={col.uniqueKey} style={{ padding: '8px' }}>{formatVal(currentVal, col.format)}</td>
+                                                );
                                             }
-
-                                            return (
-                                                <React.Fragment key={col.uniqueKey}>
-                                                    <td style={{ padding: '8px', textAlign: 'right', borderLeft: '1px solid var(--glass-border)' }}>{formatVal(currentVal, col.format)}</td>
-                                                    <td style={{ padding: '8px', textAlign: 'right', color: 'var(--text-secondary)' }}>{prevRow ? formatVal(prevVal, col.format) : '-'}</td>
-                                                    <td style={{ padding: '8px', textAlign: 'right' }}>{formatVal(diff, col.format)}</td>
-                                                    <td style={{ padding: '8px', textAlign: 'right', color: diffColor, fontWeight: 500 }}>{percentStr}</td>
-                                                </React.Fragment>
-                                            );
-
-                                        } else {
-                                            // Standard Mode
-                                            return (
-                                                <td key={col.uniqueKey} style={{ padding: '8px' }}>{formatVal(currentVal, col.format)}</td>
-                                            );
-                                        }
-                                    })}
-                                </tr>
-                            ))}
-                        </tbody>
-                    </table>
-                </div>
-            )}
+                                        })}
+                                    </tr>
+                                ))}
+                            </tbody>
+                        </table>
+                    </div>
+                )
+            }
 
             {/* Hover Preview Container (Fixed Position) */}
             <div
@@ -1517,7 +1640,167 @@ const Analytics = () => {
             >
                 <img id="preview-img" src="" alt="Preview" style={{ maxWidth: '300px', maxHeight: '300px', borderRadius: '4px' }} />
             </div>
-        </div>
+
+
+            {/* AI Analyst Slide-over Panel */}
+            <div style={{
+                position: 'fixed',
+                top: 0,
+                right: showAiPanel ? 0 : '-500px', // Slide in/out
+                width: isMobile ? '100%' : '500px',
+                height: '100vh',
+                backgroundColor: 'var(--bg-secondary)',
+                boxShadow: showAiPanel ? '-4px 0 20px rgba(0,0,0,0.5)' : 'none',
+                transition: 'right 0.3s ease',
+                zIndex: 2000,
+                display: 'flex',
+                flexDirection: 'column',
+                borderLeft: '1px solid var(--glass-border)'
+            }}>
+                {/* Header */}
+                <div style={{
+                    padding: '16px',
+                    borderBottom: '1px solid var(--glass-border)',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'space-between',
+                    background: 'var(--bg-primary)'
+                }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px', fontWeight: 'bold', fontSize: '1.1rem' }}>
+                        <FiCpu style={{ color: '#a855f7' }} />
+                        <span style={{ background: 'linear-gradient(to right, #6366f1, #a855f7)', WebkitBackgroundClip: 'text', color: 'transparent' }}>
+                            {language === 'zh' ? 'AI 廣告分析師' : 'AI Ad Analyst'}
+                        </span>
+                    </div>
+                    <button
+                        onClick={() => setShowAiPanel(false)}
+                        style={{ background: 'transparent', border: 'none', color: 'var(--text-secondary)', cursor: 'pointer', fontSize: '1.2rem' }}
+                    >
+                        <FiX />
+                    </button>
+                </div>
+
+                {/* Content */}
+                <div style={{ flex: 1, overflowY: 'auto', padding: '16px' }}>
+
+                    {!isAnalyzing && !analysisResult && !aiError && (
+                        <div style={{ textAlign: 'center', marginTop: '40px', color: 'var(--text-secondary)' }}>
+                            <div style={{ fontSize: '3rem', marginBottom: '16px', opacity: 0.5 }}>🤖</div>
+                            <h3 style={{ color: 'var(--text-primary)', marginBottom: '8px' }}>
+                                {language === 'zh' ? '準備好分析您的數據了嗎？' : 'Ready to analyze your data?'}
+                            </h3>
+                            <p style={{ fontSize: '0.9rem', maxWidth: '80%', margin: '0 auto 24px' }}>
+                                {language === 'zh'
+                                    ? 'AI 將會讀取您當前選取的報表數據（前 20 筆），並提供見解與優化建議。'
+                                    : 'AI will read your current report data (top 20 rows) and provide insights and optimization suggestions.'}
+                            </p>
+                            <button
+                                onClick={handleStartAnalysis}
+                                style={{
+                                    padding: '10px 24px',
+                                    background: 'linear-gradient(135deg, #6366f1, #a855f7)',
+                                    border: 'none',
+                                    borderRadius: '8px',
+                                    color: 'white',
+                                    fontWeight: 'bold',
+                                    cursor: 'pointer',
+                                    display: 'inline-flex', alignItems: 'center', gap: '8px',
+                                    boxShadow: '0 4px 12px rgba(168, 85, 247, 0.4)'
+                                }}
+                            >
+                                <FiZap />
+                                {language === 'zh' ? '開始分析' : 'Start Analysis'}
+                            </button>
+                        </div>
+                    )}
+
+                    {
+                        isAnalyzing && (
+                            <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', marginTop: '60px' }}>
+                                <div className="spinner" style={{
+                                    width: '40px', height: '40px',
+                                    border: '3px solid rgba(168, 85, 247, 0.3)',
+                                    borderTop: '3px solid #a855f7',
+                                    borderRadius: '50%',
+                                    animation: 'spin 1s linear infinite'
+                                }}></div>
+                                <p style={{ marginTop: '16px', color: 'var(--text-secondary)', animation: 'pulse 1.5s infinite' }}>
+                                    {language === 'zh' ? 'AI 正在思考中...' : 'AI is thinking...'}
+                                </p>
+                                {analysisResult && (
+                                    <div style={{ fontSize: '0.8rem', color: 'var(--text-tertiary)', marginTop: '8px' }}>
+                                        {language === 'zh' ? '正在接收分析結果...' : 'Receiving insights...'}
+                                    </div>
+                                )}
+                            </div>
+                        )
+                    }
+
+                    {
+                        aiError && (
+                            <div style={{
+                                padding: '16px',
+                                background: 'rgba(239, 68, 68, 0.1)',
+                                border: '1px solid #ef4444',
+                                borderRadius: '8px',
+                                color: '#ef4444'
+                            }}>
+                                <div style={{ fontWeight: 'bold', marginBottom: '4px' }}>Analysis Failed</div>
+                                <div style={{ fontSize: '0.9rem' }}>{aiError}</div>
+                                <button
+                                    onClick={handleStartAnalysis}
+                                    style={{
+                                        marginTop: '12px',
+                                        padding: '6px 12px',
+                                        background: '#ef4444',
+                                        color: 'white',
+                                        border: 'none',
+                                        borderRadius: '4px',
+                                        cursor: 'pointer',
+                                        fontSize: '0.85rem'
+                                    }}
+                                >
+                                    {language === 'zh' ? '重試' : 'Retry'}
+                                </button>
+                            </div>
+                        )
+                    }
+
+                    {
+                        analysisResult && (
+                            <div className="markdown-content" style={{
+                                lineHeight: '1.6',
+                                fontSize: '0.95rem',
+                                color: 'var(--text-primary)',
+                                whiteSpace: 'pre-wrap'
+                            }}>
+                                {/* Simple render for now, replace with ReactMarkdown later if needed */}
+                                {analysisResult}
+                            </div>
+                        )
+                    }
+
+                    {/* Bottom Padding */}
+                    <div style={{ height: '50px' }}></div>
+                </div>
+            </div>
+
+            {/* Backdrop */}
+            {
+                showAiPanel && (
+                    <div
+                        onClick={() => setShowAiPanel(false)}
+                        style={{
+                            position: 'fixed',
+                            top: 0, left: 0, right: 0, bottom: 0,
+                            background: 'rgba(0,0,0,0.5)',
+                            zIndex: 1999,
+                            backdropFilter: 'blur(2px)'
+                        }}
+                    />
+                )
+            }
+        </div >
     );
 };
 
