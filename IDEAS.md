@@ -902,5 +902,35 @@ A collapsible section or modal "自訂表格指標欄位 (Custom Table Metric Co
 *   **權限需求**: 使用現有的標準 User Access Token 即可，無需額外審查。
 *   **應用場景**: 作為強大的 **Lead Magnet (引流工具)**，吸引免費戶註冊使用，再轉化為付費會員。
 
+## 22. Google 整合與 OAuth 授權規則 (Google Integration Rules)
+**日期**: 2025-12-16
+**狀態**: 📝 技術筆記 (Technical Note)
+**目標**: 未來整合 GA4 (Google Analytics) 以實現全渠道歸因 (Full-Funnel Attribution)。
+
+### 1. OAuth 2.0 授權機制
+SaaS 產品連接用戶 Google 帳號的標準流程。
+*   **流程**: 用戶點擊連結 -> Google 詢問許可 -> 取得 Access Token -> 讀取 GA4 報表。
+*   **關鍵權限 (Scope)**:
+    *   `email`, `profile`: 基礎登入用 (目前已使用)。
+    *   `https://www.googleapis.com/auth/analytics.readonly`: **敏感權限**，讀取 GA4 數據用。
+
+### 2. GCP 發布狀態規則 (Publishing Status)
+Google Cloud Platform 的 App 狀態決定了誰可以登入。
+
+| 狀態 (Status) | 對象限制 | Google 審核 | 適用場景 |
+| :--- | :--- | :--- | :--- |
+| **測試中 (Testing)** | **白名單制** (限 100 個 Email) | 不需要 | 內部開發、封測期 |
+| **已發布 (Production)** | **所有人** (只要有 Google 帳號) | **需要驗證** (若使用敏感權限) | SaaS 正式上線 |
+
+### 3. 紅色警示 (Unverified App Screen)
+*   當 App 處於 **Production** 狀態，且索取了 **敏感權限 (如 GA4)**，但尚未通過 Google 驗證時。
+*   使用者登入會看到紅色警告：「這個應用程式未經 Google 驗證」。
+*   **基礎登入例外**: 若只索取 `email/profile`，即使在 Production 通常也不會跳警告 (這解釋了為何目前可以任意登入)。
+
+### 4. 未來策略
+*   **階段一**: 維持現狀，僅使用基礎登入。
+*   **階段二 (整合 GA4)**: 開發時切回 Testing 模式 (加白名單)。
+*   **階段三 (SaaS 上線)**: 送審 Google Verification (需提交隱私權條款、Demo 影片)，以消除紅色警告。
+
  
  
