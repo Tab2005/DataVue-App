@@ -12,3 +12,4 @@ cryptography
 alembic
 pydantic
 httpx
+email-validator
