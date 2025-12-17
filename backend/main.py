@@ -4,10 +4,52 @@ from dotenv import load_dotenv
 # Load environment variables IMMEDIATELY
 load_dotenv()
 
-print("🚀 Starting Main Application...", file=sys.stderr)
+# --- Environment Variable Validation ---
+# Validate required environment variables at startup for fail-fast behavior
+REQUIRED_ENV_VARS = [
+    "GOOGLE_CLIENT_ID",
+    "ENCRYPTION_KEY",
+]
+
+# Optional but recommended variables (warn if missing)
+OPTIONAL_ENV_VARS = [
+    "DATABASE_URL",  # Falls back to SQLite if not set
+]
+
+def validate_environment():
+    """Validate that all required environment variables are set."""
+    missing = []
+    for var in REQUIRED_ENV_VARS:
+        if not os.getenv(var):
+            missing.append(var)
+    
+    if missing:
+        print("=" * 60, file=sys.stderr)
+        print("CRITICAL ERROR: Missing Required Environment Variables", file=sys.stderr)
+        print("=" * 60, file=sys.stderr)
+        for var in missing:
+            print(f"  - {var}", file=sys.stderr)
+        print("", file=sys.stderr)
+        print("Please set these variables in your .env file or environment.", file=sys.stderr)
+        print("The server cannot start without them.", file=sys.stderr)
+        print("=" * 60, file=sys.stderr)
+        sys.exit(1)
+    
+    # Check optional variables
+    for var in OPTIONAL_ENV_VARS:
+        if not os.getenv(var):
+            print(f"[INFO] Optional environment variable not set: {var}", file=sys.stderr)
+    
+    print("[OK] All required environment variables are configured.", file=sys.stderr)
+
+# Run validation
+validate_environment()
+# -----------------------------------------
+
+print("Starting Main Application...", file=sys.stderr)
 from fastapi import FastAPI, HTTPException, Depends, status
-print("✅ FastAPI imported", file=sys.stderr)
-print(f"📂 Current Debug Dir: {os.getcwd()}", file=sys.stderr)
+print("[OK] FastAPI imported", file=sys.stderr)
+print(f"[INFO] Current Dir: {os.getcwd()}", file=sys.stderr)
 
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
