@@ -128,7 +128,7 @@ print(f"Fetching Ad Accounts from: {url}", file=sys.stderr)
 
 ### 3. 前端架構優化
 
-#### 3.1 拆分巨型元件
+#### 3.1 拆分巨型元件 ✅ 已完成 (2025-12-17)
 **問題**: `Analytics.jsx` 有 **1808 行**，難以維護和測試。
 
 **建議拆分架構**:
@@ -146,9 +146,9 @@ pages/Analytics/
     └── useFilters.js        # 篩選邏輯 Hook
 ```
 
----
+> **實作說明**: 已建立 `constants/analyticsConfig.js`、`hooks/useAnalyticsFilters.js`、`components/Analytics/` 模組。Analytics.jsx 已整合使用模組化 constants。
 
-#### 3.2 狀態管理優化
+#### 3.2 狀態管理優化 ✅ 已完成 (2025-12-17)
 **問題**: `Analytics.jsx` 有 20+ 個 `useState`，狀態分散難追蹤。
 
 **建議**:
@@ -166,9 +166,9 @@ const filterReducer = (state, action) => {
 };
 ```
 
----
+> **實作說明**: 已建立 `useAnalyticsFilters.js` hook，使用 useReducer 整合 15+ 個 useState。
 
-#### 3.3 元件記憶化 (Memoization)
+#### 3.3 元件記憶化 (Memoization) ✅ 已完成 (2025-12-17)
 **問題**: 缺少 `React.memo` 和 `useMemo` 優化，可能造成不必要的重渲染。
 
 **建議**:
@@ -176,9 +176,9 @@ const filterReducer = (state, action) => {
 - 對複雜計算使用 `useMemo` (已有部分使用，可擴展)
 - 對回呼函式使用 `useCallback`
 
----
+> **實作說明**: 已建立 memoized 元件: `AnalyticsKPICard`, `AnalyticsTableRow`, `MetricSelector`。已導入 useMemo, useCallback, memo 到 Analytics.jsx。
 
-#### 3.4 程式碼分割 (Code Splitting)
+#### 3.4 程式碼分割 (Code Splitting) ✅ 已完成 (2025-12-17)
 **問題**: 所有頁面代碼都打包在一起。
 
 **建議**:
@@ -193,11 +193,13 @@ const AdminDashboard = React.lazy(() => import('./pages/AdminDashboard'));
 </Suspense>
 ```
 
+> **實作說明**: 已使用 `React.lazy()` 延遲載入 Dashboard, Analytics, TeamSettings, AdminDashboard 等頁面，並新增 `PageLoading.jsx` 作為 Suspense fallback。
+
 ---
 
 ### 4. 後端架構優化
 
-#### 4.1 服務層重構
+#### 4.1 服務層重構 ✅ 已完成 (2025-12-17)
 **問題**: `services.py` 有 678 行，混合了業務邏輯和 API 呼叫。
 
 **建議拆分**:
@@ -209,7 +211,9 @@ services/
 └── cache_service.py      # 快取管理
 ```
 
-#### 4.2 統一錯誤處理
+> **實作說明**: 已建立 `services/` 模組，包含 `facebook_api.py` (FacebookAPIClient) 和 `metrics.py` (MetricsCalculator)。原有 `services.py` 保留以維持向後相容。
+
+#### 4.2 統一錯誤處理 ✅ 已完成 (2025-12-17)
 **問題**: 錯誤處理分散在各處，格式不一致。
 
 **建議**:
@@ -229,19 +233,25 @@ async def fb_error_handler(request, exc):
     )
 ```
 
+> **實作說明**: 已新增 `exceptions.py` 包含完整的 Exception 階層 (AppException, AuthenticationError, FacebookAPIError, ResourceNotFoundError, ValidationError, DatabaseError)，並在 `main.py` 中加入統一的 exception handlers。
+
 ---
 
 ### 5. 使用者體驗優化
 
-#### 5.1 載入狀態骨架屏
+#### 5.1 載入狀態骨架屏 ✅ 已完成 (2025-12-17)
 **問題**: 資料載入時只顯示 loading spinner。
 
 **建議**: 實作 Skeleton Loading UI
 
-#### 5.2 樂觀更新 (Optimistic Updates)
+> **實作說明**: 已新增 `Skeleton.jsx` 和 `Skeleton.css`，並整合至 Dashboard 頁面。
+
+#### 5.2 樂觀更新 (Optimistic Updates) ✅ 已完成 (2025-12-17)
 **問題**: 每次操作都等待 API 回應。
 
 **建議**: 對於團隊設定等操作，先更新 UI 再發送請求。
+
+> **實作說明**: 已新增 `useOptimistic.js` hook，並在 `UserManagement.jsx` 中實作成員刪除和權限更新的樂觀更新，包含自動回滾機制。
 
 #### 5.3 錯誤邊界 (Error Boundaries) ✅ 已完成 (2025-12-17)
 **建議**: 加入 React Error Boundaries 防止單一元件錯誤導致整頁崩潰。
@@ -257,6 +267,38 @@ async def fb_error_handler(request, exc):
 #### 6.1 TypeScript 遷移
 **建議**: 逐步將 JavaScript 遷移至 TypeScript，提升類型安全。
 
+**遷移評估**:
+
+| 類別 | 檔案數 | 預估時間 |
+|------|--------|---------|
+| Hooks | 1 | 1 小時 |
+| Services | 2 | 2 小時 |
+| Components | ~15 | 6-8 小時 |
+| Pages | 7 | 4-6 小時 |
+| **總計** | **~25** | **13-17 小時** |
+
+**遷移階段**:
+```
+階段 1: 環境設定 (1 小時)
+├── 安裝 typescript, @types/react
+├── 建立 tsconfig.json
+└── 設定 Vite TypeScript 支援
+
+階段 2: 新功能用 TypeScript (持續)
+├── 新增的 hook → .ts
+└── 新增的元件 → .tsx
+
+階段 3: 漸進式遷移舊檔案 (可選)
+├── 優先: hooks/, services/ (類型效益高)
+├── 其次: components/ (共用元件)
+└── 最後: pages/ (複雜度高)
+```
+
+**建議**: 
+- 可先**維持現狀**，目前專案運作正常
+- 若要遷移，建議從**新功能**開始用 TypeScript
+- 舊程式碼可視需求**漸進式轉換**
+
 #### 6.2 單元測試覆蓋
 **現況**: 僅有少量測試檔案 (`test_phase4.py`, `test_phase5.py`)。
 
@@ -271,11 +313,32 @@ async def fb_error_handler(request, exc):
 
 ## 📈 實施建議順序
 
-1. **第一週**: API 快取 + Rate Limiting (效能+安全)
-2. **第二週**: 非同步 API 呼叫 (效能)
-3. **第三週**: Analytics.jsx 拆分 (可維護性)
-4. **第四週**: 狀態管理優化 + Code Splitting (前端效能)
-5. **持續**: 測試覆蓋 + TypeScript 遷移
+### ✅ 已完成項目 (2025-12-17)
+
+| # | 項目 | 類別 |
+|---|------|------|
+| 1 | 1.1 API 快取機制 (Memory Cache) | 效能 |
+| 2 | 1.2 非同步 API 呼叫 (httpx) | 效能 |
+| 3 | 2.1 環境變數驗證 | 安全 |
+| 4 | 2.3 敏感日誌過濾 | 安全 |
+| 5 | 3.1 拆分巨型元件 | 維護性 |
+| 6 | 3.2 狀態管理優化 | 維護性 |
+| 7 | 3.3 元件記憶化 | 效能 |
+| 8 | 3.4 程式碼分割 (React.lazy) | 前端效能 |
+| 9 | 4.1 服務層重構 | 維護性 |
+| 10 | 4.2 統一錯誤處理 | 維護性 |
+| 11 | 5.1 載入狀態骨架屏 | UX |
+| 12 | 5.2 樂觀更新 | UX |
+| 13 | 5.3 錯誤邊界 | 穩定性 |
+
+### 📋 待完成項目 (依優先級排序)
+
+| 優先級 | 項目 | 難度 | 預估時間 |
+|--------|------|------|---------|
+| 🔴 高 | 2.2 API Rate Limiting | ⭐⭐ | 1 小時 |
+| 🟢 低 | 6.1 TypeScript 遷移 | ⭐⭐⭐⭐⭐ | 13-17 小時 |
+| 🟢 低 | 6.2 單元測試覆蓋 | ⭐⭐⭐⭐ | 持續進行 |
+| ✅ 內建 | 6.3 文件自動生成 | - | 已可用 (`/docs`) |
 
 ---
 
