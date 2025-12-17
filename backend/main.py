@@ -33,8 +33,9 @@ from datetime import datetime, timezone
 
 try:
     from services import FacebookService
+    from async_services import AsyncFacebookService
 except Exception as e:
-    print(f"❌ SERVICES IMPORT ERROR: {e}", file=sys.stderr)
+    print(f"SERVICES IMPORT ERROR: {e}", file=sys.stderr)
 
 import os
 from dotenv import load_dotenv
@@ -248,7 +249,7 @@ def health_check():
     }
 
 @app.get("/api/ad-accounts")
-def get_ad_accounts(
+async def get_ad_accounts(
     user_id: str = Depends(verify_google_token),
     team: Team = Depends(get_current_team),
     db: SessionLocal = Depends(get_db)
@@ -270,13 +271,13 @@ def get_ad_accounts(
         
     # Use strict_token=True for Owner to PREVENT Admin Fallback (Data Leak)
     # If Owner has no token, they should see NOTHING, not Admin's accounts.
-    accounts, error = FacebookService.get_all_ad_accounts(user_id, team_id=fetch_team_id, strict_token=is_owner)
+    accounts, error = await AsyncFacebookService.get_all_ad_accounts(user_id, team_id=fetch_team_id, strict_token=is_owner)
     
     # 3. Fallback for Owner: If primary fetch failed (empty/error), retry with Team Token logic
     # This covers edge cases where get_user_token fails but get_team_token (Owner Fallback) works
     if (not accounts or error) and is_owner:
         print(f"DEBUG: Primary fetch failed for owner ({error}), retrying with Team Token Scope...", file=sys.stderr)
-        accounts, error = FacebookService.get_all_ad_accounts(user_id, team_id=team_id)
+        accounts, error = await AsyncFacebookService.get_all_ad_accounts(user_id, team_id=team_id)
     
     if error:
         print(f"❌ Error from FacebookService: {error}", file=sys.stderr)
@@ -310,7 +311,7 @@ def get_ad_accounts(
     return accounts
 
 @app.get("/api/dashboard-data")
-def get_dashboard_data(
+async def get_dashboard_data(
     account_id: str = None, 
     days: int = 7, 
     user_id: str = Depends(verify_google_token), 
@@ -318,8 +319,8 @@ def get_dashboard_data(
 ):
     team_id = team.id if team else None
     if account_id:
-        # Pass user_id, days, and team_id
-        insights = FacebookService.get_account_insights(account_id, user_id, days, team_id=team_id)
+        # Pass user_id, days, and team_id - Use async service
+        insights = await AsyncFacebookService.get_account_insights(account_id, user_id, days, team_id=team_id)
         if insights:
             return {
                 "source": "real",
@@ -376,7 +377,7 @@ def get_dashboard_data(
     }
 
 @app.get("/api/analytics-data")
-def get_analytics_data(
+async def get_analytics_data(
     account_id: str, 
     since: str, 
     until: str, 
@@ -388,7 +389,7 @@ def get_analytics_data(
     Endpoint for the Advanced Analytics page.
     """
     team_id = team.id if team else None
-    report_data = FacebookService.get_custom_report(account_id, user_id, since, until, level, team_id=team_id)
+    report_data = await AsyncFacebookService.get_custom_report(account_id, user_id, since, until, level, team_id=team_id)
     
     if report_data is None:
          raise HTTPException(status_code=400, detail="Failed to fetch analytics data")
@@ -402,7 +403,7 @@ def get_analytics_data(
     }
 
 @app.get("/api/analytics-trend")
-def get_analytics_trend_data(
+async def get_analytics_trend_data(
     account_id: str,
     since: str,
     until: str,
@@ -415,7 +416,7 @@ def get_analytics_trend_data(
     Endpoint for daily trend chart data.
     """
     team_id = team.id if team else None
-    trend_data = FacebookService.get_analytics_trend(account_id, user_id, since, until, prev_since, prev_until, team_id=team_id)
+    trend_data = await AsyncFacebookService.get_analytics_trend(account_id, user_id, since, until, prev_since, prev_until, team_id=team_id)
     if trend_data is None:
          return []
     return trend_data
