@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { useOutletContext } from 'react-router-dom';
 import KPICard from '../components/KPICard';
 import TrendsChart from '../components/TrendsChart';
+import { DashboardSkeleton } from '../components/Skeleton';
 
 function Dashboard() {
     // 1. Get Context from Layout
@@ -168,7 +169,7 @@ function Dashboard() {
             </div>
 
             {loading ? (
-                <div style={{ textAlign: 'center', padding: '40px', color: 'var(--text-secondary)' }}>載入數據中...</div>
+                <DashboardSkeleton />
             ) : error ? (
                 <div style={{ textAlign: 'center', padding: '40px', color: 'var(--text-error)' }}>Error: {error}</div>
             ) : (

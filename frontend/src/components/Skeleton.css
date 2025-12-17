@@ -1,0 +1,132 @@
+/* Skeleton Loading Animation Styles */
+
+.skeleton {
+    background: linear-gradient(
+        90deg,
+        rgba(255, 255, 255, 0.05) 0%,
+        rgba(255, 255, 255, 0.1) 50%,
+        rgba(255, 255, 255, 0.05) 100%
+    );
+    background-size: 200% 100%;
+    animation: skeleton-shimmer 1.5s ease-in-out infinite;
+}
+
+@keyframes skeleton-shimmer {
+    0% {
+        background-position: 200% 0;
+    }
+    100% {
+        background-position: -200% 0;
+    }
+}
+
+/* Skeleton Card (KPI Card placeholder) */
+.skeleton-card {
+    background: rgba(255, 255, 255, 0.03);
+    border-radius: 12px;
+    padding: 20px;
+    border: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+/* Skeleton KPI Grid */
+.skeleton-kpi-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+    gap: 16px;
+    margin-bottom: 24px;
+}
+
+/* Skeleton Section */
+.skeleton-section {
+    background: rgba(255, 255, 255, 0.03);
+    border-radius: 12px;
+    padding: 24px;
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    margin-bottom: 24px;
+}
+
+/* Skeleton Chart */
+.skeleton-chart {
+    height: 200px;
+    display: flex;
+    flex-direction: column;
+}
+
+.skeleton-chart-bars {
+    flex: 1;
+    display: flex;
+    align-items: flex-end;
+    gap: 12px;
+    padding: 0 10%;
+}
+
+.skeleton-bar {
+    flex: 1;
+    background: linear-gradient(
+        90deg,
+        rgba(255, 255, 255, 0.05) 0%,
+        rgba(255, 255, 255, 0.1) 50%,
+        rgba(255, 255, 255, 0.05) 100%
+    );
+    background-size: 200% 100%;
+    animation: skeleton-shimmer 1.5s ease-in-out infinite;
+    border-radius: 4px 4px 0 0;
+}
+
+/* Skeleton Table */
+.skeleton-table {
+    width: 100%;
+}
+
+.skeleton-table-header {
+    display: flex;
+    gap: 24px;
+    padding: 12px 16px;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+    margin-bottom: 8px;
+}
+
+.skeleton-table-row {
+    display: flex;
+    gap: 24px;
+    padding: 12px 16px;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+}
+
+/* Skeleton Controls */
+.skeleton-controls {
+    display: flex;
+    gap: 12px;
+    margin-bottom: 24px;
+    flex-wrap: wrap;
+}
+
+/* Dashboard Skeleton Layout */
+.dashboard-skeleton {
+    padding: 24px;
+}
+
+/* Analytics Skeleton Layout */
+.analytics-skeleton {
+    padding: 24px;
+}
+
+/* Responsive adjustments */
+@media (max-width: 768px) {
+    .skeleton-kpi-grid {
+        grid-template-columns: repeat(2, 1fr);
+    }
+    
+    .skeleton-table-header,
+    .skeleton-table-row {
+        gap: 12px;
+    }
+    
+    .skeleton-controls {
+        flex-direction: column;
+    }
+    
+    .skeleton-controls .skeleton {
+        width: 100% !important;
+    }
+}
