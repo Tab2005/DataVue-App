@@ -64,9 +64,123 @@
 預計於 v1.6+ 版本推出的功能。
 
 ### 1. 進階報表工具
-*   **自訂指標 (Metric Customization)**: 「指標超市」讓用戶自由勾選想看的欄位。
-*   **下鑽分析 (Drill-down)**: 點擊圖表直接查看底層 Ad Sets 數據。
-*   **儲存報表 (Saved Reports)**: 將篩選條件與指標設定存為預設值 (e.g., "老闆視角", "素材視角")。
+
+#### 1.1 自訂指標 (Metric Customization) - 「指標超市」
+**目標**: 讓用戶自由選擇想要顯示的欄位，打造個人化報表體驗。
+
+**現況**: ⏳ 部分完成
+- ✅ `constants/analyticsConfig.js` 已定義 METRIC_GROUPS
+- ✅ Analytics 頁面已有 View 切換 (總覽/電商/漏斗/自訂)
+- ✅ MetricSelector 元件已建立 (Memoized)
+
+**待完成**:
+| 功能 | 說明 | 優先級 |
+|------|------|--------|
+| 偏好儲存 | 記住使用者上次選擇的指標 (localStorage) | 🔴 高 |
+| 拖曳排序 | 拖曳調整欄位顯示順序 (react-dnd) | 🟡 中 |
+| 快速篩選 | 搜尋框快速找到指標 | 🟢 低 |
+
+**資料結構**:
+```json
+// localStorage: analytics_preferences_{user_id}
+{
+  "selectedMetrics": ["general:spend", "ecommerce:roas", "ecommerce:purchases"],
+  "columnOrder": ["spend", "roas", "purchases", "ctr"],
+  "lastUpdated": "2025-12-17T00:00:00Z"
+}
+```
+
+---
+
+#### 1.2 下鑽分析 (Drill-down)
+**目標**: 點擊圖表或表格行，直接深入查看底層數據。
+
+**現況**: 🔲 未實作
+
+**使用者流程**:
+```
+Account Overview → 點擊 Campaign → 顯示該 Campaign 的 Ad Sets
+                → 點擊 Ad Set  → 顯示該 Ad Set 的 Ads
+                → 點擊 Ad      → 顯示 Ad 詳細素材預覽
+```
+
+**技術需求**:
+| 項目 | 說明 |
+|------|------|
+| 圖表點擊事件 | Recharts `onClick` handler |
+| 動態 API 呼叫 | 傳入 `campaign_id` 或 `adset_id` 過濾 |
+| 麵包屑導航 | `All Campaigns > Campaign A > Ad Set B` |
+| URL 參數 | 支援直接分享連結 `?campaign_id=123` |
+
+**API 端點 (現有)**:
+```python
+GET /api/analytics-data?account_id={id}&level=adset&campaign_id={cid}
+GET /api/analytics-data?account_id={id}&level=ad&adset_id={asid}
+```
+
+**UI 設計方向**:
+- 點擊表格 Row → 展開子表格 (Accordion Style)
+- 或: 右側滑出 Panel 顯示詳細資訊
+
+---
+
+#### 1.3 儲存報表 (Saved Reports)
+**目標**: 將篩選條件與指標設定存為預設值，一鍵還原常用視角。
+
+**現況**: 🔲 未實作
+
+**使用情境**:
+| 預設名稱 | 說明 | 指標 |
+|----------|------|------|
+| 老闆視角 | 高層總覽 | Spend, ROAS, Purchases |
+| 素材視角 | 廣告測試 | CTR, CPC, Engagement |
+| 電商視角 | 購買漏斗 | ATC, CVR, Cart Dropoff |
+
+**資料結構**:
+```json
+// saved_reports table
+{
+  "id": "uuid",
+  "user_id": 123,
+  "team_id": null,  // null = 個人, non-null = 團隊共享
+  "name": "老闆視角",
+  "icon": "📊",
+  "config": {
+    "level": "campaign",
+    "datePreset": "last_7d",
+    "metrics": ["spend", "roas", "purchases", "cpa"],
+    "filters": {
+      "keyword": "",
+      "activeOnly": false
+    },
+    "sortBy": "spend",
+    "sortOrder": "desc"
+  },
+  "is_default": false,
+  "created_at": "2025-12-17T00:00:00Z"
+}
+```
+
+**儲存位置策略**:
+| 類型 | 儲存位置 | 說明 |
+|------|----------|------|
+| 臨時偏好 | localStorage | 不需登入，立即生效 |
+| 個人報表 | 資料庫 users.saved_reports | 跨裝置同步 |
+| 團隊報表 | 資料庫 team_reports | 團隊成員共用 |
+
+**UI 設計**:
+```
+[View 選擇器]
+├── 📊 總覽 (系統預設)
+├── 🛒 電商 (系統預設)
+├── 🌪️ 漏斗 (系統預設)
+├── ─────────────────
+├── ⭐ 老闆視角 (我的報表)
+├── ⭐ 素材視角 (我的報表)
+├── ─────────────────
+├── 👥 團隊週報 (團隊共用)
+└── ⚙️ 自訂...
+```
 
 ### 2. AI 演進 (Phase 2 & 3)
 *   **Copilot (Phase 2)**: 對話式助理 (Chatbot)，例如問：「為什麼昨天 ROAS 掉了？」。
