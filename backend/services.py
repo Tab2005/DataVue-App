@@ -26,7 +26,7 @@ class FacebookService:
         """
         headers = FacebookService.get_headers(user_id, team_id, allow_fallback=not strict_token)
         if not headers:
-            print("get_all_ad_accounts: No headers (Token missing).", file=sys.stderr)
+            print("[FB] get_all_ad_accounts: No token available", file=sys.stderr)
             return [], "No access token found for this user."
 
         url = f"{FacebookService.BASE_URL}/me/adaccounts"
@@ -36,14 +36,14 @@ class FacebookService:
         }
 
         try:
-            print(f"Fetching Ad Accounts from: {url}", file=sys.stderr)
+            print(f"[FB] Fetching Ad Accounts...", file=sys.stderr)
             response = requests.get(url, headers=headers, params=params, timeout=10)
-            print(f"Facebook API Response Status: {response.status_code}", file=sys.stderr)
+            print(f"[FB] Response Status: {response.status_code}", file=sys.stderr)
             data = response.json()
             # print(f"Facebook API Response Body: {data}", file=sys.stderr) # Debug only
 
             if "error" in data:
-                print(f"Facebook API Error: {data['error']}", file=sys.stderr)
+                print(f"[FB] API Error: {data['error'].get('message', 'Unknown error')}", file=sys.stderr)
                 return [], data["error"].get("message")
 
             accounts = data.get("data", [])
@@ -390,11 +390,11 @@ class FacebookService:
         try:
             res = requests.get(url, headers=headers, params=params).json()
             if "error" in res:
-                print(f"FB API Error (Report): {res['error']}")
+                print(f"[FB] API Error (Report): {res['error'].get('message', 'Unknown')}", file=sys.stderr)
                 return None
                 
             data = res.get("data", [])
-            print(f"DEBUG_REPORT: Level={level} Period={since}~{until} Rows={len(data)}")
+            print(f"[FB] Report: Level={level} Rows={len(data)}", file=sys.stderr)
             
             # Process each row
             
@@ -422,7 +422,7 @@ class FacebookService:
                         }
                             
                 except Exception as e:
-                    print(f"Error fetching ad metadata: {e}")
+                    print(f"[FB] Error fetching ad metadata", file=sys.stderr)
 
             processed_rows = []
             for row in data:
@@ -535,7 +535,7 @@ class FacebookService:
             return processed_rows
 
         except Exception as e:
-            print(f"Error fetching custom report: {e}")
+            print(f"[FB] Error fetching custom report", file=sys.stderr)
             return None
 
     @staticmethod
@@ -570,7 +570,7 @@ class FacebookService:
                 res = requests.get(url, headers=headers, params=params).json()
                 return res.get("data", [])
             except Exception as e:
-                print(f"Error train fetch: {e}")
+                print(f"[FB] Error in trend fetch", file=sys.stderr)
                 return []
 
         # 1. Fetch Current & Previous

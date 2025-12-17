@@ -45,7 +45,7 @@ class AsyncFacebookService:
 
         headers = AsyncFacebookService.get_headers(user_id, team_id, allow_fallback=not strict_token)
         if not headers:
-            print("get_all_ad_accounts: No headers (Token missing).", file=sys.stderr)
+            print("[FB ASYNC] get_all_ad_accounts: No token available", file=sys.stderr)
             return [], "No access token found for this user."
 
         url = f"{AsyncFacebookService.BASE_URL}/me/adaccounts"
@@ -55,10 +55,10 @@ class AsyncFacebookService:
         }
 
         try:
-            print(f"[ASYNC] Fetching Ad Accounts from: {url}", file=sys.stderr)
+            print(f"[FB ASYNC] Fetching Ad Accounts...", file=sys.stderr)
             async with httpx.AsyncClient(timeout=AsyncFacebookService.TIMEOUT) as client:
                 response = await client.get(url, headers=headers, params=params)
-                print(f"[ASYNC] Facebook API Response Status: {response.status_code}", file=sys.stderr)
+                print(f"[FB ASYNC] Response Status: {response.status_code}", file=sys.stderr)
                 data = response.json()
 
             if "error" in data:
@@ -78,7 +78,7 @@ class AsyncFacebookService:
             return formatted, None
 
         except Exception as e:
-            print(f"[ASYNC] Error: {e}", file=sys.stderr)
+            print(f"[FB ASYNC] Error in get_all_ad_accounts", file=sys.stderr)
             return [], str(e)
 
     @staticmethod
@@ -116,7 +116,7 @@ class AsyncFacebookService:
                 cur_res = cur_response.json()
                 
                 if "error" in cur_res:
-                    print(f"[ASYNC] FB API Error: {cur_res['error']}", file=sys.stderr)
+                    print(f"[FB ASYNC] API Error in insights", file=sys.stderr)
                     return None
                     
                 cur_data_list = cur_res.get("data", [])
@@ -187,7 +187,7 @@ class AsyncFacebookService:
             return result
 
         except Exception as e:
-            print(f"[ASYNC] Error fetching insights: {e}", file=sys.stderr)
+            print(f"[FB ASYNC] Error fetching insights", file=sys.stderr)
             return None
 
     @staticmethod
@@ -249,11 +249,11 @@ class AsyncFacebookService:
                 res = insights_response.json()
                 
             if "error" in res:
-                print(f"[ASYNC] FB API Error (Report): {res['error']}", file=sys.stderr)
+                print(f"[FB ASYNC] API Error (Report)", file=sys.stderr)
                 return None
                 
             data = res.get("data", [])
-            print(f"[ASYNC] DEBUG_REPORT: Level={level} Period={since}~{until} Rows={len(data)}", file=sys.stderr)
+            print(f"[FB ASYNC] Report: Level={level} Rows={len(data)}", file=sys.stderr)
             
             # Build ad metadata map
             ad_meta_map = {}
@@ -362,7 +362,7 @@ class AsyncFacebookService:
             return processed_rows
 
         except Exception as e:
-            print(f"[ASYNC] Error fetching custom report: {e}", file=sys.stderr)
+            print(f"[FB ASYNC] Error fetching custom report", file=sys.stderr)
             return None
 
     @staticmethod
@@ -399,7 +399,7 @@ class AsyncFacebookService:
                 response = await client.get(url, headers=headers, params=params)
                 return response.json().get("data", [])
             except Exception as e:
-                print(f"[ASYNC] Error trend fetch: {e}", file=sys.stderr)
+                print(f"[FB ASYNC] Error in trend fetch", file=sys.stderr)
                 return []
 
         try:
@@ -506,5 +506,5 @@ class AsyncFacebookService:
             return merged
 
         except Exception as e:
-            print(f"[ASYNC] Error in get_analytics_trend: {e}", file=sys.stderr)
+            print(f"[FB ASYNC] Error in get_analytics_trend", file=sys.stderr)
             return None
