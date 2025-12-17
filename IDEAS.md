@@ -202,6 +202,43 @@ const metrics = USE_METRICS_REGISTRY
 |------|------|------|
 | 指標資料庫 | `metricsRegistry.js` - 70+ 指標 | ✅ 完成 |
 | 指標實驗室 | `MetricsLab.jsx` - 瀏覽/搜尋 UI | ✅ 完成 |
+| 儲存視角功能 | localStorage 儲存自訂指標組合 | ✅ 完成 |
+
+###### 儲存視角功能詳細說明 (Step 1)
+
+| 功能 | 說明 |
+|------|------|
+| 儲存視角按鈕 | 點擊藍色「儲存視角」按鈕開啟命名 Modal |
+| 命名 Modal | 輸入視角名稱，支援 Enter/Escape 快捷鍵 |
+| 已儲存視角區塊 | 顯示所有已儲存視角，含指標數量標籤 |
+| 載入視角 | 點擊「載入」恢復已儲存的指標選擇 |
+| 刪除視角 | 點擊垃圾桶圖標刪除視角 |
+| Toast 提示 | 操作成功後右上角顯示綠色提示 |
+| 雙語支援 | 中文/英文介面完整翻譯 |
+
+**技術實作**:
+- localStorage Key: `metricslab_saved_views`
+- 資料結構: `{ id, name, metrics[], createdAt }`
+
+###### 儲存策略規劃
+
+| 階段 | 儲存位置 | 說明 | 狀態 |
+|------|----------|------|------|
+| Phase 1 | **localStorage** | 瀏覽器本地儲存，立即可用 | ✅ 目前實作 |
+| Phase 2 | 資料庫 `users.saved_views` | 個人報表，跨裝置同步 | 🔲 未來規劃 |
+| Phase 3 | 資料庫 `team_saved_views` | 團隊共享報表 | 🔲 未來規劃 |
+
+**localStorage 限制**:
+- ❌ 無法跨裝置同步（換電腦/換瀏覽器就沒了）
+- ❌ 無法分享給團隊成員
+- ✅ 不需後端 API，開發快速
+
+**升級路徑** (Phase 2):
+```
+1. 新增後端 API: POST /api/saved-views, GET /api/saved-views
+2. 新增資料表: saved_views (id, user_id, team_id, name, metrics, created_at)
+3. 前端改為呼叫 API，同時保留 localStorage 作為快取
+```
 
 ##### 完整流程設計
 
@@ -216,7 +253,7 @@ const metrics = USE_METRICS_REGISTRY
 │  │ ☑ reach   ☑ cpa    ☐ video_p50   ☐ leads           │ │
 │  └─────────────────────────────────────────────────────┘ │
 │                                                          │
-│  [儲存為: 我的電商視角] [� 儲存]                          │
+│  [儲存為: 我的電商視角] [💾 儲存]                          │
 └─────────────────────────────────────────────────────────┘
                            ↓
                     localStorage / DB
@@ -236,25 +273,35 @@ const metrics = USE_METRICS_REGISTRY
 
 ##### 待完成功能 (後續步驟)
 
-| 優先級 | 功能 | 說明 | 工作量 |
-|--------|------|------|--------|
-| 🔴 P1 | **儲存為預設** | MetricsLab 新增「儲存為我的視角」按鈕 | 1-2 小時 |
-| 🔴 P1 | **Analytics 讀取** | Analytics 頁面讀取自訂視角並顯示 | 2-3 小時 |
-| 🟡 P2 | **後端動態欄位** | 根據選擇的指標動態請求 FB API 欄位 | 2-3 小時 |
-| 🟡 P2 | **拖曳排序** | 拖曳調整欄位顯示順序 (react-dnd) | 1-2 小時 |
-| 🟢 P3 | **團隊共享** | 團隊層級的自訂視角儲存 | 2-3 小時 |
+| 優先級 | 功能 | 說明 | 工作量 | 狀態 |
+|--------|------|------|--------|------|
+| ~~🔴 P1~~ | ~~儲存為預設~~ | ~~MetricsLab 新增「儲存為我的視角」按鈕~~ | ~~1-2 小時~~ | ✅ 完成 |
+| ~~🔴 P1~~ | ~~Analytics 讀取~~ | ~~Analytics 頁面讀取自訂視角並顯示~~ | ~~2-3 小時~~ | ✅ 完成 |
+| 🟡 P2 | 後端動態欄位 | 根據選擇的指標動態請求 FB API 欄位 | 2-3 小時 | |
+| 🟡 P2 | 拖曳排序 | 拖曳調整欄位顯示順序 (react-dnd) | 1-2 小時 | |
+| 🟢 P3 | 團隊共享 | 團隊層級的自訂視角儲存 | 2-3 小時 | |
+
+##### 待優化項目 (UX 改進)
+
+| 項目 | 說明 | 優先級 |
+|------|------|--------|
+| 視角數量上限 | 設定最多 5-10 個視角，避免 UI 擁擠 | 🟢 低 |
+| 摺疊選單 | 超過 3 個視角時改用下拉選單 | 🟢 低 |
+| 視角管理介面 | MetricsLab 提供編輯/重新命名功能 | 🟡 中 |
+| 視角排序 | 支援拖曳調整視角順序 | 🟢 低 |
 
 ##### 實作順序
 
 ```
-Step 1: MetricsLab 新增「儲存」功能
-        → localStorage.setItem('custom_metrics', [...])
+Step 1: MetricsLab 新增「儲存」功能 ✅ 已完成 (2025-12-17)
+        → localStorage.setItem('metricslab_saved_views', [...])
 
-Step 2: Analytics 新增「自訂」View
-        → VIEW_PRESETS + { label: '自訂', source: 'registry' }
+Step 2: Analytics 新增已儲存視角 ✅ 已完成 (2025-12-17)
+        → 金色星號按鈕顯示已儲存視角
+        → 點擊載入對應指標組合
 
-Step 3: Analytics 讀取 localStorage
-        → const customMetrics = localStorage.getItem('custom_metrics')
+Step 3: Analytics 讀取 localStorage ✅ 已整合至 Step 2
+        → const customMetrics = localStorage.getItem('metricslab_saved_views')
 
 Step 4: 後端支援動態欄位
         → /api/analytics-data?fields=spend,roas,video_p25

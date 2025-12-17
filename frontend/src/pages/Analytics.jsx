@@ -1,13 +1,25 @@
 import React, { useState, useEffect, useRef, useMemo, useCallback, memo } from 'react';
 import { useOutletContext } from 'react-router-dom';
 import html2canvas from 'html2canvas';
-import { FiHome, FiBarChart2, FiUsers, FiSettings, FiActivity, FiChevronLeft, FiChevronRight, FiShield, FiChevronDown, FiChevronUp, FiPlus, FiDownload, FiFilter, FiX, FiCpu, FiZap, FiRefreshCcw } from 'react-icons/fi';
+import { FiHome, FiBarChart2, FiUsers, FiSettings, FiActivity, FiChevronLeft, FiChevronRight, FiShield, FiChevronDown, FiChevronUp, FiPlus, FiDownload, FiFilter, FiX, FiCpu, FiZap, FiRefreshCcw, FiStar } from 'react-icons/fi';
 import { format, subDays, startOfWeek, endOfWeek, startOfMonth, endOfMonth, subMonths, subYears, differenceInDays } from 'date-fns';
 import KPICard from '../components/KPICard';
 import TrendSection from '../components/TrendSection';
 // New modular imports
 import { DATE_PRESETS, COMPARE_PRESETS, VIEW_PRESETS } from '../constants/analyticsConfig';
 import { AnalyticsKPISection, MetricSelector } from '../components/Analytics';
+
+// Helper to load saved views from MetricsLab localStorage
+const SAVED_VIEWS_KEY = 'metricslab_saved_views';
+const loadSavedViews = () => {
+    try {
+        const saved = localStorage.getItem(SAVED_VIEWS_KEY);
+        return saved ? JSON.parse(saved) : [];
+    } catch (e) {
+        console.error('Failed to load saved views:', e);
+        return [];
+    }
+};
 
 // METRIC_GROUPS imported from analyticsConfig but kept inline for backward compatibility
 // TODO: Migrate remaining code to use imported METRIC_GROUPS
@@ -241,6 +253,14 @@ const Analytics = () => {
 
     // View State
     const [activeView, setActiveView] = useState('summary');
+
+    // Saved Views from MetricsLab (localStorage)
+    const [savedViews, setSavedViews] = useState([]);
+
+    // Load saved views on mount
+    useEffect(() => {
+        setSavedViews(loadSavedViews());
+    }, []);
 
     // 1. Filter State
 
@@ -840,6 +860,51 @@ const Analytics = () => {
                                     {language === 'zh' ? preset.label_zh : preset.label_en}
                                 </button>
                             ))}
+
+                            {/* Saved Views from MetricsLab */}
+                            {savedViews.length > 0 && (
+                                <>
+                                    <div style={{ width: '1px', height: '24px', background: 'var(--glass-border)', margin: '0 4px' }} />
+                                    {savedViews.map(view => (
+                                        <button
+                                            key={`saved-${view.id}`}
+                                            onClick={() => {
+                                                // Load saved view metrics
+                                                const newSet = new Set();
+                                                view.metrics.forEach(metricKey => {
+                                                    // Map registry keys to composite keys
+                                                    for (const group of METRIC_GROUPS) {
+                                                        const match = group.metrics.find(m => m.key === metricKey);
+                                                        if (match) {
+                                                            newSet.add(`${group.id}:${metricKey}`);
+                                                            break;
+                                                        }
+                                                    }
+                                                });
+                                                setSelectedMetrics(newSet);
+                                                setActiveView(`saved-${view.id}`);
+                                                setShowMetricPanel(false);
+                                            }}
+                                            style={{
+                                                display: 'flex',
+                                                alignItems: 'center',
+                                                gap: '4px',
+                                                padding: '6px 12px',
+                                                borderRadius: '20px',
+                                                border: '1px solid rgba(251, 191, 36, 0.3)',
+                                                background: activeView === `saved-${view.id}` ? 'rgba(251, 191, 36, 0.2)' : 'rgba(251, 191, 36, 0.05)',
+                                                color: '#fbbf24',
+                                                fontSize: '0.85rem',
+                                                cursor: 'pointer',
+                                                transition: 'all 0.2s'
+                                            }}
+                                        >
+                                            <FiStar size={12} />
+                                            {view.name}
+                                        </button>
+                                    ))}
+                                </>
+                            )}
 
                             {/* AI Analyst Button */}
                             <button
