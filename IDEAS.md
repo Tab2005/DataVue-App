@@ -73,22 +73,105 @@
 - ✅ Analytics 頁面已有 View 切換 (總覽/電商/漏斗/自訂)
 - ✅ MetricSelector 元件已建立 (Memoized)
 
-**待完成**:
-| 功能 | 說明 | 優先級 |
-|------|------|--------|
-| 偏好儲存 | 記住使用者上次選擇的指標 (localStorage) | 🔴 高 |
-| 拖曳排序 | 拖曳調整欄位顯示順序 (react-dnd) | 🟡 中 |
-| 快速篩選 | 搜尋框快速找到指標 | 🟢 低 |
+**核心問題**: 現有 METRIC_GROUPS 僅包含 ~35 個指標，但 Facebook 有 100+ 可用指標。
 
-**資料結構**:
+##### 現有指標 vs 缺少的指標
+
+| 類別 | 現有 | 缺少 |
+|------|------|------|
+| 通用 | spend, reach, impressions, cpc, ctr | frequency, unique_clicks |
+| 電商 | roas, purchases, add_to_cart, cpa | checkout_initiated, payment_info_added |
+| 漏斗 | cvr, cart_conversion, cart_dropoff | ✅ 已完整 |
+| 互動 | comments, saves, shares, reactions | video_plays, photo_views |
+| **影音** | ❌ 無 | video_p25_watched, video_p50_watched, video_p75_watched, video_p100_watched, video_avg_time_watched, thruplay |
+| **訊息** | ❌ 無 | messaging_first_reply, messaging_conversation_started_7d |
+| **潛在客戶** | ❌ 無 | leads, lead_cost, onsite_conversion.lead_grouped |
+| **應用程式** | ❌ 無 | app_installs, mobile_app_install, app_custom_event |
+| **歸因視窗** | ❌ 無 | 1d_click, 7d_click, 28d_click, 1d_view |
+
+##### 架構設計：指標資料庫 (Metrics Registry)
+
+```
+┌─────────────────────────────────────────────────────────┐
+│                    Facebook Graph API                    │
+│  (actions, action_values, video_views, video_p25, ...)  │
+└─────────────────────────────────────────────────────────┘
+                           ↓
+┌─────────────────────────────────────────────────────────┐
+│           📦 指標資料庫 (Metrics Registry)               │
+│  - 完整 FB 可用指標清單 (100+)                           │
+│  - 各指標的中英文名稱、格式、計算方式                      │
+│  - 分類標籤 (video, messaging, lead, ecommerce...)      │
+│  - 是否需要特殊解析 (actions array 或直接欄位)           │
+└─────────────────────────────────────────────────────────┘
+                           ↓
+┌─────────────────────────────────────────────────────────┐
+│            🛒 使用者啟用的指標 (Supermarket)              │
+│  - 從 Registry 選取需要的指標                            │
+│  - user_enabled_metrics / team_enabled_metrics          │
+│  - 儲存到 localStorage (臨時) 或資料庫 (永久)            │
+└─────────────────────────────────────────────────────────┘
+```
+
+##### 指標資料庫結構 (metrics_registry.json)
+
 ```json
-// localStorage: analytics_preferences_{user_id}
 {
-  "selectedMetrics": ["general:spend", "ecommerce:roas", "ecommerce:purchases"],
-  "columnOrder": ["spend", "roas", "purchases", "ctr"],
-  "lastUpdated": "2025-12-17T00:00:00Z"
+  "video_p25_watched": {
+    "key": "video_p25_watched",
+    "label_zh": "影片觀看 25%",
+    "label_en": "Video 25% Watched",
+    "category": "video",
+    "format": "number",
+    "source": "actions",           // "actions" | "action_values" | "direct"
+    "action_type": "video_view",   // actions array 內的 action_type
+    "description_zh": "影片播放至 25% 的次數",
+    "requires_video_objective": true,
+    "is_default": false
+  },
+  "leads": {
+    "key": "leads",
+    "label_zh": "潛在客戶",
+    "label_en": "Leads",
+    "category": "lead_gen",
+    "format": "number",
+    "source": "actions",
+    "action_type": "lead",
+    "description_zh": "表單送出的潛在客戶數量",
+    "is_default": false
+  },
+  "messaging_first_reply": {
+    "key": "messaging_first_reply",
+    "label_zh": "首次訊息回覆",
+    "label_en": "First Message Reply",
+    "category": "messaging",
+    "format": "number",
+    "source": "actions",
+    "action_type": "onsite_conversion.messaging_first_reply",
+    "description_zh": "用戶首次回覆訊息的數量",
+    "is_default": false
+  }
 }
 ```
+
+##### 實作優先級
+
+| 優先級 | 項目 | 說明 | 工作量 |
+|--------|------|------|--------|
+| 🔴 P1 | 建立 `metrics_registry.json` | 定義 100+ 指標的完整資料庫 | 2-3 小時 |
+| 🔴 P1 | 更新後端解析邏輯 | 支援動態指標欄位請求 | 1-2 小時 |
+| 🔴 P1 | 指標選擇 UI | 分類瀏覽 + 搜尋 | 2-3 小時 |
+| 🟡 P2 | 偏好儲存 | localStorage + 資料庫同步 | 1-2 小時 |
+| 🟢 P3 | 團隊指標設定 | 團隊層級的預設指標 | 1-2 小時 |
+
+##### 待完成功能
+
+| 功能 | 說明 | 優先級 |
+|------|------|--------|
+| 指標資料庫 | 建立完整 FB 指標清單 | 🔴 高 |
+| 偏好儲存 | 記住使用者上次選擇的指標 | 🔴 高 |
+| 拖曳排序 | 拖曳調整欄位顯示順序 (react-dnd) | 🟡 中 |
+| 快速篩選 | 搜尋框快速找到指標 | 🟢 低 |
 
 ---
 
