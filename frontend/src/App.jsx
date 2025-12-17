@@ -16,6 +16,7 @@ const TeamSettings = lazy(() => import('./pages/TeamSettings'));
 const AdminDashboard = lazy(() => import('./pages/AdminDashboard'));
 const InvitePage = lazy(() => import('./pages/InvitePage'));
 const UserManagement = lazy(() => import('./pages/UserManagement'));
+const MetricsLab = lazy(() => import('./pages/MetricsLab'));
 
 function App() {
   // 優先從環境變數讀取 Client ID，如果沒有則使用空字串 (避免報錯，但功能會失效)
@@ -48,6 +49,11 @@ function App() {
                 <Route path="/admin" element={
                   <ErrorBoundary>
                     <AdminDashboard />
+                  </ErrorBoundary>
+                } />
+                <Route path="/lab" element={
+                  <ErrorBoundary>
+                    <MetricsLab />
                   </ErrorBoundary>
                 } />
               </Route>

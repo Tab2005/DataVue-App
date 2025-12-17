@@ -1,0 +1,391 @@
+/**
+ * MetricsLab.css - Styles for Metrics Lab experimental page
+ */
+
+.metrics-lab {
+    padding: 24px;
+    max-width: 1400px;
+    margin: 0 auto;
+    min-height: 100vh;
+}
+
+/* Header */
+.lab-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    margin-bottom: 24px;
+    padding-bottom: 24px;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.lab-title h1 {
+    font-size: 2rem;
+    font-weight: 700;
+    color: var(--text-primary, #fff);
+    margin: 0 0 8px 0;
+}
+
+.lab-title p {
+    color: var(--text-secondary, #a0a0a0);
+    margin: 0;
+}
+
+.lab-stats {
+    display: flex;
+    gap: 24px;
+}
+
+.stat-item {
+    text-align: center;
+    padding: 12px 24px;
+    background: rgba(255, 255, 255, 0.03);
+    border-radius: 12px;
+    border: 1px solid rgba(255, 255, 255, 0.05);
+}
+
+.stat-item.highlight {
+    background: rgba(59, 130, 246, 0.1);
+    border-color: rgba(59, 130, 246, 0.3);
+}
+
+.stat-value {
+    display: block;
+    font-size: 1.8rem;
+    font-weight: 700;
+    color: var(--text-primary, #fff);
+}
+
+.stat-label {
+    font-size: 0.75rem;
+    color: var(--text-secondary, #a0a0a0);
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+}
+
+/* Controls */
+.lab-controls {
+    display: flex;
+    gap: 16px;
+    align-items: center;
+    flex-wrap: wrap;
+    margin-bottom: 20px;
+}
+
+.search-box {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    background: rgba(255, 255, 255, 0.05);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    border-radius: 8px;
+    padding: 8px 12px;
+    flex: 1;
+    min-width: 200px;
+    max-width: 350px;
+}
+
+.search-box input {
+    flex: 1;
+    background: transparent;
+    border: none;
+    color: var(--text-primary, #fff);
+    font-size: 0.9rem;
+    outline: none;
+}
+
+.search-box input::placeholder {
+    color: var(--text-secondary, #a0a0a0);
+}
+
+.search-box svg {
+    color: var(--text-secondary, #a0a0a0);
+}
+
+.clear-btn {
+    background: none;
+    border: none;
+    cursor: pointer;
+    padding: 4px;
+    color: var(--text-secondary, #a0a0a0);
+}
+
+.clear-btn:hover {
+    color: #ef4444;
+}
+
+.action-buttons {
+    display: flex;
+    gap: 8px;
+}
+
+.btn-secondary {
+    padding: 8px 16px;
+    background: rgba(255, 255, 255, 0.05);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    border-radius: 6px;
+    color: var(--text-primary, #fff);
+    font-size: 0.8rem;
+    cursor: pointer;
+    transition: all 0.2s;
+}
+
+.btn-secondary:hover {
+    background: rgba(255, 255, 255, 0.1);
+    border-color: rgba(255, 255, 255, 0.2);
+}
+
+.btn-danger {
+    padding: 8px 16px;
+    background: rgba(239, 68, 68, 0.1);
+    border: 1px solid rgba(239, 68, 68, 0.3);
+    border-radius: 6px;
+    color: #ef4444;
+    font-size: 0.8rem;
+    cursor: pointer;
+    transition: all 0.2s;
+}
+
+.btn-danger:hover {
+    background: rgba(239, 68, 68, 0.2);
+}
+
+.view-toggle {
+    display: flex;
+    background: rgba(255, 255, 255, 0.05);
+    border-radius: 6px;
+    overflow: hidden;
+}
+
+.view-toggle button {
+    padding: 8px 12px;
+    background: transparent;
+    border: none;
+    color: var(--text-secondary, #a0a0a0);
+    cursor: pointer;
+    transition: all 0.2s;
+}
+
+.view-toggle button:hover {
+    color: var(--text-primary, #fff);
+}
+
+.view-toggle button.active {
+    background: rgba(59, 130, 246, 0.2);
+    color: #3b82f6;
+}
+
+.checkbox-label {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    color: var(--text-secondary, #a0a0a0);
+    font-size: 0.85rem;
+    cursor: pointer;
+}
+
+.checkbox-label input {
+    accent-color: #3b82f6;
+}
+
+/* Category Tabs */
+.category-tabs {
+    display: flex;
+    gap: 8px;
+    flex-wrap: wrap;
+    margin-bottom: 24px;
+    padding-bottom: 16px;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+}
+
+.category-tabs button {
+    padding: 8px 16px;
+    background: rgba(255, 255, 255, 0.03);
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    border-radius: 20px;
+    color: var(--text-secondary, #a0a0a0);
+    font-size: 0.8rem;
+    cursor: pointer;
+    transition: all 0.2s;
+    white-space: nowrap;
+}
+
+.category-tabs button:hover {
+    background: rgba(255, 255, 255, 0.08);
+    color: var(--text-primary, #fff);
+}
+
+.category-tabs button.active {
+    background: rgba(59, 130, 246, 0.15);
+    border-color: rgba(59, 130, 246, 0.4);
+    color: #3b82f6;
+}
+
+/* Metrics Container */
+.metrics-container {
+    display: grid;
+    gap: 16px;
+}
+
+.metrics-container.grid {
+    grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+}
+
+.metrics-container.list {
+    grid-template-columns: 1fr;
+}
+
+.empty-state {
+    grid-column: 1 / -1;
+    text-align: center;
+    padding: 48px;
+    color: var(--text-secondary, #a0a0a0);
+}
+
+/* Metric Card */
+.metric-card {
+    position: relative;
+    background: rgba(255, 255, 255, 0.02);
+    border: 2px solid transparent;
+    border-radius: 12px;
+    padding: 16px;
+    cursor: pointer;
+    transition: all 0.2s;
+}
+
+.metric-card:hover {
+    background: rgba(255, 255, 255, 0.05);
+    transform: translateY(-2px);
+}
+
+.metric-card.selected {
+    background: rgba(59, 130, 246, 0.08);
+}
+
+.metric-header {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-bottom: 8px;
+}
+
+.category-dot {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+}
+
+.metric-key {
+    font-size: 0.7rem;
+    color: var(--text-secondary, #a0a0a0);
+    font-family: monospace;
+    background: rgba(255, 255, 255, 0.05);
+    padding: 2px 6px;
+    border-radius: 4px;
+}
+
+.default-badge {
+    font-size: 0.65rem;
+    background: rgba(16, 185, 129, 0.15);
+    color: #10b981;
+    padding: 2px 6px;
+    border-radius: 4px;
+    margin-left: auto;
+}
+
+.extended-badge {
+    font-size: 0.65rem;
+    background: rgba(168, 85, 247, 0.15);
+    color: #a855f7;
+    padding: 2px 6px;
+    border-radius: 4px;
+    margin-left: auto;
+}
+
+.metric-label {
+    font-size: 1rem;
+    font-weight: 600;
+    color: var(--text-primary, #fff);
+    margin-bottom: 4px;
+}
+
+.metric-desc {
+    font-size: 0.75rem;
+    color: var(--text-secondary, #a0a0a0);
+    margin-bottom: 8px;
+}
+
+.metric-footer {
+    display: flex;
+    gap: 8px;
+}
+
+.format-badge,
+.source-badge {
+    font-size: 0.65rem;
+    padding: 2px 6px;
+    border-radius: 4px;
+    background: rgba(255, 255, 255, 0.05);
+    color: var(--text-secondary, #a0a0a0);
+}
+
+.check-indicator {
+    position: absolute;
+    top: 12px;
+    right: 12px;
+    width: 24px;
+    height: 24px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 50%;
+    background: rgba(59, 130, 246, 0.2);
+    color: #3b82f6;
+}
+
+.metric-card:not(.selected) .check-indicator {
+    display: none;
+}
+
+/* Footer */
+.lab-footer {
+    margin-top: 48px;
+    padding-top: 24px;
+    border-top: 1px solid rgba(255, 255, 255, 0.05);
+    text-align: center;
+}
+
+.lab-footer p {
+    color: var(--text-secondary, #a0a0a0);
+    font-size: 0.85rem;
+}
+
+/* Responsive */
+@media (max-width: 768px) {
+    .lab-header {
+        flex-direction: column;
+        gap: 16px;
+    }
+
+    .lab-stats {
+        width: 100%;
+        justify-content: space-around;
+    }
+
+    .lab-controls {
+        flex-direction: column;
+        align-items: stretch;
+    }
+
+    .search-box {
+        max-width: none;
+    }
+
+    .action-buttons {
+        justify-content: center;
+    }
+
+    .metrics-container.grid {
+        grid-template-columns: 1fr;
+    }
+}
