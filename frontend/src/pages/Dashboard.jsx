@@ -78,8 +78,8 @@ function Dashboard() {
     const getKpiConfig = (lang) => [
         { key: 'impressions', title: lang === 'zh' ? '曝光 (Impressions)' : 'Impressions', format: 'number' },
         { key: 'link_clicks', title: lang === 'zh' ? '連結點擊 (Link Clicks)' : 'Link Clicks', format: 'number' },
-        { key: 'ctr', title: 'CTR', format: 'percent' },
-        { key: 'cpc', title: 'CPC', format: 'currency', isInverse: true },
+        { key: 'ctr', title: lang === 'zh' ? '點擊率 (CTR)' : 'CTR', format: 'percent' },
+        { key: 'cpc', title: lang === 'zh' ? '點擊成本 (CPC)' : 'CPC', format: 'currency', isInverse: true },
         { key: 'spend', title: lang === 'zh' ? '費用 (Spend)' : 'Spend', format: 'currency', isInverse: true },
         { key: 'purchases', title: lang === 'zh' ? '購買 (Purchases)' : 'Purchases', format: 'number' },
         { key: 'add_to_cart', title: lang === 'zh' ? '購物車 (AddToCart)' : 'Add to Cart', format: 'number' },
