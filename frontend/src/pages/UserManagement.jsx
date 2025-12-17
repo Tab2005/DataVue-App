@@ -1,8 +1,8 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useRef, useCallback } from 'react';
 import { UserService } from '../services/userService';
 import { TeamService } from '../services/teamService';
 import InviteModal from '../components/InviteModal';
-import { FaUserPlus, FaEdit, FaTrash, FaShieldAlt, FaCheckCircle, FaTimesCircle } from 'react-icons/fa';
+import { FaUserPlus, FaEdit, FaTrash, FaShieldAlt, FaCheckCircle, FaTimesCircle, FaUndo } from 'react-icons/fa';
 
 const UserManagement = ({ language, selectedTeamId, user, teams, embedded = false, isMobile }) => {
     // 2. Define Translations
@@ -255,38 +255,55 @@ const UserManagement = ({ language, selectedTeamId, user, teams, embedded = fals
 
         if (!window.confirm(confirmMsg)) return;
 
+        // Save original state for rollback
+        const originalUsers = [...users];
+        const deletedUser = users.find(u => u.id === userId);
+
+        // Optimistic Update: Remove from UI immediately
+        setUsers(users.filter(u => u.id !== userId));
+
         try {
             if (selectedTeamId) {
                 await TeamService.removeMember(selectedTeamId, userId);
             } else {
                 await UserService.deleteUser(userId);
             }
-            setUsers(users.filter(u => u.id !== userId));
+            // Success - UI already updated
         } catch (err) {
-            console.error(err);
+            // Rollback: Restore original state
+            console.error('[Optimistic Rollback] Delete failed:', err);
+            setUsers(originalUsers);
             alert(err.message || t.failed_delete);
         }
     };
 
     const handleSave = async (e) => {
         e.preventDefault();
+        if (!editingUser) {
+            alert(t.invite_alert);
+            return;
+        }
+
+        // Save original state for rollback
+        const originalUsers = [...users];
+        const newRole = formData.role;
+
+        // Optimistic Update: Update UI immediately
+        setUsers(users.map(u => u.id === editingUser.id ? { ...u, role: newRole } : u));
+        setIsModalOpen(false);
+        setEditingUser(null);
+
         try {
-            if (editingUser) {
-                if (selectedTeamId) {
-                    await TeamService.updateMemberRole(selectedTeamId, editingUser.id, formData.role);
-                    setUsers(users.map(u => u.id === editingUser.id ? { ...u, role: formData.role } : u));
-                } else {
-                    const updatedUser = await UserService.updateUser(editingUser.id, formData);
-                    setUsers(users.map(u => u.id === editingUser.id ? updatedUser : u));
-                }
+            if (selectedTeamId) {
+                await TeamService.updateMemberRole(selectedTeamId, editingUser.id, newRole);
             } else {
-                alert(t.invite_alert);
-                return;
+                await UserService.updateUser(editingUser.id, formData);
             }
-            setIsModalOpen(false);
-            setEditingUser(null);
+            // Success - UI already updated
         } catch (err) {
-            console.error(err);
+            // Rollback: Restore original state
+            console.error('[Optimistic Rollback] Save failed:', err);
+            setUsers(originalUsers);
             alert(err.message || t.failed_save);
         }
     };
