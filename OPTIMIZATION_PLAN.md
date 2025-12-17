@@ -80,12 +80,14 @@ async def get_account_insights(self, account_id, user_id, days=7):
 
 ---
 
-#### 1.3 Facebook API 批次請求
+#### 1.3 Facebook API 批次請求 ✅ 已完成 (2025-12-17)
 **問題**: 多個獨立 API 呼叫可以合併為批次請求。
 
 **建議**:
 - 使用 Facebook Batch API 減少網路往返
 - 特別適用於 `get_custom_report` 中同時抓取 insights 和 ads 資料
+
+> **實作說明**: 已建立 `batch_api.py` 模組，包含 `FacebookBatchService` 類別，支援 Dashboard 和 Analytics 頁面的批次數據抓取。
 
 ---
 
