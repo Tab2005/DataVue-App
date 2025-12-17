@@ -1,6 +1,6 @@
 # Facebook Dashboard Web App - 專案資料總覽
 
-> **版本**: v1.5.2 | **最後更新**: 2025-12-17
+> **版本**: v1.5.3 | **最後更新**: 2025-12-17
 
 ---
 
@@ -36,6 +36,8 @@
 | ORM | SQLAlchemy + Alembic |
 | 資料庫 | SQLite (Local) / PostgreSQL (Production) |
 | API 整合 | Facebook Graph API v24.0 |
+| 非同步 HTTP | httpx (aiohttp) |
+| 快取 | cachetools (TTL-based Memory Cache) |
 | 加密 | Fernet 對稱式加密 |
 | AI | Google Gemini (genai) |
 
@@ -54,6 +56,9 @@ Facebook Dashboard Web App/
 ├── backend/                    # FastAPI 後端
 │   ├── main.py                 # 主應用程式 & API 端點
 │   ├── services.py             # Facebook API 整合服務
+│   ├── async_services.py       # 非同步 API 服務 (httpx)
+│   ├── cache.py                # 快取管理服務
+│   ├── exceptions.py           # 統一例外處理
 │   ├── auth.py                 # 認證邏輯
 │   ├── database.py             # 資料庫模型
 │   ├── ai_service.py           # AI 分析服務
@@ -63,14 +68,26 @@ Facebook Dashboard Web App/
 │   │   ├── invites.py
 │   │   ├── ai.py
 │   │   └── admin.py
+│   ├── service_modules/        # 模組化服務 (重構後)
+│   │   ├── facebook_api.py     # 純 API 呼叫
+│   │   └── metrics.py          # 指標計算邏輯
 │   ├── alembic/                # 資料庫遷移
 │   └── requirements.txt        # Python 相依套件
 │
 ├── frontend/                   # React 前端
 │   ├── src/
-│   │   ├── App.jsx             # 主應用程式
-│   │   ├── components/         # UI 元件 (11 個)
-│   │   ├── pages/              # 頁面元件 (7 個)
+│   │   ├── App.jsx             # 主應用程式 (Code Splitting)
+│   │   ├── components/         # UI 元件
+│   │   │   ├── Analytics/      # 模組化分析元件
+│   │   │   ├── ErrorBoundary.jsx
+│   │   │   ├── Skeleton.jsx    # 載入骨架屏
+│   │   │   └── PageLoading.jsx
+│   │   ├── pages/              # 頁面元件 (React.lazy 延遲載入)
+│   │   ├── hooks/              # 自訂 Hooks
+│   │   │   ├── useOptimistic.js
+│   │   │   └── useAnalyticsFilters.js
+│   │   ├── constants/          # 常數配置
+│   │   │   └── analyticsConfig.js
 │   │   ├── services/           # API 服務
 │   │   └── utils/              # 工具函式
 │   ├── package.json
@@ -80,6 +97,7 @@ Facebook Dashboard Web App/
 ├── SPECIFICATION.md            # 專案規格書
 ├── CHANGELOG.md                # 版本更新紀錄
 ├── IDEAS.md                    # 開發路線圖
+├── OPTIMIZATION_PLAN.md        # 優化計畫與進度
 ├── DEPLOYMENT.md               # 部署指南
 └── zeabur.toml                 # Zeabur 部署配置
 ```
@@ -150,6 +168,7 @@ Facebook Dashboard Web App/
 
 | 版本 | 日期 | 重點更新 |
 |------|------|----------|
+| v1.5.3 | 2025-12-17 | **效能優化大更新 (13項)** |
 | v1.5.2 | 2025-12-16 | API 設定介面優化 |
 | v1.5.1 | 2025-12-15 | Mobile UX 增強 |
 | v1.5.0 | 2025-12-13 | **Hybrid SaaS 架構 & 團隊管理** |
