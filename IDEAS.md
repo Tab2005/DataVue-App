@@ -158,11 +158,43 @@
 
 | 優先級 | 項目 | 說明 | 工作量 |
 |--------|------|------|--------|
-| 🔴 P1 | 建立 `metrics_registry.json` | 定義 100+ 指標的完整資料庫 | 2-3 小時 |
+| 🔴 P1 | 建立 `metricsRegistry.js` | 定義 100+ 指標的完整資料庫 | 2-3 小時 |
 | 🔴 P1 | 更新後端解析邏輯 | 支援動態指標欄位請求 | 1-2 小時 |
 | 🔴 P1 | 指標選擇 UI | 分類瀏覽 + 搜尋 | 2-3 小時 |
 | 🟡 P2 | 偏好儲存 | localStorage + 資料庫同步 | 1-2 小時 |
 | 🟢 P3 | 團隊指標設定 | 團隊層級的預設指標 | 1-2 小時 |
+
+##### ⚠️ 安全實作策略 (Backward Compatible)
+
+**原則**: 新增檔案，不修改現有程式碼。出問題時刪除新檔案即可回復。
+
+```
+📁 現有檔案 (保留不動)
+├── constants/analyticsConfig.js  ← 原有 METRIC_GROUPS，完全不改
+└── services.py                   ← 原有解析邏輯，完全不改
+
+📁 新增檔案 (獨立擴展)
+├── constants/metricsRegistry.js  ← 新的指標資料庫
+└── hooks/useMetricsRegistry.js   ← 新的 React Hook (可選)
+```
+
+**切換機制**:
+```javascript
+// 功能開關 (預設關閉)
+const USE_METRICS_REGISTRY = localStorage.getItem('feature_metrics_registry') === 'true';
+
+// 使用時
+const metrics = USE_METRICS_REGISTRY 
+  ? getMetricsFromRegistry()   // 新系統
+  : METRIC_GROUPS;              // 原系統 (預設)
+```
+
+**回滾步驟**:
+| 步驟 | 操作 | 效果 |
+|------|------|------|
+| 1️⃣ | 關閉功能開關 | 立即切回原系統 |
+| 2️⃣ | 刪除 `metricsRegistry.js` | 完全移除新程式碼 |
+| 3️⃣ | `git revert` | 版本層級回退 |
 
 ##### 待完成功能
 
@@ -172,6 +204,7 @@
 | 偏好儲存 | 記住使用者上次選擇的指標 | 🔴 高 |
 | 拖曳排序 | 拖曳調整欄位顯示順序 (react-dnd) | 🟡 中 |
 | 快速篩選 | 搜尋框快速找到指標 | 🟢 低 |
+
 
 ---
 
