@@ -1,62 +1,16 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useMemo, useCallback, memo } from 'react';
 import { useOutletContext } from 'react-router-dom';
 import html2canvas from 'html2canvas';
 import { FiHome, FiBarChart2, FiUsers, FiSettings, FiActivity, FiChevronLeft, FiChevronRight, FiShield, FiChevronDown, FiChevronUp, FiPlus, FiDownload, FiFilter, FiX, FiCpu, FiZap, FiRefreshCcw } from 'react-icons/fi';
 import { format, subDays, startOfWeek, endOfWeek, startOfMonth, endOfMonth, subMonths, subYears, differenceInDays } from 'date-fns';
 import KPICard from '../components/KPICard';
 import TrendSection from '../components/TrendSection';
+// New modular imports
+import { DATE_PRESETS, COMPARE_PRESETS, VIEW_PRESETS } from '../constants/analyticsConfig';
+import { AnalyticsKPISection, MetricSelector } from '../components/Analytics';
 
-const DATE_PRESETS = [
-    { label: '今日 (Today)', value: 'today' },
-    { label: '昨天 (Yesterday)', value: 'yesterday' },
-    { label: '本週 (This Week)', value: 'this_week' },
-    { label: '上週 (Last Week)', value: 'last_week' },
-    { label: '本月 (This Month)', value: 'this_month' },
-    { label: '上月 (Last Month)', value: 'last_month' },
-    { label: '最近 7 天 (Last 7 Days)', value: 'last_7d' },
-    { label: '最近 14 天 (Last 14 Days)', value: 'last_14d' },
-    { label: '最近 30 天 (Last 30 Days)', value: 'last_30d' },
-    { label: '自訂 (Custom)', value: 'custom' },
-];
-
-const COMPARE_PRESETS = [
-    { label: '前一期 (Previous Period)', value: 'previous_period' },
-    { label: '去年同期 (Same Period Last Year)', value: 'year_over_year' },
-    { label: '自訂 (Custom)', value: 'custom' },
-];
-
-const VIEW_PRESETS = {
-    summary: {
-        label_zh: '📊 總覽',
-        label_en: '📊 Summary',
-        // Creating a match with Dashboard Overview: Impressions, Link Clicks, CTR, CPC, Spend, Purchases, Add to Cart, ROAS
-        metrics: ['impressions', 'link_clicks', 'ctr', 'cpc', 'spend', 'purchases', 'add_to_cart', 'roas']
-    },
-    ecommerce: {
-        label_zh: '🛒 電商詳情',
-        label_en: '🛒 E-commerce',
-        // User requested 7 specific metrics: ATC Value, CPA, ATC, ROAS, Cost per ATC, Purchase Value, Purchases
-        // Reordered for logical funnel flow: ATC -> Cost/ATC -> ATC Value -> Purchases -> CPA -> Purchase Value -> ROAS
-        metrics: ['add_to_cart', 'cost_per_atc', 'atc_value', 'purchases', 'cpa', 'purchase_value', 'roas']
-    },
-    engagement: {
-        label_zh: '❤️ 互動指標',
-        label_en: '❤️ Engagement',
-        metrics: ['post_comments', 'post_saves', 'post_shares', 'post_engagement', 'post_reactions', 'page_likes']
-    },
-    funnel: {
-        label_zh: '🌪️ 漏斗分析',
-        label_en: '🌪️ Funnel',
-        metrics: ['cvr', 'view_to_cart', 'cart_conversion', 'cart_dropoff', 'cart_value_realization']
-    },
-    custom: {
-        label_zh: '⚙️ 自訂',
-        label_en: '⚙️ Custom',
-        metrics: [] // User defined
-    }
-};
-
-// Unified Metric Groups Config
+// METRIC_GROUPS imported from analyticsConfig but kept inline for backward compatibility
+// TODO: Migrate remaining code to use imported METRIC_GROUPS
 // Used for BOTH the Metric Selector (Checkbox) and the KPI Cards/Table Columns
 const METRIC_GROUPS = [
     {
