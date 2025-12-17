@@ -146,26 +146,75 @@ except Exception as e:
     print(f"Database Migration/Initialization Failed: {str(e)}")
 
 
-app = FastAPI()
+app = FastAPI(
+    title="Facebook Dashboard API",
+    description="API for Facebook Ads Dashboard with Analytics and Team Management",
+    version="1.5.0"
+)
 
-# --- GLOBAL DEBUG EXCEPTION HANDLER ---
+# --- Unified Exception Handlers ---
 from fastapi import Request
 from fastapi.responses import JSONResponse
 import traceback
+from exceptions import (
+    AppException,
+    AuthenticationError,
+    AuthorizationError,
+    FacebookAPIError,
+    ResourceNotFoundError,
+    ValidationError,
+    DatabaseError
+)
 
-@app.exception_handler(Exception)
-async def debug_exception_handler(request: Request, exc: Exception):
-    error_msg = f"INTERNAL SERVER ERROR: {str(exc)}"
-    print(error_msg, file=sys.stderr)
-    traceback.print_exc()
+# Handler for custom AppException and its subclasses
+@app.exception_handler(AppException)
+async def app_exception_handler(request: Request, exc: AppException):
+    """Handle all custom application exceptions with consistent JSON response."""
+    print(f"[ERROR] {exc.error_code}: {exc.message}", file=sys.stderr)
     return JSONResponse(
-        status_code=500,
+        status_code=exc.status_code,
+        content=exc.to_dict()
+    )
+
+# Handler for standard HTTP exceptions
+from fastapi import HTTPException
+@app.exception_handler(HTTPException)
+async def http_exception_handler(request: Request, exc: HTTPException):
+    """Handle FastAPI HTTPException."""
+    return JSONResponse(
+        status_code=exc.status_code,
         content={
-            "detail": error_msg,
-            "traceback": traceback.format_exc()
+            "error": exc.detail,
+            "error_code": "HTTP_ERROR",
+            "details": {}
         }
     )
-# --------------------------------------
+
+# Handler for unhandled exceptions (fallback)
+@app.exception_handler(Exception)
+async def general_exception_handler(request: Request, exc: Exception):
+    """Handle all unhandled exceptions."""
+    error_msg = f"Internal server error: {str(exc)}"
+    print(f"[CRITICAL] Unhandled exception: {str(exc)}", file=sys.stderr)
+    traceback.print_exc()
+    
+    # In production, hide traceback from response
+    is_dev = os.getenv("ENV", "development") == "development"
+    
+    content = {
+        "error": error_msg if is_dev else "Internal server error",
+        "error_code": "INTERNAL_ERROR",
+        "details": {}
+    }
+    
+    if is_dev:
+        content["traceback"] = traceback.format_exc()
+    
+    return JSONResponse(
+        status_code=500,
+        content=content
+    )
+# -----------------------------------------
 
 # --- Google Token Verification ---
 GOOGLE_CLIENT_ID = os.getenv("GOOGLE_CLIENT_ID")
