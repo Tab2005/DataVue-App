@@ -309,7 +309,7 @@ const Analytics = () => {
                 const params = new URLSearchParams({ user_id: user.id });
                 if (selectedTeamId) params.append('team_id', selectedTeamId);
 
-                const token = localStorage.getItem('access_token');
+                const token = localStorage.getItem('google_token');
                 const res = await fetch(`${API_BASE}/api/saved-views?${params}`, {
                     headers: { 'Authorization': `Bearer ${token}` }
                 });
