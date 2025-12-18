@@ -237,7 +237,7 @@ class AsyncFacebookService:
             return [], str(e)
 
     @staticmethod
-    async def get_account_insights(account_id, user_id, days=7, team_id=None):
+    async def get_account_insights(account_id, user_id, days=7, team_id=None, strict_token=False):
         """
         Async version of get_account_insights with parallel fetching.
         """
@@ -246,7 +246,7 @@ class AsyncFacebookService:
         if cached is not None:
             return cached
 
-        headers = AsyncFacebookService.get_headers(user_id, team_id)
+        headers = AsyncFacebookService.get_headers(user_id, team_id, allow_fallback=not strict_token)
         if not headers:
             return None
             
@@ -346,7 +346,7 @@ class AsyncFacebookService:
             return None
 
     @staticmethod
-    async def get_custom_report(account_id, user_id, since, until, level="account", team_id=None, custom_fields=None):
+    async def get_custom_report(account_id, user_id, since, until, level="account", team_id=None, custom_fields=None, strict_token=False):
         """
         Async version of get_custom_report with caching.
         
@@ -358,6 +358,7 @@ class AsyncFacebookService:
             level: Analysis level (account/campaign/adset/ad)
             team_id: Optional team ID for team-scoped token
             custom_fields: Optional comma-separated list of metric keys for dynamic field selection
+            strict_token: If True, blocks fallback to Admin Token (Prevents data leak)
         """
         # Build cache key including custom_fields for proper cache isolation
         cache_key_suffix = f"_{custom_fields}" if custom_fields else ""
@@ -365,7 +366,7 @@ class AsyncFacebookService:
         if cached is not None:
             return cached
 
-        headers = AsyncFacebookService.get_headers(user_id, team_id)
+        headers = AsyncFacebookService.get_headers(user_id, team_id, allow_fallback=not strict_token)
         if not headers:
             return None
         
@@ -583,7 +584,7 @@ class AsyncFacebookService:
             return None
 
     @staticmethod
-    async def get_analytics_trend(account_id, user_id, since, until, prev_since=None, prev_until=None, team_id=None):
+    async def get_analytics_trend(account_id, user_id, since, until, prev_since=None, prev_until=None, team_id=None, strict_token=False):
         """
         Async version of get_analytics_trend with parallel fetching.
         """
@@ -592,7 +593,7 @@ class AsyncFacebookService:
         if cached is not None:
             return cached
 
-        headers = AsyncFacebookService.get_headers(user_id, team_id)
+        headers = AsyncFacebookService.get_headers(user_id, team_id, allow_fallback=not strict_token)
         if not headers:
             return None
 

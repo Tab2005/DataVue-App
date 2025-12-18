@@ -60,11 +60,15 @@ const SettingsModal = ({ isOpen, onClose, language, teamId, teamName, onSuccess 
 
     // --- Facebook Logic ---
     const fetchTokenStatus = async () => {
-        if (teamId) return;
+        // if (teamId) return; // Allow for team
         try {
             const token = localStorage.getItem('google_token');
             const apiUrl = import.meta.env.VITE_API_URL || 'http://localhost:8000';
-            const res = await fetch(`${apiUrl}/api/auth/token-status`, {
+
+            let url = `${apiUrl}/api/auth/token-status`;
+            if (teamId) url += `?team_id=${teamId}`;
+
+            const res = await fetch(url, {
                 headers: { 'Authorization': `Bearer ${token}` }
             });
             if (res.ok) {
@@ -289,7 +293,7 @@ const SettingsModal = ({ isOpen, onClose, language, teamId, teamName, onSuccess 
                             )}
 
                             {/* Token Status Widget */}
-                            {!teamId && tokenInfo?.expires_at && (
+                            {tokenInfo?.expires_at && (
                                 <div style={{
                                     marginBottom: '20px', padding: '12px', borderRadius: '8px',
                                     backgroundColor: 'rgba(74, 222, 128, 0.1)', border: '1px solid rgba(74, 222, 128, 0.2)',

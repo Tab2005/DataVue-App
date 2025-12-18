@@ -86,6 +86,7 @@ class Team(Base):
     # Team Level Facebook Config (The core of isolation)
     fb_access_token = Column(String, nullable=True)
     fb_app_id = Column(String, nullable=True)
+    token_expires_at = Column(DateTime, nullable=True)
     
     # Ad Account Whitelist (JSON list of IDs stored as string)
     # e.g. '["act_123", "act_456"]'
@@ -126,6 +127,25 @@ class TeamInvite(Base):
     
     # Stats
     used_count = Column(Integer, default=0)
+    created_at = Column(DateTime, default=text("CURRENT_TIMESTAMP"))
+
+class SavedView(Base):
+    """
+    Saved metric views for MetricsManager.
+    Can be personal (user_id) or team-shared (team_id).
+    """
+    __tablename__ = "saved_views"
+
+    id = Column(String, primary_key=True, default=lambda: str(uuid.uuid4()))
+    name = Column(String, nullable=False)
+    metrics = Column(String, nullable=False)  # JSON array as string: '["spend","roas",...]'
+    
+    # Ownership: EITHER user_id OR team_id (mutually exclusive)
+    user_id = Column(String, ForeignKey("users.id"), nullable=True, index=True)
+    team_id = Column(String, ForeignKey("teams.id"), nullable=True, index=True)
+    
+    # Who created it (for team views, track the creator)
+    created_by = Column(String, ForeignKey("users.id"), nullable=True)
     created_at = Column(DateTime, default=text("CURRENT_TIMESTAMP"))
 
 from sqlalchemy import inspect

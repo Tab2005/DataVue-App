@@ -1,7 +1,7 @@
 # Facebook Dashboard SaaS - 專案路線圖與創意筆記
 
 **最後更新**: 2025-12-18
-**專案狀態**: v1.5.2 (Stable Phase - 穩定版)
+**專案狀態**: v1.5.3 (Stable Phase - 穩定版)
 
 本文檔用於追蹤 Facebook Dashboard SaaS 平台的開發路線圖、已完成的里程碑以及未來的架構計畫。
 
@@ -35,6 +35,8 @@
 *   **✅ 資料庫整合**: 從 SQLite/JSON 遷移至 PostgreSQL (Zeabur Ready)。
 *   **✅ 安全性強化**: FB Access Tokens 儲存採用 Fernet 加密。
 *   **✅ Token 隔離**: 嚴格區分「個人工作區」與「團隊工作區」的數據權限。
+*   **✅ Strict Token Mode**: 強制個人工作區使用個人 Token，防止 Fallback 導致資料洩漏。
+*   **✅ 團隊 Token 管理**: 支援儲存與顯示 Token 到期時間，並提供即將過期通知。
 
 ### 2. 儀表板與數據分析 (Dashboard & Analytics)
 *   **✅ 多層級分析**: 支援 Campaign / Ad Set / Ad 層級切換與動態日期範圍。
@@ -49,7 +51,8 @@
 ### 3. 團隊協作 (SaaS Features)
 *   **✅ 團隊工作區**: 建立、管理與切換多個團隊。
 *   **✅ 邀請系統**: 產生 24小時有效期的邀請連結。
-*   **✅ 廣告帳號白名單**: 精細控制團隊成員可見的廣告帳號列表。
+*   **✅ 廣告帳號白名單**: 精細控制團隊成員可見的廣告帳號列表 (含 Robust Filtering 修復)。
+*   **✅ 視角共享**: 支援資料庫層級的「個人視角」與「團隊視角」儲存策略。
 *   **✅ 超級管理員後台**: 全域的使用者與團隊管理介面。
 
 ### 4. 使用者體驗與手機版 (UX & Mobile)
@@ -68,7 +71,7 @@
 #### 1.1 自訂指標 (Metric Customization) - 「指標超市」
 **目標**: 讓用戶自由選擇想要顯示的欄位，打造個人化報表體驗。
 
-**現況**: ⏳ 部分完成
+**現況**: ✅ 已完成 (v1.5.3)
 - ✅ `constants/analyticsConfig.js` 已定義 METRIC_GROUPS
 - ✅ Analytics 頁面已有 View 切換 (總覽/電商/漏斗/自訂)
 - ✅ MetricSelector 元件已建立 (Memoized)
@@ -371,7 +374,7 @@ GET /api/analytics-data?account_id={id}&level=ad&adset_id={asid}
 #### 1.3 儲存報表 (Saved Reports)
 **目標**: 將篩選條件與指標設定存為預設值，一鍵還原常用視角。
 
-**現況**: 🔲 未實作
+**現況**: ✅ 已完成 (資料庫儲存 + 自動遷移)
 
 **使用情境**:
 | 預設名稱 | 說明 | 指標 |
@@ -408,9 +411,9 @@ GET /api/analytics-data?account_id={id}&level=ad&adset_id={asid}
 **儲存位置策略**:
 | 類型 | 儲存位置 | 說明 |
 |------|----------|------|
-| 臨時偏好 | localStorage | 不需登入，立即生效 |
-| 個人報表 | 資料庫 users.saved_reports | 跨裝置同步 |
-| 團隊報表 | 資料庫 team_reports | 團隊成員共用 |
+| 臨時偏好 | localStorage | [Deprecated] 改用資料庫儲存，已實作自動遷移 |
+| 個人報表 | 資料庫 saved_views (user_id) | [Done] 已實作，支援跨裝置同步 |
+| 團隊報表 | 資料庫 saved_views (team_id) | [Done] 已實作，團隊成員共用 |
 
 **UI 設計**:
 ```

@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef, useMemo, useCallback, memo } from 'react';
 import { useOutletContext } from 'react-router-dom';
 import html2canvas from 'html2canvas';
-import { FiHome, FiBarChart2, FiUsers, FiSettings, FiActivity, FiChevronLeft, FiChevronRight, FiShield, FiChevronDown, FiChevronUp, FiPlus, FiDownload, FiFilter, FiX, FiCpu, FiZap, FiRefreshCcw, FiStar } from 'react-icons/fi';
+import { FiHome, FiBarChart2, FiUsers, FiSettings, FiActivity, FiChevronLeft, FiChevronRight, FiShield, FiChevronDown, FiChevronUp, FiPlus, FiDownload, FiFilter, FiX, FiCpu, FiZap, FiRefreshCcw, FiStar, FiUser } from 'react-icons/fi';
 import { format, subDays, startOfWeek, endOfWeek, startOfMonth, endOfMonth, subMonths, subYears, differenceInDays } from 'date-fns';
 import KPICard from '../components/KPICard';
 import TrendSection from '../components/TrendSection';
@@ -11,17 +11,8 @@ import { AnalyticsKPISection, MetricSelector } from '../components/Analytics';
 // Import Metrics Registry for extended metrics support
 import { METRICS_REGISTRY, METRIC_CATEGORIES } from '../constants/metricsRegistry';
 
-// Helper to load saved views from MetricsLab localStorage
-const SAVED_VIEWS_KEY = 'metricslab_saved_views';
-const loadSavedViews = () => {
-    try {
-        const saved = localStorage.getItem(SAVED_VIEWS_KEY);
-        return saved ? JSON.parse(saved) : [];
-    } catch (e) {
-        console.error('Failed to load saved views:', e);
-        return [];
-    }
-};
+// API constants
+const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:8000';
 
 // METRIC_GROUPS imported from analyticsConfig but kept inline for backward compatibility
 // TODO: Migrate remaining code to use imported METRIC_GROUPS
@@ -307,13 +298,31 @@ const Analytics = () => {
     // View State
     const [activeView, setActiveView] = useState('summary');
 
-    // Saved Views from MetricsLab (localStorage)
+    // Saved Views from Database (via API)
     const [savedViews, setSavedViews] = useState([]);
 
-    // Load saved views on mount
+    // Load saved views from API
     useEffect(() => {
-        setSavedViews(loadSavedViews());
-    }, []);
+        const fetchSavedViews = async () => {
+            if (!user?.id) return;
+            try {
+                const params = new URLSearchParams({ user_id: user.id });
+                if (selectedTeamId) params.append('team_id', selectedTeamId);
+
+                const token = localStorage.getItem('access_token');
+                const res = await fetch(`${API_BASE}/api/saved-views?${params}`, {
+                    headers: { 'Authorization': `Bearer ${token}` }
+                });
+                if (res.ok) {
+                    const data = await res.json();
+                    setSavedViews(data);
+                }
+            } catch (e) {
+                console.error('Failed to fetch saved views:', e);
+            }
+        };
+        fetchSavedViews();
+    }, [user?.id, selectedTeamId]);
 
     // 1. Filter State
 
@@ -997,15 +1006,18 @@ const Analytics = () => {
                                                 gap: '4px',
                                                 padding: '6px 12px',
                                                 borderRadius: '20px',
-                                                border: '1px solid rgba(251, 191, 36, 0.3)',
-                                                background: activeView === `saved-${view.id}` ? 'rgba(251, 191, 36, 0.2)' : 'rgba(251, 191, 36, 0.05)',
-                                                color: '#fbbf24',
+                                                border: view.is_personal ? '1px solid rgba(59, 130, 246, 0.3)' : '1px solid rgba(16, 185, 129, 0.3)',
+                                                background: activeView === `saved-${view.id}`
+                                                    ? (view.is_personal ? 'rgba(59, 130, 246, 0.2)' : 'rgba(16, 185, 129, 0.2)')
+                                                    : (view.is_personal ? 'rgba(59, 130, 246, 0.05)' : 'rgba(16, 185, 129, 0.05)'),
+                                                color: view.is_personal ? '#60a5fa' : '#34d399',
                                                 fontSize: '0.85rem',
                                                 cursor: 'pointer',
                                                 transition: 'all 0.2s'
                                             }}
+                                            title={view.is_personal ? (language === 'zh' ? '個人視角' : 'Personal View') : (language === 'zh' ? '團隊視角' : 'Team View')}
                                         >
-                                            <FiStar size={12} />
+                                            {view.is_personal ? <FiUser size={12} /> : <FiUsers size={12} />}
                                             {view.name}
                                         </button>
                                     ))}

@@ -6,9 +6,9 @@
  * 
  * Access via: /metrics
  */
-import React, { useState, useMemo, useEffect } from 'react';
+import React, { useState, useMemo, useEffect, useCallback } from 'react';
 import { useOutletContext } from 'react-router-dom';
-import { FiSearch, FiCheck, FiX, FiGrid, FiList, FiSave, FiTrash2, FiFolder, FiStar } from 'react-icons/fi';
+import { FiSearch, FiCheck, FiX, FiGrid, FiList, FiSave, FiTrash2, FiFolder, FiStar, FiUser, FiUsers } from 'react-icons/fi';
 import {
     METRICS_REGISTRY,
     METRIC_CATEGORIES,
@@ -17,31 +17,14 @@ import {
 } from '../constants/metricsRegistry';
 import './MetricsManager.css';
 
-// localStorage key for saved views
+const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:8000';
+
+// localStorage key for migration detection
 const SAVED_VIEWS_KEY = 'metricslab_saved_views';
-
-// Helper to load saved views from localStorage
-const loadSavedViews = () => {
-    try {
-        const saved = localStorage.getItem(SAVED_VIEWS_KEY);
-        return saved ? JSON.parse(saved) : [];
-    } catch (e) {
-        console.error('Failed to load saved views:', e);
-        return [];
-    }
-};
-
-// Helper to save views to localStorage
-const persistSavedViews = (views) => {
-    try {
-        localStorage.setItem(SAVED_VIEWS_KEY, JSON.stringify(views));
-    } catch (e) {
-        console.error('Failed to save views:', e);
-    }
-};
+const MIGRATION_DONE_KEY = 'metricslab_migration_done';
 
 const MetricsManager = () => {
-    const { language = 'zh' } = useOutletContext() || {};
+    const { language = 'zh', user, selectedTeamId } = useOutletContext() || {};
 
     // State
     const [selectedCategory, setSelectedCategory] = useState('all');
@@ -57,11 +40,71 @@ const MetricsManager = () => {
     const [showSaveModal, setShowSaveModal] = useState(false);
     const [newViewName, setNewViewName] = useState('');
     const [saveMessage, setSaveMessage] = useState(null);
+    const [saveToTeam, setSaveToTeam] = useState(false); // New: save to team or personal
+    const [isLoading, setIsLoading] = useState(false);
+
+    // Get auth token
+    const getAuthToken = useCallback(() => {
+        return localStorage.getItem('access_token');
+    }, []);
+
+    // Fetch saved views from API
+    const fetchSavedViews = useCallback(async () => {
+        if (!user?.id) return;
+        setIsLoading(true);
+        try {
+            const params = new URLSearchParams({ user_id: user.id });
+            if (selectedTeamId) params.append('team_id', selectedTeamId);
+
+            const res = await fetch(`${API_BASE}/api/saved-views?${params}`, {
+                headers: { 'Authorization': `Bearer ${getAuthToken()}` }
+            });
+            if (res.ok) {
+                const data = await res.json();
+                setSavedViews(data);
+            }
+        } catch (e) {
+            console.error('Failed to fetch saved views:', e);
+        } finally {
+            setIsLoading(false);
+        }
+    }, [user?.id, selectedTeamId, getAuthToken]);
+
+    // Migrate localStorage views to database (one-time)
+    const migrateLocalStorage = useCallback(async () => {
+        if (!user?.id) return;
+        const migrated = localStorage.getItem(MIGRATION_DONE_KEY);
+        if (migrated) return;
+
+        try {
+            const localViews = localStorage.getItem(SAVED_VIEWS_KEY);
+            if (localViews) {
+                const views = JSON.parse(localViews);
+                if (views.length > 0) {
+                    const res = await fetch(`${API_BASE}/api/saved-views/migrate?user_id=${user.id}`, {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json',
+                            'Authorization': `Bearer ${getAuthToken()}`
+                        },
+                        body: JSON.stringify({ views })
+                    });
+                    if (res.ok) {
+                        console.log('Migration complete');
+                    }
+                }
+            }
+        } catch (e) {
+            console.error('Migration failed:', e);
+        } finally {
+            localStorage.setItem(MIGRATION_DONE_KEY, 'true');
+        }
+    }, [user?.id, getAuthToken]);
 
     // Load saved views on mount
     useEffect(() => {
-        setSavedViews(loadSavedViews());
-    }, []);
+        migrateLocalStorage().then(fetchSavedViews);
+    }, [migrateLocalStorage, fetchSavedViews]);
 
     // Translations
     const t = {
@@ -93,6 +136,11 @@ const MetricsManager = () => {
             deleteSuccess: '視角已刪除',
             loadSuccess: '視角已載入',
             metricsCount: '個指標',
+            // Team/Personal labels
+            personal: '個人',
+            team: '團隊',
+            saveAsPersonal: '儲存為個人視角',
+            saveAsTeam: '儲存為團隊視角',
         },
         en: {
             title: '📋 Metrics Manager',
@@ -122,6 +170,11 @@ const MetricsManager = () => {
             deleteSuccess: 'View deleted',
             loadSuccess: 'View loaded',
             metricsCount: 'metrics',
+            // Team/Personal labels
+            personal: 'Personal',
+            team: 'Team',
+            saveAsPersonal: 'Save as personal view',
+            saveAsTeam: 'Save as team view',
         }
     };
     const txt = t[language] || t.zh;
@@ -176,24 +229,37 @@ const MetricsManager = () => {
         setSelectedMetrics(new Set());
     };
 
-    // Save view handler
-    const handleSaveView = () => {
-        if (!newViewName.trim()) return;
+    // Save view handler - using API
+    const handleSaveView = async () => {
+        if (!newViewName.trim() || !user?.id) return;
 
-        const newView = {
-            id: Date.now().toString(),
-            name: newViewName.trim(),
-            metrics: Array.from(selectedMetrics),
-            createdAt: new Date().toISOString(),
-        };
+        try {
+            const params = new URLSearchParams({ user_id: user.id });
+            const body = {
+                name: newViewName.trim(),
+                metrics: Array.from(selectedMetrics),
+                team_id: saveToTeam && selectedTeamId ? selectedTeamId : null
+            };
 
-        const updatedViews = [...savedViews, newView];
-        setSavedViews(updatedViews);
-        persistSavedViews(updatedViews);
+            const res = await fetch(`${API_BASE}/api/saved-views?${params}`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Authorization': `Bearer ${getAuthToken()}`
+                },
+                body: JSON.stringify(body)
+            });
 
-        setNewViewName('');
-        setShowSaveModal(false);
-        showTemporaryMessage(txt.saveSuccess);
+            if (res.ok) {
+                setNewViewName('');
+                setShowSaveModal(false);
+                setSaveToTeam(false);
+                showTemporaryMessage(txt.saveSuccess);
+                fetchSavedViews(); // Refresh list
+            }
+        } catch (e) {
+            console.error('Failed to save view:', e);
+        }
     };
 
     // Load view handler
@@ -202,12 +268,24 @@ const MetricsManager = () => {
         showTemporaryMessage(txt.loadSuccess);
     };
 
-    // Delete view handler
-    const handleDeleteView = (viewId) => {
-        const updatedViews = savedViews.filter(v => v.id !== viewId);
-        setSavedViews(updatedViews);
-        persistSavedViews(updatedViews);
-        showTemporaryMessage(txt.deleteSuccess);
+    // Delete view handler - using API
+    const handleDeleteView = async (viewId) => {
+        if (!user?.id) return;
+
+        try {
+            const params = new URLSearchParams({ user_id: user.id });
+            const res = await fetch(`${API_BASE}/api/saved-views/${viewId}?${params}`, {
+                method: 'DELETE',
+                headers: { 'Authorization': `Bearer ${getAuthToken()}` }
+            });
+
+            if (res.ok) {
+                showTemporaryMessage(txt.deleteSuccess);
+                fetchSavedViews(); // Refresh list
+            }
+        } catch (e) {
+            console.error('Failed to delete view:', e);
+        }
     };
 
     // Show temporary message
@@ -326,8 +404,18 @@ const MetricsManager = () => {
                         {savedViews.map(view => (
                             <div key={view.id} className="saved-view-item">
                                 <div className="view-info">
-                                    <FiStar className="view-icon" />
+                                    {view.is_personal ? <FiUser className="view-icon" style={{ color: 'var(--accent-primary)' }} /> : <FiUsers className="view-icon" style={{ color: '#10b981' }} />}
                                     <span className="view-name">{view.name}</span>
+                                    <span className="view-type-badge" style={{
+                                        backgroundColor: view.is_personal ? 'rgba(45, 136, 255, 0.1)' : 'rgba(16, 185, 129, 0.1)',
+                                        color: view.is_personal ? 'var(--accent-primary)' : '#10b981',
+                                        padding: '2px 8px',
+                                        borderRadius: '4px',
+                                        fontSize: '0.7rem',
+                                        fontWeight: 500
+                                    }}>
+                                        {view.is_personal ? txt.personal : txt.team}
+                                    </span>
                                     <span className="view-count">{view.metrics.length} {txt.metricsCount}</span>
                                 </div>
                                 <div className="view-actions">
@@ -369,6 +457,58 @@ const MetricsManager = () => {
                                 if (e.key === 'Escape') setShowSaveModal(false);
                             }}
                         />
+
+                        {/* Personal/Team Toggle - only show if in a team workspace */}
+                        {selectedTeamId && (
+                            <div style={{
+                                display: 'flex',
+                                gap: '8px',
+                                margin: '16px 0',
+                                padding: '12px',
+                                backgroundColor: 'var(--bg-tertiary)',
+                                borderRadius: '8px'
+                            }}>
+                                <button
+                                    onClick={() => setSaveToTeam(false)}
+                                    style={{
+                                        flex: 1,
+                                        padding: '10px',
+                                        border: 'none',
+                                        borderRadius: '6px',
+                                        cursor: 'pointer',
+                                        display: 'flex',
+                                        alignItems: 'center',
+                                        justifyContent: 'center',
+                                        gap: '6px',
+                                        backgroundColor: !saveToTeam ? 'var(--accent-primary)' : 'transparent',
+                                        color: !saveToTeam ? '#fff' : 'var(--text-secondary)',
+                                        transition: 'all 0.2s'
+                                    }}
+                                >
+                                    <FiUser /> {txt.personal}
+                                </button>
+                                <button
+                                    onClick={() => setSaveToTeam(true)}
+                                    style={{
+                                        flex: 1,
+                                        padding: '10px',
+                                        border: 'none',
+                                        borderRadius: '6px',
+                                        cursor: 'pointer',
+                                        display: 'flex',
+                                        alignItems: 'center',
+                                        justifyContent: 'center',
+                                        gap: '6px',
+                                        backgroundColor: saveToTeam ? '#10b981' : 'transparent',
+                                        color: saveToTeam ? '#fff' : 'var(--text-secondary)',
+                                        transition: 'all 0.2s'
+                                    }}
+                                >
+                                    <FiUsers /> {txt.team}
+                                </button>
+                            </div>
+                        )}
+
                         <div className="modal-actions">
                             <button onClick={() => setShowSaveModal(false)} className="btn-secondary">
                                 {txt.cancel}

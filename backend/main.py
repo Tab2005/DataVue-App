@@ -263,13 +263,17 @@ def exchange_token_endpoint(request: ExchangeRequest, user_id: str = Depends(ver
     return {"message": message}
 
 @app.get("/api/auth/token-status")
-def get_token_status(user_id: str = Depends(verify_google_token)):
-    """Check the expiration status of the user's Facebook token."""
+def get_token_status(team_id: Optional[str] = None, user_id: str = Depends(verify_google_token)):
+    """Check the expiration status of the user's OR team's Facebook token."""
     session = SessionLocal()
     try:
-        user = session.query(User).filter(User.google_id == user_id).first()
+        target = None
+        if team_id:
+             target = session.query(Team).filter(Team.id == team_id).first()
+        else:
+             target = session.query(User).filter(User.google_id == user_id).first()
         
-        if not user or not user.token_expires_at:
+        if not target or not target.token_expires_at:
              return {
                  "expires_at": None,
                  "days_remaining": None,
@@ -277,7 +281,7 @@ def get_token_status(user_id: str = Depends(verify_google_token)):
              }
         
         now = datetime.now(timezone.utc)
-        expires_at = user.token_expires_at
+        expires_at = target.token_expires_at
         
         # Ensure timezone awareness compatibility
         if expires_at.tzinfo is None:
@@ -304,6 +308,10 @@ app.include_router(teams.router, prefix="/api/teams", tags=["teams"]) # Team Man
 app.include_router(invites.router, prefix="/api", tags=["invites"]) # Invites
 app.include_router(ai.router, prefix="/api/ai", tags=["ai"]) # AI Intelligence
 app.include_router(admin.router) # Admin Router (prefix defined in router)
+
+# Import and include saved_views router
+from saved_views import router as saved_views_router
+app.include_router(saved_views_router) # Saved Views (prefix defined in router)
 
 @app.middleware("http")
 async def log_requests(request: Request, call_next):
@@ -362,7 +370,11 @@ async def get_ad_accounts(
         
     # Use strict_token=True for Owner to PREVENT Admin Fallback (Data Leak)
     # If Owner has no token, they should see NOTHING, not Admin's accounts.
-    accounts, error = await AsyncFacebookService.get_all_ad_accounts(user_id, team_id=fetch_team_id, strict_token=is_owner)
+    # Use strict_token=True for Owner to PREVENT Admin Fallback (Data Leak)
+    # If Owner has no token, they should see NOTHING, not Admin's accounts.
+    # CRITICAL SECURITY FIX: If team_id is None (Personal Workspace), strict_token MUST be True.
+    use_strict = is_owner or (fetch_team_id is None)
+    accounts, error = await AsyncFacebookService.get_all_ad_accounts(user_id, team_id=fetch_team_id, strict_token=use_strict)
     
     # 3. Fallback for Owner: If primary fetch failed (empty/error), retry with Team Token logic
     # This covers edge cases where get_user_token fails but get_team_token (Owner Fallback) works
@@ -386,9 +398,33 @@ async def get_ad_accounts(
                 try:
                     import json
                     whitelist = json.loads(team.visible_ad_account_ids) # List of IDs
+                    print(f"DEBUG: Whitelist Loaded: {whitelist}", file=sys.stderr)
+                    
                     if isinstance(whitelist, list):
-                        # Filter accounts
-                        accounts = [acc for acc in accounts if acc['id'] in whitelist]
+                        # Robust Filter: Handle act_ prefix mismatch
+                        filtered_accounts = []
+                        whitelist_set = set(str(x) for x in whitelist) # Ensure strings
+                        
+                        input_ids = [acc.get('id') for acc in accounts]
+                        print(f"DEBUG: API Returned IDs: {input_ids}", file=sys.stderr)
+
+                        for acc in accounts:
+                            acc_id = str(acc.get('id', ''))
+                            # 1. Exact Match
+                            if acc_id in whitelist_set:
+                                filtered_accounts.append(acc)
+                                continue
+                            
+                            # 2. Try alternate format (remove or add act_)
+                            # If DB has '123' and API has 'act_123' -> match
+                            # If DB has 'act_123' and API has '123' -> match
+                            alt_id = acc_id.replace('act_', '') if 'act_' in acc_id else f'act_{acc_id}'
+                            if alt_id in whitelist_set:
+                                filtered_accounts.append(acc)
+                                continue
+                                
+                        accounts = filtered_accounts
+                        print(f"DEBUG: Filtered Result Count: {len(accounts)}", file=sys.stderr)
                     else:
                         print("⚠ Whitelist is not a list. Blocking all.", file=sys.stderr)
                         accounts = []
@@ -397,6 +433,7 @@ async def get_ad_accounts(
                     accounts = []
             else:
                 # STRICT MODE: If no whitelist, Member sees NOTHING.
+                print("🔒 No whitelist defined for team member. Access denied.", file=sys.stderr)
                 accounts = []
 
     return accounts
@@ -409,9 +446,25 @@ async def get_dashboard_data(
     team: Team = Depends(get_current_team)
 ):
     team_id = team.id if team else None
+    today = datetime.now()
+    if team_id:
+        # Team Mode: Allow Fallback (Admin/Owner Token)
+        strict = False
+    else:
+        # Personal Mode: STRICT (No Fallback to Admin)
+        strict = True
+
+    today = datetime.now()
+    if team_id:
+        # Team Mode: Allow Fallback (Admin/Owner Token)
+        strict = False
+    else:
+        # Personal Mode: STRICT (No Fallback to Admin)
+        strict = True
+
     if account_id:
         # Pass user_id, days, and team_id - Use async service
-        insights = await AsyncFacebookService.get_account_insights(account_id, user_id, days, team_id=team_id)
+        insights = await AsyncFacebookService.get_account_insights(account_id, user_id, days, team_id=team_id, strict_token=strict)
         if insights:
             return {
                 "source": "real",
@@ -489,10 +542,15 @@ async def get_analytics_data(
                 Example: "spend,roas,purchases,video_p25_watched"
     """
     team_id = team.id if team else None
+    
+    # CRITICAL: Strict Mode
+    strict = True if team_id is None else False
+    
     report_data = await AsyncFacebookService.get_custom_report(
         account_id, user_id, since, until, level, 
         team_id=team_id, 
-        custom_fields=fields  # Pass dynamic fields parameter
+        custom_fields=fields,  # Pass dynamic fields parameter
+        strict_token=strict 
     )
     
     if report_data is None:
@@ -521,7 +579,15 @@ async def get_analytics_trend_data(
     Endpoint for daily trend chart data.
     """
     team_id = team.id if team else None
-    trend_data = await AsyncFacebookService.get_analytics_trend(account_id, user_id, since, until, prev_since, prev_until, team_id=team_id)
+    
+     # CRITICAL: Strict Mode
+    strict = True if team_id is None else False
+    
+    trend_data = await AsyncFacebookService.get_analytics_trend(
+        account_id, user_id, since, until, prev_since, prev_until, 
+        team_id=team_id,
+        strict_token=strict
+    )
     if trend_data is None:
          return []
     return trend_data

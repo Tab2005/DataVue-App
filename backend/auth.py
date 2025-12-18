@@ -72,7 +72,7 @@ class TokenManager:
             session.close()
 
     @staticmethod
-    def save_team_token(team_id, long_lived_token, app_id, user_id):
+    def save_team_token(team_id, long_lived_token, app_id, user_id, expires_in=None):
         """Save or update TEAM'S Facebook token."""
         session = SessionLocal()
         try:
@@ -116,6 +116,11 @@ class TokenManager:
 
             team.fb_access_token = TokenManager._encrypt(long_lived_token)
             team.fb_app_id = app_id
+            
+            if expires_in:
+                from datetime import datetime, timedelta, timezone
+                expires_at = datetime.now(timezone.utc) + timedelta(seconds=int(expires_in))
+                team.token_expires_at = expires_at
             # team.fb_app_secret # Schema doesn't have app_secret for Team yet? Checked database.py, it does NOT.
             # Ideally we should add it. For now, assuming only ID/Token is enough? 
             # Wait, `get_long_lived` needs secret. If we ever refresh it for Team, we need secret.
@@ -225,7 +230,8 @@ class TokenManager:
                         team_id=team_id,
                         long_lived_token=data["access_token"],
                         app_id=app_id,
-                        user_id=user_id
+                        user_id=user_id,
+                        expires_in=data.get("expires_in")
                     )
                     return True, f"Token saved to Team (ID: {team_id})."
                 else:
