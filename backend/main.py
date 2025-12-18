@@ -99,11 +99,12 @@ try:
     # AUTO MIGRATION FOR ZEABUR
     # Run alembic upgrade head programmatically
     print("Running Database Migrations...")
-    alembic_cfg = alembic.config.Config("alembic.ini")
-    alembic.command.upgrade(alembic_cfg, "head")
-    print("Database Migrations Applied.")
-    
-    print("Database Migrations Applied.")
+    try:
+        alembic_cfg = alembic.config.Config("alembic.ini")
+        alembic.command.upgrade(alembic_cfg, "head")
+        print("Database Migrations Applied.")
+    except Exception as alembic_err:
+        print(f"⚠️ Alembic Migration Warning (continuing with fallback): {alembic_err}")
     
     print("Verifying Schema Integrity...")
     # SQLALCHEMY AUTO-PATCHING (For environments where migration history is lost/broken)
