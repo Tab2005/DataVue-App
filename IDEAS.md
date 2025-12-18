@@ -518,7 +518,7 @@ GET /api/analytics-data?account_id={id}&level=ad&adset_id={asid}
 
 ```
 Step 1: 資料模型 (subscriptions 表)
-        └─ user_id/team_id, plan, status, stripe_ids, period_dates
+        └─ user_id/team_id, plan, status, payuni_token, period_dates
 
 Step 2: 配額常數 (PLAN_LIMITS)
         └─ 定義各方案的功能限制
@@ -529,9 +529,88 @@ Step 3: 配額檢查 Middleware
 Step 4: 前端 Paywall 元件
         └─ 顯示升級提示
 
-Step 5: Stripe 整合
+Step 5: PAYUNi 整合
         └─ 付款頁面、Webhook 處理
 ```
+
+#### PAYUNi 統一金流整合計畫
+
+**選擇 PAYUNi 的原因**: 台灣本土金流，支援信用卡週期性扣款，適合 SaaS 訂閱制。
+
+##### 技術概述
+
+| 項目 | 說明 |
+|------|------|
+| **官方 SDK** | PHP SDK、.NET SDK (官方)、**無 Python SDK** |
+| **API 類型** | RESTful API，需 AES 加密 EncryptInfo |
+| **加密方式** | Hash Key + Hash IV (AES-128-CBC) |
+| **API 文件** | https://www.payuni.com.tw/docs/web/#/7/34 |
+| **GitHub** | https://github.com/payuni |
+
+##### 支援的支付方式 (mode)
+
+| Mode | 說明 | 適用場景 |
+|------|------|----------|
+| `upp` | 整合式支付頁 | 最簡單，適合首次導入 |
+| `credit` | 信用卡幕後 | 自訂 UI |
+| `credit_bind_query` | 信用卡 Token (約定) | **訂閱制必用** |
+| `atm` | 虛擬帳號 | 一次性付款 |
+| `cvs` | 超商代碼 | 一次性付款 |
+| `linepay` | LINE Pay | 行動支付 |
+
+##### 訂閱制流程 (信用卡 Token)
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│  首次訂閱流程                                                 │
+│                                                             │
+│  1. 用戶選擇方案 → 點擊「訂閱」                               │
+│  2. 後端建立訂單 → 重導向 PAYUNi 支付頁                       │
+│  3. 用戶完成付款 + 同意綁定信用卡                             │
+│  4. PAYUNi 回調 Webhook → 儲存 Token 到 subscriptions         │
+│  5. 訂閱啟用，解鎖 Pro 功能                                  │
+│                                                             │
+│  續約扣款流程 (自動)                                          │
+│                                                             │
+│  1. Cron Job 檢查即將到期的訂閱                              │
+│  2. 使用儲存的 Token 向 PAYUNi 請款                          │
+│  3. 成功 → 延長訂閱期限；失敗 → 通知用戶更新卡片              │
+└─────────────────────────────────────────────────────────────┘
+```
+
+##### Python 實作方案 (FastAPI)
+
+| 檔案 | 說明 | 狀態 |
+|------|------|------|
+| `services/payuni.py` | PAYUNi API 封裝 (AES 加密、HTTP 請求) | 🔲 待開發 |
+| `routers/payments.py` | 付款相關 API 端點 | 🔲 待開發 |
+| `routers/webhooks.py` | PAYUNi 回調處理 | 🔲 待開發 |
+| `tasks/subscription_renewal.py` | 自動續約 Cron Job | 🔲 待開發 |
+
+##### 必要環境變數
+
+```env
+PAYUNI_MER_ID=商店代號
+PAYUNI_HASH_KEY=Hash Key
+PAYUNI_HASH_IV=Hash IV
+PAYUNI_IS_TEST=true  # 測試環境
+```
+
+##### 實作優先級
+
+| 優先級 | 項目 | 說明 | 工作量 |
+|--------|------|------|--------|
+| 🔴 P1 | `PayuniService` 類別 | Python 實作 AES 加密 + API 呼叫 | 4-6 小時 |
+| 🔴 P1 | `subscriptions` 資料表 | 儲存訂閱狀態、Token、到期日 | 2-3 小時 |
+| 🟡 P2 | 前端付款流程 | 方案選擇 → 重導向 → 回調頁面 | 4-6 小時 |
+| 🟡 P2 | Webhook 處理 | 接收付款成功/失敗通知 | 3-4 小時 |
+| 🟢 P3 | 自動續約 Job | 定期檢查 + Token 請款 | 3-4 小時 |
+| 🟢 P3 | 訂閱管理後台 | 查看/取消訂閱、更換卡片 | 4-6 小時 |
+
+> **待確認事項**:
+> - [ ] 取得 PAYUNi 商店帳號 (MerID, Hash Key, Hash IV)
+> - [ ] 確認定價：月繳/年繳、試用期天數
+> - [ ] 選擇首次導入方式：整合式支付頁 (upp) 或幕後信用卡綁定
 
 ### 4. 渠道擴充
 *   **協作廣告 (CPAS)**: 針對零售通路的銷售指標 (Catalog 邏輯)。
