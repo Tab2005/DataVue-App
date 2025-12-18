@@ -135,6 +135,13 @@ try:
                  with engine.connect() as conn:
                     conn.execute(text("ALTER TABLE teams ADD COLUMN fb_access_token VARCHAR"))
                     conn.commit()
+            
+            # Patch 4: token_expires_at
+            if "token_expires_at" not in columns:
+                 print("⚠️ Schema Drift: Adding 'token_expires_at'...")
+                 with engine.connect() as conn:
+                    conn.execute(text("ALTER TABLE teams ADD COLUMN token_expires_at TIMESTAMP"))
+                    conn.commit()
                     
     except Exception as e:
         print(f"⚠️ Schema Patching Warning: {e}")
