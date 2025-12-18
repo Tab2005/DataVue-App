@@ -275,9 +275,10 @@ const MetricsManager = () => {
             }
         } catch (error) {
             console.error('Failed to save view:', error);
+            const targetUrl = `${API_BASE}/api/saved-views`;
             alert(language === 'zh'
-                ? `儲存時發生錯誤: ${error.message}`
-                : `Error saving view: ${error.message}`
+                ? `儲存時發生錯誤: ${error.message}\n請求網址: ${targetUrl}`
+                : `Error saving view: ${error.message}\nRequest URL: ${targetUrl}`
             );
         }
     };
