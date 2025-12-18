@@ -6,12 +6,13 @@ from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 from typing import List, Optional
 from sqlalchemy.orm import Session
-from database import SessionLocal, SavedView
+from database import SessionLocal, SavedView, User
 import json
 import uuid
 from datetime import datetime
+from dependencies import get_current_user
 
-router = APIRouter(prefix="/api/saved-views", tags=["saved-views"])
+router = APIRouter(prefix="/api/saved-views", tags=["saved_views"])
 
 # Dependency
 def get_db():
@@ -47,14 +48,15 @@ class MigrateRequest(BaseModel):
 
 @router.get("", response_model=List[SavedViewResponse])
 async def get_saved_views(
-    user_id: str,
     team_id: Optional[str] = None,
+    current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
     """
     Get all saved views for a user.
     Returns personal views + team views (if team_id is provided).
     """
+    user_id = current_user.id
     views = []
     
     # Get personal views
@@ -90,13 +92,14 @@ async def get_saved_views(
 @router.post("", response_model=SavedViewResponse)
 async def create_saved_view(
     data: SavedViewCreate,
-    user_id: str,
+    current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
     """
     Create a new saved view.
     If team_id is provided, it's a team view; otherwise, it's a personal view.
     """
+    user_id = current_user.id
     new_view = SavedView(
         id=str(uuid.uuid4()),
         name=data.name,
@@ -125,13 +128,14 @@ async def create_saved_view(
 @router.delete("/{view_id}")
 async def delete_saved_view(
     view_id: str,
-    user_id: str,
+    current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
     """
     Delete a saved view.
     User can only delete their own personal views or views they created.
     """
+    user_id = current_user.id
     view = db.query(SavedView).filter(SavedView.id == view_id).first()
     
     if not view:
@@ -151,13 +155,14 @@ async def delete_saved_view(
 @router.post("/migrate")
 async def migrate_from_localStorage(
     data: MigrateRequest,
-    user_id: str,
+    current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
     """
     Migrate views from localStorage to database.
     This is called once when user first loads the app after the upgrade.
     """
+    user_id = current_user.id
     migrated_count = 0
     
     for view_data in data.views:
