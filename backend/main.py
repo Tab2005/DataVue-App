@@ -85,7 +85,7 @@ from google.oauth2 import id_token
 from google.auth.transport import requests as google_requests
 
 # Import Routers
-from routers import users, teams, invites, admin, ai
+from routers import users, teams, invites, admin, ai, saved_views
 import auth
 from dependencies import get_current_team, get_db
 from contextlib import asynccontextmanager
@@ -268,6 +268,15 @@ def exchange_token_endpoint(request: ExchangeRequest, user_id: str = Depends(ver
     if not success:
         raise HTTPException(status_code=400, detail=message)
     return {"message": message}
+
+# Include Routers
+app.include_router(users.router, prefix="/api/users", tags=["users"])
+app.include_router(teams.router, prefix="/api/teams", tags=["teams"])
+app.include_router(invites.router, prefix="/api", tags=["invites"])
+app.include_router(admin.router) # /api/admin
+app.include_router(ai.router) # /api/ai
+app.include_router(saved_views.router) # /api/saved-views
+
 
 @app.get("/api/auth/token-status")
 def get_token_status(team_id: Optional[str] = None, user_id: str = Depends(verify_google_token)):
