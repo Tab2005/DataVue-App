@@ -341,11 +341,23 @@ async def log_requests(request: Request, call_next):
 # Configure CORS
 app.add_middleware(
     CORSMiddleware,
-    allow_origin_regex='https?://.*', # Allow ALL origins (Dev Mode)
+    # Explicitly list allowed origins for Credentials support
+    allow_origins=[
+        "http://localhost:5173", 
+        "http://localhost:3000",
+        "https://fbdashboard-dev-saas.zeabur.app", # Frontend Production URL
+        "https://fbbackend-dev-saas.zeabur.app"   # Backend Self (optional)
+    ],
+    allow_origin_regex='https?://.*', # Fallback (caution with credentials)
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+# Debug Router reachability
+@app.get("/api/saved-views/ping")
+def saved_views_ping():
+    return {"status": "pong", "message": "Saved Views Router is Active"}
 
 # DEBUG ENDPOINT (Temporary)
 @app.get("/api/debug/fix-schema")
