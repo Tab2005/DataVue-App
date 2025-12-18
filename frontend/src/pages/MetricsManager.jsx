@@ -275,7 +275,10 @@ const MetricsManager = () => {
             }
         } catch (error) {
             console.error('Failed to save view:', error);
-            alert(language === 'zh' ? '儲存時發生錯誤' : 'Error saving view');
+            alert(language === 'zh'
+                ? `儲存時發生錯誤: ${error.message}`
+                : `Error saving view: ${error.message}`
+            );
         }
     };
 
