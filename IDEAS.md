@@ -1,7 +1,7 @@
 # Facebook Dashboard SaaS - 專案路線圖與創意筆記
 
-**最後更新**: 2025-12-16
-**專案狀態**: v1.5.1 (Stable Phase - 穩定版)
+**最後更新**: 2025-12-18
+**專案狀態**: v1.5.2 (Stable Phase - 穩定版)
 
 本文檔用於追蹤 Facebook Dashboard SaaS 平台的開發路線圖、已完成的里程碑以及未來的架構計畫。
 
@@ -277,7 +277,7 @@ const metrics = USE_METRICS_REGISTRY
 |--------|------|------|--------|------|
 | ~~🔴 P1~~ | ~~儲存為預設~~ | ~~MetricsLab 新增「儲存為我的視角」按鈕~~ | ~~1-2 小時~~ | ✅ 完成 |
 | ~~🔴 P1~~ | ~~Analytics 讀取~~ | ~~Analytics 頁面讀取自訂視角並顯示~~ | ~~2-3 小時~~ | ✅ 完成 |
-| 🟡 P2 | 後端動態欄位 | 根據選擇的指標動態請求 FB API 欄位 | 2-3 小時 | |
+| ~~🟡 P2~~ | ~~後端動態欄位~~ | ~~根據選擇的指標動態請求 FB API 欄位~~ | ~~2-3 小時~~ | ✅ 完成 |
 | 🟡 P2 | 拖曳排序 | 拖曳調整欄位顯示順序 (react-dnd) | 1-2 小時 | |
 | 🟢 P3 | 團隊共享 | 團隊層級的自訂視角儲存 | 2-3 小時 | |
 
@@ -303,10 +303,16 @@ Step 2: Analytics 新增已儲存視角 ✅ 已完成 (2025-12-17)
 Step 3: Analytics 讀取 localStorage ✅ 已整合至 Step 2
         → const customMetrics = localStorage.getItem('metricslab_saved_views')
 
-Step 4: 後端支援動態欄位
+Step 4: 後端支援動態欄位 ✅ 已完成 (2025-12-18)
         → /api/analytics-data?fields=spend,roas,video_p25
+        → 後端 build_fb_fields() 動態建構 API 請求
+        → 前端 fetchAnalytics() 傳送 fields 參數
+        → calculateSummary() 支援所有 57 個指標
 
-Step 5: 完整整合測試
+Step 5: 完整整合測試 ✅ 已完成 (2025-12-18)
+        → Video, Messaging, Lead, App 指標正常顯示
+        → KPI 卡片摘要正確計算
+        → 已推送至 dev-saas 分支
 ```
 
 ---
