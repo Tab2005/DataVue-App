@@ -96,9 +96,8 @@ async def create_saved_view(
     db: Session = Depends(get_db)
 ):
     """
-    Create a new saved view.
-    If team_id is provided, it's a team view; otherwise, it's a personal view.
-    """
+    import sys
+    print(f"DEBUG: create_saved_view called with data: {data}", file=sys.stderr)
     user_id = current_user.id
     new_view = SavedView(
         id=str(uuid.uuid4()),
