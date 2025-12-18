@@ -1,10 +1,10 @@
 /**
- * MetricsLab - Experimental Metrics Registry UI
+ * MetricsManager - Metrics Management Page
  * 
- * This is a standalone experimental page for testing the Metrics Registry.
- * It does NOT modify the existing Analytics page.
+ * This page allows users to browse, select and save metric configurations.
+ * Saved views can be used in the Analytics page.
  * 
- * Access via: /lab
+ * Access via: /metrics
  */
 import React, { useState, useMemo, useEffect } from 'react';
 import { useOutletContext } from 'react-router-dom';
@@ -15,7 +15,7 @@ import {
     getDefaultMetrics,
     REGISTRY_STATS
 } from '../constants/metricsRegistry';
-import './MetricsLab.css';
+import './MetricsManager.css';
 
 // localStorage key for saved views
 const SAVED_VIEWS_KEY = 'metricslab_saved_views';
@@ -40,7 +40,7 @@ const persistSavedViews = (views) => {
     }
 };
 
-const MetricsLab = () => {
+const MetricsManager = () => {
     const { language = 'zh' } = useOutletContext() || {};
 
     // State
@@ -66,8 +66,8 @@ const MetricsLab = () => {
     // Translations
     const t = {
         zh: {
-            title: '🧪 指標實驗室',
-            subtitle: '探索與選擇 Facebook 廣告指標',
+            title: '📋 指標管理',
+            subtitle: '瀏覽與設定 Facebook 廣告指標',
             search: '搜尋指標...',
             all: '全部',
             selected: '已選擇',
@@ -95,8 +95,8 @@ const MetricsLab = () => {
             metricsCount: '個指標',
         },
         en: {
-            title: '🧪 Metrics Lab',
-            subtitle: 'Explore & Select Facebook Ads Metrics',
+            title: '📋 Metrics Manager',
+            subtitle: 'Browse & Configure Facebook Ads Metrics',
             search: 'Search metrics...',
             all: 'All',
             selected: 'Selected',
@@ -469,4 +469,4 @@ const MetricsLab = () => {
     );
 };
 
-export default MetricsLab;
+export default MetricsManager;

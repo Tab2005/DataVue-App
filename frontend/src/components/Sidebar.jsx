@@ -29,6 +29,7 @@ const Sidebar = ({ language, isCollapsed, setIsCollapsed, isMobile, selectedTeam
     const menuItems = [
         { icon: <FiHome size={20} />, label: t('Overview', '總覽'), path: '/' },
         { icon: <FiBarChart2 size={20} />, label: t('Analytics', '成效分析'), path: '/analytics' },
+        { icon: <FiActivity size={20} />, label: t('Metrics Manager', '指標管理'), path: '/metrics' },
         // Grouped Team Settings
         {
             icon: <FiSettings size={20} />,

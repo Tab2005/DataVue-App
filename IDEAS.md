@@ -196,13 +196,20 @@ const metrics = USE_METRICS_REGISTRY
 | 2️⃣ | 刪除 `metricsRegistry.js` | 完全移除新程式碼 |
 | 3️⃣ | `git revert` | 版本層級回退 |
 
-##### 已完成功能 (2025-12-17)
+##### 已完成功能 (2025-12-17 ~ 2025-12-18)
 
 | 功能 | 說明 | 狀態 |
 |------|------|------|
 | 指標資料庫 | `metricsRegistry.js` - 70+ 指標 | ✅ 完成 |
-| 指標實驗室 | `MetricsLab.jsx` - 瀏覽/搜尋 UI | ✅ 完成 |
+| ~~指標實驗室~~ 指標管理 | `MetricsManager.jsx` - 瀏覽/搜尋 UI | ✅ 完成 |
 | 儲存視角功能 | localStorage 儲存自訂指標組合 | ✅ 完成 |
+| 動態欄位 API | 後端支援 `?fields=` 參數動態請求 | ✅ 完成 |
+| 側邊欄整合 | 「指標管理」選單已加入側邊欄 (`/metrics`) | ✅ 完成 |
+
+> **命名變更 (2025-12-18)**:
+> - `MetricsLab.jsx` → `MetricsManager.jsx`
+> - `/lab` → `/metrics`
+> - 🧪 指標實驗室 → 📋 指標管理
 
 ###### 儲存視角功能詳細說明 (Step 1)
 
