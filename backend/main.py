@@ -369,6 +369,45 @@ def fix_db_schema():
     except Exception as e:
         return {"error": str(e)}
 
+@app.get("/api/debug/permissions")
+def debug_permissions(team_id: str, token: str):
+    # Manual verify to allow browser access
+    try:
+         id_info = id_token.verify_oauth2_token(token, google_requests.Request(), GOOGLE_CLIENT_ID, clock_skew_in_seconds=60)
+         user_id = id_info['sub']
+    except Exception as e:
+         return {"error": f"Invalid Token: {e}"}
+
+    session = SessionLocal()
+    try:
+        user = session.query(User).filter(User.google_id == user_id).first()
+        if not user:
+            return {"error": "User not found"}
+        
+        member = session.query(TeamMember).filter(
+            TeamMember.team_id == team_id,
+            TeamMember.user_id == user.id
+        ).first()
+        
+        # Check explicit permission logic used in auth.py
+        is_admin = False
+        if user.is_super_admin:
+            is_admin = True
+        elif member and member.role == UserRole.ADMIN:
+            is_admin = True
+            
+        return {
+            "user_name": user.name,
+            "google_id": user_id,
+            "internal_id": user.id,
+            "is_super_admin": user.is_super_admin,
+            "team_id": team_id,
+            "team_member_role": member.role if member else "NOT_MEMBER",
+            "computed_is_admin": is_admin
+        }
+    finally:
+        session.close()
+
 @app.get("/")
 def health_check():
     """Health check endpoint to verify service status and DB connection."""

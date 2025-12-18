@@ -452,6 +452,12 @@ GET /api/analytics-data?account_id={id}&level=ad&adset_id={asid}
 *   **測試模式 (Testing Mode)**: 需要手動將 Email 加入白名單。
 *   **正式模式 (Production Mode)**: 若索取敏感權限 (如 GA4) 需通過 Google 驗證，否則會有 "Unverified App" 警告。
 *   **策略**: 目前僅使用 `email/profile` 權限，避免繁瑣驗證。
+*   **架構隔離 (Architecture Isolation)**:
+    *   **個人 API 設定**: 存於 `users` 表，僅限個人工作區使用 (Strict Token Mode 保護)。
+    *   **團隊 API 設定**: 存於 `teams` 表，僅限團隊工作區使用。兩者互不干擾。
+*   **權限控制 (Permissions)**:
+    *   **團隊 API 配置**: 僅限 **Team Owner** 與 **Team Admin** 有權限修改。
+    *   **一般成員 (Member/Viewer)**: 僅能查看數據，無法更改 API 連線設定。
 
 ### 部署與效能
 *   **Zeabur 部署**: 需設定特定環境變數 (`ZEABUR_AI_HUB_API_KEY`)。
