@@ -327,29 +327,16 @@ app.include_router(admin.router) # Admin Router (prefix defined in router)
 
 
 
-@app.middleware("http")
-async def log_requests(request: Request, call_next):
-    print(f"📥 REQUEST: {request.method} {request.url}", file=sys.stderr)
-    try:
-        response = await call_next(request)
-        print(f"📤 RESPONSE: {response.status_code} for {request.url}", file=sys.stderr)
-        return response
-    except Exception as e:
-        print(f"💥 REQUEST FAILED: {e}", file=sys.stderr)
-        raise e
+# Middleware removed for stability
+
 
 # Configure CORS
+# Using Wildcard Origin with allow_credentials=False is standard for Token-based Auth (Bearer)
+# This avoids complex Origin matching issues in cloud environments.
 app.add_middleware(
     CORSMiddleware,
-    # Explicitly list allowed origins for Credentials support
-    allow_origins=[
-        "http://localhost:5173", 
-        "http://localhost:3000",
-        "https://fbdashboard-dev-saas.zeabur.app", # Frontend Production URL
-        "https://fbbackend-dev-saas.zeabur.app"   # Backend Self (optional)
-    ],
-    allow_origin_regex='https?://.*', # Fallback (caution with credentials)
-    allow_credentials=True,
+    allow_origins=["*"],
+    allow_credentials=False, # Must be False to use buildcard "*"
     allow_methods=["*"],
     allow_headers=["*"],
 )

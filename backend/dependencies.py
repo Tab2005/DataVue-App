@@ -23,14 +23,17 @@ def verify_google_token_basic(credentials: HTTPAuthorizationCredentials = Depend
     """
     token = credentials.credentials
     try:
+        print(f"DEBUG: Verifying Google Token: {token[:10]}...", file=sys.stderr)
         # P.S. Ideally cache the validation or use a library that handles caching certs
         id_info = id_token.verify_oauth2_token(token, google_requests.Request(), GOOGLE_CLIENT_ID, clock_skew_in_seconds=60)
+        print(f"DEBUG: Token Verified. User: {id_info.get('email')}", file=sys.stderr)
         return id_info
     except Exception as e:
         print(f"Token Verification Critical Error: {type(e).__name__}: {e}", file=sys.stderr, flush=True)
+        # CRITICAL: We must ensure this raises a standard HTTPException that CORS middleware can handle
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
-            detail=f"Authentication Error ({type(e).__name__}): {str(e)}",
+            detail=f"Authentication Error: {str(e)}",
             headers={"WWW-Authenticate": "Bearer"},
         )
 
