@@ -280,7 +280,7 @@ export const METRICS_REGISTRY = {
     },
     cost_per_thruplay: {
         key: 'cost_per_thruplay', label_zh: '每次 ThruPlay 成本', label_en: 'Cost per ThruPlay',
-        category: 'video', format: 'currency', isInverse: true,
+        category: 'video', format: 'currency_decimal', isInverse: true,
         source: 'direct', fb_field: 'cost_per_thruplay',
         is_default: false
     },

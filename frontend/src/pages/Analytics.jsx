@@ -796,6 +796,11 @@ const Analytics = () => {
     const renderMetricValue = (val, format) => {
         if (val === undefined || val === null || isNaN(val)) return '-';
         if (format === 'currency') return `$${val.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}`; // Round currency on cards
+        if (format === 'currency_decimal') {
+            // Smart decimal: show .X only if not a whole number
+            const isWholeNumber = Number.isInteger(val) || Math.abs(val - Math.round(val)) < 0.01;
+            return `$${val.toLocaleString(undefined, { minimumFractionDigits: isWholeNumber ? 0 : 1, maximumFractionDigits: isWholeNumber ? 0 : 1 })}`;
+        }
         if (format === 'percent') return `${val.toFixed(2)}%`;
         if (format === 'decimal') return val.toFixed(2);
         return val.toLocaleString();
@@ -1670,6 +1675,11 @@ const Analytics = () => {
                                                 if (v === undefined || v === null) return '-';
                                                 if (format === 'percent') return `${v.toFixed(2)}%`;
                                                 if (format === 'currency') return `$${v.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}`;
+                                                if (format === 'currency_decimal') {
+                                                    // Smart decimal: show .X only if not a whole number
+                                                    const isWholeNumber = Number.isInteger(v) || Math.abs(v - Math.round(v)) < 0.01;
+                                                    return `$${v.toLocaleString(undefined, { minimumFractionDigits: isWholeNumber ? 0 : 1, maximumFractionDigits: isWholeNumber ? 0 : 1 })}`;
+                                                }
                                                 if (format === 'decimal') return v.toFixed(2);
                                                 return v.toLocaleString();
                                             };
