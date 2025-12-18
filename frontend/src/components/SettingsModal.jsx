@@ -119,8 +119,20 @@ const SettingsModal = ({ isOpen, onClose, language, teamId, teamName, onSuccess 
                 fetchTokenStatus();
                 if (onSuccess) onSuccess();
             } else {
-                const errorDetail = data.detail || JSON.stringify(data);
-                setStatus({ type: 'error', message: `${t.common.error} ${errorDetail}` });
+                // Support multiple error formats:
+                // 1. FastAPI standard: { detail: "msg" }
+                // 2. Custom Exception Handler: { error: "msg", error_code: ... }
+                const errorDetail = data.error || data.detail || JSON.stringify(data);
+
+                // Optional: Client-side translation/friendly mapping
+                let friendlierMessage = errorDetail;
+                if (typeof errorDetail === 'string' && errorDetail.includes("Permission Denied")) {
+                    friendlierMessage = language === 'zh'
+                        ? "權限不足：只有團隊管理員 (Admin) 才能修改設定。"
+                        : "Permission Denied: Only Team Admins can update settings.";
+                }
+
+                setStatus({ type: 'error', message: `${t.common.error} ${friendlierMessage}` });
             }
         } catch (err) {
             setStatus({ type: 'error', message: `${t.common.error} ${err.message}` });
