@@ -146,6 +146,33 @@ try:
     except Exception as e:
         print(f"⚠️ Schema Patching Warning: {e}")
 
+    # --- PATCH: Auto-create saved_views table if missing ---
+    try:
+        from sqlalchemy import text, inspect
+        inspector = inspect(engine)
+        if not inspector.has_table("saved_views"):
+            print("⚠️ Table 'saved_views' not found. Creating via DDL...")
+            with engine.connect() as conn:
+                conn.execute(text("""
+                    CREATE TABLE IF NOT EXISTS saved_views (
+                        id VARCHAR PRIMARY KEY,
+                        name VARCHAR NOT NULL,
+                        metrics VARCHAR NOT NULL,
+                        user_id VARCHAR REFERENCES users(id),
+                        team_id VARCHAR REFERENCES teams(id),
+                        created_by VARCHAR REFERENCES users(id),
+                        created_at TIMESTAMP DEFAULT NOW()
+                    )
+                """))
+                conn.execute(text("CREATE INDEX IF NOT EXISTS ix_saved_views_user_id ON saved_views(user_id)"))
+                conn.execute(text("CREATE INDEX IF NOT EXISTS ix_saved_views_team_id ON saved_views(team_id)"))
+                conn.commit()
+            print("✅ Table 'saved_views' created successfully.")
+        else:
+            print("✅ Table 'saved_views' already exists.")
+    except Exception as e:
+        print(f"⚠️ saved_views Auto-Patch Warning: {e}")
+
     init_db() 
     
     print("Schema Verified.")
