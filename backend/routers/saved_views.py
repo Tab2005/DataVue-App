@@ -95,7 +95,7 @@ async def create_saved_view(
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
-    """
+    """Create a new saved view."""
     import sys
     print(f"DEBUG: create_saved_view called with data: {data}", file=sys.stderr)
     user_id = current_user.id
