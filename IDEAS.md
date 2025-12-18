@@ -205,7 +205,7 @@ const metrics = USE_METRICS_REGISTRY
 |------|------|------|
 | 指標資料庫 | `metricsRegistry.js` - 70+ 指標 | ✅ 完成 |
 | ~~指標實驗室~~ 指標管理 | `MetricsManager.jsx` - 瀏覽/搜尋 UI | ✅ 完成 |
-| 儲存視角功能 | localStorage 儲存自訂指標組合 | ✅ 完成 |
+| 儲存視角功能 | ~~localStorage~~ → 資料庫 `saved_views` 表儲存個人/團隊視角 | ✅ 完成 (升級) |
 | 動態欄位 API | 後端支援 `?fields=` 參數動態請求 | ✅ 完成 |
 | 側邊欄整合 | 「指標管理」選單已加入側邊欄 (`/metrics`) | ✅ 完成 |
 
@@ -234,9 +234,9 @@ const metrics = USE_METRICS_REGISTRY
 
 | 階段 | 儲存位置 | 說明 | 狀態 |
 |------|----------|------|------|
-| Phase 1 | **localStorage** | 瀏覽器本地儲存，立即可用 | ✅ 目前實作 |
-| Phase 2 | 資料庫 `users.saved_views` | 個人報表，跨裝置同步 | 🔲 未來規劃 |
-| Phase 3 | 資料庫 `team_saved_views` | 團隊共享報表 | 🔲 未來規劃 |
+| Phase 1 | ~~localStorage~~ | ~~瀏覽器本地儲存~~ | ✅ 已棄用 (遷移至資料庫) |
+| Phase 2 | 資料庫 `saved_views` | 個人報表，跨裝置同步 | ✅ 已完成 (2025-12-18) |
+| Phase 3 | 資料庫 `saved_views (team_id)` | 團隊共享報表 | ✅ 已完成 (2025-12-18) |
 
 **localStorage 限制**:
 - ❌ 無法跨裝置同步（換電腦/換瀏覽器就沒了）
@@ -301,7 +301,7 @@ const metrics = USE_METRICS_REGISTRY
 | ~~🔴 P1~~ | ~~Analytics 讀取~~ | ~~Analytics 頁面讀取自訂視角並顯示~~ | ~~2-3 小時~~ | ✅ 完成 |
 | ~~🟡 P2~~ | ~~後端動態欄位~~ | ~~根據選擇的指標動態請求 FB API 欄位~~ | ~~2-3 小時~~ | ✅ 完成 |
 | 🟡 P2 | 拖曳排序 | 拖曳調整欄位顯示順序 (react-dnd) | 1-2 小時 | |
-| 🟢 P3 | 團隊共享 | 團隊層級的自訂視角儲存 | 2-3 小時 | |
+| ~~🟢 P3~~ | ~~團隊共享~~ | ~~團隊層級的自訂視角儲存~~ | ~~2-3 小時~~ | ✅ 已完成 (2025-12-18) |
 
 ##### 待優化項目 (UX 改進)
 
@@ -411,9 +411,9 @@ GET /api/analytics-data?account_id={id}&level=ad&adset_id={asid}
 **儲存位置策略**:
 | 類型 | 儲存位置 | 說明 |
 |------|----------|------|
-| 臨時偏好 | localStorage | [Deprecated] 改用資料庫儲存，已實作自動遷移 |
-| 個人報表 | 資料庫 saved_views (user_id) | [Done] 已實作，支援跨裝置同步 |
-| 團隊報表 | 資料庫 saved_views (team_id) | [Done] 已實作，團隊成員共用 |
+| 臨時偏好 | ~~localStorage~~ | [已棄用] 改用資料庫儲存，已實作自動遷移至 `saved_views` 表 |
+| 個人報表 | 資料庫 `saved_views` (user_id) | ✅ 已實作 (2025-12-18)，支援跨裝置同步 |
+| 團隊報表 | 資料庫 `saved_views` (team_id) | ✅ 已實作 (2025-12-18)，團隊成員共用 |
 
 **UI 設計**:
 ```
