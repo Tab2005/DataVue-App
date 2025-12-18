@@ -340,6 +340,35 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+# DEBUG ENDPOINT (Temporary)
+@app.get("/api/debug/fix-schema")
+def fix_db_schema():
+    try:
+        from sqlalchemy import inspect, text
+        inspector = inspect(engine)
+        columns = [c["name"] for c in inspector.get_columns("teams")]
+        
+        result = {
+            "table": "teams",
+            "existing_columns": columns,
+            "actions_taken": []
+        }
+        
+        if "token_expires_at" not in columns:
+            try:
+                with engine.connect() as conn:
+                    conn.execute(text("ALTER TABLE teams ADD COLUMN token_expires_at TIMESTAMP"))
+                    conn.commit()
+                result["actions_taken"].append("Added token_expires_at")
+            except Exception as e:
+                result["actions_taken"].append(f"Failed to add token_expires_at: {e}")
+        else:
+            result["actions_taken"].append("token_expires_at already exists")
+            
+        return result
+    except Exception as e:
+        return {"error": str(e)}
+
 @app.get("/")
 def health_check():
     """Health check endpoint to verify service status and DB connection."""
