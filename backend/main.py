@@ -472,15 +472,28 @@ async def get_analytics_data(
     account_id: str, 
     since: str, 
     until: str, 
-    level: str = "account", 
+    level: str = "account",
+    fields: str = None,  # NEW: Optional comma-separated list of metric keys
     user_id: str = Depends(verify_google_token),
     team: Team = Depends(get_current_team)
 ):
     """
     Endpoint for the Advanced Analytics page.
+    
+    Args:
+        account_id: Facebook Ad Account ID
+        since: Start date (YYYY-MM-DD)
+        until: End date (YYYY-MM-DD)
+        level: Analysis level (account/campaign/adset/ad)
+        fields: Optional comma-separated list of metric keys for dynamic field selection
+                Example: "spend,roas,purchases,video_p25_watched"
     """
     team_id = team.id if team else None
-    report_data = await AsyncFacebookService.get_custom_report(account_id, user_id, since, until, level, team_id=team_id)
+    report_data = await AsyncFacebookService.get_custom_report(
+        account_id, user_id, since, until, level, 
+        team_id=team_id, 
+        custom_fields=fields  # Pass dynamic fields parameter
+    )
     
     if report_data is None:
          raise HTTPException(status_code=400, detail="Failed to fetch analytics data")
@@ -489,7 +502,8 @@ async def get_analytics_data(
         "data": report_data,
         "meta": {
             "level": level,
-            "period": f"{since} ~ {until}"
+            "period": f"{since} ~ {until}",
+            "custom_fields": fields  # Include in response for debugging
         }
     }
 

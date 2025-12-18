@@ -16,6 +16,161 @@ from cache import (
 )
 
 
+# ============================================================================
+# METRICS REGISTRY - Python version of frontend metricsRegistry.js
+# Used for dynamic field building when custom fields are requested
+# ============================================================================
+METRICS_REGISTRY = {
+    # --- General Metrics ---
+    'spend': {'source': 'direct', 'fb_field': 'spend'},
+    'impressions': {'source': 'direct', 'fb_field': 'impressions'},
+    'reach': {'source': 'direct', 'fb_field': 'reach'},
+    'frequency': {'source': 'direct', 'fb_field': 'frequency'},
+    'cpc': {'source': 'direct', 'fb_field': 'cpc'},
+    'cpm': {'source': 'direct', 'fb_field': 'cpm'},
+    'ctr': {'source': 'direct', 'fb_field': 'ctr'},
+    'clicks': {'source': 'direct', 'fb_field': 'clicks'},
+    'link_clicks': {'source': 'direct', 'fb_field': 'inline_link_clicks'},
+    'unique_clicks': {'source': 'direct', 'fb_field': 'unique_clicks'},
+    
+    # --- E-commerce Metrics ---
+    'roas': {'source': 'purchase_roas', 'fb_field': 'purchase_roas'},
+    'purchases': {'source': 'actions', 'action_type': 'purchase'},
+    'purchase_value': {'source': 'action_values', 'action_type': 'purchase'},
+    'cpa': {'source': 'calculated'},
+    'add_to_cart': {'source': 'actions', 'action_type': 'add_to_cart'},
+    'atc_value': {'source': 'action_values', 'action_type': 'add_to_cart'},
+    'cost_per_atc': {'source': 'calculated'},
+    'initiate_checkout': {'source': 'actions', 'action_type': 'initiate_checkout'},
+    'add_payment_info': {'source': 'actions', 'action_type': 'add_payment_info'},
+    'view_content': {'source': 'actions', 'action_type': 'view_content'},
+    
+    # --- Funnel Metrics (all calculated) ---
+    'cvr': {'source': 'calculated'},
+    'view_to_cart': {'source': 'calculated'},
+    'cart_conversion': {'source': 'calculated'},
+    'cart_dropoff': {'source': 'calculated'},
+    'cart_value_realization': {'source': 'calculated'},
+    
+    # --- Engagement Metrics ---
+    'post_comments': {'source': 'actions', 'action_type': 'comment'},
+    'post_saves': {'source': 'actions', 'action_type': 'onsite_conversion.post_save'},
+    'post_shares': {'source': 'actions', 'action_type': 'post'},
+    'post_engagement': {'source': 'actions', 'action_type': 'post_engagement'},
+    'post_reactions': {'source': 'actions', 'action_type': 'post_reaction'},
+    'page_likes': {'source': 'actions', 'action_type': 'like'},
+    
+    # --- Video Metrics ---
+    'video_views': {'source': 'actions', 'action_type': 'video_view'},
+    'video_thruplay': {'source': 'actions', 'action_type': 'video_view'},
+    'video_p25_watched': {'source': 'direct', 'fb_field': 'video_p25_watched_actions'},
+    'video_p50_watched': {'source': 'direct', 'fb_field': 'video_p50_watched_actions'},
+    'video_p75_watched': {'source': 'direct', 'fb_field': 'video_p75_watched_actions'},
+    'video_p100_watched': {'source': 'direct', 'fb_field': 'video_p100_watched_actions'},
+    'video_avg_time_watched': {'source': 'direct', 'fb_field': 'video_avg_time_watched_actions'},
+    'cost_per_thruplay': {'source': 'direct', 'fb_field': 'cost_per_thruplay'},
+    
+    # --- Messaging Metrics ---
+    'messaging_first_reply': {'source': 'actions', 'action_type': 'onsite_conversion.messaging_first_reply'},
+    'messaging_conversation_started': {'source': 'actions', 'action_type': 'onsite_conversion.messaging_conversation_started_7d'},
+    'cost_per_message': {'source': 'calculated'},
+    
+    # --- Lead Gen Metrics ---
+    'leads': {'source': 'actions', 'action_type': 'lead'},
+    'cost_per_lead': {'source': 'calculated'},
+    'onsite_leads': {'source': 'actions', 'action_type': 'onsite_conversion.lead_grouped'},
+    
+    # --- App Metrics ---
+    'app_installs': {'source': 'actions', 'action_type': 'mobile_app_install'},
+    'cost_per_install': {'source': 'calculated'},
+    'app_events': {'source': 'actions', 'action_type': 'app_custom_event'},
+    
+    # --- Quality Metrics ---
+    'quality_ranking': {'source': 'direct', 'fb_field': 'quality_ranking'},
+    'engagement_rate_ranking': {'source': 'direct', 'fb_field': 'engagement_rate_ranking'},
+    'conversion_rate_ranking': {'source': 'direct', 'fb_field': 'conversion_rate_ranking'},
+    
+    # --- CPAS Metrics ---
+    'shared_purchases': {'source': 'catalog_segment_actions', 'action_type': 'purchase'},
+    'shared_purchase_value': {'source': 'catalog_segment_value', 'action_type': 'purchase'},
+    'shared_roas': {'source': 'calculated'},
+    'shared_add_to_cart': {'source': 'catalog_segment_actions', 'action_type': 'add_to_cart'},
+    'shared_atc_value': {'source': 'catalog_segment_value', 'action_type': 'add_to_cart'},
+    'shared_view_content': {'source': 'catalog_segment_actions', 'action_type': 'view_content'},
+}
+
+
+def build_fb_fields(custom_fields: str = None) -> str:
+    """
+    Build Facebook API fields string based on requested custom fields.
+    
+    Args:
+        custom_fields: Comma-separated list of metric keys (e.g., "spend,roas,video_p25_watched")
+    
+    Returns:
+        Comma-separated string of Facebook API fields to request
+    """
+    # Base fields always included for structure (IDs and names)
+    base_structure = [
+        "campaign_id", "adset_id", "ad_id",
+        "campaign_name", "adset_name", "ad_name"
+    ]
+    
+    if not custom_fields:
+        # Return default fields (backward compatible)
+        return None  # Signal to use original hardcoded fields
+    
+    requested_keys = [k.strip() for k in custom_fields.split(",") if k.strip()]
+    
+    # Collect Facebook API fields based on requested metrics
+    fb_fields = set(base_structure)
+    needs_actions = False
+    needs_action_values = False
+    needs_purchase_roas = False
+    needs_catalog_segment_actions = False
+    needs_catalog_segment_value = False
+    
+    for key in requested_keys:
+        if key not in METRICS_REGISTRY:
+            print(f"[WARN] Unknown metric key: {key}", file=sys.stderr)
+            continue
+        
+        metric = METRICS_REGISTRY[key]
+        source = metric.get('source')
+        
+        if source == 'direct':
+            fb_field = metric.get('fb_field')
+            if fb_field:
+                fb_fields.add(fb_field)
+        elif source == 'actions':
+            needs_actions = True
+        elif source == 'action_values':
+            needs_action_values = True
+        elif source == 'purchase_roas':
+            needs_purchase_roas = True
+        elif source == 'catalog_segment_actions':
+            needs_catalog_segment_actions = True
+        elif source == 'catalog_segment_value':
+            needs_catalog_segment_value = True
+        # 'calculated' metrics don't need additional fields (derived from other metrics)
+    
+    # Add aggregate fields as needed
+    if needs_actions:
+        fb_fields.add("actions")
+    if needs_action_values:
+        fb_fields.add("action_values")
+    if needs_purchase_roas:
+        fb_fields.add("purchase_roas")
+    if needs_catalog_segment_actions:
+        fb_fields.add("catalog_segment_actions")
+    if needs_catalog_segment_value:
+        fb_fields.add("catalog_segment_value")
+    
+    result = ",".join(fb_fields)
+    print(f"[FB DYNAMIC] Built fields: {result}", file=sys.stderr)
+    return result
+
+
 class AsyncFacebookService:
     BASE_URL = "https://graph.facebook.com/v24.0"
     TIMEOUT = 30.0
@@ -191,32 +346,51 @@ class AsyncFacebookService:
             return None
 
     @staticmethod
-    async def get_custom_report(account_id, user_id, since, until, level="account", team_id=None):
+    async def get_custom_report(account_id, user_id, since, until, level="account", team_id=None, custom_fields=None):
         """
         Async version of get_custom_report with caching.
+        
+        Args:
+            account_id: Facebook Ad Account ID
+            user_id: Google User ID for authentication
+            since: Start date (YYYY-MM-DD)
+            until: End date (YYYY-MM-DD)
+            level: Analysis level (account/campaign/adset/ad)
+            team_id: Optional team ID for team-scoped token
+            custom_fields: Optional comma-separated list of metric keys for dynamic field selection
         """
-        # Check cache
-        cached = get_analytics_cache(account_id, since, until, level)
+        # Build cache key including custom_fields for proper cache isolation
+        cache_key_suffix = f"_{custom_fields}" if custom_fields else ""
+        cached = get_analytics_cache(account_id, since, until, level + cache_key_suffix)
         if cached is not None:
             return cached
 
         headers = AsyncFacebookService.get_headers(user_id, team_id)
         if not headers:
             return None
-            
-        base_fields = (
-            "campaign_id,adset_id,ad_id,"
-            "campaign_name,adset_name,ad_name,"
-            "spend,impressions,reach,cpm,cpc,ctr,inline_link_clicks,clicks,"
-            "actions,action_values,purchase_roas,"
-            "quality_ranking,engagement_rate_ranking,conversion_rate_ranking,"
-            "catalog_segment_value,catalog_segment_actions"
-        )
+        
+        # Determine which fields to request from Facebook API
+        dynamic_fields = build_fb_fields(custom_fields)
+        
+        if dynamic_fields:
+            # Use dynamically built fields
+            api_fields = dynamic_fields
+            print(f"[FB ASYNC] Using DYNAMIC fields: {api_fields[:100]}...", file=sys.stderr)
+        else:
+            # Use default hardcoded fields (backward compatible)
+            api_fields = (
+                "campaign_id,adset_id,ad_id,"
+                "campaign_name,adset_name,ad_name,"
+                "spend,impressions,reach,cpm,cpc,ctr,inline_link_clicks,clicks,"
+                "actions,action_values,purchase_roas,"
+                "quality_ranking,engagement_rate_ranking,conversion_rate_ranking,"
+                "catalog_segment_value,catalog_segment_actions"
+            )
 
         url = f"{AsyncFacebookService.BASE_URL}/{account_id}/insights"
         
         params = {
-            "fields": base_fields,
+            "fields": api_fields,
             "level": level,
             "time_range": f'{{"since":"{since}","until":"{until}"}}',
             "time_increment": "all_days",
@@ -354,10 +528,53 @@ class AsyncFacebookService:
                     
                 flat["cart_value_realization"] = (flat["purchase_value"] / flat["atc_value"] * 100) if flat["atc_value"] > 0 else 0
 
+                # Video Metrics Processing
+                # video_views and video_thruplay come from actions array
+                flat["video_views"] = acts.get("video_view", 0)
+                flat["video_thruplay"] = acts.get("video_view", 0)  # ThruPlay is also video_view action type
+                
+                # Video percentage watched metrics (special format: array with value field)
+                def get_video_metric(field_name):
+                    """Extract value from video metric array format"""
+                    video_data = row.get(field_name, [])
+                    if isinstance(video_data, list) and len(video_data) > 0:
+                        return int(video_data[0].get("value", 0))
+                    return 0
+                
+                flat["video_p25_watched"] = get_video_metric("video_p25_watched_actions")
+                flat["video_p50_watched"] = get_video_metric("video_p50_watched_actions")
+                flat["video_p75_watched"] = get_video_metric("video_p75_watched_actions")
+                flat["video_p100_watched"] = get_video_metric("video_p100_watched_actions")
+                
+                # Video average time watched (in seconds, special format)
+                video_avg_data = row.get("video_avg_time_watched_actions", [])
+                if isinstance(video_avg_data, list) and len(video_avg_data) > 0:
+                    flat["video_avg_time_watched"] = float(video_avg_data[0].get("value", 0))
+                else:
+                    flat["video_avg_time_watched"] = 0
+                
+                # Cost per ThruPlay
+                flat["cost_per_thruplay"] = float(row.get("cost_per_thruplay", [{}])[0].get("value", 0) if row.get("cost_per_thruplay") else 0)
+                
+                # Messaging Metrics
+                flat["messaging_first_reply"] = acts.get("onsite_conversion.messaging_first_reply", 0)
+                flat["messaging_conversation_started"] = acts.get("onsite_conversion.messaging_conversation_started_7d", 0)
+                flat["cost_per_message"] = flat["spend"] / flat["messaging_first_reply"] if flat["messaging_first_reply"] > 0 else 0
+                
+                # Lead Metrics
+                flat["leads"] = acts.get("lead", 0)
+                flat["onsite_leads"] = acts.get("onsite_conversion.lead_grouped", 0)
+                flat["cost_per_lead"] = flat["spend"] / flat["leads"] if flat["leads"] > 0 else 0
+                
+                # App Metrics
+                flat["app_installs"] = acts.get("mobile_app_install", 0)
+                flat["app_events"] = acts.get("app_custom_event", 0)
+                flat["cost_per_install"] = flat["spend"] / flat["app_installs"] if flat["app_installs"] > 0 else 0
+
                 processed_rows.append(flat)
             
-            # Store in cache
-            set_analytics_cache(account_id, since, until, level, processed_rows)
+            # Store in cache (include custom_fields in key)
+            set_analytics_cache(account_id, since, until, level + cache_key_suffix, processed_rows)
             
             return processed_rows
 

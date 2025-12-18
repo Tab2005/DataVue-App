@@ -8,6 +8,8 @@ import TrendSection from '../components/TrendSection';
 // New modular imports
 import { DATE_PRESETS, COMPARE_PRESETS, VIEW_PRESETS } from '../constants/analyticsConfig';
 import { AnalyticsKPISection, MetricSelector } from '../components/Analytics';
+// Import Metrics Registry for extended metrics support
+import { METRICS_REGISTRY, METRIC_CATEGORIES } from '../constants/metricsRegistry';
 
 // Helper to load saved views from MetricsLab localStorage
 const SAVED_VIEWS_KEY = 'metricslab_saved_views';
@@ -111,6 +113,57 @@ const METRIC_GROUPS = [
         ]
     }
 ];
+
+// Build extended metric groups from METRICS_REGISTRY for metrics not in METRIC_GROUPS
+// This allows MetricsLab saved views to display extended metrics (video, messaging, etc.)
+const buildExtendedMetricGroups = () => {
+    // Get all keys already in METRIC_GROUPS
+    const existingKeys = new Set();
+    METRIC_GROUPS.forEach(group => {
+        group.metrics.forEach(m => existingKeys.add(m.key));
+    });
+
+    // Group extended metrics by category
+    const extendedByCategory = {};
+    Object.entries(METRICS_REGISTRY).forEach(([key, metric]) => {
+        if (!existingKeys.has(key)) {
+            const category = metric.category || 'other';
+            if (!extendedByCategory[category]) {
+                extendedByCategory[category] = [];
+            }
+            extendedByCategory[category].push({
+                key: key,
+                label_zh: metric.label_zh,
+                label_en: metric.label_en,
+                format: metric.format,
+                isInverse: metric.isInverse || false
+            });
+        }
+    });
+
+    // Convert to METRIC_GROUPS format
+    const extendedGroups = [];
+    Object.entries(extendedByCategory).forEach(([categoryId, metrics]) => {
+        const categoryInfo = METRIC_CATEGORIES[categoryId] || {
+            label_zh: '其他指標',
+            label_en: 'Other Metrics',
+            color: '#6b7280'
+        };
+        extendedGroups.push({
+            id: `extended_${categoryId}`,
+            label_zh: `${categoryInfo.label_zh} (擴展)`,
+            label_en: `${categoryInfo.label_en} (Extended)`,
+            color: categoryInfo.color,
+            metrics: metrics
+        });
+    });
+
+    return extendedGroups;
+};
+
+// Combined metric groups: original + extended
+const EXTENDED_METRIC_GROUPS = buildExtendedMetricGroups();
+const ALL_METRIC_GROUPS = [...METRIC_GROUPS, ...EXTENDED_METRIC_GROUPS];
 
 const Analytics = () => {
     // 1. Get shared context
@@ -457,6 +510,15 @@ const Analytics = () => {
             const idToken = localStorage.getItem('google_token');
             const apiUrl = import.meta.env.VITE_API_URL || 'http://localhost:8000';
 
+            // Build dynamic fields parameter from selected metrics
+            // Extract metric keys from composite keys (e.g., "general:spend" -> "spend")
+            const selectedKeys = Array.from(selectedMetrics).map(compositeKey => {
+                const parts = compositeKey.split(':');
+                return parts.length > 1 ? parts[1] : parts[0];
+            });
+            const fieldsParam = selectedKeys.join(',');
+            console.log('[Analytics] Requesting fields:', fieldsParam);
+
             // 1. Fetch Current Data
             const currentQuery = new URLSearchParams({
                 account_id: selectedAccountId,
@@ -464,6 +526,11 @@ const Analytics = () => {
                 until: dateRange.until,
                 level: level,
             });
+
+            // Add fields parameter if there are selected metrics
+            if (fieldsParam) {
+                currentQuery.append('fields', fieldsParam);
+            }
 
             const headers = {
                 'Authorization': `Bearer ${idToken}`
@@ -511,6 +578,11 @@ const Analytics = () => {
                     level: level,
                 });
 
+                // Add same fields parameter for comparison data
+                if (fieldsParam) {
+                    prevQuery.append('fields', fieldsParam);
+                }
+
                 const prevRes = await fetch(`${apiUrl}/api/analytics-data?${prevQuery}`, {
                     headers: headers
                 });
@@ -553,11 +625,11 @@ const Analytics = () => {
         setSelectedMetrics(newSet);
     };
 
-    // Helper to get active columns based on order defined in METRIC_GROUPS
+    // Helper to get active columns based on order defined in ALL_METRIC_GROUPS
     const getActiveColumns = () => {
         const cols = [];
-        // Flatten groups to preserve order
-        METRIC_GROUPS.forEach(group => {
+        // Flatten groups to preserve order (includes extended metrics)
+        ALL_METRIC_GROUPS.forEach(group => {
             group.metrics.forEach(m => {
                 const compositeKey = `${group.id}:${m.key}`;
                 if (selectedMetrics.has(compositeKey)) {
@@ -661,6 +733,23 @@ const Analytics = () => {
             shared_add_to_cart: sum('shared_add_to_cart'),
             shared_atc_value: sum('shared_atc_value'),
             shared_view_content: sum('shared_view_content'),
+            // Video Metrics
+            video_views: sum('video_views'),
+            video_thruplay: sum('video_thruplay'),
+            video_p25_watched: sum('video_p25_watched'),
+            video_p50_watched: sum('video_p50_watched'),
+            video_p75_watched: sum('video_p75_watched'),
+            video_p100_watched: sum('video_p100_watched'),
+            video_avg_time_watched: sum('video_avg_time_watched'),
+            // Messaging Metrics
+            messaging_first_reply: sum('messaging_first_reply'),
+            messaging_conversation_started: sum('messaging_conversation_started'),
+            // Lead Metrics
+            leads: sum('leads'),
+            onsite_leads: sum('onsite_leads'),
+            // App Metrics
+            app_installs: sum('app_installs'),
+            app_events: sum('app_events'),
         };
 
         // Recalculate derived rates
@@ -678,6 +767,18 @@ const Analytics = () => {
         total.cart_conversion = total.add_to_cart > 0 ? (total.purchases / total.add_to_cart) * 100 : 0;
         total.cart_dropoff = total.add_to_cart > 0 ? (1 - (total.purchases / total.add_to_cart)) * 100 : 0;
         total.cart_value_realization = total.atc_value > 0 ? (total.purchase_value / total.atc_value) * 100 : 0;
+
+        // Video Derived Rates
+        total.cost_per_thruplay = total.video_thruplay > 0 ? total.spend / total.video_thruplay : 0;
+
+        // Messaging Derived Rates
+        total.cost_per_message = total.messaging_first_reply > 0 ? total.spend / total.messaging_first_reply : 0;
+
+        // Lead Derived Rates
+        total.cost_per_lead = total.leads > 0 ? total.spend / total.leads : 0;
+
+        // App Derived Rates
+        total.cost_per_install = total.app_installs > 0 ? total.spend / total.app_installs : 0;
 
         return total;
     };
@@ -872,8 +973,8 @@ const Analytics = () => {
                                                 // Load saved view metrics
                                                 const newSet = new Set();
                                                 view.metrics.forEach(metricKey => {
-                                                    // Map registry keys to composite keys
-                                                    for (const group of METRIC_GROUPS) {
+                                                    // Map registry keys to composite keys (search in ALL groups including extended)
+                                                    for (const group of ALL_METRIC_GROUPS) {
                                                         const match = group.metrics.find(m => m.key === metricKey);
                                                         if (match) {
                                                             newSet.add(`${group.id}:${metricKey}`);
@@ -1001,7 +1102,7 @@ const Analytics = () => {
 
                     {activeView === 'custom' && showMetricPanel && (
                         <div style={{ marginTop: '16px', animation: 'fadeIn 0.3s' }}>
-                            {METRIC_GROUPS.map(group => (
+                            {ALL_METRIC_GROUPS.map(group => (
                                 <div key={group.id} style={{ marginBottom: '16px' }}>
                                     <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '8px' }}>
                                         <div style={{ fontSize: '0.85rem', color: group.color || 'var(--accent-primary)', fontWeight: 'bold' }}>
@@ -1243,7 +1344,7 @@ const Analytics = () => {
                         </div>
 
                         <div style={{ display: 'flex', flexDirection: 'column', gap: '24px' }}>
-                            {METRIC_GROUPS.map((group, gIdx) => {
+                            {ALL_METRIC_GROUPS.map((group, gIdx) => {
                                 // Filter metrics for this group that are currently selected using composite key
                                 const activeGroupMetrics = group.metrics.filter(m => selectedMetrics.has(`${group.id}:${m.key}`));
 
@@ -1317,7 +1418,7 @@ const Analytics = () => {
                 prevDateRange={prevDateRange}
                 isCompareMode={isCompareMode}
                 selectedMetrics={selectedMetrics}
-                metricGroups={METRIC_GROUPS}
+                metricGroups={ALL_METRIC_GROUPS}
                 selectedRowIds={selectedRowIds} // Pass selection to filter chart
             />
 
