@@ -18,6 +18,12 @@ depends_on = None
 
 def upgrade() -> None:
     # --- Users Table ---
+    # Enum workaround for PostgreSQL (check if type exists)
+    bind = op.get_bind()
+    if bind.engine.name == 'postgresql':
+        op.execute("DO $$ BEGIN IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'userrole') THEN CREATE TYPE userrole AS ENUM ('ADMIN', 'MEMBER', 'VIEWER'); END IF; END $$;")
+        op.execute("DO $$ BEGIN IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'userstatus') THEN CREATE TYPE userstatus AS ENUM ('ACTIVE', 'SUSPENDED'); END IF; END $$;")
+
     op.create_table('users',
         sa.Column('id', sa.String(), nullable=False),
         sa.Column('google_id', sa.String(), nullable=True),

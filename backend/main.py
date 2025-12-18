@@ -325,9 +325,7 @@ app.include_router(invites.router, prefix="/api", tags=["invites"]) # Invites
 app.include_router(ai.router, prefix="/api/ai", tags=["ai"]) # AI Intelligence
 app.include_router(admin.router) # Admin Router (prefix defined in router)
 
-# Import and include saved_views router
-from saved_views import router as saved_views_router
-app.include_router(saved_views_router) # Saved Views (prefix defined in router)
+
 
 @app.middleware("http")
 async def log_requests(request: Request, call_next):
