@@ -45,7 +45,7 @@ const MetricsManager = () => {
 
     // Get auth token
     const getAuthToken = useCallback(() => {
-        return localStorage.getItem('access_token');
+        return localStorage.getItem('google_token');
     }, []);
 
     // Fetch saved views from API
@@ -229,36 +229,53 @@ const MetricsManager = () => {
         setSelectedMetrics(new Set());
     };
 
+    // Get auth token
+
+
     // Save view handler - using API
     const handleSaveView = async () => {
-        if (!newViewName.trim() || !user?.id) return;
+        if (!newViewName.trim()) return;
 
         try {
-            const params = new URLSearchParams({ user_id: user.id });
+            // Backend now extracts user from token, so no need to pass user_id in params
             const body = {
                 name: newViewName.trim(),
                 metrics: Array.from(selectedMetrics),
                 team_id: saveToTeam && selectedTeamId ? selectedTeamId : null
             };
 
-            const res = await fetch(`${API_BASE}/api/saved-views?${params}`, {
+            const token = getAuthToken();
+            if (!token) {
+                alert(language === 'zh' ? '請先登入' : 'Please login first');
+                return;
+            }
+
+            const res = await fetch(`${API_BASE}/api/saved-views`, {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',
-                    'Authorization': `Bearer ${getAuthToken()}`
+                    'Authorization': `Bearer ${token}`
                 },
                 body: JSON.stringify(body)
             });
 
             if (res.ok) {
-                setNewViewName('');
+                const newView = await res.json();
+                setSavedViews(prev => [...prev, newView]);
                 setShowSaveModal(false);
-                setSaveToTeam(false);
-                showTemporaryMessage(txt.saveSuccess);
-                fetchSavedViews(); // Refresh list
+                setNewViewName('');
+                showTemporaryMessage(txt.saveSuccess); // Assuming txt.saveSuccess is the correct key
+            } else {
+                const errData = await res.json().catch(() => ({}));
+                console.error("Save failed:", res.status, errData);
+                alert(language === 'zh'
+                    ? `儲存失敗 (${res.status}): ${errData.detail || '未知錯誤'}`
+                    : `Save failed (${res.status}): ${errData.detail || 'Unknown error'}`
+                );
             }
-        } catch (e) {
-            console.error('Failed to save view:', e);
+        } catch (error) {
+            console.error('Failed to save view:', error);
+            alert(language === 'zh' ? '儲存時發生錯誤' : 'Error saving view');
         }
     };
 
