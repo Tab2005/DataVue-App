@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { TeamService } from '../services/teamService';
 import { FiCheckSquare, FiSquare, FiSave, FiAlertCircle } from 'react-icons/fi';
 
-const AdAccountSelector = ({ teamId, initialSelected, language, styles, teamName }) => {
+const AdAccountSelector = ({ teamId, initialSelected, language, styles, teamName, onSaveSuccess }) => {
     const [allAccounts, setAllAccounts] = useState([]);
     const [selectedIds, setSelectedIds] = useState([]);
     const [loading, setLoading] = useState(false);
@@ -63,10 +63,8 @@ const AdAccountSelector = ({ teamId, initialSelected, language, styles, teamName
             await TeamService.updateAdAccounts(teamId, selectedIds);
             setSuccessMsg(language === 'zh' ? '權限設定已更新' : 'Permissions updated');
 
-            // Reload page or notify parent?
-            // Since context updates might be complex, a simple success message is good enough.
-            // But ideally we should reload the team content.
-            // window.location.reload(); // Aggressive but ensures global state sync
+            // Notify parent to refresh context
+            if (onSaveSuccess) onSaveSuccess();
         } catch (err) {
             setError(err.message);
         } finally {

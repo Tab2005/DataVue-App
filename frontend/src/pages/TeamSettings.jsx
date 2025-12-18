@@ -61,6 +61,16 @@ const TeamSettings = () => {
         }
     };
 
+    const handleAdAccountUpdateSuccess = async () => {
+        try {
+            // Refresh single team data to update Context
+            const updatedTeam = await TeamService.getTeam(selectedTeamId);
+            setTeams(teams.map(t => t.id === selectedTeamId ? updatedTeam : t));
+        } catch (e) {
+            console.error("Failed to refresh team data", e);
+        }
+    };
+
     const handleDisband = async () => {
         const confirmName = window.prompt(`${t.confirm_disband} ${currentTeam.name}`);
         if (confirmName !== currentTeam.name) {
@@ -315,6 +325,7 @@ const TeamSettings = () => {
                                 teamName={teamName} // Trigger reload if needed
                                 language={language}
                                 styles={styles}
+                                onSaveSuccess={handleAdAccountUpdateSuccess}
                             />
                         </div>
                     </section>
