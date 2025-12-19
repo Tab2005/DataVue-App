@@ -59,7 +59,7 @@
 | :--- | :---: | :--- |
 | `clicks` | ✅ | 所有點擊 |
 | `unique_clicks` | ✅ | 不重複點擊 |
-| `inline_link_clicks` | ❌ | 連結點擊 (站內) |
+| `inline_link_clicks` | ✅ | 連結點擊 (站內) |
 | `outbound_clicks` | ❌ | 外連點擊 (導外) |
 | `unique_ctr` | ❌ | 不重複點擊率 |
 | `inline_link_click_ctr` | ❌ | 連結點擊率 |
@@ -71,7 +71,7 @@
 
 | Metric Key | Used in System? | 中文備註 |
 | :--- | :---: | :--- |
-| `purchase` | ❌ | 購買 |
+| `purchase` | ✅ | 購買 |
 | `add_to_cart` | ✅ | 加入購物車 |
 | `initiate_checkout` | ✅ | 開始結帳 |
 | `add_payment_info` | ✅ | 新增付款資訊 |
