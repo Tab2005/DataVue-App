@@ -114,8 +114,6 @@ const MetricsManager = () => {
             search: '搜尋指標...',
             all: '全部',
             selected: '已選擇',
-            default: '預設',
-            extended: '擴展',
             stats: '統計',
             totalMetrics: '總指標數',
             selectedCount: '已選擇',
@@ -148,8 +146,6 @@ const MetricsManager = () => {
             search: 'Search metrics...',
             all: 'All',
             selected: 'Selected',
-            default: 'Default',
-            extended: 'Extended',
             stats: 'Stats',
             totalMetrics: 'Total Metrics',
             selectedCount: 'Selected',
@@ -590,12 +586,6 @@ const MetricsManager = () => {
                                         style={{ backgroundColor: category?.color }}
                                     />
                                     <span className="metric-key">{metric.key}</span>
-                                    {metric.is_default && (
-                                        <span className="default-badge">{txt.default}</span>
-                                    )}
-                                    {!metric.is_default && (
-                                        <span className="extended-badge">{txt.extended}</span>
-                                    )}
                                 </div>
                                 <div className="metric-label">
                                     {language === 'zh' ? metric.label_zh : metric.label_en}
@@ -605,10 +595,7 @@ const MetricsManager = () => {
                                         {language === 'zh' ? metric.description_zh : metric.description_en || metric.description_zh}
                                     </div>
                                 )}
-                                <div className="metric-footer">
-                                    <span className="format-badge">{metric.format}</span>
-                                    <span className="source-badge">{metric.source}</span>
-                                </div>
+
                                 <div className="check-indicator">
                                     {isSelected ? <FiCheck /> : null}
                                 </div>

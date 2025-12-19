@@ -228,7 +228,7 @@
 }
 
 .metrics-container.grid {
-    grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+    grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
 }
 
 .metrics-container.list {
@@ -535,8 +535,13 @@
 }
 
 @keyframes fadeIn {
-    from { opacity: 0; }
-    to { opacity: 1; }
+    from {
+        opacity: 0;
+    }
+
+    to {
+        opacity: 1;
+    }
 }
 
 .save-modal {
@@ -550,11 +555,12 @@
 }
 
 @keyframes slideUp {
-    from { 
+    from {
         opacity: 0;
         transform: translateY(20px);
     }
-    to { 
+
+    to {
         opacity: 1;
         transform: translateY(0);
     }
@@ -625,8 +631,165 @@
         opacity: 0;
         transform: translateX(20px);
     }
+
     to {
         opacity: 1;
         transform: translateX(0);
+    }
+}
+
+/* ===== MOBILE RESPONSIVE STYLES ===== */
+@media (max-width: 768px) {
+    .metrics-lab {
+        padding: 16px;
+    }
+
+    /* Header adjustments */
+    .lab-header {
+        flex-direction: column;
+        gap: 16px;
+    }
+
+    .lab-stats {
+        width: 100%;
+        justify-content: space-between;
+    }
+
+    .stat-item {
+        padding: 8px 12px;
+        flex: 1;
+    }
+
+    .stat-value {
+        font-size: 1.4rem;
+    }
+
+    /* Action buttons: Horizontal scroll on mobile */
+    .lab-controls {
+        flex-direction: column;
+        align-items: stretch;
+    }
+
+    .action-buttons {
+        display: flex;
+        overflow-x: auto;
+        -webkit-overflow-scrolling: touch;
+        scrollbar-width: none;
+        gap: 8px;
+        padding-bottom: 4px;
+    }
+
+    .action-buttons::-webkit-scrollbar {
+        display: none;
+    }
+
+    .action-buttons .btn-secondary,
+    .action-buttons .btn-danger,
+    .action-buttons .btn-primary {
+        flex-shrink: 0;
+        white-space: nowrap;
+        font-size: 0.75rem;
+        padding: 6px 12px;
+    }
+
+    .search-box {
+        max-width: 100%;
+        min-width: auto;
+    }
+
+    /* Saved Views: Better mobile layout */
+    .saved-views-panel {
+        padding: 16px;
+    }
+
+    .saved-view-item {
+        flex-wrap: nowrap;
+        padding: 8px 12px;
+        gap: 8px;
+    }
+
+    .view-info {
+        flex: 1;
+        min-width: 0;
+        /* Allow text truncation */
+        overflow: hidden;
+    }
+
+    .view-name {
+        font-size: 0.85rem;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        max-width: 80px;
+        /* Limit name width on mobile */
+    }
+
+    .view-scope {
+        font-size: 0.65rem;
+        padding: 1px 4px;
+        white-space: nowrap;
+    }
+
+    .view-count {
+        font-size: 0.65rem;
+        padding: 1px 6px;
+        white-space: nowrap;
+    }
+
+    .view-actions {
+        flex-shrink: 0;
+        gap: 4px;
+    }
+
+    .btn-load {
+        padding: 4px 8px;
+        font-size: 0.7rem;
+    }
+
+    .btn-delete {
+        padding: 4px 6px;
+    }
+
+    /* Metrics Grid: Single column on small screens */
+    .metrics-container.grid {
+        grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
+    }
+
+    /* Category tabs: Horizontal scroll */
+    .category-tabs {
+        overflow-x: auto;
+        -webkit-overflow-scrolling: touch;
+        scrollbar-width: none;
+        gap: 4px;
+        padding-bottom: 4px;
+    }
+
+    .category-tabs::-webkit-scrollbar {
+        display: none;
+    }
+
+    .category-tab {
+        flex-shrink: 0;
+        white-space: nowrap;
+        font-size: 0.75rem;
+        padding: 6px 10px;
+    }
+
+    /* Metric cards */
+    .metric-card {
+        padding: 12px;
+    }
+
+    .metric-header {
+        padding-bottom: 8px;
+        margin-bottom: 8px;
+    }
+
+    .metric-name {
+        font-size: 0.85rem;
+    }
+
+    .metric-description {
+        font-size: 0.7rem;
     }
 }

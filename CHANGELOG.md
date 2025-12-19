@@ -1,6 +1,31 @@
 # Changelog
 
-## v1.5.1 (2025-12-15) - Mobile UX Enhancements & Hotfixes
+## v1.5.3 (2025-12-19) - Analytics Data Accuracy & UI Simplification
+
+### Fixed
+- **KPI Calculation Accuracy**:
+    - **Backend Derived Metrics**: Refactored `_format_kpi` to manually calculate ROAS, CPA, CPC, CTR from base values instead of relying on potentially missing API aggregations.
+    - **Purchase Value Backfill**: Added fallback logic to calculate `purchase_value` from `ROAS * Spend` when the API returns ROAS but not purchase value.
+    - **Essential Metrics**: Frontend now always requests core base metrics (`spend`, `impressions`, `link_clicks`, `purchases`, `purchase_value`) regardless of user selection, ensuring derived calculations work correctly.
+
+### Changed
+- **Analytics Page Simplification**:
+    - **View Presets**: Reduced fixed view tabs from 5 to 2 (Summary + Custom). Removed E-commerce, Engagement, and Funnel presets - users can create these via Metrics Manager.
+    - **Tab Order**: Repositioned AI Analysis button directly after Custom tab, before saved views.
+- **Metrics Manager**:
+    - **UI Cleanup**: Removed "Default/Extended" badges and technical format/source badges from metric cards.
+    - **Default Metrics**: Only 10 "General" category metrics are now set as default, providing a cleaner starting state.
+    - **Grid Layout**: Adjusted to 5 columns per row for optimal density.
+    - **Unified Groups**: Merged extended metrics directly into main categories without "(Extended)" suffix.
+
+### Improved
+- **Mobile Responsiveness (Metrics Manager)**:
+    - Action buttons now use horizontal scroll instead of stacking.
+    - Saved view names truncate with ellipsis to prevent layout breaking.
+    - Category tabs use horizontal scroll.
+    - Reduced font sizes and padding for compact mobile display.
+
+
 ### Improvements
 - **Mobile Experience**:
     - **Smart Sidebar**: 

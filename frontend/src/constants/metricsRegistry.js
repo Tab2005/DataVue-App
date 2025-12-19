@@ -53,7 +53,7 @@ export const METRICS_REGISTRY = {
         key: 'frequency', label_zh: '頻率', label_en: 'Frequency',
         category: 'general', format: 'decimal',
         source: 'direct', fb_field: 'frequency',
-        is_default: false
+        is_default: true
     },
     cpc: {
         key: 'cpc', label_zh: 'CPC (單次點擊成本)', label_en: 'CPC',
@@ -77,7 +77,7 @@ export const METRICS_REGISTRY = {
         key: 'clicks', label_zh: '點擊次數 (全部)', label_en: 'Clicks (All)',
         category: 'general', format: 'number',
         source: 'direct', fb_field: 'clicks',
-        is_default: false
+        is_default: true
     },
     link_clicks: {
         key: 'link_clicks', label_zh: '連結點擊次數', label_en: 'Link Clicks',
@@ -89,7 +89,7 @@ export const METRICS_REGISTRY = {
         key: 'unique_clicks', label_zh: '不重複點擊次數', label_en: 'Unique Clicks',
         category: 'general', format: 'number',
         source: 'direct', fb_field: 'unique_clicks',
-        is_default: false
+        is_default: true
     },
 
     // ─────────────────────────────────────────────────────────────────────────
@@ -99,55 +99,55 @@ export const METRICS_REGISTRY = {
         key: 'roas', label_zh: '購買 ROAS', label_en: 'ROAS',
         category: 'ecommerce', format: 'decimal',
         source: 'purchase_roas', fb_field: 'purchase_roas',
-        is_default: true
+        is_default: false
     },
     purchases: {
         key: 'purchases', label_zh: '購買次數', label_en: 'Purchases',
         category: 'ecommerce', format: 'number',
         source: 'actions', action_type: 'purchase',
-        is_default: true
+        is_default: false
     },
     purchase_value: {
         key: 'purchase_value', label_zh: '購買轉換價值', label_en: 'Purchase Value',
         category: 'ecommerce', format: 'currency',
         source: 'action_values', action_type: 'purchase',
-        is_default: true
+        is_default: false
     },
     cpa: {
         key: 'cpa', label_zh: 'CPA (單次購買成本)', label_en: 'CPA',
         category: 'ecommerce', format: 'currency', isInverse: true,
         source: 'calculated', formula: 'spend / purchases',
-        is_default: true
+        is_default: false
     },
     add_to_cart: {
         key: 'add_to_cart', label_zh: '加到購物車次數', label_en: 'Add to Cart',
         category: 'ecommerce', format: 'number',
         source: 'actions', action_type: 'add_to_cart',
-        is_default: true
+        is_default: false
     },
     atc_value: {
         key: 'atc_value', label_zh: '加到購物車的轉換值', label_en: 'ATC Value',
         category: 'ecommerce', format: 'currency',
         source: 'action_values', action_type: 'add_to_cart',
-        is_default: true
+        is_default: false
     },
     cost_per_atc: {
         key: 'cost_per_atc', label_zh: '加入購物車成本', label_en: 'Cost per ATC',
         category: 'ecommerce', format: 'currency', isInverse: true,
         source: 'calculated', formula: 'spend / add_to_cart',
-        is_default: true
+        is_default: false
     },
     initiate_checkout: {
         key: 'initiate_checkout', label_zh: '開始結帳次數', label_en: 'Initiate Checkout',
         category: 'ecommerce', format: 'number',
         source: 'actions', action_type: 'initiate_checkout',
-        is_default: true
+        is_default: false
     },
     add_payment_info: {
         key: 'add_payment_info', label_zh: '新增付款資訊次數', label_en: 'Add Payment Info',
         category: 'ecommerce', format: 'number',
         source: 'actions', action_type: 'add_payment_info',
-        is_default: true
+        is_default: false
     },
     view_content: {
         key: 'view_content', label_zh: '瀏覽內容次數', label_en: 'View Content',
@@ -163,31 +163,31 @@ export const METRICS_REGISTRY = {
         key: 'cvr', label_zh: '購買轉換率', label_en: 'CVR',
         category: 'funnel', format: 'percent',
         source: 'calculated', formula: '(purchases / link_clicks) * 100',
-        is_default: true
+        is_default: false
     },
     view_to_cart: {
         key: 'view_to_cart', label_zh: '查看後購物車加入率', label_en: 'View to Cart',
         category: 'funnel', format: 'percent',
         source: 'calculated', formula: '(add_to_cart / view_content) * 100',
-        is_default: true
+        is_default: false
     },
     cart_conversion: {
         key: 'cart_conversion', label_zh: '購物車購買率', label_en: 'Cart Purchase Rate',
         category: 'funnel', format: 'percent',
         source: 'calculated', formula: '(purchases / add_to_cart) * 100',
-        is_default: true
+        is_default: false
     },
     cart_dropoff: {
         key: 'cart_dropoff', label_zh: '廣告購物車流失率', label_en: 'Cart Dropoff',
         category: 'funnel', format: 'percent', isInverse: true,
         source: 'calculated', formula: '(1 - purchases / add_to_cart) * 100',
-        is_default: true
+        is_default: false
     },
     cart_value_realization: {
         key: 'cart_value_realization', label_zh: '購物車價值實現率', label_en: 'Cart Value Realization',
         category: 'funnel', format: 'percent',
         source: 'calculated', formula: '(purchase_value / atc_value) * 100',
-        is_default: true
+        is_default: false
     },
 
     // ─────────────────────────────────────────────────────────────────────────
@@ -197,37 +197,37 @@ export const METRICS_REGISTRY = {
         key: 'post_comments', label_zh: '貼文留言', label_en: 'Comments',
         category: 'engagement', format: 'number',
         source: 'actions', action_type: 'comment',
-        is_default: true
+        is_default: false
     },
     post_saves: {
         key: 'post_saves', label_zh: '貼文儲存', label_en: 'Saves',
         category: 'engagement', format: 'number',
         source: 'actions', action_type: 'onsite_conversion.post_save',
-        is_default: true
+        is_default: false
     },
     post_shares: {
         key: 'post_shares', label_zh: '貼文分享', label_en: 'Shares',
         category: 'engagement', format: 'number',
         source: 'actions', action_type: 'post',
-        is_default: true
+        is_default: false
     },
     post_engagement: {
         key: 'post_engagement', label_zh: '貼文互動', label_en: 'Engagement',
         category: 'engagement', format: 'number',
         source: 'actions', action_type: 'post_engagement',
-        is_default: true
+        is_default: false
     },
     post_reactions: {
         key: 'post_reactions', label_zh: '貼文心情', label_en: 'Reactions',
         category: 'engagement', format: 'number',
         source: 'actions', action_type: 'post_reaction',
-        is_default: true
+        is_default: false
     },
     page_likes: {
         key: 'page_likes', label_zh: '粉絲專頁按讚', label_en: 'Page Likes',
         category: 'engagement', format: 'number',
         source: 'actions', action_type: 'like',
-        is_default: true
+        is_default: false
     },
 
     // ─────────────────────────────────────────────────────────────────────────
@@ -358,19 +358,19 @@ export const METRICS_REGISTRY = {
         key: 'quality_ranking', label_zh: '品質排名', label_en: 'Quality Ranking',
         category: 'quality', format: 'string',
         source: 'direct', fb_field: 'quality_ranking',
-        is_default: true
+        is_default: false
     },
     engagement_rate_ranking: {
         key: 'engagement_rate_ranking', label_zh: '互動率排名', label_en: 'Engagement Ranking',
         category: 'quality', format: 'string',
         source: 'direct', fb_field: 'engagement_rate_ranking',
-        is_default: true
+        is_default: false
     },
     conversion_rate_ranking: {
         key: 'conversion_rate_ranking', label_zh: '轉換率排名', label_en: 'Conversion Ranking',
         category: 'quality', format: 'string',
         source: 'direct', fb_field: 'conversion_rate_ranking',
-        is_default: true
+        is_default: false
     },
 
     // ─────────────────────────────────────────────────────────────────────────
@@ -380,37 +380,37 @@ export const METRICS_REGISTRY = {
         key: 'shared_purchases', label_zh: '共享購買次數', label_en: 'Shared Purchases',
         category: 'cpas', format: 'number',
         source: 'catalog_segment_actions', action_type: 'purchase',
-        is_default: true
+        is_default: false
     },
     shared_purchase_value: {
         key: 'shared_purchase_value', label_zh: '共享購買值', label_en: 'Shared Value',
         category: 'cpas', format: 'currency',
         source: 'catalog_segment_value', action_type: 'purchase',
-        is_default: true
+        is_default: false
     },
     shared_roas: {
         key: 'shared_roas', label_zh: '共享 ROAS', label_en: 'Shared ROAS',
         category: 'cpas', format: 'decimal',
         source: 'calculated', formula: 'shared_purchase_value / spend',
-        is_default: true
+        is_default: false
     },
     shared_add_to_cart: {
         key: 'shared_add_to_cart', label_zh: '共享加購次數', label_en: 'Shared ATC',
         category: 'cpas', format: 'number',
         source: 'catalog_segment_actions', action_type: 'add_to_cart',
-        is_default: true
+        is_default: false
     },
     shared_atc_value: {
         key: 'shared_atc_value', label_zh: '共享加購值', label_en: 'Shared ATC Val',
         category: 'cpas', format: 'currency',
         source: 'catalog_segment_value', action_type: 'add_to_cart',
-        is_default: true
+        is_default: false
     },
     shared_view_content: {
         key: 'shared_view_content', label_zh: '共享瀏覽次數', label_en: 'Shared Views',
         category: 'cpas', format: 'number',
         source: 'catalog_segment_actions', action_type: 'view_content',
-        is_default: true
+        is_default: false
     },
 };
 

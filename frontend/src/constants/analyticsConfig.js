@@ -31,28 +31,13 @@ export const VIEW_PRESETS = {
         // Creating a match with Dashboard Overview: Impressions, Link Clicks, CTR, CPC, Spend, Purchases, Add to Cart, ROAS
         metrics: ['impressions', 'link_clicks', 'ctr', 'cpc', 'spend', 'purchases', 'add_to_cart', 'roas']
     },
-    ecommerce: {
-        label_zh: '🛒 電商詳情',
-        label_en: '🛒 E-commerce',
-        // User requested 7 specific metrics: ATC Value, CPA, ATC, ROAS, Cost per ATC, Purchase Value, Purchases
-        // Reordered for logical funnel flow: ATC -> Cost/ATC -> ATC Value -> Purchases -> CPA -> Purchase Value -> ROAS
-        metrics: ['add_to_cart', 'cost_per_atc', 'atc_value', 'purchases', 'cpa', 'purchase_value', 'roas']
-    },
-    engagement: {
-        label_zh: '❤️ 互動指標',
-        label_en: '❤️ Engagement',
-        metrics: ['post_comments', 'post_saves', 'post_shares', 'post_engagement', 'post_reactions', 'page_likes']
-    },
-    funnel: {
-        label_zh: '🌪️ 漏斗分析',
-        label_en: '🌪️ Funnel',
-        metrics: ['cvr', 'view_to_cart', 'cart_conversion', 'cart_dropoff', 'cart_value_realization']
-    },
     custom: {
         label_zh: '⚙️ 自訂',
         label_en: '⚙️ Custom',
-        metrics: [] // User defined
+        metrics: [] // User defined - opens metric selector panel
     }
+    // NOTE: E-commerce, Engagement, Funnel presets have been removed.
+    // Users can create custom views via the Metrics Manager (指標管理) page.
 };
 
 // Unified Metric Groups Config

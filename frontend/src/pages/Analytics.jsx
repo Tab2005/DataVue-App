@@ -105,56 +105,66 @@ const METRIC_GROUPS = [
     }
 ];
 
-// Build extended metric groups from METRICS_REGISTRY for metrics not in METRIC_GROUPS
-// This allows MetricsLab saved views to display extended metrics (video, messaging, etc.)
-const buildExtendedMetricGroups = () => {
-    // Get all keys already in METRIC_GROUPS
-    const existingKeys = new Set();
-    METRIC_GROUPS.forEach(group => {
-        group.metrics.forEach(m => existingKeys.add(m.key));
-    });
+// Unified metric groups: Merge original + registry metrics
+const buildUnifiedMetricGroups = () => {
+    // 1. Deep clone existing hardcoded groups to avoid mutation
+    const groups = JSON.parse(JSON.stringify(METRIC_GROUPS));
 
-    // Group extended metrics by category
-    const extendedByCategory = {};
-    Object.entries(METRICS_REGISTRY).forEach(([key, metric]) => {
-        if (!existingKeys.has(key)) {
-            const category = metric.category || 'other';
-            if (!extendedByCategory[category]) {
-                extendedByCategory[category] = [];
+    // Mapping from Registry Category to Group ID
+    // Some keys might differ between registry and hardcoded groups (e.g. cpas vs collaborative)
+    const categoryToGroupId = {
+        'general': 'general',
+        'ecommerce': 'ecommerce',
+        'funnel': 'funnel',
+        'engagement': 'engagement',
+        'quality': 'quality',
+        'cpas': 'collaborative',
+    };
+
+    // 2. Iterate through all metrics in registry
+    Object.values(METRICS_REGISTRY).forEach(registryMetric => {
+        // Determine target group ID
+        const targetGroupId = categoryToGroupId[registryMetric.category] || registryMetric.category;
+
+        // Find existing group
+        let group = groups.find(g => g.id === targetGroupId);
+
+        // If group doesn't exist (e.g. video, messaging, app), create it from METRIC_CATEGORIES
+        if (!group) {
+            const catInfo = METRIC_CATEGORIES[registryMetric.category];
+            if (catInfo) {
+                group = {
+                    id: targetGroupId,
+                    label_zh: catInfo.label_zh, // No "(Extended)" or "(擴展)" suffix
+                    label_en: catInfo.label_en,
+                    color: catInfo.color,
+                    metrics: []
+                };
+                groups.push(group);
             }
-            extendedByCategory[category].push({
-                key: key,
-                label_zh: metric.label_zh,
-                label_en: metric.label_en,
-                format: metric.format,
-                isInverse: metric.isInverse || false
-            });
+        }
+
+        // Add metric to group if not already present
+        if (group) {
+            // Check if key exists (handle both simple and composite keys if necessary, but registry keys are unique)
+            const exists = group.metrics.some(m => m.key === registryMetric.key);
+
+            if (!exists) {
+                group.metrics.push({
+                    key: registryMetric.key,
+                    label_zh: registryMetric.label_zh,
+                    label_en: registryMetric.label_en,
+                    format: registryMetric.format,
+                    isInverse: registryMetric.isInverse || false
+                });
+            }
         }
     });
 
-    // Convert to METRIC_GROUPS format
-    const extendedGroups = [];
-    Object.entries(extendedByCategory).forEach(([categoryId, metrics]) => {
-        const categoryInfo = METRIC_CATEGORIES[categoryId] || {
-            label_zh: '其他指標',
-            label_en: 'Other Metrics',
-            color: '#6b7280'
-        };
-        extendedGroups.push({
-            id: `extended_${categoryId}`,
-            label_zh: `${categoryInfo.label_zh} (擴展)`,
-            label_en: `${categoryInfo.label_en} (Extended)`,
-            color: categoryInfo.color,
-            metrics: metrics
-        });
-    });
-
-    return extendedGroups;
+    return groups;
 };
 
-// Combined metric groups: original + extended
-const EXTENDED_METRIC_GROUPS = buildExtendedMetricGroups();
-const ALL_METRIC_GROUPS = [...METRIC_GROUPS, ...EXTENDED_METRIC_GROUPS];
+const ALL_METRIC_GROUPS = buildUnifiedMetricGroups();
 
 const Analytics = () => {
     // 1. Get shared context
@@ -525,8 +535,19 @@ const Analytics = () => {
                 const parts = compositeKey.split(':');
                 return parts.length > 1 ? parts[1] : parts[0];
             });
-            const fieldsParam = selectedKeys.join(',');
-            console.log('[Analytics] Requesting fields:', fieldsParam);
+
+            // CRITICAL: Always include essential base metrics required for derived calculations
+            // These are needed to calculate ROAS, CPA, CTR, CPM, etc. even if user didn't select them
+            const essentialMetrics = [
+                'spend', 'impressions', 'link_clicks', 'clicks', 'reach',
+                'purchases', 'purchase_value', 'add_to_cart', 'atc_value',
+                'view_content', 'initiate_checkout', 'add_payment_info'
+            ];
+
+            // Merge selected keys with essential metrics (avoid duplicates)
+            const allKeys = new Set([...selectedKeys, ...essentialMetrics]);
+            const fieldsParam = Array.from(allKeys).join(',');
+            console.log('[Analytics] Requesting fields (with essentials):', fieldsParam);
 
             // 1. Fetch Current Data
             const currentQuery = new URLSearchParams({
@@ -976,6 +997,24 @@ const Analytics = () => {
                                 </button>
                             ))}
 
+                            {/* AI Analyst Button - Placed right after Custom tab */}
+                            <button
+                                onClick={() => setShowAiPanel(true)}
+                                style={{
+                                    display: 'flex', alignItems: 'center', gap: '6px',
+                                    padding: '6px 16px', borderRadius: '20px',
+                                    background: 'linear-gradient(135deg, #6366f1, #a855f7)', // Indigo to Purple
+                                    border: 'none', color: 'white',
+                                    fontSize: '0.9rem', fontWeight: 'bold', cursor: 'pointer',
+                                    boxShadow: '0 4px 12px rgba(99, 102, 241, 0.3)',
+                                    transition: 'transform 0.2s',
+                                }}
+                                onMouseEnter={e => e.currentTarget.style.transform = 'translateY(-2px)'}
+                                onMouseLeave={e => e.currentTarget.style.transform = 'translateY(0)'}
+                            >
+                                🤖 {language === 'zh' ? 'AI 廣告分析' : 'AI Analyst'}
+                            </button>
+
                             {/* Saved Views from MetricsLab */}
                             {savedViews.length > 0 && (
                                 <>
@@ -1023,24 +1062,6 @@ const Analytics = () => {
                                     ))}
                                 </>
                             )}
-
-                            {/* AI Analyst Button */}
-                            <button
-                                onClick={() => setShowAiPanel(true)}
-                                style={{
-                                    display: 'flex', alignItems: 'center', gap: '6px',
-                                    padding: '6px 16px', borderRadius: '20px',
-                                    background: 'linear-gradient(135deg, #6366f1, #a855f7)', // Indigo to Purple
-                                    border: 'none', color: 'white',
-                                    fontSize: '0.9rem', fontWeight: 'bold', cursor: 'pointer',
-                                    boxShadow: '0 4px 12px rgba(99, 102, 241, 0.3)',
-                                    transition: 'transform 0.2s',
-                                }}
-                                onMouseEnter={e => e.currentTarget.style.transform = 'translateY(-2px)'}
-                                onMouseLeave={e => e.currentTarget.style.transform = 'translateY(0)'}
-                            >
-                                🤖 {language === 'zh' ? 'AI 廣告分析' : 'AI Analyst'}
-                            </button>
                         </div>
                     </div>
 

@@ -285,58 +285,75 @@ class FacebookService:
             }
 
         # Add Metrics (Keys must match Frontend kpiKeys)
+        # Helper to calculate derived metric
+        def calc_derived(numerator_key, denominator_key, multiplier=1.0, default=0.0):
+            num = get_val(cur, numerator_key)
+            den = get_val(cur, denominator_key)
+            return (num / den * multiplier) if den > 0 else default
+
+        def calc_derived_prev(numerator_key, denominator_key, multiplier=1.0, default=0.0):
+            num = get_val(prev, numerator_key)
+            den = get_val(prev, denominator_key)
+            return (num / den * multiplier) if den > 0 else default
+        
+        # Base Metrics
         add_metric("Spend", "spend", is_currency=True, is_inverse=True)
         add_metric("Impressions", "impressions")
-        add_metric("CPM", "cpm", is_currency=True, is_inverse=True) 
-        # Fix: Frontend expects 'link_clicks', API has 'inline_link_clicks'
-        add_metric("Link Clicks", "link_clicks", source_key="inline_link_clicks") 
-        add_metric("CPC", "cpc", is_currency=True, is_inverse=True)
-        add_metric("CTR", "ctr", is_percent=True)
-        # Fix: Frontend expects 'purchases', API action is 'purchase'
-        add_metric("Purchases", "purchases", is_action=True, action_key="purchase") 
-        
-        # Calculate CPA manually
-        spend_val = get_val(cur, "spend")
-        prev_spend_val = get_val(prev, "spend")
-        
-        cur_purchases = cur_acts.get("purchase", 0)
-        prev_purchases = prev_acts.get("purchase", 0)
-
-        cpa_val = spend_val / cur_purchases if cur_purchases > 0 else 0.0
-        prev_cpa_val = prev_spend_val / prev_purchases if prev_purchases > 0 else 0.0
-
-        # Add CPA metric
-        add_metric("Cost Per Purchase", "cpa", is_currency=True, is_inverse=True)
-        # Manually update CPA values in the metrics dict
-        if "cpa" in metrics:
-            metrics["cpa"]["raw_value"] = cpa_val
-            metrics["cpa"]["value"] = f"${cpa_val:,.2f}"
-            metrics["cpa"]["previous"] = f"(${prev_cpa_val:,.2f})"
-            
-            diff_cpa = cpa_val - prev_cpa_val
-            if prev_cpa_val == 0:
-                percent_cpa = 100.0 if cpa_val > 0 else 0.0
-            else:
-                percent_cpa = (diff_cpa / prev_cpa_val) * 100.0
-            
-            if percent_cpa > 0:
-                metrics["cpa"]["change"] = f"+{abs(percent_cpa):.1f}%"
-            elif percent_cpa < 0:
-                metrics["cpa"]["change"] = f"-{abs(percent_cpa):.1f}%"
-            else:
-                metrics["cpa"]["change"] = "0.0%"
-            
-            metrics["cpa"]["is_increase"] = (diff_cpa > 0) # CPA is inverse, so higher is worse
-            if metrics["cpa"]["is_increase"]: metrics["cpa"]["is_increase"] = False
-            else: metrics["cpa"]["is_increase"] = True
-
-
-        # Add To Cart
+        add_metric("Link Clicks", "link_clicks", source_key="inline_link_clicks")
+        add_metric("Purchases", "purchases", is_action=True, action_key="purchase")
         add_metric("Add to Cart", "add_to_cart", is_action=True, action_key="add_to_cart")
         
-        # ROAS
-        add_metric("ROAS", "roas", is_roas=True) 
+        # Derived Metrics - Manually Calculate to match Table logic
         
+        # 1. CPM = Spend / Impressions * 1000
+        cur["cpm_calc"] = calc_derived("spend", "impressions", 1000.0)
+        prev["cpm_calc"] = calc_derived_prev("spend", "impressions", 1000.0)
+        add_metric("CPM", "cpm", source_key="cpm_calc", is_currency=True, is_inverse=True)
+
+        # 2. CPC = Spend / Link Clicks
+        cur["cpc_calc"] = calc_derived("spend", "inline_link_clicks")
+        prev["cpc_calc"] = calc_derived_prev("spend", "inline_link_clicks")
+        add_metric("CPC", "cpc", source_key="cpc_calc", is_currency=True, is_inverse=True)
+
+        # 3. CTR = Link Clicks / Impressions * 100
+        cur["ctr_calc"] = calc_derived("inline_link_clicks", "impressions", 100.0)
+        prev["ctr_calc"] = calc_derived_prev("inline_link_clicks", "impressions", 100.0)
+        add_metric("CTR", "ctr", source_key="ctr_calc", is_percent=True)
+
+        # 4. ROAS = Purchase Value / Spend
+        # Need to get purchase value first
+        cur_purch_val = cur_acts.get("purchase_val", 0)
+        prev_purch_val = prev_acts.get("purchase_val", 0)
+        cur_spend = get_val(cur, "spend")
+        prev_spend = get_val(prev, "spend")
+        
+        cur["roas_calc"] = (cur_purch_val / cur_spend) if cur_spend > 0 else 0.0
+        prev["roas_calc"] = (prev_purch_val / prev_spend) if prev_spend > 0 else 0.0
+        add_metric("ROAS", "roas", source_key="roas_calc", is_roas=True) # Use customized source_key logic modification below
+
+        # 5. CPA = Spend / Purchases
+        cur_purchases = cur_acts.get("purchase", 0)
+        prev_purchases = prev_acts.get("purchase", 0)
+        
+        cur["cpa_calc"] = (cur_spend / cur_purchases) if cur_purchases > 0 else 0.0
+        prev["cpa_calc"] = (prev_spend / prev_purchases) if prev_purchases > 0 else 0.0
+        add_metric("CPA", "cpa", source_key="cpa_calc", is_currency=True, is_inverse=True)
+        
+        # 6. Purchase Value
+        # We need to add this to metrics dict manually or via helper if we want it displayed
+        # The frontend asks for specific keys. If 'purchase_value' is needed in KPI cards:
+        add_metric("Purchase Value", "purchase_value", is_action=True, action_key="purchase_val", is_currency=True)
+        
+        # 7. Add to Cart Value
+        add_metric("ATC Value", "atc_value", is_action=True, action_key="add_to_cart_val", is_currency=True)
+        
+        # 8. Cost Per ATC
+        cur_atc = cur_acts.get("add_to_cart", 0)
+        prev_atc = prev_acts.get("add_to_cart", 0)
+        cur["cost_per_atc_calc"] = (cur_spend / cur_atc) if cur_atc > 0 else 0.0
+        prev["cost_per_atc_calc"] = (prev_spend / prev_atc) if prev_atc > 0 else 0.0
+        add_metric("Cost Per ATC", "cost_per_atc", source_key="cost_per_atc_calc", is_currency=True, is_inverse=True)
+
         return metrics
 
     @staticmethod
@@ -514,6 +531,10 @@ class FacebookService:
                 flat["cpa"] = flat["spend"] / flat["purchases"] if flat["purchases"] > 0 else 0
                 flat["cost_per_atc"] = flat["spend"] / flat["add_to_cart"] if flat["add_to_cart"] > 0 else 0
                 flat["cvr"] = (flat["purchases"] / flat["link_clicks"] * 100) if flat["link_clicks"] > 0 else 0
+
+                # Backfill Purchase Value if missing but ROAS exists (Fix for 0 ROAS in Summary)
+                if flat["purchase_value"] == 0 and flat["roas"] > 0 and flat["spend"] > 0:
+                    flat["purchase_value"] = flat["roas"] * flat["spend"]
                 
                 # Funnel Rates
                 # 1. View to Cart (ATC / View Content)
