@@ -211,7 +211,7 @@ class TokenManager:
         Exchange a short-lived user access token for a long-lived one (60 days).
         https://developers.facebook.com/docs/facebook-login/guides/access-tokens/get-long-lived
         """
-        url = "https://graph.facebook.com/v18.0/oauth/access_token"
+        url = "https://graph.facebook.com/v24.0/oauth/access_token"
         params = {
             "grant_type": "fb_exchange_token",
             "client_id": app_id,
