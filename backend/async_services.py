@@ -382,10 +382,12 @@ class AsyncFacebookService:
             api_fields = (
                 "campaign_id,adset_id,ad_id,"
                 "campaign_name,adset_name,ad_name,"
-                "spend,impressions,reach,cpm,cpc,ctr,inline_link_clicks,clicks,"
+                "spend,impressions,reach,frequency,cpm,cpc,ctr,inline_link_clicks,clicks,unique_clicks,"  # Added frequency, unique_clicks
                 "actions,action_values,purchase_roas,"
                 "quality_ranking,engagement_rate_ranking,conversion_rate_ranking,"
-                "catalog_segment_value,catalog_segment_actions"
+                "catalog_segment_value,catalog_segment_actions,"
+                "video_p25_watched_actions,video_p50_watched_actions,video_p75_watched_actions,video_p100_watched_actions,"
+                "video_avg_time_watched_actions,cost_per_thruplay"
             )
 
         url = f"{AsyncFacebookService.BASE_URL}/{account_id}/insights"
@@ -473,8 +475,10 @@ class AsyncFacebookService:
                     "spend": float(row.get("spend", 0)),
                     "impressions": int(row.get("impressions", 0)),
                     "reach": int(row.get("reach", 0)),
+                    "frequency": float(row.get("frequency", 0)),  # NEW
                     "clicks": int(row.get("clicks", 0)),
                     "link_clicks": int(row.get("inline_link_clicks", 0)),
+                    "unique_clicks": int(row.get("unique_clicks", 0)),  # NEW
                     "ctr": float(row.get("ctr", 0)),
                     "cpc": float(row.get("cpc", 0)),
                     "cpm": float(row.get("cpm", 0)),

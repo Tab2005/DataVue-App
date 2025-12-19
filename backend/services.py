@@ -194,6 +194,21 @@ class FacebookService:
         return result
 
     @staticmethod
+    def _get_video_action_value(row, field_name):
+        """
+        Helper to extract video action values from Facebook API response.
+        Video actions are returned as a list: [{'action_type': 'video_view', 'value': '100'}]
+        """
+        try:
+            action_list = row.get(field_name, [])
+            if action_list and isinstance(action_list, list) and len(action_list) > 0:
+                return float(action_list[0].get("value", 0))
+            return 0
+        except (TypeError, ValueError, IndexError):
+            return 0
+
+
+    @staticmethod
     def _calculate_change(current, previous):
         """
         Returns string percentage change. e.g. "+15.0%", "-1.2%", or "0%"
@@ -385,10 +400,12 @@ class FacebookService:
         base_fields = (
             "campaign_id,adset_id,ad_id," # ID fields
             "campaign_name,adset_name,ad_name," # Identity fields
-            "spend,impressions,reach,cpm,cpc,ctr,inline_link_clicks,clicks,"
-            "actions,action_values,purchase_roas,"
+            "spend,impressions,reach,frequency,cpm,cpc,ctr,inline_link_clicks,clicks,unique_clicks,"  # Core metrics (added frequency, unique_clicks)
+            "actions,action_values,purchase_roas,"  # Actions and ROAS
             "quality_ranking,engagement_rate_ranking,conversion_rate_ranking," # Quality Diagnosis
-            "catalog_segment_value,catalog_segment_actions" # CPAS Metrics
+            "catalog_segment_value,catalog_segment_actions," # CPAS Metrics
+            "video_p25_watched_actions,video_p50_watched_actions,video_p75_watched_actions,video_p100_watched_actions," # Video metrics
+            "video_avg_time_watched_actions,cost_per_thruplay" # Video derived
         )
 
         # Removed 'objective,effective_status' from Insights API to prevent errors.
@@ -473,8 +490,10 @@ class FacebookService:
                     "spend": float(row.get("spend", 0)),
                     "impressions": int(row.get("impressions", 0)),
                     "reach": int(row.get("reach", 0)),
+                    "frequency": float(row.get("frequency", 0)),  # NEW
                     "clicks": int(row.get("clicks", 0)),
                     "link_clicks": int(row.get("inline_link_clicks", 0)),
+                    "unique_clicks": int(row.get("unique_clicks", 0)),  # NEW
                     "ctr": float(row.get("ctr", 0)),
                     "cpc": float(row.get("cpc", 0)),
                     "cpm": float(row.get("cpm", 0)),
@@ -486,6 +505,14 @@ class FacebookService:
                     "quality_ranking": row.get("quality_ranking", "-"),
                     "engagement_rate_ranking": row.get("engagement_rate_ranking", "-"),
                     "conversion_rate_ranking": row.get("conversion_rate_ranking", "-"),
+                    
+                    # Video Metrics (NEW)
+                    "video_p25_watched": FacebookService._get_video_action_value(row, "video_p25_watched_actions"),
+                    "video_p50_watched": FacebookService._get_video_action_value(row, "video_p50_watched_actions"),
+                    "video_p75_watched": FacebookService._get_video_action_value(row, "video_p75_watched_actions"),
+                    "video_p100_watched": FacebookService._get_video_action_value(row, "video_p100_watched_actions"),
+                    "video_avg_time_watched": FacebookService._get_video_action_value(row, "video_avg_time_watched_actions"),
+                    "cost_per_thruplay": float(row.get("cost_per_thruplay", [{}])[0].get("value", 0) if row.get("cost_per_thruplay") else 0),
                     
                     # Metadata
                     "objective": row.get("objective", "-"), # This might be missing now, acceptable.
@@ -504,16 +531,31 @@ class FacebookService:
                 flat["purchase_value"] = acts.get("purchase_val", 0)
                 flat["atc_value"] = acts.get("add_to_cart_val", 0)
 
-                # 2.1 Engagement Metrics (New)
+                # 2.1 Engagement Metrics
                 flat["post_comments"] = acts.get("comment", 0)
-                flat["post_saves"] = acts.get("post_save", 0)
-                flat["post_shares"] = acts.get("post", 0) # 'post' usually represents shares in actions list
+                flat["post_saves"] = acts.get("onsite_conversion.post_save", 0)  # Fixed action type
+                flat["post_shares"] = acts.get("post", 0)
                 flat["post_engagement"] = acts.get("post_engagement", 0)
                 flat["post_reactions"] = acts.get("post_reaction", 0)
                 flat["page_likes"] = acts.get("like", 0)
 
-                # 2.2 CPAS Metrics (Collaborative Ads)
-                # Parse catalog_segment_actions/values which have same structure as actions
+                # 2.2 Video Metrics (from actions)
+                flat["video_views"] = acts.get("video_view", 0)
+                flat["video_thruplay"] = acts.get("video_view", 0)  # ThruPlay uses same action type
+
+                # 2.3 Messaging Metrics
+                flat["messaging_first_reply"] = acts.get("onsite_conversion.messaging_first_reply", 0)
+                flat["messaging_conversation_started"] = acts.get("onsite_conversion.messaging_conversation_started_7d", 0)
+                
+                # 2.4 Lead Gen Metrics
+                flat["leads"] = acts.get("lead", 0)
+                flat["onsite_leads"] = acts.get("onsite_conversion.lead_grouped", 0)
+                
+                # 2.5 App Metrics
+                flat["app_installs"] = acts.get("mobile_app_install", 0)
+                flat["app_events"] = acts.get("app_custom_event", 0)
+
+                # 2.6 CPAS Metrics (Collaborative Ads)
                 cpas_acts = FacebookService._process_actions({"actions": row.get("catalog_segment_actions", [])})
                 cpas_vals = FacebookService._process_actions({"action_values": row.get("catalog_segment_value", [])})
 
@@ -531,6 +573,15 @@ class FacebookService:
                 flat["cpa"] = flat["spend"] / flat["purchases"] if flat["purchases"] > 0 else 0
                 flat["cost_per_atc"] = flat["spend"] / flat["add_to_cart"] if flat["add_to_cart"] > 0 else 0
                 flat["cvr"] = (flat["purchases"] / flat["link_clicks"] * 100) if flat["link_clicks"] > 0 else 0
+                
+                # Cost per Message
+                flat["cost_per_message"] = flat["spend"] / flat["messaging_first_reply"] if flat["messaging_first_reply"] > 0 else 0
+                
+                # Cost per Lead
+                flat["cost_per_lead"] = flat["spend"] / flat["leads"] if flat["leads"] > 0 else 0
+                
+                # Cost per Install
+                flat["cost_per_install"] = flat["spend"] / flat["app_installs"] if flat["app_installs"] > 0 else 0
 
                 # Backfill Purchase Value if missing but ROAS exists (Fix for 0 ROAS in Summary)
                 if flat["purchase_value"] == 0 and flat["roas"] > 0 and flat["spend"] > 0:

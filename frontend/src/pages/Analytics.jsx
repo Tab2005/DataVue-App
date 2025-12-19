@@ -742,7 +742,10 @@ const Analytics = () => {
             spend: sum('spend'),
             impressions: sum('impressions'),
             reach: sum('reach'), // Approximation
+            frequency: sum('frequency'),  // NEW
+            clicks: sum('clicks'),  // NEW
             link_clicks: sum('link_clicks'),
+            unique_clicks: sum('unique_clicks'),  // NEW
             view_content: sum('view_content'),
             add_to_cart: sum('add_to_cart'),
             initiate_checkout: sum('initiate_checkout'),

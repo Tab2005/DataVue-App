@@ -7,6 +7,7 @@
     - **Backend Derived Metrics**: Refactored `_format_kpi` to manually calculate ROAS, CPA, CPC, CTR from base values instead of relying on potentially missing API aggregations.
     - **Purchase Value Backfill**: Added fallback logic to calculate `purchase_value` from `ROAS * Spend` when the API returns ROAS but not purchase value.
     - **Essential Metrics**: Frontend now always requests core base metrics (`spend`, `impressions`, `link_clicks`, `purchases`, `purchase_value`) regardless of user selection, ensuring derived calculations work correctly.
+    - **Async Service Sync**: Fixed `async_services.py` missing `frequency`, `unique_clicks`, and video metrics in both API request fields and data processing. This was the root cause of these metrics showing 0 despite being available from Facebook API.
 
 ### Changed
 - **Analytics Page Simplification**:
