@@ -8,7 +8,7 @@
  */
 import React, { useState, useMemo, useEffect, useCallback } from 'react';
 import { useOutletContext } from 'react-router-dom';
-import { FiSearch, FiCheck, FiX, FiGrid, FiList, FiSave, FiTrash2, FiFolder, FiStar, FiUser, FiUsers } from 'react-icons/fi';
+import { FiSearch, FiCheck, FiX, FiGrid, FiList, FiSave, FiTrash2, FiFolder, FiStar, FiUser, FiUsers, FiEdit } from 'react-icons/fi';
 import {
     METRICS_REGISTRY,
     METRIC_CATEGORIES,
@@ -42,6 +42,12 @@ const MetricsManager = () => {
     const [saveMessage, setSaveMessage] = useState(null);
     const [saveToTeam, setSaveToTeam] = useState(false); // New: save to team or personal
     const [isLoading, setIsLoading] = useState(false);
+
+    // Edit functionality state
+    const [showEditModal, setShowEditModal] = useState(false);
+    const [editingView, setEditingView] = useState(null);
+    const [editViewName, setEditViewName] = useState('');
+    const [editViewMetrics, setEditViewMetrics] = useState(new Set());
 
     // Get auth token
     const getAuthToken = useCallback(() => {
@@ -139,6 +145,12 @@ const MetricsManager = () => {
             team: '團隊',
             saveAsPersonal: '儲存為個人視角',
             saveAsTeam: '儲存為團隊視角',
+            // Edit functionality
+            edit: '編輯',
+            editView: '編輯視角',
+            updateSuccess: '視角已更新！',
+            update: '更新',
+            editMetricsHint: '點擊下方指標卡片以新增或移除',
         },
         en: {
             title: '📋 Metrics Manager',
@@ -171,6 +183,12 @@ const MetricsManager = () => {
             team: 'Team',
             saveAsPersonal: 'Save as personal view',
             saveAsTeam: 'Save as team view',
+            // Edit functionality
+            edit: 'Edit',
+            editView: 'Edit View',
+            updateSuccess: 'View updated!',
+            update: 'Update',
+            editMetricsHint: 'Click metrics below to add or remove',
         }
     };
     const txt = t[language] || t.zh;
@@ -302,6 +320,70 @@ const MetricsManager = () => {
             }
         } catch (e) {
             console.error('Failed to delete view:', e);
+        }
+    };
+
+    // Edit view handler - open modal with view data
+    const handleEditView = (view) => {
+        setEditingView(view);
+        setEditViewName(view.name);
+        setEditViewMetrics(new Set(view.metrics));
+        setShowEditModal(true);
+    };
+
+    // Toggle metric in edit mode
+    const toggleEditMetric = (key) => {
+        const newSet = new Set(editViewMetrics);
+        if (newSet.has(key)) {
+            newSet.delete(key);
+        } else {
+            newSet.add(key);
+        }
+        setEditViewMetrics(newSet);
+    };
+
+    // Update view handler - call API
+    const handleUpdateView = async () => {
+        if (!editingView || !editViewName.trim()) return;
+
+        try {
+            const token = getAuthToken();
+            if (!token) {
+                alert(language === 'zh' ? '請先登入' : 'Please login first');
+                return;
+            }
+
+            const res = await fetch(`${API_BASE}/api/saved-views/${editingView.id}`, {
+                method: 'PATCH',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Authorization': `Bearer ${token}`
+                },
+                body: JSON.stringify({
+                    name: editViewName.trim(),
+                    metrics: Array.from(editViewMetrics)
+                })
+            });
+
+            if (res.ok) {
+                const updatedView = await res.json();
+                setSavedViews(prev => prev.map(v => v.id === updatedView.id ? updatedView : v));
+                setShowEditModal(false);
+                setEditingView(null);
+                showTemporaryMessage(txt.updateSuccess);
+            } else {
+                const errData = await res.json().catch(() => ({}));
+                alert(language === 'zh'
+                    ? `更新失敗: ${errData.detail || '未知錯誤'}`
+                    : `Update failed: ${errData.detail || 'Unknown error'}`
+                );
+            }
+        } catch (error) {
+            console.error('Failed to update view:', error);
+            alert(language === 'zh'
+                ? `更新時發生錯誤: ${error.message}`
+                : `Error updating view: ${error.message}`
+            );
         }
     };
 
@@ -444,6 +526,13 @@ const MetricsManager = () => {
                                         {txt.load}
                                     </button>
                                     <button
+                                        onClick={() => handleEditView(view)}
+                                        className="btn-edit"
+                                        title={txt.edit}
+                                    >
+                                        <FiEdit />
+                                    </button>
+                                    <button
                                         onClick={() => handleDeleteView(view.id)}
                                         className="btn-delete"
                                         title={txt.delete}
@@ -536,6 +625,72 @@ const MetricsManager = () => {
                                 disabled={!newViewName.trim()}
                             >
                                 <FiSave /> {txt.save}
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {/* Edit Modal */}
+            {showEditModal && editingView && (
+                <div className="modal-overlay" onClick={() => setShowEditModal(false)}>
+                    <div className="save-modal edit-modal" onClick={e => e.stopPropagation()}>
+                        <h3><FiEdit /> {txt.editView}</h3>
+                        <input
+                            type="text"
+                            value={editViewName}
+                            onChange={(e) => setEditViewName(e.target.value)}
+                            placeholder={txt.viewNamePlaceholder}
+                            autoFocus
+                            onKeyDown={(e) => {
+                                if (e.key === 'Enter') handleUpdateView();
+                                if (e.key === 'Escape') setShowEditModal(false);
+                            }}
+                        />
+
+                        <p style={{ marginTop: '16px', color: 'var(--text-secondary)', fontSize: '0.85rem' }}>
+                            {txt.editMetricsHint} ({editViewMetrics.size} {txt.metricsCount})
+                        </p>
+
+                        {/* Mini metrics grid for editing */}
+                        <div className="edit-metrics-grid">
+                            {Object.values(METRICS_REGISTRY).slice(0, 30).map(metric => {
+                                const isSelected = editViewMetrics.has(metric.key);
+                                const category = METRIC_CATEGORIES[metric.category];
+                                return (
+                                    <div
+                                        key={metric.key}
+                                        className={`edit-metric-chip ${isSelected ? 'selected' : ''}`}
+                                        onClick={() => toggleEditMetric(metric.key)}
+                                        style={{ borderColor: isSelected ? category?.color : 'transparent' }}
+                                    >
+                                        <span className="category-dot" style={{ backgroundColor: category?.color }} />
+                                        {language === 'zh' ? metric.label_zh : metric.label_en}
+                                        {isSelected && <FiCheck className="check-icon" />}
+                                    </div>
+                                );
+                            })}
+                        </div>
+
+                        {Object.values(METRICS_REGISTRY).length > 30 && (
+                            <p style={{ textAlign: 'center', color: 'var(--text-tertiary)', fontSize: '0.75rem', marginTop: '8px' }}>
+                                {language === 'zh'
+                                    ? `… 及其他 ${Object.values(METRICS_REGISTRY).length - 30} 個指標`
+                                    : `... and ${Object.values(METRICS_REGISTRY).length - 30} more metrics`
+                                }
+                            </p>
+                        )}
+
+                        <div className="modal-actions">
+                            <button onClick={() => setShowEditModal(false)} className="btn-secondary">
+                                {txt.cancel}
+                            </button>
+                            <button
+                                onClick={handleUpdateView}
+                                className="btn-primary"
+                                disabled={!editViewName.trim() || editViewMetrics.size === 0}
+                            >
+                                <FiCheck /> {txt.update}
                             </button>
                         </div>
                     </div>

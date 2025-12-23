@@ -44,6 +44,11 @@ class MigrateRequest(BaseModel):
     views: List[dict]  # Views from localStorage
 
 
+class SavedViewUpdate(BaseModel):
+    name: Optional[str] = None
+    metrics: Optional[List[str]] = None
+
+
 # --- ENDPOINTS ---
 
 @router.get("", response_model=List[SavedViewResponse])
@@ -149,6 +154,48 @@ async def delete_saved_view(
     db.commit()
     
     return {"message": "View deleted successfully"}
+
+
+@router.patch("/{view_id}", response_model=SavedViewResponse)
+async def update_saved_view(
+    view_id: str,
+    data: SavedViewUpdate,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """
+    Update a saved view (name and/or metrics).
+    User can only update their own personal views or views they created.
+    """
+    user_id = current_user.id
+    view = db.query(SavedView).filter(SavedView.id == view_id).first()
+    
+    if not view:
+        raise HTTPException(status_code=404, detail="View not found")
+    
+    # Authorization check
+    can_edit = (view.user_id == user_id) or (view.created_by == user_id)
+    if not can_edit:
+        raise HTTPException(status_code=403, detail="Not authorized to edit this view")
+    
+    # Update fields if provided
+    if data.name is not None:
+        view.name = data.name
+    if data.metrics is not None:
+        view.metrics = json.dumps(data.metrics)
+    
+    db.commit()
+    db.refresh(view)
+    
+    return {
+        "id": view.id,
+        "name": view.name,
+        "metrics": json.loads(view.metrics),
+        "user_id": view.user_id,
+        "team_id": view.team_id,
+        "created_at": view.created_at.isoformat() if view.created_at else "",
+        "is_personal": view.team_id is None
+    }
 
 
 @router.post("/migrate")

@@ -1,5 +1,19 @@
 # Changelog
 
+## v1.5.4 (2025-12-23) - View Management Optimization
+
+### New Features
+- **View Edit/Rename**:
+    - Added ability to edit and rename saved metric views directly in Metrics Manager.
+    - New edit modal allows modifying view name and adjusting selected metrics.
+    - Backend: New `PATCH /api/saved-views/{view_id}` API endpoint with authorization check.
+- **視角編輯/重新命名**:
+    - 在指標管理頁面新增編輯已儲存視角功能。
+    - 新的編輯視窗可修改視角名稱及調整選取的指標。
+    - 後端：新增 `PATCH /api/saved-views/{view_id}` API 端點，含權限檢查。
+
+---
+
 ## v1.5.3 (2025-12-19) - Analytics Data Accuracy & UI Simplification
 
 ### Fixed
