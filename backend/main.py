@@ -459,6 +459,7 @@ def debug_permissions(team_id: str, token: str):
 @app.get("/api/debug/test-auction-metrics")
 async def test_auction_metrics(
     account_id: str,
+    level: str = "all",  # New: test all levels by default
     user_id: str = Depends(verify_google_token),
     team: Team = Depends(get_current_team)
 ):
@@ -466,7 +467,10 @@ async def test_auction_metrics(
     測試 auction_bid 和 auction_competitiveness 指標
     這是一個 DEBUG 端點，用於驗證 Facebook API 是否回傳這些指標
     
-    Usage: /api/debug/test-auction-metrics?account_id=act_XXXXX
+    Usage: 
+        /api/debug/test-auction-metrics?account_id=act_XXXXX
+        /api/debug/test-auction-metrics?account_id=act_XXXXX&level=ad
+        /api/debug/test-auction-metrics?account_id=act_XXXXX&level=all (default)
     """
     import httpx
     
@@ -482,59 +486,62 @@ async def test_auction_metrics(
     if not access_token:
         return {"error": "No access token found", "team_id": team_id}
     
-    # Build FB API request
-    fields = [
-        "adset_name",
-        "adset_id",
-        "spend",
-        "impressions",
-        "auction_bid",
-        "auction_competitiveness"
-    ]
+    # Fields to request
+    base_fields = ["spend", "impressions", "auction_bid", "auction_competitiveness"]
     
-    url = f"https://graph.facebook.com/v24.0/{account_id}/insights"
-    params = {
-        "level": "adset",  # These metrics are only meaningful at adset level
-        "fields": ",".join(fields),
-        "date_preset": "last_7d",
-        "access_token": access_token
-    }
+    # Determine which levels to test
+    levels_to_test = ["campaign", "adset", "ad"] if level == "all" else [level]
     
-    try:
-        async with httpx.AsyncClient() as client:
-            response = await client.get(url, params=params, timeout=30.0)
-            data = response.json()
+    results = {}
+    
+    async with httpx.AsyncClient() as client:
+        for test_level in levels_to_test:
+            # Add level-specific name field
+            if test_level == "campaign":
+                fields = ["campaign_name", "campaign_id"] + base_fields
+            elif test_level == "adset":
+                fields = ["adset_name", "adset_id"] + base_fields
+            else:  # ad
+                fields = ["ad_name", "ad_id"] + base_fields
             
-            # Check for errors
-            if "error" in data:
-                return {
-                    "success": False,
-                    "fb_error": data["error"],
-                    "requested_fields": fields
-                }
+            url = f"https://graph.facebook.com/v24.0/{account_id}/insights"
+            params = {
+                "level": test_level,
+                "fields": ",".join(fields),
+                "date_preset": "last_7d",
+                "access_token": access_token
+            }
             
-            # Parse response
-            insights = data.get("data", [])
-            
-            # Check which fields were returned
-            returned_fields = set()
-            sample_row = None
-            if insights:
-                sample_row = insights[0]
-                returned_fields = set(sample_row.keys())
-            
-            # Check if auction metrics are available
-            auction_bid_available = "auction_bid" in returned_fields
-            auction_competitiveness_available = "auction_competitiveness" in returned_fields
-            
-            return {
-                "success": True,
-                "account_id": account_id,
-                "level": "adset",
-                "total_rows": len(insights),
-                "requested_fields": fields,
-                "returned_fields": list(returned_fields),
-                "auction_metrics_status": {
+            try:
+                response = await client.get(url, params=params, timeout=30.0)
+                data = response.json()
+                
+                # Check for errors
+                if "error" in data:
+                    results[test_level] = {
+                        "success": False,
+                        "error": data["error"].get("message", "Unknown error"),
+                        "requested_fields": fields
+                    }
+                    continue
+                
+                # Parse response
+                insights = data.get("data", [])
+                
+                # Check which fields were returned
+                returned_fields = set()
+                sample_row = None
+                if insights:
+                    sample_row = insights[0]
+                    returned_fields = set(sample_row.keys())
+                
+                # Check if auction metrics are available
+                auction_bid_available = "auction_bid" in returned_fields
+                auction_competitiveness_available = "auction_competitiveness" in returned_fields
+                
+                results[test_level] = {
+                    "success": True,
+                    "total_rows": len(insights),
                     "auction_bid": {
                         "available": auction_bid_available,
                         "sample_value": sample_row.get("auction_bid") if sample_row else None
@@ -542,16 +549,28 @@ async def test_auction_metrics(
                     "auction_competitiveness": {
                         "available": auction_competitiveness_available,
                         "sample_value": sample_row.get("auction_competitiveness") if sample_row else None
-                    }
-                },
-                "sample_data": insights[:3] if insights else []  # First 3 rows
-            }
-    except Exception as e:
-        return {
-            "success": False,
-            "error": str(e),
-            "requested_fields": fields
-        }
+                    },
+                    "returned_fields": list(returned_fields),
+                    "sample_data": insights[0] if insights else None
+                }
+            except Exception as e:
+                results[test_level] = {
+                    "success": False,
+                    "error": str(e)
+                }
+    
+    # Summary
+    any_available = any(
+        r.get("auction_bid", {}).get("available") or r.get("auction_competitiveness", {}).get("available")
+        for r in results.values() if isinstance(r, dict)
+    )
+    
+    return {
+        "account_id": account_id,
+        "tested_levels": levels_to_test,
+        "any_auction_metrics_available": any_available,
+        "results_by_level": results
+    }
 
 @app.get("/")
 def health_check():
