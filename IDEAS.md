@@ -416,7 +416,77 @@ Step 5: 完整整合測試 ✅ 已完成 (2025-12-18)
 
 ---
 
-#### 1.2 下鑽分析 (Drill-down)
+#### 1.2 競品廣告監測 (Ad Library API) - 🔒 需申請權限
+
+**目標**: 搜尋任意品牌/粉絲頁的正在刊登廣告，下載廣告文案及素材。
+
+**現況**: 🔲 未實作（需申請 `ads_archive` 權限）
+
+**測試結果 (2024-12-23)**:
+> 經本地 API 測試確認，目前的 Facebook Access Token 無法直接使用 Ad Library API。
+> 錯誤訊息: `Authentication Error (InvalidValue): Token expired`
+> 原因: 需要額外申請 `ads_archive` 權限並完成身份驗證。
+
+##### Marketing API vs Ad Library API 差異
+
+| 特性 | Marketing API (目前使用) | Ad Library API |
+|------|------------------------|----------------|
+| **用途** | 管理自己的廣告成效 | 查看任意品牌的公開廣告 |
+| **資料範圍** | 私人帳號數據 | 公開廣告資料 |
+| **需要權限** | `ads_read`, `ads_management` ✅ | `ads_archive` ❌ 未申請 |
+| **可取得資料** | 點擊、轉換、ROAS、CPA 等 | 廣告素材、文案、曝光範圍 |
+
+##### Ad Library API 可取得的資料
+
+| 資料類型 | 可取得 | 備註 |
+|---------|:------:|------|
+| 廣告文案 (body text) | ✅ | 廣告內文 |
+| 標題 (title) | ✅ | 廣告標題 |
+| 圖片/影片連結 | ✅ | 可下載素材 |
+| CTA 按鈕 | ✅ | 行動呼籲文字 |
+| 廣告開始日期 | ✅ | |
+| 曝光數範圍 | ✅ | 例如 "1K-5K" |
+| 花費範圍 | ✅ | 例如 "$100-$499" |
+| 點擊數/轉換數 | ❌ | 不提供 |
+
+##### 取得權限步驟
+
+1. **申請 `ads_archive` 權限**
+   - 前往 [Facebook 開發者後台](https://developers.facebook.com/apps/)
+   - 進入 App → 「App Review」→「Permissions and Features」
+   - 搜尋並申請 `ads_archive` 權限
+
+2. **完成身份驗證**
+   - Facebook 可能要求上傳身份證明文件
+
+3. **等待審核**
+   - 審核時間通常需要幾天
+
+##### 已準備的測試端點
+
+```python
+# backend/main.py
+@app.get("/api/debug/test-ad-library")
+async def test_ad_library(search_term: str, country: str = "TW"):
+    """搜尋指定品牌的正在刊登廣告"""
+    ...
+```
+
+**使用方式**: `/api/debug/test-ad-library?search_term=品牌名稱`
+
+##### 功能規劃 (取得權限後)
+
+| 優先級 | 功能 | 說明 |
+|--------|------|------|
+| 🔴 P1 | 品牌搜尋 | 輸入品牌名稱搜尋正在刊登的廣告 |
+| 🔴 P1 | 廣告列表 | 顯示廣告文案、標題、素材預覽 |
+| 🟡 P2 | 素材下載 | 下載廣告圖片/影片 |
+| 🟡 P2 | 花費追蹤 | 追蹤競品廣告花費範圍變化 |
+| 🟢 P3 | 監測提醒 | 競品有新廣告時發送通知 |
+
+---
+
+#### 1.3 下鑽分析 (Drill-down)
 **目標**: 點擊圖表或表格行，直接深入查看底層數據。
 
 **現況**: 🔲 未實作

@@ -572,6 +572,119 @@ async def test_auction_metrics(
         "results_by_level": results
     }
 
+@app.get("/api/debug/test-ad-library")
+async def test_ad_library(
+    search_term: str,
+    country: str = "TW",  # Taiwan by default
+    user_id: str = Depends(verify_google_token),
+    team: Team = Depends(get_current_team)
+):
+    """
+    測試 Facebook Ad Library API
+    搜尋指定品牌/粉絲頁的正在刊登廣告
+    
+    Usage: /api/debug/test-ad-library?search_term=品牌名稱
+    
+    參數:
+        search_term: 品牌名稱或粉絲頁名稱
+        country: 國家代碼 (預設 TW)
+    """
+    import httpx
+    
+    team_id = team.id if team else None
+    
+    # Get token
+    from auth import TokenManager
+    if team_id:
+        access_token = TokenManager.get_team_token(team_id)
+    else:
+        access_token = TokenManager.get_user_token(user_id, allow_fallback=False)
+    
+    if not access_token:
+        return {"error": "No access token found", "team_id": team_id}
+    
+    # Ad Library API endpoint
+    url = "https://graph.facebook.com/v24.0/ads_archive"
+    
+    # Fields to request
+    fields = [
+        "id",
+        "ad_creation_time",
+        "ad_creative_bodies",      # 廣告文案
+        "ad_creative_link_captions",
+        "ad_creative_link_descriptions",
+        "ad_creative_link_titles", # 廣告標題
+        "ad_delivery_start_time",
+        "ad_delivery_stop_time",
+        "ad_snapshot_url",         # 廣告預覽連結
+        "page_id",
+        "page_name",               # 粉絲頁名稱
+        "publisher_platforms",     # 發佈平台 (facebook, instagram)
+        "impressions",             # 曝光範圍
+        "spend",                   # 花費範圍
+    ]
+    
+    params = {
+        "search_terms": search_term,
+        "ad_reached_countries": f"['{country}']",
+        "ad_active_status": "ACTIVE",  # 只搜尋正在刊登的廣告
+        "fields": ",".join(fields),
+        "limit": 10,  # 最多取 10 筆
+        "access_token": access_token
+    }
+    
+    try:
+        async with httpx.AsyncClient() as client:
+            response = await client.get(url, params=params, timeout=30.0)
+            data = response.json()
+            
+            # Check for errors
+            if "error" in data:
+                return {
+                    "success": False,
+                    "search_term": search_term,
+                    "country": country,
+                    "error": data["error"].get("message", "Unknown error"),
+                    "error_code": data["error"].get("code"),
+                    "error_type": data["error"].get("type"),
+                    "hint": "可能需要申請 ads_archive 權限或完成身份驗證"
+                }
+            
+            # Parse response
+            ads = data.get("data", [])
+            
+            # Format results
+            formatted_ads = []
+            for ad in ads:
+                formatted_ads.append({
+                    "id": ad.get("id"),
+                    "page_name": ad.get("page_name"),
+                    "page_id": ad.get("page_id"),
+                    "ad_bodies": ad.get("ad_creative_bodies", []),  # 文案
+                    "ad_titles": ad.get("ad_creative_link_titles", []),  # 標題
+                    "platforms": ad.get("publisher_platforms", []),
+                    "start_time": ad.get("ad_delivery_start_time"),
+                    "snapshot_url": ad.get("ad_snapshot_url"),  # 預覽連結
+                    "impressions": ad.get("impressions"),
+                    "spend": ad.get("spend"),
+                })
+            
+            return {
+                "success": True,
+                "search_term": search_term,
+                "country": country,
+                "total_ads_found": len(ads),
+                "ads": formatted_ads,
+                "paging": data.get("paging"),  # 分頁資訊
+                "note": "如果沒有結果，可能是該地區不支援 Ad Library API 或需要申請 ads_archive 權限"
+            }
+    except Exception as e:
+        return {
+            "success": False,
+            "search_term": search_term,
+            "error": str(e)
+        }
+
 @app.get("/")
 def health_check():
     """Health check endpoint to verify service status and DB connection."""
