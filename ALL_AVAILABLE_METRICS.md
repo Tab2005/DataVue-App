@@ -124,6 +124,5 @@
 | `objective` | ✅ | 行銷目標 |
 | `buying_type` | ✅ | 購買類型 |
 | `attribution_setting` | ❌ | 歸因設定 |
-| `auction_bid` | ❌ | 競價金額 |
-| `auction_competitiveness` | ❌ | 競價競爭力 |
-
+| `auction_bid` | ⛔ | 競價金額 (**已棄用** - API 無回傳, 測試於 2024-12-23) |
+| `auction_competitiveness` | ⛔ | 競價競爭力 (**已棄用** - API 無回傳, 測試於 2024-12-23) |

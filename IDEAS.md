@@ -130,30 +130,25 @@
 | **潛在客戶** | ❌ 無 | leads, lead_cost, onsite_conversion.lead_grouped |
 | **應用程式** | ❌ 無 | app_installs, mobile_app_install, app_custom_event |
 | **歸因視窗** | ❌ 無 | 1d_click, 7d_click, 28d_click, 1d_view |
-| **競標指標** | ❌ 無 | auction_bid, auction_competitiveness |
+| **競標指標** | ⛔ 已棄用 | auction_bid, auction_competitiveness |
 
-##### 競標指標說明 (Auction Metrics)
+##### 競標指標說明 (Auction Metrics) - ⛔ 已確認不可用
 
-| 指標 | 中文名稱 | 格式 | 說明 |
-|------|----------|------|------|
-| `auction_bid` | 競價金額 | 貨幣 (numeric string) | 您為該廣告設定的競價金額 |
-| `auction_competitiveness` | 競價競爭力 | 百分比/數字 (numeric string) | 衡量您的廣告在競標中的競爭力程度 |
+> **測試結果 (2024-12-23)**：經本地 API 測試確認，Facebook Graph API v24.0 **不會回傳**這兩個指標的資料，即使在 Ad Set 層級請求也是如此。這些指標可能已被 Facebook 棄用或僅限特定帳號使用。
 
-**適用層級**：
+| 指標 | 中文名稱 | 狀態 | 說明 |
+|------|----------|:----:|------|
+| `auction_bid` | 競價金額 | ⛔ | API 無回傳資料 |
+| `auction_competitiveness` | 競價競爭力 | ⛔ | API 無回傳資料 |
+
+**原本預期的適用層級**（僅供參考）：
 
 | 指標 | Campaign | Ad Set | Ad |
 |:-----|:--------:|:------:|:--:|
 | `auction_bid` | ⚠️ 無意義 | ✅ 主要層級 | ⚠️ 無意義 |
 | `auction_competitiveness` | ⚠️ 無意義 | ✅ 主要層級 | ⚠️ 無意義 |
 
-> **為何只在 Ad Set 層級有效？**
-> - 競價策略（預算、出價上限、投遞策略）都是在 **Ad Set 層級** 設定
-> - 競爭力是針對 **Ad Set 的受眾定位** 計算，衡量該受眾群體中有多少廣告主在競爭
-
-**注意事項**：
-- 這些指標可能屬於「實驗性」或「開發中」的指標
-- 回傳的方法論可能會隨時間演變
-- 建議在正式使用前先測試 API 實際回傳的格式
+**結論**：暫不將這兩個指標加入系統。
 
 ##### 架構設計：指標資料庫 (Metrics Registry)
 
