@@ -97,7 +97,7 @@
 | `gender` | ❌ | 性別 (維度) |
 | `country` | ❌ | 國家 (維度) |
 | `region` | ❌ | 地區 (維度) |
-| `dma` | ❌ | DMA 市場 (維度) |
+| `dma` | ❌ | DMA 市場 (維度) - **僅限美國** |
 | `impression_device` | ❌ | 曝光裝置 (維度) |
 | `platform_position` | ❌ | 版位 (維度) |
 | `publisher_platform` | ❌ | 發佈平台 (FB/IG/Audience Network) |
