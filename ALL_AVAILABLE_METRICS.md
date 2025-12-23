@@ -126,3 +126,40 @@
 | `attribution_setting` | ❌ | 歸因設定 |
 | `auction_bid` | ⛔ | 競價金額 (**已棄用** - API 無回傳, 測試於 2024-12-23) |
 | `auction_competitiveness` | ⛔ | 競價競爭力 (**已棄用** - API 無回傳, 測試於 2024-12-23) |
+
+---
+
+## 🧮 Calculated Metrics (後端計算指標)
+
+以下指標是由系統根據原生資料**計算**產生的，不是直接從 Facebook API 取得。
+
+計算邏輯位於: `backend/service_modules/metrics.py`
+
+### 成本相關
+
+| 指標 Key | 中文名稱 | 計算公式 |
+| :--- | :--- | :--- |
+| `cpc` | 單次點擊成本 | `spend / link_clicks` |
+| `cpm` | 千次曝光成本 | `(spend / impressions) * 1000` |
+| `cpa` | 單次購買成本 | `spend / purchases` |
+| `cost_per_atc` | 加購成本 | `spend / add_to_cart` |
+
+### 效率相關
+
+| 指標 Key | 中文名稱 | 計算公式 |
+| :--- | :--- | :--- |
+| `ctr` | 點擊率 | `(link_clicks / impressions) * 100` |
+| `roas` | 廣告投報率 | `purchase_value / spend` |
+| `aov` | 客單價 | `purchase_value / purchases` |
+
+### 漏斗轉換率
+
+| 指標 Key | 中文名稱 | 計算公式 |
+| :--- | :--- | :--- |
+| `view_to_cart_rate` | 瀏覽加購率 | `(add_to_cart / view_content) * 100` |
+| `cart_to_purchase_rate` | 購物車購買率 | `(purchases / add_to_cart) * 100` |
+| `cart_value_realization_rate` | 購物車價值實現率 | `(purchase_value / atc_value) * 100` |
+| `cvr` | 購買轉換率 | `(purchases / link_clicks) * 100` |
+| `cart_dropoff` | 購物車流失率 | `1 - (purchases / add_to_cart)` |
+
+> **備註**: 上述計算指標在前端 `Analytics.jsx` 的 `calculateSummary()` 函數中也有重複計算，用於 KPI 卡片的即時彙總。
