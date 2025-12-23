@@ -312,13 +312,24 @@ def get_token_status(team_id: Optional[str] = None, user_id: str = Depends(verif
     session = SessionLocal()
     try:
         target = None
+        print(f"[DEBUG] token-status called: team_id={team_id}, user_id={user_id}", file=sys.stderr)
+        
         if team_id:
-             target = session.query(Team).filter(Team.id == team_id).first()
+            target = session.query(Team).filter(Team.id == team_id).first()
+            if target:
+                print(f"[DEBUG] Team found: {target.name}, token_expires_at={target.token_expires_at}", file=sys.stderr)
+            else:
+                print(f"[DEBUG] Team NOT found for id={team_id}", file=sys.stderr)
         else:
-             target = session.query(User).filter(User.google_id == user_id).first()
+            target = session.query(User).filter(User.google_id == user_id).first()
+            if target:
+                print(f"[DEBUG] User found: {target.name}, token_expires_at={target.token_expires_at}", file=sys.stderr)
+            else:
+                print(f"[DEBUG] User NOT found for google_id={user_id}", file=sys.stderr)
         
         if not target or not target.token_expires_at:
-             return {
+            print(f"[DEBUG] Returning None - target exists: {target is not None}, has expires_at: {hasattr(target, 'token_expires_at') and target.token_expires_at if target else 'N/A'}", file=sys.stderr)
+            return {
                  "expires_at": None,
                  "days_remaining": None,
                  "is_expired": False
@@ -334,13 +345,16 @@ def get_token_status(team_id: Optional[str] = None, user_id: str = Depends(verif
         delta = expires_at - now
         days_remaining = delta.days
         
+        print(f"[DEBUG] Returning: expires_at={expires_at.isoformat()}, days_remaining={days_remaining}", file=sys.stderr)
         return {
             "expires_at": expires_at.isoformat(),
             "days_remaining": days_remaining,
             "is_expired": days_remaining < 0
         }
     except Exception as e:
-        print(f"Error checking token status: {e}")
+        print(f"Error checking token status: {e}", file=sys.stderr)
+        import traceback
+        traceback.print_exc()
         # Return DB error details for debugging
         raise HTTPException(status_code=500, detail=f"Internal Server Error: {e}")
     finally:
