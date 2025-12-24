@@ -581,6 +581,43 @@ GET /api/analytics-data?account_id={id}&level=ad&adset_id={asid}
 *   **Autopilot (Phase 3)**: 自動化規則執行 (e.g., "CPA > $50 自動暫停廣告")。
 *   **RAG 整合**: 結合知識庫，提供具備上下文的回答。
 
+### 3. This section is renumbered to accommodate the new 1.4 section below.
+
+#### 1.4 報告產生器 (Report Generator) - 混合式架構
+**目標**: 產生專業的 PDF 週報，包含數據圖表與可選的 AI 總結。
+
+**架構設計**: **「B. 選配式 (Optional)」**
+1.  **數據報表 (Data Report)**:
+    -   基礎功能，完全不需 AI。
+    -   內容：目前的 Dashboard 快照 (KPI Cards + Charts + Top Campaigns)。
+    -   格式：A4 排版，適合列印/PDF 匯出。
+2.  **AI 總結 (AI Summary)**:
+    -   加值功能，按需觸發 (On-demand)。
+    -   點擊「✨ Generate AI Summary」後，呼叫 Google Gemini 分析當前數據。
+    -   產出：約 200-300 字的 Executive Summary (關鍵成效、風險、建議)。
+
+**使用者流程**:
+```
+[User] 點擊 "Export Report"
+   ↓
+[System] 彈出預覽視窗 (Preview Modal)
+   ├─ 顯示 Header (Logo, Date, Account)
+   ├─ 顯示 KPI Cards & Charts (From Dashboard)
+   └─ AI Section (Empty) ── [✨ Generate AI Insight] ──┐
+                                                       ↓
+                                                [AI Generating...]
+                                                       ↓
+                                                [Markdown Summary]
+   ↓
+[User] 點擊 "Download PDF" (Browser Print)
+```
+
+**技術實作**:
+-   **Frontend**: `ReportModal.jsx` (Preview), `window.print()` (PDF Export).
+-   **Backend**: `AIService` 新增 `WEEKLY_SUMMARY` prompt。
+
+---
+
 ### 3. 商業化與金流
 
 #### 發展階段路線圖
