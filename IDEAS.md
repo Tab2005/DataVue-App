@@ -625,6 +625,35 @@ GET /api/analytics-data?account_id={id}&level=ad&adset_id={asid}
 
 ---
 
+#### 1.5 維度分析 (Dimension Analysis) - 獨立開發區
+**現況**: 📋 規劃中 (Planned)
+**目標**: 提供 Facebook 廣告的維度細分報告，例如依年齡、性別、國家、平台等進行分析。
+
+**與一般指標的差異**:
+
+| 類型 | API 參數 | 資料結構 |
+|------|----------|----------|
+| **指標 (Metrics)** | `fields=spend,clicks` | 每廣告一行 |
+| **維度 (Dimensions)** | `breakdowns=age,gender` | 每廣告 × 每維度值 = 多行 |
+
+**支援的維度** (來源: `ALL_AVAILABLE_METRICS.md`):
+-   `age` - 年齡
+-   `gender` - 性別
+-   `country` - 國家
+-   `region` - 地區
+-   `impression_device` - 曝光裝置
+-   `platform_position` - 版位
+-   `publisher_platform` - 發佈平台 (FB/IG/Audience Network)
+
+**架構需求** (獨立開發):
+1.  **後端**: 新增 `breakdowns` 參數支援，回傳多行資料
+2.  **前端**: 新增獨立的「維度報告」頁面或 Tab
+3.  **視覺化**: 圓餅圖/長條圖顯示維度分佈
+
+> ⚠️ **注意**: 此功能與現有指標系統架構不同，需獨立開發，不可直接混入現有表格。
+
+---
+
 ### 3. 商業化與金流
 
 #### 發展階段路線圖

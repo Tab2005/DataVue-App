@@ -817,6 +817,250 @@ async def check_token_permissions(
     
     return results
 
+@app.get("/api/public/test-threads")
+async def test_threads_api_public(access_token: str):
+    """
+    公開測試 Threads API (不需登入)
+    直接傳入 Access Token 作為 query 參數
+    
+    Usage: /api/public/test-threads?access_token=YOUR_TOKEN
+    """
+    import httpx
+    
+    if not access_token:
+        return {"error": "access_token is required"}
+    
+    results = {
+        "threads_permissions": [],
+        "threads_profile": None,
+        "threads_posts": [],
+        "threads_insights": None,
+        "errors": []
+    }
+    
+    THREADS_API_VERSION = "v24.0"
+    BASE_URL = f"https://graph.threads.net/{THREADS_API_VERSION}"
+    
+    async with httpx.AsyncClient() as client:
+        # 1. Check Threads-specific permissions
+        try:
+            perm_resp = await client.get(
+                "https://graph.facebook.com/v24.0/me/permissions",
+                params={"access_token": access_token},
+                timeout=15.0
+            )
+            perm_data = perm_resp.json()
+            if "error" in perm_data:
+                results["errors"].append(f"Permissions: {perm_data['error'].get('message', 'Unknown')}")
+            elif "data" in perm_data:
+                threads_perms = [
+                    {"permission": p.get("permission"), "status": p.get("status")}
+                    for p in perm_data["data"]
+                    if "threads" in p.get("permission", "").lower()
+                ]
+                results["threads_permissions"] = threads_perms
+        except Exception as e:
+            results["errors"].append(f"Permissions check failed: {str(e)}")
+        
+        # 2. Get Threads User Profile
+        try:
+            profile_resp = await client.get(
+                f"{BASE_URL}/me",
+                params={
+                    "fields": "id,username,name,threads_profile_picture_url,threads_biography",
+                    "access_token": access_token
+                },
+                timeout=15.0
+            )
+            profile_data = profile_resp.json()
+            if "error" in profile_data:
+                results["errors"].append(f"Profile: {profile_data['error'].get('message', 'Unknown')}")
+            else:
+                results["threads_profile"] = profile_data
+        except Exception as e:
+            results["errors"].append(f"Profile fetch failed: {str(e)}")
+        
+        # 3. Get Recent Threads Posts
+        try:
+            posts_resp = await client.get(
+                f"{BASE_URL}/me/threads",
+                params={
+                    "fields": "id,text,timestamp,media_type,permalink,is_quote_post",
+                    "limit": 10,
+                    "access_token": access_token
+                },
+                timeout=15.0
+            )
+            posts_data = posts_resp.json()
+            if "error" in posts_data:
+                results["errors"].append(f"Posts: {posts_data['error'].get('message', 'Unknown')}")
+            elif "data" in posts_data:
+                results["threads_posts"] = posts_data["data"]
+        except Exception as e:
+            results["errors"].append(f"Posts fetch failed: {str(e)}")
+        
+        # 4. Get Account Insights
+        if results.get("threads_profile") and results["threads_profile"].get("id"):
+            threads_user_id = results["threads_profile"]["id"]
+            try:
+                insights_resp = await client.get(
+                    f"{BASE_URL}/{threads_user_id}/threads_insights",
+                    params={
+                        "metric": "views,likes,replies,reposts,quotes,followers_count",
+                        "access_token": access_token
+                    },
+                    timeout=15.0
+                )
+                insights_data = insights_resp.json()
+                if "error" in insights_data:
+                    results["errors"].append(f"Insights: {insights_data['error'].get('message', 'Unknown')}")
+                elif "data" in insights_data:
+                    results["threads_insights"] = insights_data["data"]
+            except Exception as e:
+                results["errors"].append(f"Insights fetch failed: {str(e)}")
+    
+    # Summary
+    results["summary"] = {
+        "has_threads_basic": any(p["permission"] == "threads_basic" and p["status"] == "granted" for p in results["threads_permissions"]),
+        "has_threads_insights": any(p["permission"] == "threads_manage_insights" and p["status"] == "granted" for p in results["threads_permissions"]),
+        "has_threads_publish": any(p["permission"] == "threads_content_publish" and p["status"] == "granted" for p in results["threads_permissions"]),
+        "profile_loaded": results["threads_profile"] is not None,
+        "posts_count": len(results["threads_posts"]),
+        "insights_available": results["threads_insights"] is not None,
+        "total_errors": len(results["errors"])
+    }
+    
+    return results
+
+@app.get("/api/debug/test-threads")
+async def test_threads_api(
+    user_id: str = Depends(verify_google_token),
+    team: Team = Depends(get_current_team)
+):
+    """
+    測試 Threads API 權限與可用資料
+    檢查 threads_basic, threads_manage_insights 等權限
+    
+    Usage: /api/debug/test-threads
+    """
+    import httpx
+    
+    team_id = team.id if team else None
+    
+    # Get token
+    from auth import TokenManager
+    if team_id:
+        access_token = TokenManager.get_team_token(team_id)
+        token_source = f"Team #{team_id}"
+    else:
+        access_token = TokenManager.get_user_token(user_id, allow_fallback=False)
+        token_source = f"User {user_id}"
+    
+    if not access_token:
+        return {"error": "No access token found", "team_id": team_id}
+    
+    results = {
+        "token_source": token_source,
+        "threads_permissions": [],
+        "threads_profile": None,
+        "threads_posts": [],
+        "threads_insights": None,
+        "errors": []
+    }
+    
+    THREADS_API_VERSION = "v24.0"
+    BASE_URL = f"https://graph.threads.net/{THREADS_API_VERSION}"
+    
+    async with httpx.AsyncClient() as client:
+        # 1. Check Threads-specific permissions from graph.facebook.com
+        try:
+            perm_resp = await client.get(
+                "https://graph.facebook.com/v24.0/me/permissions",
+                params={"access_token": access_token},
+                timeout=15.0
+            )
+            perm_data = perm_resp.json()
+            if "data" in perm_data:
+                # Filter only threads-related permissions
+                threads_perms = [
+                    {"permission": p.get("permission"), "status": p.get("status")}
+                    for p in perm_data["data"]
+                    if "threads" in p.get("permission", "").lower()
+                ]
+                results["threads_permissions"] = threads_perms
+        except Exception as e:
+            results["errors"].append(f"Permissions check failed: {str(e)}")
+        
+        # 2. Get Threads User Profile
+        try:
+            profile_resp = await client.get(
+                f"{BASE_URL}/me",
+                params={
+                    "fields": "id,username,name,threads_profile_picture_url,threads_biography",
+                    "access_token": access_token
+                },
+                timeout=15.0
+            )
+            profile_data = profile_resp.json()
+            if "error" in profile_data:
+                results["errors"].append(f"Profile: {profile_data['error'].get('message', 'Unknown error')}")
+            else:
+                results["threads_profile"] = profile_data
+        except Exception as e:
+            results["errors"].append(f"Profile fetch failed: {str(e)}")
+        
+        # 3. Get Recent Threads Posts
+        try:
+            posts_resp = await client.get(
+                f"{BASE_URL}/me/threads",
+                params={
+                    "fields": "id,text,timestamp,media_type,permalink,is_quote_post",
+                    "limit": 10,
+                    "access_token": access_token
+                },
+                timeout=15.0
+            )
+            posts_data = posts_resp.json()
+            if "error" in posts_data:
+                results["errors"].append(f"Posts: {posts_data['error'].get('message', 'Unknown error')}")
+            elif "data" in posts_data:
+                results["threads_posts"] = posts_data["data"]
+        except Exception as e:
+            results["errors"].append(f"Posts fetch failed: {str(e)}")
+        
+        # 4. Get Account Insights (requires threads_manage_insights)
+        if results.get("threads_profile") and results["threads_profile"].get("id"):
+            threads_user_id = results["threads_profile"]["id"]
+            try:
+                insights_resp = await client.get(
+                    f"{BASE_URL}/{threads_user_id}/threads_insights",
+                    params={
+                        "metric": "views,likes,replies,reposts,quotes,followers_count",
+                        "access_token": access_token
+                    },
+                    timeout=15.0
+                )
+                insights_data = insights_resp.json()
+                if "error" in insights_data:
+                    results["errors"].append(f"Insights: {insights_data['error'].get('message', 'Unknown error')}")
+                elif "data" in insights_data:
+                    results["threads_insights"] = insights_data["data"]
+            except Exception as e:
+                results["errors"].append(f"Insights fetch failed: {str(e)}")
+    
+    # Summary
+    results["summary"] = {
+        "has_threads_basic": any(p["permission"] == "threads_basic" and p["status"] == "granted" for p in results["threads_permissions"]),
+        "has_threads_insights": any(p["permission"] == "threads_manage_insights" and p["status"] == "granted" for p in results["threads_permissions"]),
+        "has_threads_publish": any(p["permission"] == "threads_content_publish" and p["status"] == "granted" for p in results["threads_permissions"]),
+        "profile_loaded": results["threads_profile"] is not None,
+        "posts_count": len(results["threads_posts"]),
+        "insights_available": results["threads_insights"] is not None,
+        "total_errors": len(results["errors"])
+    }
+    
+    return results
+
 @app.get("/")
 def health_check():
     """Health check endpoint to verify service status and DB connection."""
