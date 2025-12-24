@@ -584,13 +584,14 @@ GET /api/analytics-data?account_id={id}&level=ad&adset_id={asid}
 ### 3. This section is renumbered to accommodate the new 1.4 section below.
 
 #### 1.4 報告產生器 (Report Generator) - 混合式架構
+**現況**: ✅ 已完成 (v1.5.4) - 支援 PDF 匯出與 AI 週報總結
 **目標**: 產生專業的 PDF 週報，包含數據圖表與可選的 AI 總結。
 
 **架構設計**: **「B. 選配式 (Optional)」**
 1.  **數據報表 (Data Report)**:
     -   基礎功能，完全不需 AI。
     -   內容：目前的 Dashboard 快照 (KPI Cards + Charts + Top Campaigns)。
-    -   格式：A4 排版，適合列印/PDF 匯出。
+    -   格式：A4 橫向排版，適合列印/PDF 匯出。
 2.  **AI 總結 (AI Summary)**:
     -   加值功能，按需觸發 (On-demand)。
     -   點擊「✨ Generate AI Summary」後，呼叫 Google Gemini 分析當前數據。
@@ -609,12 +610,18 @@ GET /api/analytics-data?account_id={id}&level=ad&adset_id={asid}
                                                        ↓
                                                 [Markdown Summary]
    ↓
-[User] 點擊 "Download PDF" (Browser Print)
+[User] 點擊 "列印 / 儲存 PDF" (Browser Print)
 ```
 
 **技術實作**:
--   **Frontend**: `ReportModal.jsx` (Preview), `window.print()` (PDF Export).
+-   **Frontend**: `ReportModal.jsx` (Preview), `window.print()` (瀏覽器原生列印，確保繁體中文支援)。
 -   **Backend**: `AIService` 新增 `WEEKLY_SUMMARY` prompt。
+-   **Print CSS**:
+    -   A4 橫向自動排版
+    -   表頭垂直旋轉以容納更多欄位
+    -   KPI Cards 四欄網格
+    -   字型使用「微軟正黑體」確保中文正常顯示
+-   **已知問題**: 列印預覽可能產生空白頁，待後續優化。
 
 ---
 

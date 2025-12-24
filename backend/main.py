@@ -685,6 +685,138 @@ async def test_ad_library(
             "error": str(e)
         }
 
+@app.get("/api/debug/check-permissions")
+async def check_token_permissions(
+    user_id: str = Depends(verify_google_token),
+    team: Team = Depends(get_current_team)
+):
+    """
+    檢查目前 Access Token 的權限範圍
+    顯示可以存取哪些 Facebook/Instagram API
+    
+    Usage: /api/debug/check-permissions
+    """
+    import httpx
+    
+    team_id = team.id if team else None
+    
+    # Get token
+    from auth import TokenManager
+    if team_id:
+        access_token = TokenManager.get_team_token(team_id)
+        token_source = f"Team #{team_id}"
+    else:
+        access_token = TokenManager.get_user_token(user_id, allow_fallback=False)
+        token_source = f"User {user_id}"
+    
+    if not access_token:
+        return {"error": "No access token found", "team_id": team_id}
+    
+    results = {
+        "token_source": token_source,
+        "permissions": [],
+        "pages": [],
+        "instagram_accounts": [],
+        "ad_accounts": []
+    }
+    
+    async with httpx.AsyncClient() as client:
+        # 1. Check permissions
+        try:
+            perm_resp = await client.get(
+                "https://graph.facebook.com/v24.0/me/permissions",
+                params={"access_token": access_token},
+                timeout=15.0
+            )
+            perm_data = perm_resp.json()
+            if "data" in perm_data:
+                results["permissions"] = [
+                    {
+                        "permission": p.get("permission"),
+                        "status": p.get("status")
+                    }
+                    for p in perm_data["data"]
+                ]
+        except Exception as e:
+            results["permissions_error"] = str(e)
+        
+        # 2. Check Facebook Pages (managed by user)
+        try:
+            pages_resp = await client.get(
+                "https://graph.facebook.com/v24.0/me/accounts",
+                params={
+                    "fields": "id,name,category,fan_count,instagram_business_account{id,username,followers_count}",
+                    "access_token": access_token
+                },
+                timeout=15.0
+            )
+            pages_data = pages_resp.json()
+            if "data" in pages_data:
+                for page in pages_data["data"]:
+                    page_info = {
+                        "id": page.get("id"),
+                        "name": page.get("name"),
+                        "category": page.get("category"),
+                        "fan_count": page.get("fan_count")
+                    }
+                    # Check if IG is linked
+                    ig_account = page.get("instagram_business_account")
+                    if ig_account:
+                        page_info["instagram_linked"] = True
+                        results["instagram_accounts"].append({
+                            "ig_id": ig_account.get("id"),
+                            "username": ig_account.get("username"),
+                            "followers": ig_account.get("followers_count"),
+                            "linked_page": page.get("name")
+                        })
+                    else:
+                        page_info["instagram_linked"] = False
+                    results["pages"].append(page_info)
+        except Exception as e:
+            results["pages_error"] = str(e)
+        
+        # 3. Check Ad Accounts
+        try:
+            ads_resp = await client.get(
+                "https://graph.facebook.com/v24.0/me/adaccounts",
+                params={
+                    "fields": "id,name,account_status,currency",
+                    "limit": 10,
+                    "access_token": access_token
+                },
+                timeout=15.0
+            )
+            ads_data = ads_resp.json()
+            if "data" in ads_data:
+                results["ad_accounts"] = [
+                    {
+                        "id": acc.get("id"),
+                        "name": acc.get("name"),
+                        "status": acc.get("account_status"),
+                        "currency": acc.get("currency")
+                    }
+                    for acc in ads_data["data"]
+                ]
+        except Exception as e:
+            results["ad_accounts_error"] = str(e)
+    
+    # Summary
+    granted_permissions = [p["permission"] for p in results["permissions"] if p.get("status") == "granted"]
+    
+    results["summary"] = {
+        "total_permissions": len(granted_permissions),
+        "granted_permissions": granted_permissions,
+        "can_read_ads": "ads_read" in granted_permissions,
+        "can_manage_ads": "ads_management" in granted_permissions,
+        "can_read_pages": "pages_read_engagement" in granted_permissions or "pages_show_list" in granted_permissions,
+        "can_read_instagram": "instagram_basic" in granted_permissions or "instagram_business_basic" in granted_permissions,
+        "total_pages": len(results["pages"]),
+        "total_instagram_accounts": len(results["instagram_accounts"]),
+        "total_ad_accounts": len(results["ad_accounts"])
+    }
+    
+    return results
+
 @app.get("/")
 def health_check():
     """Health check endpoint to verify service status and DB connection."""

@@ -88,7 +88,8 @@ class AIService:
         data: Dict[str, Any], 
         context: str, 
         api_key: Optional[str] = None,
-        model: str = "gemini-2.5-flash" 
+        model: str = "gemini-2.5-flash",
+        report_type: str = "ad_analysis"
     ) -> Generator[str, None, None]:
         """
         Analyzes the provided data using the LLM.
@@ -102,25 +103,45 @@ class AIService:
         # key_metrics = ... (We assume data is already summarized or Raw)
         # For Phase 1, we pass the JSON dumps directly but truncated if needed.
         
-        system_prompt = """
-        You are an expert Facebook Ads Analyst (Senior Media Buyer).
-        Your task is to analyze the provided ad performance data and generate a professional diagnosis report.
+        system_prompt = ""
         
-        Structure your response in these 3 sections:
-        
-        ### 🔴 Critical Issues (紅燈警示)
-        Identify ads or ad sets that are wasting budget (High CPA, Low ROAS, Saturation).
-        Be specific with names and numbers.
-        
-        ### 🟢 Opportunities (綠燈機會)
-        Identify high-performing assets that deserve more budget.
-        
-        ### 💡 Strategic Advice (策略建議)
-        Give 1-2 high-level actionable suggestions based on the funnel data (CTR -> CVR).
-        
-        Tone: Professional, Concise, Action-oriented. No fluff.
-        Language: Traditional Chinese (繁體中文).
-        """
+        if report_type == "weekly_summary":
+            # 🟢 WEEKLY SUMMARY REPORT PROMPT
+            system_prompt = """
+            You are a Senior Facebook Ads Consultant helping a client prepare a Weekly Performance Report (週報).
+            Your goal is to write a cohesive, professional summary based on the provided data context.
+            
+            Structure:
+            1. **Executive Summary (本週總結)**: 2-3 sentences summarizing the overall performance (Spend, ROAS, Purchases) compared to the previous period (if available).
+            2. **Key Wins (亮點分析)**: Identify 1-2 campaigns or ad sets that performed efficiently (High ROAS, Low CPA).
+            3. **Areas for Improvement (優化空間)**: Identify 1-2 areas with declining performance or wasted budget.
+            4. **Next Steps (下週建議)**: 2-3 specific actionable bullet points for the next week.
+
+            Tone: Professional, Encouraging, Insightful.
+            Language: Traditional Chinese (繁體中文).
+            Format: Markdown (use bolding for key numbers).
+            """
+        else:
+            # 🔴 DEFAULT: DIRECT AD ANALYSIS PROMPT
+            system_prompt = """
+            You are an expert Facebook Ads Analyst (Senior Media Buyer).
+            Your task is to analyze the provided ad performance data and generate a professional diagnosis report.
+            
+            Structure your response in these 3 sections:
+            
+            ### 🔴 Critical Issues (紅燈警示)
+            Identify ads or ad sets that are wasting budget (High CPA, Low ROAS, Saturation).
+            Be specific with names and numbers.
+            
+            ### 🟢 Opportunities (綠燈機會)
+            Identify high-performing assets that deserve more budget.
+            
+            ### 💡 Strategic Advice (策略建議)
+            Give 1-2 high-level actionable suggestions based on the funnel data (CTR -> CVR).
+            
+            Tone: Professional, Concise, Action-oriented. No fluff.
+            Language: Traditional Chinese (繁體中文).
+            """
         
         user_message = f"""
         Context: {context}

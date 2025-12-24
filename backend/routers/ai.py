@@ -13,6 +13,7 @@ class AnalysisRequest(BaseModel):
     context: str
     api_key: Optional[str] = None # Optional: For BYOK mode
     model: Optional[str] = "gemini-2.5-flash"
+    report_type: Optional[str] = "ad_analysis" # 'ad_analysis' or 'weekly_summary'
 
 class TestConnectionRequest(BaseModel):
     api_key: Optional[str] = None
@@ -39,7 +40,8 @@ async def analyze_data(request: AnalysisRequest, user: User = Depends(get_curren
             data=request.data, 
             context=request.context, 
             api_key=request.api_key,
-            model=request.model
+            model=request.model,
+            report_type=request.report_type
         ),
         media_type="text/plain"
     )

@@ -371,6 +371,11 @@ class AsyncFacebookService:
             return None
         
         # Determine which fields to request from Facebook API
+        try:
+            with open("debug_fields.log", "a") as f:
+                f.write(f"[{datetime.now()}] Requesting fields: {custom_fields}\n")
+        except: pass
+
         dynamic_fields = build_fb_fields(custom_fields)
         
         if dynamic_fields:

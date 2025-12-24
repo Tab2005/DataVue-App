@@ -1,13 +1,14 @@
 import React, { useState, useEffect, useRef, useMemo, useCallback, memo } from 'react';
 import { useOutletContext } from 'react-router-dom';
 import html2canvas from 'html2canvas';
-import { FiHome, FiBarChart2, FiUsers, FiSettings, FiActivity, FiChevronLeft, FiChevronRight, FiShield, FiChevronDown, FiChevronUp, FiPlus, FiDownload, FiFilter, FiX, FiCpu, FiZap, FiRefreshCcw, FiStar, FiUser } from 'react-icons/fi';
+import { FiHome, FiBarChart2, FiUsers, FiSettings, FiActivity, FiChevronLeft, FiChevronRight, FiShield, FiChevronDown, FiChevronUp, FiPlus, FiDownload, FiFilter, FiX, FiCpu, FiZap, FiRefreshCcw, FiStar, FiUser, FiFileText } from 'react-icons/fi';
 import { format, subDays, startOfWeek, endOfWeek, startOfMonth, endOfMonth, subMonths, subYears, differenceInDays } from 'date-fns';
 import KPICard from '../components/KPICard';
 import TrendSection from '../components/TrendSection';
 // New modular imports
 import { DATE_PRESETS, COMPARE_PRESETS, VIEW_PRESETS } from '../constants/analyticsConfig';
 import { AnalyticsKPISection, MetricSelector } from '../components/Analytics';
+import ReportModal from '../components/Analytics/ReportModal';
 // Import Metrics Registry for extended metrics support
 import { METRICS_REGISTRY, METRIC_CATEGORIES } from '../constants/metricsRegistry';
 
@@ -169,6 +170,7 @@ const ALL_METRIC_GROUPS = buildUnifiedMetricGroups();
 const Analytics = () => {
     // 1. Get shared context
     const { selectedAccountId, user, language, isSidebarCollapsed, selectedTeamId } = useOutletContext();
+    const [showReportModal, setShowReportModal] = useState(false);
 
     // 2. Translations
     const t = {
@@ -1269,6 +1271,29 @@ const Analytics = () => {
                     </div>
 
                     <button
+                        onClick={() => setShowReportModal(true)}
+                        style={{
+                            marginTop: '20px',
+                            padding: '12px 24px',
+                            background: 'rgba(255,255,255,0.05)',
+                            border: '1px solid var(--glass-border)',
+                            borderRadius: '8px',
+                            color: 'var(--text-primary)',
+                            fontWeight: 600,
+                            cursor: 'pointer',
+                            fontSize: '1rem',
+                            display: 'flex',
+                            justifyContent: 'center',
+                            alignItems: 'center',
+                            gap: '8px',
+                            opacity: reportData && reportData.length > 0 ? 1 : 0.5,
+                            pointerEvents: reportData && reportData.length > 0 ? 'auto' : 'none'
+                        }}
+                    >
+                        <FiFileText /> {language === 'zh' ? '匯出報表' : 'Export Report'}
+                    </button>
+
+                    <button
                         onClick={fetchAnalytics}
                         style={{
                             marginTop: '20px',
@@ -1966,6 +1991,17 @@ const Analytics = () => {
                     />
                 )
             }
+
+            <ReportModal
+                isOpen={showReportModal}
+                onClose={() => setShowReportModal(false)}
+                data={reportData || []}
+                dateRange={dateRange}
+                summaryData={currentSummaryData}
+                selectedMetrics={selectedMetrics}
+                language={language}
+                user={user}
+            />
         </div >
     );
 };

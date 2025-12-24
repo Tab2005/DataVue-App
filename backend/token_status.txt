@@ -1,0 +1,7 @@
+Found 2 users.
+User: 114037010616433047724 (Role: UserRole.ADMIN) - Has Token: YES
+User: 103830638108295003746 (Role: UserRole.VIEWER) - Has Token: NO
+Found 3 teams.
+Team: 憤怒鳥搞行銷 (Owner: 607f2671-3ac7-4cda-a344-c3598e789b15) - Has Token: YES
+Team: 糗系郎來了 (Owner: 607f2671-3ac7-4cda-a344-c3598e789b15) - Has Token: NO
+Team: 這是行銷 (Owner: 607f2671-3ac7-4cda-a344-c3598e789b15) - Has Token: NO
