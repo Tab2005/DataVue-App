@@ -304,8 +304,12 @@ class AsyncFacebookService:
                     "time_range": f'{{"since":"{prev_start}","until":"{prev_stop}"}}'
                 }
                 
+                trend_fields = (
+                    "spend,impressions,inline_link_clicks,ctr,cpc,"
+                    "actions,action_values,purchase_roas"
+                )
                 trend_params = {
-                    "fields": "spend",
+                    "fields": trend_fields,
                     "date_preset": date_preset,
                     "time_increment": "1",
                     "level": "account"

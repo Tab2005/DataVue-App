@@ -186,7 +186,10 @@ const Layout = () => {
                 display: 'flex',
                 flexDirection: 'column',
                 marginLeft: isMobile ? '0' : (isSidebarCollapsed ? '80px' : '240px'),
-                transition: 'margin-left 0.3s ease'
+                transition: 'margin-left 0.3s ease',
+                minWidth: 0,
+                maxWidth: isMobile ? '100vw' : 'calc(100vw - ' + (isSidebarCollapsed ? '80px' : '240px') + ')',
+                overflow: 'hidden'
             }}>
                 <Header
                     language={language}
@@ -207,7 +210,7 @@ const Layout = () => {
                     user={user}
                 />
 
-                <div style={{ padding: '0', flex: 1, marginTop: '70px', minWidth: 0, overflowX: 'hidden' }}>
+                <div style={{ padding: '0', flex: 1, marginTop: '70px', minWidth: 0, width: '100%', maxWidth: '100%', overflowX: 'auto', boxSizing: 'border-box' }}>
                     <Outlet context={{ selectedAccountId, user, accounts, language, isSidebarCollapsed, isMobile, teams, setTeams, selectedTeamId, setSelectedTeamId }} />
                 </div>
 

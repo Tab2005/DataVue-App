@@ -146,8 +146,12 @@ class FacebookService:
             prev_data = prev_data_list[0] if prev_data_list else {}
 
             # 2. Fetch Daily Trend (for the Chart) - Current Range Only
+            trend_fields = (
+                "spend,impressions,inline_link_clicks,ctr,cpc,"
+                "actions,action_values,purchase_roas"
+            )
             trend_params = {
-                "fields": "spend",
+                "fields": trend_fields,
                 "date_preset": date_preset,
                 "time_increment": "1", # Daily breakdown
                 "level": "account"
@@ -378,10 +382,28 @@ class FacebookService:
         for item in data_list:
             # date_start is "YYYY-MM-DD"
             date_str = item.get("date_start", "")[5:] # Remove Year -> "MM-DD"
-            formatted.append({
+            
+            # 1. Base Metrics
+            row = {
                 "name": date_str, 
-                "spend": float(item.get("spend", 0))
-            })
+                "spend": float(item.get("spend", 0)),
+                "impressions": int(item.get("impressions", 0)),
+                "link_clicks": int(item.get("inline_link_clicks", 0)),
+                "ctr": float(item.get("ctr", 0)),
+                "cpc": float(item.get("cpc", 0)),
+            }
+            
+            # 2. Actions (Purchases, ATC)
+            acts = FacebookService._process_actions(item)
+            row["purchases"] = acts.get("purchase", 0)
+            row["add_to_cart"] = acts.get("add_to_cart", 0)
+            
+            # 3. ROAS
+            # purchase_roas is list of {action_type: 'purchase_roas', value: '...'}
+            roas_list = item.get("purchase_roas", [])
+            row["roas"] = float(roas_list[0].get("value", 0)) if roas_list else 0.0
+
+            formatted.append(row)
         
         # Sort by date
         formatted.sort(key=lambda x: x["name"])

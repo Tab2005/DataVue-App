@@ -654,6 +654,115 @@ GET /api/analytics-data?account_id={id}&level=ad&adset_id={asid}
 
 ---
 
+#### 1.6 Google Search Console - API 能力與優化方向
+
+**目標**: 充分利用 GSC API 的資料維度，提供更豐富的 SEO 分析報表。
+
+##### 目前已實作的功能 ✅
+
+| 端點 | 功能 | 回傳資料 |
+|------|------|----------|
+| `GET /api/gsc/sites` | 取得用戶驗證的網站清單 | `siteUrl`, `permissionLevel` |
+| `GET /api/gsc/analytics` | 依日期取得搜尋效能 | `clicks`, `impressions`, `ctr`, `position` |
+
+##### GSC API 可用維度 (Dimensions)
+
+| 維度 | 說明 | 實作狀態 | 優先級 |
+|------|------|---------|--------|
+| `date` | 依日期分組 | ✅ 已實作 | - |
+| `query` | 依搜尋關鍵字分組 | ❌ 待開發 | 🔴 高 |
+| `page` | 依網頁 URL 分組 | ❌ 待開發 | 🔴 高 |
+| `country` | 依國家/地區分組 | ❌ 待開發 | 🟡 中 |
+| `device` | 依裝置類型分組 (DESKTOP, MOBILE, TABLET) | ❌ 待開發 | 🟡 中 |
+| `searchAppearance` | 依搜尋外觀分組 (AMP, 精選摘要等) | ❌ 待開發 | 🟢 低 |
+
+##### 功能優化待辦清單
+
+1. **關鍵字分析報表** 🔴
+   - 新增 `dimensions: ['query']` 的 API 呼叫
+   - 顯示熱門關鍵字排行：點擊數、曝光、CTR、平均排名
+   - 支援關鍵字搜尋/篩選
+
+2. **頁面效能報表** 🔴
+   - 新增 `dimensions: ['page']` 的 API 呼叫
+   - 顯示表現最佳/最差的頁面
+   - URL 可點擊跳轉
+
+3. **地區流量分佈** 🟡
+   - 新增 `dimensions: ['country']` 的 API 呼叫
+   - 地圖視覺化 或 國家表格排行
+
+4. **裝置分佈分析** 🟡
+   - 新增 `dimensions: ['device']` 的 API 呼叫
+   - 圓餅圖顯示桌機/手機/平板比例
+
+5. **多維度組合查詢** 🟢
+   - 例如 `['query', 'page']` 可分析「特定關鍵字在哪些頁面出現」
+   - 進階用戶功能
+
+6. **日期範圍選擇器** 🟡
+   - 目前固定 30 天，改為可自訂範圍
+   - 支援快捷選項：今日、7 天、30 天、90 天
+
+7. **資料匯出功能** 🟢
+   - 匯出 CSV / Excel
+   - 匯出 PDF 報表
+
+##### 已完成開發項目 (2024-12-26) ✅
+
+1. **GSC OAuth 連線修復**
+   - 修正 `gsc_service.py` token exchange 時的 "Scope has changed" 錯誤
+   - 解決方案：使用 `scopes=None` 讓後端接受 Google 核發的任何權限
+   - 修正 `GSCStats.jsx` 使用錯誤的 localStorage key (`token` → `google_token`)
+
+2. **手機版響應式優化**
+   - `SearchConsole.jsx`: 加入 `isMobile` context，調整 padding (16px mobile / 24px desktop)
+   - `GSCStats.jsx`: 響應式卡片 grid、表格水平捲動、字體大小調整
+   - `Layout.jsx`: 修正 main-content 寬度計算，防止子元素溢出
+
+3. **相關檔案異動**
+   - `frontend/src/pages/SearchConsole.jsx` - 響應式容器樣式
+   - `frontend/src/components/GSCStats.jsx` - 響應式卡片與表格
+   - `frontend/src/components/Layout.jsx` - 修正 main-content maxWidth 計算
+   - `backend/gsc_service.py` - OAuth scopes 修復
+   - `backend/routers/gsc.py` - 錯誤處理優化
+
+---
+
+#### 1.7 Google Search Console (Team Integration)
+**目標**: 將目前個人的 GSC 綁定升級為「團隊共享」模式，讓團隊成員能共同檢視 GSC 數據。
+
+**現況**: ⚠️ 僅支援個人綁定 (Personal Binding)
+- 目前 GSC Token 綁定在 `User` 模型。
+- 無論切換到哪個團隊，看到的都是當前使用者的私人 GSC 數據。
+
+**架構升級計畫**:
+
+##### 資料庫變更 (Database Schema)
+- **`teams` table**: 新增 GSC 相關欄位，儲存團隊共用的 Token。
+    - `gsc_access_token`
+    - `gsc_refresh_token`
+    - `gsc_expires_at`
+
+##### 後端 API 調整 (Backend)
+- **POST `/api/gsc/authorize`**:
+    - 新增選填參數 `team_id`。
+    - 若帶有 `team_id`，將 Token 存入 `teams` 表而非 `users` 表。
+- **GET `/api/gsc/sites` & `/api/gsc/analytics`**:
+    - 檢查 Header `X-Team-ID`。
+    - 若有 `X-Team-ID`，優先從 `teams` 表讀取 Token。
+    - 若無，則 Fallback 至 `users` 表 (或依據 Strict Token Mode 決定是否阻擋)。
+
+##### 前端調整 (Frontend)
+- **`GSCConnect.jsx`**: 授權時傳送當前 `selectedTeamId`。
+- **`SearchConsole.jsx`**: 確保 API 請求帶有正確的 Header (目前 axios interceptor 已處理，需驗證)。
+
+**預期效益**:
+- 行銷代理商 (Agency) 可由主管綁定客戶 GSC，所有優化師皆可查看，無需分享 Google 帳號密碼。
+- 企業內部行銷團隊可共享單一 GSC 資源。
+
+---
+
 ### 3. 商業化與金流
 
 #### 發展階段路線圖
@@ -815,3 +924,40 @@ PAYUNI_IS_TEST=true  # 測試環境
 *   **效能優化**:
     *   **分頁機制 (Pagination)**: 對於超過 50 個 Active Campaign 的帳號至關重要。
     *   **快取 (Caching)**: 使用 Redis/Memory cache 減少頻繁 API 呼叫。
+
+---
+
+## 📅 Roadmap Update: Google Search Console 整合 (2025-12-26)
+
+### 1. 專案目標
+將 Google Search Console (GSC) 報表功能整合至 Facebook Dashboard，提供 SEO 與廣告投放的全面數據視野。
+
+### 2. 核心設計原則
+-   **獨立分頁**: 建立獨立的 "Search Console" 頁面，區隔 FB 廣告與 SEO 數據。
+-   **帳號彈性**: 允許使用者連結**任何**擁有目標網站權限的 Google 帳號，不強制綁定登入帳號。
+-   **權限要求**: 連結的 Google 帳號必須在 GSC 擁有該網站的權限 (Owner 或 Full User)。
+
+### 3. 實作計畫
+
+#### 後端 (Backend)
+-   **新 Router (`gsc.py`)**:
+    -   `POST /api/gsc/auth`: 交換 Access/Refresh Tokens。
+    -   `GET /api/gsc/sites`: 列出已驗證網站。
+    -   `POST /api/gsc/analytics`: 抓取搜尋分析數據 (Clicks, Impressions, CTR, Position)。
+-   **資料庫更新 (`User` 表)**:
+    -   新增 `gsc_access_token`, `gsc_refresh_token`, `gsc_expires_at`。
+    -   Token 進行加密儲存。
+-   **相依套件**: 新增 `google-api-python-client`。
+
+#### 前端 (Frontend)
+-   **新元件 `GSCConnect.jsx`**:
+    -   提供 OAuth 連線按鈕。
+    -   權限範圍: `https://www.googleapis.com/auth/webmasters.readonly`。
+-   **新元件 `GSCStats.jsx`**:
+    -   顯示 SEO 關鍵指標與趨勢圖。
+-   **新路由**: `/gsc` (Search Console)。
+
+### 4. 驗證步驟
+1.  點擊 "Connect Search Console" 並授權。
+2.  確認後端成功交換並儲存加密 Token。
+3.  進入 Search Console 分頁，確認能讀取網站列表與數據報表。

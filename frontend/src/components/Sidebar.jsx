@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { FiHome, FiBarChart2, FiUsers, FiSettings, FiActivity, FiChevronLeft, FiChevronRight, FiShield, FiChevronDown, FiChevronUp, FiPlus } from 'react-icons/fi';
+import { FiHome, FiBarChart2, FiUsers, FiSettings, FiActivity, FiChevronLeft, FiChevronRight, FiShield, FiChevronDown, FiChevronUp, FiPlus, FiSearch } from 'react-icons/fi';
 import { Link, useLocation } from 'react-router-dom';
 import SettingsModal from './SettingsModal';
 import CreateTeamModal from './CreateTeamModal';
@@ -30,6 +30,7 @@ const Sidebar = ({ language, isCollapsed, setIsCollapsed, isMobile, selectedTeam
         { icon: <FiHome size={20} />, label: t('Overview', '總覽'), path: '/' },
         { icon: <FiBarChart2 size={20} />, label: t('Analytics', '成效分析'), path: '/analytics' },
         { icon: <FiActivity size={20} />, label: t('Metrics Manager', '指標管理'), path: '/metrics' },
+        { icon: <FiSearch size={20} />, label: t('Search Console', '搜尋管理'), path: '/gsc' },
         // Grouped Team Settings
         {
             icon: <FiSettings size={20} />,

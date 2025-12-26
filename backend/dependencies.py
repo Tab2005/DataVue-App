@@ -5,6 +5,7 @@ from google.oauth2 import id_token
 from google.auth.transport import requests as google_requests
 import os
 import sys
+import traceback
 
 # Reuse the existing security scheme
 security = HTTPBearer()
@@ -106,6 +107,11 @@ def get_current_user(
         return user
     except Exception as e:
         print(f"CRITICAL ERROR in get_current_user: {str(e)}", file=sys.stderr, flush=True)
+        try:
+             with open("debug_auth.log", "w", encoding="utf-8") as f:
+                 f.write(f"Auth Error: {str(e)}\n\nTraceback:\n{traceback.format_exc()}")
+        except:
+            pass
         # Raise as 401/400 to break the 500 loop
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,

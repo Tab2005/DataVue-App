@@ -55,8 +55,13 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from pydantic import BaseModel
 from auth import TokenManager
-import alembic.config
-import alembic.command
+# Robust Imports with Error Handling
+try:
+    import alembic.config
+    import alembic.command
+except Exception as e:
+    print(f"⚠️ ALEMBIC IMPORT ERROR: {e}", file=sys.stderr)
+    alembic = None
 
 # Robust Imports with Error Handling
 try:
@@ -85,8 +90,23 @@ from google.oauth2 import id_token
 from google.auth.transport import requests as google_requests
 
 # Import Routers
-from routers import users, teams, invites, admin, ai, saved_views
+from routers import users
+from routers import teams
+from routers import invites
+from routers import admin
+from routers import ai
+from routers import saved_views
+try:
+    from routers import gsc
+except Exception as e:
+    print(f"CRITICAL: Failed to import GSC router: {e}", file=sys.stderr)
+    gsc = None
 import auth
+
+# ...
+
+# Include Routers
+
 from dependencies import get_current_team, get_db
 from contextlib import asynccontextmanager
 
@@ -146,6 +166,21 @@ try:
                     
     except Exception as e:
         print(f"⚠️ Schema Patching Warning: {e}")
+
+    # --- PATCH: Auto-patch Users table for GSC ---
+    try:
+        if inspector.has_table("users"):
+            user_columns = [c["name"] for c in inspector.get_columns("users")]
+            print(f"DEBUG: Current Users Columns: {user_columns}")
+            
+            for col, col_type in [("gsc_access_token", "VARCHAR"), ("gsc_refresh_token", "VARCHAR"), ("gsc_expires_at", "TIMESTAMP")]:
+                if col not in user_columns:
+                    print(f"⚠️ Schema Drift: Adding '{col}' to users table...")
+                    with engine.connect() as conn:
+                        conn.execute(text(f"ALTER TABLE users ADD COLUMN {col} {col_type}"))
+                        conn.commit()
+    except Exception as e:
+        print(f"⚠️ User Schema Patching Warning: {e}")
 
     # --- PATCH: Auto-create saved_views table if missing ---
     try:
@@ -231,6 +266,12 @@ async def general_exception_handler(request: Request, exc: Exception):
     """Handle all unhandled exceptions."""
     error_msg = f"Internal server error: {str(exc)}"
     print(f"[CRITICAL] Unhandled exception: {str(exc)}", file=sys.stderr)
+    try:
+        error_dump = f"GLOBAL ERROR: {str(exc)}\n\nTraceback:\n{traceback.format_exc()}"
+        with open("debug_global_error.log", "w", encoding="utf-8") as f:
+            f.write(error_dump)
+    except:
+        pass
     traceback.print_exc()
     
     # In production, hide traceback from response
@@ -304,6 +345,7 @@ app.include_router(invites.router, prefix="/api", tags=["invites"])
 app.include_router(admin.router) # /api/admin
 app.include_router(ai.router) # /api/ai
 app.include_router(saved_views.router) # /api/saved-views
+app.include_router(gsc.router) # /api/gsc
 
 
 @app.get("/api/auth/token-status")

@@ -14,3 +14,4 @@ pydantic
 httpx
 email-validator
 cachetools
+google-api-python-client

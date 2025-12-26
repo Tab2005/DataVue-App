@@ -68,6 +68,11 @@ class User(Base):
     fb_app_secret = Column(String, nullable=True)
     token_expires_at = Column(DateTime, nullable=True)
     
+    # Google Search Console (GSC) Integration
+    gsc_access_token = Column(String, nullable=True)
+    gsc_refresh_token = Column(String, nullable=True)
+    gsc_expires_at = Column(DateTime, nullable=True)
+    
     # Role Based Access Control (Legacy / Default Team Role)
     role = Column(SAEnum(UserRole), default=UserRole.VIEWER)
     status = Column(SAEnum(UserStatus), default=UserStatus.ACTIVE)

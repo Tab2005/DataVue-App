@@ -11,7 +11,9 @@ function Dashboard() {
     const [days, setDays] = useState(7);
     const [dashboardData, setDashboardData] = useState(null);
     const [loading, setLoading] = useState(false);
+
     const [error, setError] = useState(null);
+    const [selectedMetric, setSelectedMetric] = useState('spend'); // Default to spend
 
     // Translations
     const t = {
@@ -205,9 +207,46 @@ function Dashboard() {
 
                     {/* Charts Row */}
                     <div className="glass-panel" style={{ padding: '24px', borderRadius: '16px', minHeight: '300px' }}>
-                        <h3 style={{ margin: '0 0 20px 0', fontSize: '1.1rem', color: 'var(--text-secondary)' }}>{txt.spendTrend}</h3>
+                        <div style={{
+                            display: 'flex',
+                            justifyContent: 'space-between',
+                            alignItems: 'center',
+                            marginBottom: '20px',
+                            flexWrap: 'wrap',
+                            gap: '10px'
+                        }}>
+                            <h3 style={{ margin: 0, fontSize: '1.1rem', color: 'var(--text-secondary)' }}>
+                                {kpiList.find(k => k.key === selectedMetric)?.title} Trend
+                            </h3>
+                            <select
+                                value={selectedMetric}
+                                onChange={(e) => setSelectedMetric(e.target.value)}
+                                style={{
+                                    background: 'rgba(255, 255, 255, 0.05)',
+                                    color: 'var(--text-primary)',
+                                    border: '1px solid var(--glass-border)',
+                                    padding: '8px 12px',
+                                    borderRadius: '8px',
+                                    outline: 'none',
+                                    cursor: 'pointer',
+                                    fontSize: '0.9rem'
+                                }}
+                            >
+                                {kpiList.map(opt => (
+                                    <option key={opt.key} value={opt.key} style={{ background: '#1a1d21' }}>
+                                        {opt.title}
+                                    </option>
+                                ))}
+                            </select>
+                        </div>
+
                         {dashboardData && dashboardData.chart_data ? (
-                            <TrendsChart data={dashboardData.chart_data} dataKey="spend" color="#ef4444" />
+                            <TrendsChart
+                                data={dashboardData.chart_data}
+                                dataKey={selectedMetric}
+                                color="var(--accent-primary)"
+                                title=" " /* Hide internal title using space hack */
+                            />
                         ) : (
                             <div style={{ textAlign: 'center', color: 'gray', padding: '40px' }}>No Chart Data</div>
                         )}
