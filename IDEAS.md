@@ -700,9 +700,10 @@ GET /api/analytics-data?account_id={id}&level=ad&adset_id={asid}
    - 例如 `['query', 'page']` 可分析「特定關鍵字在哪些頁面出現」
    - 進階用戶功能
 
-6. **日期範圍選擇器** 🟡
-   - 目前固定 30 天，改為可自訂範圍
-   - 支援快捷選項：今日、7 天、30 天、90 天
+6. **日期範圍選擇器** ✅ (已完成)
+   - 快捷選項：7 天、28 天、3 個月、自訂
+   - 自訂日期輸入選擇器
+   - 動態更新卡片標籤顯示天數
 
 7. **資料匯出功能** 🟢
    - 匯出 CSV / Excel
@@ -720,12 +721,19 @@ GET /api/analytics-data?account_id={id}&level=ad&adset_id={asid}
    - `GSCStats.jsx`: 響應式卡片 grid、表格水平捲動、字體大小調整
    - `Layout.jsx`: 修正 main-content 寬度計算，防止子元素溢出
 
-3. **相關檔案異動**
+3. **日期範圍選擇器**
+   - 快捷選項下拉選單：7 天、28 天、3 個月、自訂
+   - 自訂日期輸入 (date picker)
+   - 卡片標籤動態顯示選擇的天數
+   - 表格數字加入千位數分隔符號 (`toLocaleString()`)
+
+4. **相關檔案異動**
    - `frontend/src/pages/SearchConsole.jsx` - 響應式容器樣式
-   - `frontend/src/components/GSCStats.jsx` - 響應式卡片與表格
+   - `frontend/src/components/GSCStats.jsx` - 日期選擇器 + 響應式卡片與表格
    - `frontend/src/components/Layout.jsx` - 修正 main-content maxWidth 計算
    - `backend/gsc_service.py` - OAuth scopes 修復
    - `backend/routers/gsc.py` - 錯誤處理優化
+
 
 ---
 

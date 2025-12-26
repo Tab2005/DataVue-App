@@ -1,6 +1,47 @@
 
 import React, { useEffect, useState } from 'react';
 
+// Date Range Presets Configuration
+const DATE_PRESETS = [
+    { key: 'last_7d', label_zh: '過去 7 天', label_en: 'Last 7 Days', days: 7 },
+    { key: 'last_28d', label_zh: '過去 28 天', label_en: 'Last 28 Days', days: 28 },
+    { key: 'last_3m', label_zh: '過去 3 個月', label_en: 'Last 3 Months', days: 90 },
+    { key: 'custom', label_zh: '自訂', label_en: 'Custom', days: null }
+];
+
+// Helper function to format date to YYYY-MM-DD
+const formatDate = (date) => {
+    return date.toISOString().split('T')[0];
+};
+
+// Helper function to calculate date range from preset
+const getDateRangeFromPreset = (presetKey) => {
+    const today = new Date();
+    const preset = DATE_PRESETS.find(p => p.key === presetKey);
+
+    if (!preset || preset.days === null) {
+        // Custom - return default last 30 days
+        const start = new Date();
+        start.setDate(today.getDate() - 30);
+        return { start: formatDate(start), end: formatDate(today) };
+    }
+
+    if (preset.key === 'today') {
+        return { start: formatDate(today), end: formatDate(today) };
+    }
+
+    if (preset.key === 'yesterday') {
+        const yesterday = new Date();
+        yesterday.setDate(today.getDate() - 1);
+        return { start: formatDate(yesterday), end: formatDate(yesterday) };
+    }
+
+    // For "last X days" presets
+    const start = new Date();
+    start.setDate(today.getDate() - preset.days);
+    return { start: formatDate(start), end: formatDate(today) };
+};
+
 const GSCStats = ({ language, isMobile = false }) => {
     const t = (zh, en) => language === 'zh' ? zh : en;
     const [sites, setSites] = useState([]);
@@ -9,6 +50,11 @@ const GSCStats = ({ language, isMobile = false }) => {
     const [selectedSite, setSelectedSite] = useState('');
     const [analytics, setAnalytics] = useState([]);
     const [analyticsLoading, setAnalyticsLoading] = useState(false);
+
+    // Date Range State
+    const [datePreset, setDatePreset] = useState('last_28d');
+    const [dateRange, setDateRange] = useState(getDateRangeFromPreset('last_28d'));
+    const [showCustomDate, setShowCustomDate] = useState(false);
 
     useEffect(() => {
         fetchSites();
@@ -36,24 +82,17 @@ const GSCStats = ({ language, isMobile = false }) => {
         }
     };
 
+    // Refetch when site OR dateRange changes
     useEffect(() => {
-        if (selectedSite) {
-            fetchAnalytics(selectedSite);
+        if (selectedSite && dateRange.start && dateRange.end) {
+            fetchAnalytics(selectedSite, dateRange.start, dateRange.end);
         }
-    }, [selectedSite]);
+    }, [selectedSite, dateRange]);
 
-    const fetchAnalytics = async (siteUrl) => {
+    const fetchAnalytics = async (siteUrl, startDate, endDate) => {
         setAnalyticsLoading(true);
         try {
-            // Default last 30 days
-            const end = new Date();
-            const start = new Date();
-            start.setDate(end.getDate() - 30);
-
-            const startStr = start.toISOString().split('T')[0];
-            const endStr = end.toISOString().split('T')[0];
-
-            const resp = await fetch(`/api/gsc/analytics?site_url=${encodeURIComponent(siteUrl)}&start_date=${startStr}&end_date=${endStr}&dimensions=date`, {
+            const resp = await fetch(`/api/gsc/analytics?site_url=${encodeURIComponent(siteUrl)}&start_date=${startDate}&end_date=${endDate}&dimensions=date`, {
                 headers: { 'Authorization': `Bearer ${localStorage.getItem('google_token')}` }
             });
             const data = await resp.json();
@@ -64,6 +103,31 @@ const GSCStats = ({ language, isMobile = false }) => {
         } finally {
             setAnalyticsLoading(false);
         }
+    };
+
+    // Handle preset change
+    const handlePresetChange = (presetKey) => {
+        setDatePreset(presetKey);
+        if (presetKey === 'custom') {
+            setShowCustomDate(true);
+        } else {
+            setShowCustomDate(false);
+            setDateRange(getDateRangeFromPreset(presetKey));
+        }
+    };
+
+    // Handle custom date change
+    const handleCustomDateChange = (field, value) => {
+        setDateRange(prev => ({ ...prev, [field]: value }));
+    };
+
+    // Calculate days in range for display
+    const getDaysInRange = () => {
+        const start = new Date(dateRange.start);
+        const end = new Date(dateRange.end);
+        const diffTime = Math.abs(end - start);
+        const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24)) + 1;
+        return diffDays;
     };
 
     // Responsive Styles
@@ -189,6 +253,7 @@ const GSCStats = ({ language, isMobile = false }) => {
 
     return (
         <div style={containerStyle}>
+            {/* Site Selector */}
             <div style={headerStyle}>
                 <label style={labelStyle}>{t('選擇資源:', 'Select Property:')}</label>
                 <select
@@ -204,21 +269,92 @@ const GSCStats = ({ language, isMobile = false }) => {
                 </select>
             </div>
 
+            {/* Date Range Selector */}
+            <div style={{
+                background: 'var(--bg-secondary)',
+                padding: isMobile ? '12px' : '16px',
+                borderRadius: '12px',
+                border: '1px solid var(--glass-border)',
+                display: 'flex',
+                flexDirection: isMobile ? 'column' : 'row',
+                gap: isMobile ? '12px' : '16px',
+                alignItems: isMobile ? 'stretch' : 'center',
+                flexWrap: 'wrap'
+            }}>
+                {/* Preset Selector */}
+                <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flex: isMobile ? '1' : 'none' }}>
+                    <label style={{ ...labelStyle, whiteSpace: 'nowrap' }}>{t('日期範圍:', 'Date Range:')}</label>
+                    <select
+                        value={datePreset}
+                        onChange={(e) => handlePresetChange(e.target.value)}
+                        style={{ ...selectStyle, flex: isMobile ? 1 : 'none' }}
+                    >
+                        {DATE_PRESETS.map(preset => (
+                            <option key={preset.key} value={preset.key}>
+                                {language === 'zh' ? preset.label_zh : preset.label_en}
+                            </option>
+                        ))}
+                    </select>
+                </div>
+
+                {/* Custom Date Inputs */}
+                {showCustomDate && (
+                    <div style={{
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: '8px',
+                        flex: isMobile ? '1' : 'none',
+                        flexWrap: 'wrap'
+                    }}>
+                        <input
+                            type="date"
+                            value={dateRange.start}
+                            onChange={(e) => handleCustomDateChange('start', e.target.value)}
+                            style={{
+                                ...selectStyle,
+                                flex: isMobile ? 1 : 'none',
+                                minWidth: '130px'
+                            }}
+                        />
+                        <span style={{ color: 'var(--text-secondary)' }}>→</span>
+                        <input
+                            type="date"
+                            value={dateRange.end}
+                            onChange={(e) => handleCustomDateChange('end', e.target.value)}
+                            style={{
+                                ...selectStyle,
+                                flex: isMobile ? 1 : 'none',
+                                minWidth: '130px'
+                            }}
+                        />
+                    </div>
+                )}
+
+                {/* Date Range Info */}
+                <div style={{
+                    color: 'var(--text-secondary)',
+                    fontSize: isMobile ? '12px' : '13px',
+                    marginLeft: isMobile ? 0 : 'auto'
+                }}>
+                    {dateRange.start} ~ {dateRange.end} ({getDaysInRange()} {t('天', 'days')})
+                </div>
+            </div>
+
             {analyticsLoading ? (
                 <div style={{ color: 'var(--text-secondary)' }}>
                     {t('載入數據中...', 'Loading analytics...')}
                 </div>
             ) : (
                 <div style={gridStyle}>
-                    {/* Summary Cards */}
+                    {/* Summary Cards - Dynamic label based on date range */}
                     <div style={cardStyle}>
-                        <div style={cardLabelStyle}>{t('總點擊數 (30天)', 'Total Clicks (30d)')}</div>
+                        <div style={cardLabelStyle}>{t(`總點擊數 (${getDaysInRange()}天)`, `Total Clicks (${getDaysInRange()}d)`)}</div>
                         <div style={cardValueStyle}>
                             {analytics.reduce((acc, row) => acc + row.clicks, 0).toLocaleString()}
                         </div>
                     </div>
                     <div style={cardStyle}>
-                        <div style={cardLabelStyle}>{t('總曝光數 (30天)', 'Total Impressions (30d)')}</div>
+                        <div style={cardLabelStyle}>{t(`總曝光數 (${getDaysInRange()}天)`, `Total Impressions (${getDaysInRange()}d)`)}</div>
                         <div style={cardValueStyle}>
                             {analytics.reduce((acc, row) => acc + row.impressions, 0).toLocaleString()}
                         </div>
@@ -261,8 +397,8 @@ const GSCStats = ({ language, isMobile = false }) => {
                                     onMouseLeave={(e) => e.currentTarget.style.background = 'transparent'}
                                 >
                                     <td style={tdStyle}>{row.keys && row.keys[0]}</td>
-                                    <td style={tdStyle}>{row.clicks}</td>
-                                    <td style={tdStyle}>{row.impressions}</td>
+                                    <td style={tdStyle}>{row.clicks.toLocaleString()}</td>
+                                    <td style={tdStyle}>{row.impressions.toLocaleString()}</td>
                                     <td style={tdStyle}>{(row.ctr * 100).toFixed(2)}%</td>
                                     <td style={tdStyle}>{row.position.toFixed(1)}</td>
                                 </tr>
