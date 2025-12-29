@@ -12,7 +12,8 @@ const GSCConnect = ({ onConnect, language }) => {
             setLoading(true);
             setError(null);
             try {
-                const response = await fetch('/api/gsc/authorize', {
+                const apiUrl = import.meta.env.VITE_API_URL || 'http://localhost:8000';
+                const response = await fetch(`${apiUrl}/api/gsc/authorize`, {
                     method: 'POST',
                     headers: {
                         'Content-Type': 'application/json',

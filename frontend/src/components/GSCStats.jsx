@@ -42,6 +42,9 @@ const getDateRangeFromPreset = (presetKey) => {
     return { start: formatDate(start), end: formatDate(today) };
 };
 
+// API URL configuration for production deployment
+const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000';
+
 const GSCStats = ({ language, isMobile = false }) => {
     const t = (zh, en) => language === 'zh' ? zh : en;
     const [sites, setSites] = useState([]);
@@ -62,7 +65,7 @@ const GSCStats = ({ language, isMobile = false }) => {
 
     const fetchSites = async () => {
         try {
-            const resp = await fetch('/api/gsc/sites', {
+            const resp = await fetch(`${API_URL}/api/gsc/sites`, {
                 headers: { 'Authorization': `Bearer ${localStorage.getItem('google_token')}` }
             });
             // Check for HTML response again to be safe
@@ -92,7 +95,7 @@ const GSCStats = ({ language, isMobile = false }) => {
     const fetchAnalytics = async (siteUrl, startDate, endDate) => {
         setAnalyticsLoading(true);
         try {
-            const resp = await fetch(`/api/gsc/analytics?site_url=${encodeURIComponent(siteUrl)}&start_date=${startDate}&end_date=${endDate}&dimensions=date`, {
+            const resp = await fetch(`${API_URL}/api/gsc/analytics?site_url=${encodeURIComponent(siteUrl)}&start_date=${startDate}&end_date=${endDate}&dimensions=date`, {
                 headers: { 'Authorization': `Bearer ${localStorage.getItem('google_token')}` }
             });
             const data = await resp.json();

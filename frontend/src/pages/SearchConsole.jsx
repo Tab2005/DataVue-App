@@ -14,7 +14,8 @@ const SearchConsole = () => {
             const controller = new AbortController();
             const timeoutId = setTimeout(() => controller.abort(), 10000); // 10s timeout
 
-            const resp = await fetch('/api/gsc/sites', {
+            const apiUrl = import.meta.env.VITE_API_URL || 'http://localhost:8000';
+            const resp = await fetch(`${apiUrl}/api/gsc/sites`, {
                 headers: { 'Authorization': `Bearer ${localStorage.getItem('google_token')}` },
                 signal: controller.signal
             });
