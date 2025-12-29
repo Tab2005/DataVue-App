@@ -1,5 +1,19 @@
 # Changelog
 
+## v1.5.5 (2025-12-29) - Google Search Console Deployment Fix
+
+### Fixed
+- **GSC Deployment Error (405 → 500)**:
+    - **Root Cause 1 (405)**: GSC components (`GSCConnect.jsx`, `GSCStats.jsx`, `SearchConsole.jsx`) were using relative API paths (`/api/gsc/...`) instead of `VITE_API_URL`. In production, these requests hit the static frontend server instead of the backend API.
+    - **Root Cause 2 (500)**: Missing `GOOGLE_CLIENT_SECRET` environment variable on Zeabur backend, required for OAuth token exchange.
+    - **Fix**: Updated 3 frontend files to use `VITE_API_URL` and documented `GOOGLE_CLIENT_SECRET` as required in `.env.example`.
+- **GSC 部署錯誤修復**:
+    - **原因 1 (405)**：GSC 元件使用相對路徑而非 `VITE_API_URL`，導致請求打到前端靜態伺服器。
+    - **原因 2 (500)**：Zeabur 後端缺少 `GOOGLE_CLIENT_SECRET` 環境變數。
+    - **修復**：更新 3 個前端檔案使用 `VITE_API_URL`，並在 `.env.example` 中新增 `GOOGLE_CLIENT_SECRET` 說明。
+
+---
+
 ## v1.5.4 (2025-12-23) - View Management Optimization
 
 ### New Features
