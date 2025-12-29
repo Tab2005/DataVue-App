@@ -1,5 +1,67 @@
 # Changelog
 
+## v1.5.8 (2025-12-29) - GSC Country & Device Distribution
+
+### New Features
+- **🌍 Country Distribution Tab**:
+    - Traffic breakdown by country/region.
+    - 80+ countries translated to Chinese names.
+    - Visual share percentage bar chart.
+    - Sortable by clicks, impressions, CTR.
+- **📱 Device Distribution Tab**:
+    - Card-based visual layout (not table).
+    - Mobile (green), Desktop (blue), Tablet (orange).
+    - Percentage bars with animations.
+    - CTR and position stats per device.
+
+### 新功能
+- **🌍 地區分佈 Tab**：
+    - 按國家/地區的流量分佈。
+    - 80+ 國家中文翻譯。
+    - 視覺化佔比進度條。
+- **📱 裝置分佈 Tab**：
+    - 卡片式視覺設計。
+    - 手機（綠色）、桌機（藍色）、平板（橙色）。
+    - 百分比進度條 + 動畫效果。
+
+---
+
+## v1.5.7 (2025-12-29) - GSC Page Trends & Title Enhancement
+
+### New Features
+- **📊 Page Trends Tab**:
+    - New tab for comparing page performance between current and previous periods.
+    - Sub-tabs: 頂層 (Top) / 走勢向上 (Trending Up) / 走勢向下 (Trending Down).
+    - Shows percentage change with color indicators (green ↑ / red ↓).
+- **Real Page Titles**:
+    - Backend API `POST /api/gsc/page-titles` scrapes actual `<title>` tags from URLs.
+    - Displays real page titles in Page Analysis and Page Trends tabs.
+    - Falls back to URL-extracted title if scraping fails.
+- **Top/Bottom Indicators**:
+    - Top 5 pages highlighted in green 🏆, Bottom 5 in red ⚠️.
+- **Core Keywords per Page**:
+    - Each page shows its top 5 associated keywords with clicks/impressions.
+    - Expandable row to view detailed keyword list.
+- **Date Range Fix**:
+    - "Last 7 days" now correctly shows the 7 complete days before today.
+
+### 新功能
+- **📊 頁面趨勢 Tab**：
+    - 新增頁面趨勢分頁，比較本期與前期的表現變化。
+    - 子分頁：頂層 / 走勢向上 / 走勢向下。
+    - 顯示百分比變化及顏色標示（綠色 ↑ / 紅色 ↓）。
+- **真實頁面標題**：
+    - 後端 API 抓取網頁實際 `<title>` 標籤。
+    - 頁面分析與趨勢 Tab 顯示真實標題。
+- **Top/Bottom 標示**：
+    - Top 5 頁面綠色 🏆，Bottom 5 紅色 ⚠️。
+- **頁面核心關鍵字**：
+    - 每個頁面顯示關聯的 Top 5 關鍵字及點擊/曝光數。
+- **日期範圍修正**：
+    - 「過去 7 天」現正確顯示今天之前的完整 7 天。
+
+---
+
 ## v1.5.6 (2025-12-29) - GSC Keyword & Page Analysis
 
 ### New Features
