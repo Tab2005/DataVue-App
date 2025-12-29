@@ -28,6 +28,7 @@
    - `DATABASE_URL`: 填入 PostgreSQL 內網連線字串。
    - `ENCRYPTION_KEY`: 您的 Fernet 加密金鑰。
    - `GOOGLE_CLIENT_ID`: 您的 Google OAuth Client ID。
+   - `GOOGLE_CLIENT_SECRET`: 您的 Google OAuth Client Secret（GSC 整合必要）。
    - `SUPER_ADMIN_EMAIL`: 您的最高管理員 Email。
 
 ---
