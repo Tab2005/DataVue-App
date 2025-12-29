@@ -1,5 +1,38 @@
 # Changelog
 
+## v1.5.6 (2025-12-29) - GSC Keyword & Page Analysis
+
+### New Features
+- **GSC Tab Navigation**:
+    - Added 3 analysis tabs: 📈 Daily Performance, 🔍 Keyword Analysis, 📄 Page Analysis.
+    - Each tab uses different GSC API dimensions (`date`, `query`, `page`).
+- **Keyword Analysis**:
+    - Top keywords ranking table with sortable columns (Clicks, Impressions, CTR, Position).
+    - Keyword search/filter input.
+    - Row limit selector (Top 50/100/200).
+- **Keyword Grouping** 📦:
+    - Toggle button to group similar keywords together.
+    - Similarity algorithm: Jaccard word overlap + substring detection.
+    - Expandable/collapsible group rows with aggregated statistics.
+    - +N badge showing additional keywords in each group.
+- **Page Analysis**:
+    - Top pages ranking with clickable URLs (opens in new tab).
+    - URL auto-simplified display (removes domain prefix).
+
+### 新功能
+- **GSC 分頁導航**：
+    - 新增 3 個分析分頁：📈 每日成效、🔍 關鍵字分析、📄 頁面分析。
+- **關鍵字分析**：
+    - 熱門關鍵字排行表格，支援欄位排序。
+    - 關鍵字搜尋篩選與數量限制選擇器。
+- **關鍵字群組功能** 📦：
+    - 一鍵將類似關鍵字歸為一組，可展開/收合查看。
+    - 群組顯示總點擊數與總曝光數。
+- **頁面分析**：
+    - 頁面 URL 可點擊跳轉，自動簡化顯示。
+
+---
+
 ## v1.5.5 (2025-12-29) - Google Search Console Deployment Fix
 
 ### Fixed
