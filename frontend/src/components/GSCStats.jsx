@@ -599,6 +599,14 @@ const GSCStats = ({ language, isMobile = false }) => {
         }
 
         data.sort((a, b) => {
+            // Special handling for date sorting (date is in keys[0])
+            if (sortConfig.key === 'date') {
+                const aVal = a.keys?.[0] || '';
+                const bVal = b.keys?.[0] || '';
+                return sortConfig.direction === 'desc'
+                    ? bVal.localeCompare(aVal)
+                    : aVal.localeCompare(bVal);
+            }
             let aVal = a[sortConfig.key] ?? 0;
             let bVal = b[sortConfig.key] ?? 0;
             return sortConfig.direction === 'desc' ? bVal - aVal : aVal - bVal;
@@ -1338,8 +1346,8 @@ const GSCStats = ({ language, isMobile = false }) => {
                                 <table style={tableStyle}>
                                     <thead>
                                         <tr style={{ background: 'var(--bg-hover)' }}>
-                                            <th style={thStyle}>
-                                                {activeTab === 'daily' && t('日期', 'Date')}
+                                            <th style={thStyle} onClick={() => activeTab === 'daily' && handleSort('date')}>
+                                                {activeTab === 'daily' && <>{t('日期', 'Date')}{renderSortIndicator('date')}</>}
                                                 {activeTab === 'query' && t('關鍵字', 'Keyword')}
                                                 {activeTab === 'page' && t('頁面', 'Page')}
                                             </th>
