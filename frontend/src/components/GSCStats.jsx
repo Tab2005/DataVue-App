@@ -169,21 +169,82 @@ const extractGroupKey = (query) => {
     return significantWords.join(' ') || query;
 };
 
-// Helper: Calculate similarity between two strings (Levenshtein-based)
+// Helper: Detect primary language of a string
+const detectLanguage = (str) => {
+    const chineseChars = (str.match(/[\u4e00-\u9fa5]/g) || []).length;
+    const englishChars = (str.match(/[a-zA-Z]/g) || []).length;
+
+    if (chineseChars > englishChars) return 'chinese';
+    if (englishChars > chineseChars) return 'english';
+    return 'mixed';
+};
+
+// Helper: N-gram similarity (better for Chinese)
+const ngramSimilarity = (str1, str2, n = 2) => {
+    const s1 = str1.toLowerCase().replace(/\s+/g, '');
+    const s2 = str2.toLowerCase().replace(/\s+/g, '');
+
+    if (s1.length < n || s2.length < n) {
+        // Fallback to character overlap for very short strings
+        const chars1 = new Set(s1.split(''));
+        const chars2 = new Set(s2.split(''));
+        const intersection = [...chars1].filter(c => chars2.has(c));
+        const union = new Set([...chars1, ...chars2]);
+        return union.size > 0 ? intersection.length / union.size : 0;
+    }
+
+    const getNgrams = (s) => {
+        const ngrams = new Set();
+        for (let i = 0; i <= s.length - n; i++) {
+            ngrams.add(s.substring(i, i + n));
+        }
+        return ngrams;
+    };
+
+    const ngrams1 = getNgrams(s1);
+    const ngrams2 = getNgrams(s2);
+    const intersection = [...ngrams1].filter(ng => ngrams2.has(ng));
+    const union = new Set([...ngrams1, ...ngrams2]);
+
+    return union.size > 0 ? intersection.length / union.size : 0;
+};
+
+// Helper: Word-split similarity (better for English)
+const wordSimilarity = (str1, str2) => {
+    const s1 = str1.toLowerCase();
+    const s2 = str2.toLowerCase();
+
+    const words1 = new Set(s1.split(/\s+/).filter(w => w.length > 0));
+    const words2 = new Set(s2.split(/\s+/).filter(w => w.length > 0));
+    const intersection = [...words1].filter(w => words2.has(w));
+    const union = new Set([...words1, ...words2]);
+
+    return union.size > 0 ? intersection.length / union.size : 0;
+};
+
+// Helper: Adaptive similarity - uses optimal algorithm based on language
 const getSimilarity = (str1, str2) => {
     const s1 = str1.toLowerCase();
     const s2 = str2.toLowerCase();
 
-    // Check if one contains the other
+    // Quick check: if one contains the other, they're highly similar
     if (s1.includes(s2) || s2.includes(s1)) return 0.8;
 
-    // Check common word overlap
-    const words1 = new Set(s1.split(/\s+/));
-    const words2 = new Set(s2.split(/\s+/));
-    const intersection = [...words1].filter(w => words2.has(w));
-    const union = new Set([...words1, ...words2]);
+    const lang1 = detectLanguage(str1);
+    const lang2 = detectLanguage(str2);
 
-    return intersection.length / union.size;
+    // Both Chinese → use N-gram (optimal for Chinese)
+    if (lang1 === 'chinese' && lang2 === 'chinese') {
+        return ngramSimilarity(str1, str2);
+    }
+
+    // Both English → use word-split (optimal for English)
+    if (lang1 === 'english' && lang2 === 'english') {
+        return wordSimilarity(str1, str2);
+    }
+
+    // Mixed languages → average of both methods
+    return (ngramSimilarity(str1, str2) + wordSimilarity(str1, str2)) / 2;
 };
 
 // Helper: Extract a readable title from URL path
