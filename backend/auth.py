@@ -1,6 +1,7 @@
 import requests
 import os
 from dotenv import load_dotenv
+load_dotenv(override=True)
 from database import SessionLocal, User, UserRole, Team, TeamMember
 
 # ... (Previous imports remain same, just single line update above)
@@ -15,14 +16,33 @@ def get_encryption_key():
         # For Dev/Demo Only: Generate a volatile key if missing to prevent crash
         key = Fernet.generate_key().decode()
         print(f"⚠ WARNING: ENCRYPTION_KEY not set. Using volatile key: {key}", file=sys.stderr)
-    return key
+        return key
+    
+    # Sanitize: Remove possible quotes and whitespace
+    sanitized_key = key.strip().strip("'").strip('"')
+    
+    # Validation
+    try:
+        # Fernet keys must be 32 url-safe base64-encoded bytes (resulting in 44 chars)
+        Fernet(sanitized_key)
+        return sanitized_key
+    except Exception as e:
+        print(f"❌ CRITICAL: Invalid ENCRYPTION_KEY in .env: {e}", file=sys.stderr)
+        print(f"Key length: {len(sanitized_key)}, Content starts with: {sanitized_key[:5]}...", file=sys.stderr)
+        # Fallback to volatile to prevent blocking server start, but it will cause decryption failures
+        volatile_key = Fernet.generate_key().decode()
+        return volatile_key
 
 class TokenManager:
     @staticmethod
     def _encrypt(message):
         if not message: return None
-        f = Fernet(get_encryption_key())
-        return f.encrypt(message.encode()).decode()
+        try:
+            f = Fernet(get_encryption_key())
+            return f.encrypt(message.encode()).decode()
+        except Exception as e:
+            print(f"Encryption error: {e}", file=sys.stderr)
+            return None
 
     @staticmethod
     def _decrypt(token):
@@ -31,7 +51,8 @@ class TokenManager:
             f = Fernet(get_encryption_key())
             return f.decrypt(token.encode()).decode()
         except Exception as e:
-            print(f"Decryption failed: {e}")
+            # Replaced with standard logging, but keep enough info for us
+            print(f"[DEBUG_AUTH] Decryption failed. Error: {e}", file=sys.stderr)
             return None
 
     @staticmethod
@@ -157,10 +178,19 @@ class TokenManager:
         try:
             # 1. Check Current User
             user = session.query(User).filter(User.google_id == google_id).first()
-            if user and user.fb_access_token:
-                return TokenManager._decrypt(user.fb_access_token)
+            if not user:
+                print(f"[DEBUG_AUTH] User not found for google_id: {google_id}", file=sys.stderr)
+            elif not user.fb_access_token:
+                print(f"[DEBUG_AUTH] User found but fb_access_token is missing for: {google_id}", file=sys.stderr)
+            else:
+                decrypted = TokenManager._decrypt(user.fb_access_token)
+                if not decrypted:
+                    print(f"[DEBUG_AUTH] Decryption failed for user: {google_id}", file=sys.stderr)
+                else:
+                    return decrypted
             
             if not allow_fallback:
+                print(f"[DEBUG_AUTH] Fallback disabled, returning None", file=sys.stderr)
                 return None
 
             # 2. Fallback: Search for any ADMIN with a valid token

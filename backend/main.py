@@ -44,6 +44,16 @@ def validate_environment():
 
 # Run validation
 validate_environment()
+
+# --- Encryption Key Startup Check ---
+from auth import get_encryption_key
+try:
+    from cryptography.fernet import Fernet
+    test_key = get_encryption_key()
+    Fernet(test_key)
+    print(f"[OK] Encryption Key validated successfully (starts with {test_key[:5]}...)", file=sys.stderr)
+except Exception as e:
+    print(f"❌ CRITICAL ENCRYPTION KEY ERROR: {e}", file=sys.stderr)
 # -----------------------------------------
 
 print("Starting Main Application...", file=sys.stderr)
@@ -101,13 +111,24 @@ try:
 except Exception as e:
     print(f"CRITICAL: Failed to import GSC router: {e}", file=sys.stderr)
     gsc = None
+
+try:
+    from routers import permissions
+except Exception as e:
+    print(f"CRITICAL: Failed to import Permissions router: {e}", file=sys.stderr)
+    permissions = None
 import auth
+from dependencies import get_current_team, get_db, require_module
 
 # ...
 
 # Include Routers
 
-from dependencies import get_current_team, get_db
+
+
+# ... (imports)
+
+
 from contextlib import asynccontextmanager
 
 # Initialize Database
@@ -221,6 +242,17 @@ app = FastAPI(
     description="API for Facebook Ads Dashboard with Analytics and Team Management",
     version="1.5.0"
 )
+
+# --- Register Routers ---
+# GSC Router
+if gsc:
+    app.include_router(gsc.router)
+    print("[OK] GSC Router registered", file=sys.stderr)
+
+# Permissions Router
+if permissions:
+    app.include_router(permissions.router)
+    print("[OK] Permissions Router registered", file=sys.stderr)
 
 # --- Unified Exception Handlers ---
 from fastapi import Request
@@ -369,12 +401,20 @@ def get_token_status(team_id: Optional[str] = None, user_id: str = Depends(verif
             else:
                 print(f"[DEBUG] User NOT found for google_id={user_id}", file=sys.stderr)
         
+        # Check if token actually exists (not just expiration date)
+        token_exists = False
+        if target and hasattr(target, 'fb_access_token') and target.fb_access_token:
+            token_exists = len(str(target.fb_access_token)) > 10  # Token should be > 10 chars
+        
+        print(f"[DEBUG] token_exists check: {token_exists}", file=sys.stderr)
+        
         if not target or not target.token_expires_at:
             print(f"[DEBUG] Returning None - target exists: {target is not None}, has expires_at: {hasattr(target, 'token_expires_at') and target.token_expires_at if target else 'N/A'}", file=sys.stderr)
             return {
                  "expires_at": None,
                  "days_remaining": None,
-                 "is_expired": False
+                 "is_expired": False,
+                 "token_exists": token_exists  # NEW: indicate if token actually exists
              }
         
         now = datetime.now(timezone.utc)
@@ -387,11 +427,12 @@ def get_token_status(team_id: Optional[str] = None, user_id: str = Depends(verif
         delta = expires_at - now
         days_remaining = delta.days
         
-        print(f"[DEBUG] Returning: expires_at={expires_at.isoformat()}, days_remaining={days_remaining}", file=sys.stderr)
+        print(f"[DEBUG] Returning: expires_at={expires_at.isoformat()}, days_remaining={days_remaining}, token_exists={token_exists}", file=sys.stderr)
         return {
             "expires_at": expires_at.isoformat(),
             "days_remaining": days_remaining,
-            "is_expired": days_remaining < 0
+            "is_expired": days_remaining < 0,
+            "token_exists": token_exists  # NEW: indicate if token actually exists
         }
     except Exception as e:
         print(f"Error checking token status: {e}", file=sys.stderr)
@@ -401,6 +442,7 @@ def get_token_status(team_id: Optional[str] = None, user_id: str = Depends(verif
         raise HTTPException(status_code=500, detail=f"Internal Server Error: {e}")
     finally:
         session.close()
+
 
 # --- Include Routers ---
 app.include_router(users.router, prefix="/api/users", tags=["users"])
@@ -1117,7 +1159,7 @@ def health_check():
         "message": "Backend is running (Safe Mode) with User Management"
     }
 
-@app.get("/api/ad-accounts")
+@app.get("/api/ad-accounts", dependencies=[Depends(require_module("fb_ads"))])
 async def get_ad_accounts(
     user_id: str = Depends(verify_google_token),
     team: Team = Depends(get_current_team),
@@ -1208,7 +1250,7 @@ async def get_ad_accounts(
 
     return accounts
 
-@app.get("/api/dashboard-data")
+@app.get("/api/dashboard-data", dependencies=[Depends(require_module("fb_ads"))])
 async def get_dashboard_data(
     account_id: str = None, 
     days: int = 7, 
@@ -1290,7 +1332,7 @@ async def get_dashboard_data(
         "chart_data": []
     }
 
-@app.get("/api/analytics-data")
+@app.get("/api/analytics-data", dependencies=[Depends(require_module("fb_ads"))])
 async def get_analytics_data(
     account_id: str, 
     since: str, 
@@ -1335,7 +1377,7 @@ async def get_analytics_data(
         }
     }
 
-@app.get("/api/analytics-trend")
+@app.get("/api/analytics-trend", dependencies=[Depends(require_module("fb_ads"))])
 async def get_analytics_trend_data(
     account_id: str,
     since: str,

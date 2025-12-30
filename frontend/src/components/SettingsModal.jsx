@@ -304,29 +304,54 @@ const SettingsModal = ({ isOpen, onClose, language, teamId, teamName, onSuccess 
                                 </div>
                             )}
 
-                            {/* Token Status Widget */}
-                            {tokenInfo?.expires_at && (
-                                <div style={{
-                                    marginBottom: '20px', padding: '12px', borderRadius: '8px',
-                                    backgroundColor: 'rgba(74, 222, 128, 0.1)', border: '1px solid rgba(74, 222, 128, 0.2)',
-                                    display: 'flex', alignItems: 'center', justifyContent: 'space-between'
-                                }}>
-                                    <div>
-                                        <div style={{ color: '#4ade80', fontWeight: 'bold', fontSize: '0.9rem', marginBottom: '4px' }}>
-                                            {language === 'zh' ? '● 目前權杖狀態正常' : '● Active Token Found'}
+                            {/* Token Status Widget - Now with token_exists check */}
+                            {tokenInfo && (
+                                <>
+                                    {/* Warning: Token missing but has expiration date */}
+                                    {tokenInfo.expires_at && tokenInfo.token_exists === false && (
+                                        <div style={{
+                                            marginBottom: '20px', padding: '12px', borderRadius: '8px',
+                                            backgroundColor: 'rgba(248, 113, 113, 0.1)', border: '1px solid rgba(248, 113, 113, 0.3)',
+                                        }}>
+                                            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', color: '#f87171', fontWeight: 'bold', fontSize: '0.9rem', marginBottom: '4px' }}>
+                                                <span>⚠️</span>
+                                                <span>{language === 'zh' ? '權杖資料不同步' : 'Token Data Out of Sync'}</span>
+                                            </div>
+                                            <div style={{ color: 'var(--text-secondary)', fontSize: '0.8rem' }}>
+                                                {language === 'zh'
+                                                    ? `到期日期 ${new Date(tokenInfo.expires_at).toLocaleDateString()} 存在，但實際權杖遺失。請重新設定連線。`
+                                                    : `Expiration date ${new Date(tokenInfo.expires_at).toLocaleDateString()} exists, but actual token is missing. Please reconnect.`
+                                                }
+                                            </div>
                                         </div>
-                                        <div style={{ color: 'var(--text-secondary)', fontSize: '0.8rem' }}>
-                                            {language === 'zh' ? '到期時間: ' : 'Exp: '}
-                                            {new Date(tokenInfo.expires_at).toLocaleDateString()}
+                                    )}
+
+                                    {/* Normal Status: Token exists and not expired */}
+                                    {tokenInfo.expires_at && tokenInfo.token_exists !== false && (
+                                        <div style={{
+                                            marginBottom: '20px', padding: '12px', borderRadius: '8px',
+                                            backgroundColor: 'rgba(74, 222, 128, 0.1)', border: '1px solid rgba(74, 222, 128, 0.2)',
+                                            display: 'flex', alignItems: 'center', justifyContent: 'space-between'
+                                        }}>
+                                            <div>
+                                                <div style={{ color: '#4ade80', fontWeight: 'bold', fontSize: '0.9rem', marginBottom: '4px' }}>
+                                                    {language === 'zh' ? '✓ 權杖狀態正常' : '✓ Token Active'}
+                                                </div>
+                                                <div style={{ color: 'var(--text-secondary)', fontSize: '0.8rem' }}>
+                                                    {language === 'zh' ? '到期時間: ' : 'Exp: '}
+                                                    {new Date(tokenInfo.expires_at).toLocaleDateString()}
+                                                </div>
+                                            </div>
+                                            <div style={{
+                                                background: '#4ade80', color: 'black', padding: '4px 8px', borderRadius: '4px', fontSize: '0.75rem', fontWeight: 'bold'
+                                            }}>
+                                                {tokenInfo.days_remaining} {language === 'zh' ? '天後到期' : 'Days Left'}
+                                            </div>
                                         </div>
-                                    </div>
-                                    <div style={{
-                                        background: '#4ade80', color: 'black', padding: '4px 8px', borderRadius: '4px', fontSize: '0.75rem', fontWeight: 'bold'
-                                    }}>
-                                        {tokenInfo.days_remaining} {language === 'zh' ? '天後到期' : 'Days Left'}
-                                    </div>
-                                </div>
+                                    )}
+                                </>
                             )}
+
 
                             <form onSubmit={handleFbSubmit} style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
                                 <div>

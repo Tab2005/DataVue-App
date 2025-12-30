@@ -1,7 +1,7 @@
 # Facebook Dashboard SaaS - 專案路線圖與創意筆記
 
 **最後更新**: 2025-12-29
-**專案狀態**: v1.5.8 (Stable Phase - 穩定版)
+**專案狀態**: v1.6.0 (Stable Phase - 穩定版)
 **品牌名稱**: **DataVue**
 
 本文檔用於追蹤 Facebook Dashboard SaaS 平台的開發路線圖、已完成的里程碑以及未來的架構計畫。
@@ -24,6 +24,26 @@
 - **主色**: 深藍 (#1E3A8A) - 專業、信賴
 - **輔色**: 青綠 (#10B981) - 成長、洞察
 - **強調色**: 橙色 (#F59E0B) - 行動、活力
+
+---
+
+## 🏁 Completed Features (已完成功能)
+
+### 3. 使用者與權限管理 (Phase 3: Access Control) - ✅ v1.6.0 完成
+**目標**: 建立完整的權限控制與付費訂閱基礎。
+- **🔐 權限管理系統 (RBAC)**:
+  - 模組化權限架構 (FB Ads, GSC, GA4)
+  - 角色定義 (Owner, Admin, Member, Viewer)
+  - PermissionService 核心邏輯
+- **👤 超級管理員後台**:
+  - 模組/權限/角色可視化列表
+  - 使用者模組授權管理介面 (User Module Access)
+- **⚡ 前端權限整合**:
+  - `usePermission` & `useModuleAccess` Hooks
+  - 路由保護與 UI 條件渲染
+- **🛡️ API 安全防護**:
+  - `require_module` 裝飾器 (已應用於 GSC 模組)
+  - 新使用者自動授權流程
 
 ---
 

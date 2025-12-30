@@ -80,6 +80,35 @@ def get_current_user(
             db.commit()
             db.refresh(user)
             print(f"Auto-Registered: {name} ({email}) as {new_role}", file=sys.stderr)
+            
+            # Grant default modules to new user (fb_ads, gsc)
+            try:
+                from database import Module, UserModuleAccess
+                for module_key in ["fb_ads", "gsc"]:
+                    module = db.query(Module).filter(Module.key == module_key).first()
+                    if module:
+                        # Check if access already exists to prevent IntegrityError
+                        # Use .is_(None) for proper NULL comparison in SQLAlchemy
+                        existing = db.query(UserModuleAccess).filter(
+                            UserModuleAccess.user_id == user.id,
+                            UserModuleAccess.module_id == module.id,
+                            UserModuleAccess.team_id.is_(None)
+                        ).first()
+                        if not existing:
+                            access = UserModuleAccess(
+                                user_id=user.id,
+                                module_id=module.id,
+                                team_id=None,
+                                enabled=True
+                            )
+                            db.add(access)
+                db.commit()
+                print(f"✅ Granted default modules (fb_ads, gsc) to {email}", file=sys.stderr)
+            except Exception as mod_err:
+                print(f"⚠️ Failed to grant default modules: {mod_err}", file=sys.stderr)
+                db.rollback()  # Rollback on error to prevent transaction issues
+
+
         else:
             # Auto-Update Profile if missing or changed
             if user.email != email or user.name != name:
@@ -175,3 +204,104 @@ def get_current_team(
          raise HTTPException(status_code=404, detail="Team not found")
          
     return team
+
+
+# ==================================================
+# Permission Check Dependencies
+# ==================================================
+
+from typing import Callable, Optional
+from functools import wraps
+
+def require_permission(permission_key: str, team_id_param: str = None):
+    """
+    Dependency factory that checks if the current user has a specific permission.
+    
+    Usage:
+        @app.get("/api/some-endpoint")
+        async def endpoint(
+            user: User = Depends(get_current_user),
+            _: bool = Depends(require_permission("fb_ads:analytics:view"))
+        ):
+            ...
+    """
+    def permission_checker(
+        user: User = Depends(get_current_user),
+        db = Depends(get_db)
+    ):
+        from services.permission_service import PermissionService
+        
+        # Super Admin bypass
+        if user.is_super_admin:
+            return True
+        
+        service = PermissionService(db)
+        has_permission = service.check_permission(user.id, permission_key, None)
+        
+        if not has_permission:
+            raise HTTPException(
+                status_code=403, 
+                detail=f"Permission denied: {permission_key}"
+            )
+        return True
+    
+    return permission_checker
+
+
+def require_module(module_key: str):
+    """
+    Dependency factory that checks if the current user has access to a module.
+    
+    Usage:
+        @app.get("/api/gsc/data")
+        async def gsc_data(
+            user: User = Depends(get_current_user),
+            _: bool = Depends(require_module("gsc"))
+        ):
+            ...
+    """
+    def module_checker(
+        user: User = Depends(get_current_user),
+        db = Depends(get_db)
+    ):
+        from services.permission_service import PermissionService
+        
+        # Super Admin bypass
+        if user.is_super_admin:
+            return True
+        
+        service = PermissionService(db)
+        has_access = service.check_module_access(user.id, module_key, None)
+        
+        if not has_access:
+            raise HTTPException(
+                status_code=403, 
+                detail=f"Module access denied: {module_key}. Please upgrade your plan."
+            )
+        return True
+    
+    return module_checker
+
+
+def require_super_admin():
+    """
+    Dependency that requires the current user to be a Super Admin.
+    
+    Usage:
+        @app.delete("/api/admin/users/{user_id}")
+        async def delete_user(
+            user_id: str,
+            _: bool = Depends(require_super_admin())
+        ):
+            ...
+    """
+    def admin_checker(user: User = Depends(get_current_user)):
+        if not user.is_super_admin:
+            raise HTTPException(
+                status_code=403, 
+                detail="Super Admin access required"
+            )
+        return True
+    
+    return admin_checker
+

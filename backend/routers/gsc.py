@@ -1,13 +1,16 @@
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
 from database import SessionLocal, User
-from dependencies import get_db, get_current_user
+from dependencies import get_db, get_current_user, require_module
 from gsc_service import GSCService
 from typing import List, Optional
 from pydantic import BaseModel
 import traceback
 
 router = APIRouter(prefix="/api/gsc", tags=["gsc"])
+
+# Module access check - all GSC endpoints require 'gsc' module
+gsc_module_check = require_module("gsc")
 
 # Pydantic Models
 class GSCAuthCode(BaseModel):
@@ -40,7 +43,11 @@ def authorize_gsc(auth_data: GSCAuthCode, user: User = Depends(get_current_user)
 
 # 2. List Sites
 @router.get("/sites")
-def list_sites(user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+def list_sites(
+    user: User = Depends(get_current_user), 
+    db: Session = Depends(get_db),
+    _: bool = Depends(gsc_module_check)
+):
     try:
         sites, error = GSCService.list_sites(user)
         if error:
@@ -60,7 +67,8 @@ def get_gsc_analytics(
     end_date: str,
     dimensions: Optional[str] = "date",
     user: User = Depends(get_current_user), 
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    _: bool = Depends(gsc_module_check)
 ):
     try:
         dim_list = dimensions.split(",")

@@ -8,6 +8,7 @@ import Layout from './components/Layout';
 import ProtectedRoute from './components/ProtectedRoute';
 import ErrorBoundary from './components/ErrorBoundary';
 import PageLoading from './components/PageLoading';
+import { ProtectedModule } from './hooks';
 
 // Lazy-loaded pages (loaded on demand)
 const Dashboard = lazy(() => import('./pages/Dashboard'));
@@ -33,14 +34,18 @@ function App() {
               <Route path="/invite/:code" element={<InvitePage />} />
               <Route element={<ProtectedRoute><Layout /></ProtectedRoute>}>
                 <Route path="/" element={
-                  <ErrorBoundary>
-                    <Dashboard />
-                  </ErrorBoundary>
+                  <ProtectedModule module="fb_ads">
+                    <ErrorBoundary>
+                      <Dashboard />
+                    </ErrorBoundary>
+                  </ProtectedModule>
                 } />
                 <Route path="/analytics" element={
-                  <ErrorBoundary>
-                    <Analytics />
-                  </ErrorBoundary>
+                  <ProtectedModule module="fb_ads">
+                    <ErrorBoundary>
+                      <Analytics />
+                    </ErrorBoundary>
+                  </ProtectedModule>
                 } />
                 <Route path="/settings/team" element={
                   <ErrorBoundary>
@@ -53,14 +58,18 @@ function App() {
                   </ErrorBoundary>
                 } />
                 <Route path="/metrics" element={
-                  <ErrorBoundary>
-                    <MetricsManager />
-                  </ErrorBoundary>
+                  <ProtectedModule module="fb_ads">
+                    <ErrorBoundary>
+                      <MetricsManager />
+                    </ErrorBoundary>
+                  </ProtectedModule>
                 } />
                 <Route path="/gsc" element={
-                  <ErrorBoundary>
-                    <SearchConsole />
-                  </ErrorBoundary>
+                  <ProtectedModule module="gsc">
+                    <ErrorBoundary>
+                      <SearchConsole />
+                    </ErrorBoundary>
+                  </ProtectedModule>
                 } />
               </Route>
             </Routes>

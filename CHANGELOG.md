@@ -1,5 +1,92 @@
 # Changelog
 
+## v1.6.1 (2025-12-30) - Permission System Bug Fixes & Token Status Enhancement
+
+### Fixed
+- **🔧 Google ID Mismatch Issue**:
+    - Fixed critical login failure caused by mismatched `google_id` in database vs current Google account.
+    - Root cause: User lookup by `google_id` failed, system tried to create new user, but email unique constraint blocked it.
+    - Solution: Updated `google_id` in database to match current login credentials.
+
+- **🔧 SQLAlchemy NULL Comparison**:
+    - Fixed `UserModuleAccess.team_id == None` comparison using `.is_(None)` for proper SQL NULL handling.
+    - Applied fix to both `dependencies.py` and `permission_service.py`.
+
+- **🔧 Super Admin Module Access**:
+    - Added direct Super Admin bypass at API endpoint level (`/me/module/{key}`) to ensure immediate access without PermissionService queries.
+
+### New Features
+- **✨ Token Existence Indicator**:
+    - API `/api/auth/token-status` now returns `token_exists` field (checks if `fb_access_token` has actual content).
+    - Frontend shows warning "⚠️ 權杖資料不同步" when expiration date exists but token is missing.
+    - Helps users identify data sync issues between expiration date and actual token.
+
+### 修復
+- **🔧 Google ID 不匹配問題**：
+    - 修復因資料庫 `google_id` 與當前 Google 帳號 ID 不一致導致的登入失敗。
+- **🔧 SQLAlchemy NULL 比較**：
+    - 修正 `team_id == None` 的 SQL NULL 比較語法錯誤。
+- **🔧 Super Admin 模組存取**：
+    - 在 API 端點層級新增直接 Super Admin bypass。
+
+### 新功能
+- **✨ 權杖存在性指示器**：
+    - Token Status API 新增 `token_exists` 欄位。
+    - 前端顯示警告當到期日期存在但權杖遺失的資料不同步狀況。
+
+---
+
+## v1.6.0 (2025-12-29) - Permission & Access Control System
+
+
+### New Features
+- **🔐 Permission Management System**:
+    - Modular permission architecture for FB Ads, GSC, GA4 modules.
+    - 6 new database models for roles, permissions, and module access.
+    - PermissionService class with check/grant/revoke methods.
+    - 14 new API endpoints for permission management.
+
+- **👤 Super Admin Dashboard - Permissions Tab**:
+    - View system modules, permissions, and roles.
+    - Expandable module details showing all permissions.
+    - User Module Manager: Grant/revoke module access for users.
+
+- **🛡️ Module Access Control**:
+    - `require_module` decorator for API protection.
+    - GSC API now requires 'gsc' module access.
+    - Auto-grant default modules (fb_ads, gsc) for new users.
+
+- **⚛️ Frontend Permission Hooks**:
+    - `useModuleAccess` - Check if user can access a module.
+    - `usePermission` - Check if user has a specific permission.
+    - `useUserModules` / `useUserPermissions` - Get all user permissions.
+    - `<ProtectedModule>` / `<ProtectedPermission>` components.
+
+### 新功能
+- **🔐 權限管理系統**：
+    - 模組化權限架構（FB Ads, GSC, GA4）。
+    - 6 個新資料庫模型：模組、權限、角色等。
+    - PermissionService 類別：檢查/授予/撤銷權限。
+    - 14 個新 API 端點。
+
+- **👤 超級管理員後台 - 權限管理 Tab**：
+    - 檢視系統模組、權限和角色。
+    - 使用者模組授權管理：開通/關閉模組存取。
+
+- **🛡️ 模組存取控制**：
+    - GSC API 現在需要 'gsc' 模組權限。
+    - 新使用者自動獲得預設模組權限。
+
+- **⚛️ 前端權限 Hooks**：
+    - `useModuleAccess`, `usePermission` 等 4 個 Hook。
+    - `<ProtectedModule>` 路由保護組件。
+
+### Files Added/Modified
+- Backend: `database.py`, `dependencies.py`, `routers/permissions.py`, `services/permission_service.py`
+- Frontend: `hooks/usePermission.js`, `components/PermissionManager.jsx`, `components/UserModuleManager.jsx`
+
+---
+
 ## v1.5.8 (2025-12-29) - GSC Country & Device Distribution
 
 ### New Features
