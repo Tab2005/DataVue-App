@@ -36,9 +36,10 @@ def authorize_gsc(auth_data: GSCAuthCode, user: User = Depends(get_current_user)
             
         return {"status": "success", "message": message}
 
+    except HTTPException:
+        raise
     except Exception as e:
         traceback.print_exc()
-        # Removed file logging to avoid PermissionError on Windows
         raise HTTPException(status_code=500, detail=f"Internal Server Error: {str(e)}")
 
 # 2. List Sites
@@ -54,9 +55,10 @@ def list_sites(
             raise HTTPException(status_code=400, detail=error)
         
         return sites
+    except HTTPException:
+        raise
     except Exception as e:
         traceback.print_exc()
-        # Removed file logging to avoid PermissionError on Windows
         raise HTTPException(status_code=500, detail=f"Internal Server Error: {str(e)}")
 
 # 3. Get Analytics
@@ -77,9 +79,10 @@ def get_gsc_analytics(
             raise HTTPException(status_code=400, detail=error)
         
         return data
+    except HTTPException:
+        raise
     except Exception as e:
         traceback.print_exc()
-        # Removed file logging to avoid PermissionError on Windows
         raise HTTPException(status_code=500, detail=f"Internal Server Error: {str(e)}")
 
 # 4. Fetch Page Titles

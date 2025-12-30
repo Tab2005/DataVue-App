@@ -9,6 +9,7 @@ const GSCConnect = ({ onConnect, language }) => {
 
     const login = useGoogleLogin({
         onSuccess: async (codeResponse) => {
+            if (loading) return; // Prevent double submission
             setLoading(true);
             setError(null);
             try {

@@ -28,43 +28,98 @@ class GSCService:
         Exchanges the authorization code for access/refresh tokens and updates the User model.
         """
         try:
-            # Create a flow instance to exchange the code
-            # IMPORTANT: Do NOT specify scopes here - let Google use the scopes from the auth code
-            # This avoids "Scope has changed" errors when scopes in code differ from what we specify
+            # Try manual token exchange using requests to debug/bypass library issues
+            import requests
             
-            from google_auth_oauthlib.flow import Flow
+            client_id = os.getenv("GOOGLE_CLIENT_ID", "").strip()
+            client_secret = os.getenv("GOOGLE_CLIENT_SECRET", "").strip()
             
-            client_config = {
-                "web": {
-                    "client_id": os.getenv("GOOGLE_CLIENT_ID"),
-                    "client_secret": os.getenv("GOOGLE_CLIENT_SECRET"),
-                    "auth_uri": "https://accounts.google.com/o/oauth2/auth",
-                    "token_uri": "https://oauth2.googleapis.com/token",
-                }
+            token_url = "https://oauth2.googleapis.com/token"
+            data = {
+                "code": code,
+                "client_id": client_id,
+                "client_secret": client_secret,
+                "redirect_uri": "postmessage",
+                "grant_type": "authorization_code"
             }
             
-            # Use None for scopes to accept whatever was granted in the authorization
-            flow = Flow.from_client_config(
-                client_config,
-                scopes=None,  # Accept granted scopes from auth code
-                redirect_uri="postmessage"  # Standard for React Google Login 'response_type="code"'
-            )
+            print(f"DEBUG: Attempting manual token exchange with clientId={client_id[:10]}... and SecretPrefix={client_secret[:3] if client_secret else 'NONE'}...")
+            print(f"DEBUG: Auth Code Length: {len(code)}")
+
+            # Try multiple redirect_uris to handle different frontend configurations
+            redirect_uris = [
+                "postmessage", 
+                "http://localhost:5173", 
+                "http://localhost:5173/"
+            ]
             
-            flow.fetch_token(code=code)
-            credentials = flow.credentials
+            response = None
+            success = False
+            
+            # 1. Standard attempts with Secret
+            for uri in redirect_uris:
+                print(f"DEBUG: Trying URI='{uri}' WITH SECRET")
+                data["redirect_uri"] = uri
+                data["client_secret"] = client_secret # Ensure secret is there
+                
+                response = requests.post(token_url, data=data)
+                print(f"DEBUG: Status: {response.status_code}")
+                
+                if response.status_code == 200:
+                    success = True
+                    break
+                
+                err = response.json().get('error')
+                print(f"DEBUG: Error: {err}")
+                
+            # 2. If all failed, try WITHOUT Secret (in case it's treated as Public Client)
+            if not success:
+               print("DEBUG: Trying attempts WITHOUT SECRET")
+               del data["client_secret"]
+               for uri in redirect_uris:
+                    print(f"DEBUG: Trying URI='{uri}' NO SECRET")
+                    data["redirect_uri"] = uri
+                    response = requests.post(token_url, data=data)
+                    print(f"DEBUG: Status: {response.status_code}")
+                    if response.status_code == 200:
+                        success = True
+                        break
+                    print(f"DEBUG: Error: {response.json().get('error')}")
+
+            if not success:
+                error_detail = response.json() if response else {"error": "Unknown"}
+                print(f"ERROR BODY: {error_detail}")
+                return False, f"Google Auth Error: {error_detail.get('error')} - {error_detail.get('error_description')}"
+                
+            tokens = response.json()
             
             # Update User
-            user.gsc_access_token = credentials.token
-            user.gsc_refresh_token = credentials.refresh_token
-            # Calculate expiration locally if needed, or store raw expiry
-            # user.gsc_expires_at = ... (Optional for now, refresh token is key)
+            user.gsc_access_token = tokens.get("access_token")
+                
+            if not success:
+                error_detail = response.json() if response else {"error": "Unknown"}
+                print(f"ERROR BODY: {error_detail}")
+                return False, f"Google Auth Error: {error_detail.get('error')} - {error_detail.get('error_description')}"
+                
+            tokens = response.json()
+            
+            # Update User
+            user.gsc_access_token = tokens.get("access_token")
+            # Refresh token might not be returned if not requested (access_type=offline) 
+            # or if user already approved properly. 
+            if "refresh_token" in tokens:
+                user.gsc_refresh_token = tokens.get("refresh_token")
+            
+            user.gsc_expires_at = datetime.utcnow() + timedelta(seconds=tokens.get("expires_in", 3600))
             
             db.commit()
             return True, "Successfully connected to Google Search Console"
             
         except Exception as e:
             import traceback
+            print("=== GSC AUTH ERROR START ===")
             traceback.print_exc()
+            print("=== GSC AUTH ERROR END ===")
             return False, str(e)
 
     @staticmethod

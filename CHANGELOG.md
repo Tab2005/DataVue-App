@@ -15,6 +15,9 @@
 - **🔧 Super Admin Module Access**:
     - Added direct Super Admin bypass at API endpoint level (`/me/module/{key}`) to ensure immediate access without PermissionService queries.
 
+- **🔧 Deployment Permission Data**:
+    - Integrated automatic permission seeding (`seed_permissions`) into backend startup sequence to ensure missing roles/modules are populated on deployment (Zeabur).
+
 ### New Features
 - **✨ Token Existence Indicator**:
     - API `/api/auth/token-status` now returns `token_exists` field (checks if `fb_access_token` has actual content).
@@ -28,6 +31,9 @@
     - 修正 `team_id == None` 的 SQL NULL 比較語法錯誤。
 - **🔧 Super Admin 模組存取**：
     - 在 API 端點層級新增直接 Super Admin bypass。
+
+- **🔧 部署環境權限資料**：
+    - 將權限初始化腳本 (`seed_permissions`) 整合至後端啟動流程，修復部署環境 (Zeabur) 缺失系統模組與角色的問題。
 
 ### 新功能
 - **✨ 權杖存在性指示器**：

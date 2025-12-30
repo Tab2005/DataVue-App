@@ -22,7 +22,7 @@ const SearchConsole = lazy(() => import('./pages/SearchConsole'));
 
 function App() {
   // 優先從環境變數讀取 Client ID，如果沒有則使用空字串 (避免報錯，但功能會失效)
-  const clientId = import.meta.env.VITE_GOOGLE_CLIENT_ID || '';
+  const clientId = (import.meta.env.VITE_GOOGLE_CLIENT_ID || '').trim();
 
   return (
     <ErrorBoundary>

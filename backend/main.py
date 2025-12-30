@@ -233,6 +233,14 @@ try:
     init_db() 
     
     print("Schema Verified.")
+
+    # --- AUTO-SEED PERMISSIONS ---
+    try:
+        print("Running Permission Seeding...")
+        from seed_permissions import seed_permissions
+        seed_permissions()
+    except Exception as e:
+        print(f"⚠️ Permission Seeding Warning: {str(e)}", file=sys.stderr)
 except Exception as e:
     print(f"Database Migration/Initialization Failed: {str(e)}")
 
