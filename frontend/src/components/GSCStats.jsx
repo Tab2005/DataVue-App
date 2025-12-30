@@ -632,20 +632,21 @@ const GSCStats = ({ language, isMobile = false }) => {
         }
 
         // Sort based on sub-tab
+        // GSC uses ABSOLUTE click difference, not percentage change
         switch (trendSubTab) {
             case 'top':
-                // Sort by absolute clicks (descending)
+                // Sort by absolute clicks (descending) - "熱門：點擊次數最多的內容"
                 data.sort((a, b) => b.clicks - a.clicks);
                 break;
             case 'up':
-                // Sort by positive change (descending)
-                data = data.filter(row => row.clicksChange > 0);
-                data.sort((a, b) => b.clicksChange - a.clicksChange);
+                // Sort by absolute click GROWTH (descending) - "趨勢上升：點擊次數成長最多的內容"
+                data = data.filter(row => (row.clicks - row.prevClicks) > 0);
+                data.sort((a, b) => (b.clicks - b.prevClicks) - (a.clicks - a.prevClicks));
                 break;
             case 'down':
-                // Sort by negative change (ascending = most negative first)
-                data = data.filter(row => row.clicksChange < 0);
-                data.sort((a, b) => a.clicksChange - b.clicksChange);
+                // Sort by absolute click DECREASE (ascending) - "趨勢下降：點擊次數減少最多的內容"
+                data = data.filter(row => (row.clicks - row.prevClicks) < 0);
+                data.sort((a, b) => (a.clicks - a.prevClicks) - (b.clicks - b.prevClicks));
                 break;
             default:
                 data.sort((a, b) => b.clicks - a.clicks);
