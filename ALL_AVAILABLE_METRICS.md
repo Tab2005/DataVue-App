@@ -9,16 +9,16 @@
 | `spend` | ✅ | 花費金額 |
 | `cpm` | ✅ | 每千次曝光成本 |
 | `cpc` | ✅ | 單次點擊成本 (全部) |
-| `cpp` | ❌ | 每千人觸及成本 |
+| `cpp` | ✅ | 每千人觸及成本 |
 | `ctr` | ✅ | 點擊率 (全部) |
-| `cost_per_unique_click` | ❌ | 單次不重複點擊成本 |
-| `cost_per_inline_link_click` | ❌ | 單次連結點擊成本 |
-| `cost_per_outbound_click` | ❌ | 單次外連點擊成本 |
+| `cost_per_unique_click` | ✅ | 單次不重複點擊成本 |
+| `cost_per_inline_link_click` | ✅ | 單次連結點擊成本 |
+| `cost_per_outbound_click` | ✅ | 單次外連點擊成本 |
 | `cost_per_action_type` | ❌ | 單次動作成本 (依類型) |
 | `cost_per_ad_click` | ❌ | 單次廣告點擊成本 |
-| `cost_per_conversion` | ❌ | 單次轉換成本 |
+| `cost_per_conversion` | ✅ | 單次轉換成本 |
 | `cost_per_unique_conversion` | ❌ | 單次不重複轉換成本 |
-| `social_spend` | ❌ | 社交互動花費 |
+| `social_spend` | ❌ | 社交互動花費 (非常用指標不提供新增) |
 
 ## Video (12)
 

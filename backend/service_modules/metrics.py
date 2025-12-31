@@ -112,6 +112,36 @@ class MetricsCalculator:
         result['aov'] = (purchase_value / purchases) if purchases > 0 else 0
         
         # Funnel rates
+        reach = safe_float(data.get('reach', 0))
+        
+        # New Cost & Spend Metrics (Calculated Fallbacks preferred)
+        # CPP: Cost per 1,000 People Reached
+        result['cpp'] = (spend / reach * 1000) if reach > 0 else safe_float(data.get('cpp', 0))
+        
+        # Cost Per Conversion (CPA for Purchases)
+        result['cost_per_conversion'] = (spend / purchases) if purchases > 0 else safe_float(data.get('cost_per_conversion', 0))
+        
+        # Cost Per Unique Click
+        unique_clicks = safe_float(data.get('unique_clicks', 0))
+        result['cost_per_unique_click'] = (spend / unique_clicks) if unique_clicks > 0 else safe_float(data.get('cost_per_unique_click', 0))
+        
+        # Cost Per Inline Link Click
+        inline_link_clicks = safe_float(data.get('inline_link_clicks', 0))
+        result['cost_per_inline_link_click'] = (spend / inline_link_clicks) if inline_link_clicks > 0 else safe_float(data.get('cost_per_inline_link_click', 0))
+        
+        # Cost Per Outbound Click (Using actions 'outbound_click' if available)
+        outbound_clicks = safe_float(actions.get('outbound_click', 0))
+        result['cost_per_outbound_click'] = (spend / outbound_clicks) if outbound_clicks > 0 else safe_float(data.get('cost_per_outbound_click', 0))
+        
+        result['social_spend'] = safe_float(data.get('social_spend', 0))
+        result['cost_per_thruplay'] = safe_float(data.get('cost_per_thruplay', 0))
+        
+        # Store extras
+        result['unique_clicks'] = unique_clicks
+        result['inline_link_clicks'] = inline_link_clicks
+        result['outbound_clicks'] = outbound_clicks
+        
+        # Funnel rates
         result['view_to_cart_rate'] = (add_to_cart / view_content * 100) if view_content > 0 else 0
         result['cart_to_purchase_rate'] = (purchases / add_to_cart * 100) if add_to_cart > 0 else 0
         result['cart_value_realization_rate'] = (purchase_value / atc_value * 100) if atc_value > 0 else 0

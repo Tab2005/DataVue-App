@@ -585,6 +585,52 @@ class AsyncFacebookService:
                 flat["app_events"] = acts.get("app_custom_event", 0)
                 flat["cost_per_install"] = flat["spend"] / flat["app_installs"] if flat["app_installs"] > 0 else 0
 
+                # --- NEW COST & SPEND METRICS (Backfill for Table) ---
+                # CPP (Cost per 1000 People Reached)
+                if flat["reach"] > 0:
+                    flat["cpp"] = (flat["spend"] / flat["reach"]) * 1000
+                else:
+                    flat["cpp"] = float(row.get("cpp", 0))
+
+                # Cost Per Unique Click
+                if flat["unique_clicks"] > 0:
+                    flat["cost_per_unique_click"] = flat["spend"] / flat["unique_clicks"]
+                else:
+                    flat["cost_per_unique_click"] = float(row.get("cost_per_unique_click", 0))
+
+                # Cost Per Inline Link Click
+                if flat["link_clicks"] > 0:
+                    flat["cost_per_inline_link_click"] = flat["spend"] / flat["link_clicks"]
+                else:
+                    flat["cost_per_inline_link_click"] = float(row.get("cost_per_inline_link_click", 0))
+
+                # Cost Per Outbound Click
+                # Outbound clicks usually come from actions list with type 'outbound_click'
+                # But 'outbound_clicks' field might be available in top level for some versions or aggregated views
+                # We check actions first
+                outbound_clicks = acts.get("outbound_click", 0) 
+                if outbound_clicks == 0:
+                     # fallback to checking top level if it exists (though rare for this specific key format in actions)
+                     outbound_clicks_list = row.get("outbound_clicks", [])
+                     if isinstance(outbound_clicks_list, list) and outbound_clicks_list:
+                         outbound_clicks = int(outbound_clicks_list[0].get("value", 0))
+                
+                flat["outbound_clicks"] = outbound_clicks
+                
+                if outbound_clicks > 0:
+                    flat["cost_per_outbound_click"] = flat["spend"] / outbound_clicks
+                else:
+                     flat["cost_per_outbound_click"] = float(row.get("cost_per_outbound_click", [{}])[0].get("value", 0) if isinstance(row.get("cost_per_outbound_click"), list) else row.get("cost_per_outbound_click", 0))
+
+                # Cost Per Conversion (CPA) - Already calculated as 'cpa' above, but mapping to key expected by frontend 'cost_per_conversion'
+                flat["cost_per_conversion"] = flat["cpa"]
+
+                # Social Spend
+                flat["social_spend"] = float(row.get("social_spend", 0))
+
+                # Cost per ThruPlay is already handled above at line 571, but ensuring consistency
+                # (Line 571: flat["cost_per_thruplay"] = ...)
+
                 processed_rows.append(flat)
             
             # Store in cache (include custom_fields in key)

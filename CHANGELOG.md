@@ -1,5 +1,37 @@
 # Changelog
 
+## v1.6.2 (2025-12-31) - Analytics Cost Metrics Enhancement
+
+### New Features
+- **📊 Expanded Cost Metrics**:
+    - Added comprehensive Cost & Spend metrics to Analytics dashboard: `CPP` (Cost per 1,000 People Reached), `Cost Per Unique Click`, `Cost Per Inline Link Click`, `Cost Per Outbound Click`, `Cost Per Conversion`, `Cost Per ThruPlay`.
+    - Removed `Social Spend` metric as per user request (marked as unused in system).
+- **🧮 Enhanced Metric Reliability**:
+    - **Backend Calculation Fallback**: Implemented manual calculation logic for cost metrics (e.g., `Spend / Unique Clicks`) in `metrics.py` and `async_services.py`.
+    - This ensures valid data values are displayed in the table even when the direct Facebook API field returns null or missing data.
+
+### Fixed
+- **🔧 Missing Table Data**:
+    - Fixed an issue where new cost metrics appeared correctly in KPI cards but showed as empty/dash in the data table.
+    - Root cause: `get_custom_report` in `async_services.py` was missing the mapping logic for these specific new metrics in the row processing loop.
+    - Solution: Added explicit calculation and mapping for all new cost metrics in the table row generation logic.
+
+### 新功能
+- **📊 成本指標擴充**：
+    - 在分析儀表板中新增完整的成本數據：`CPP` (每千人觸及成本)、`單次不重複點擊成本`、`單次連結點擊成本`、`單次外連點擊成本`、`單次轉換成本`、`單次 ThruPlay 成本`。
+    - 應需求移除 `社交互動花費` 指標 (系統標記為不使用)。
+- **🧮 指標可靠性提升**：
+    - **後端計算備援**：在 `metrics.py` 與 `async_services.py` 中實作了成本指標的手動計算邏輯 (如 `花費 / 不重複點擊`)。
+    - 確保即使 FB API 直接欄位回傳空值，表格仍能顯示有效的計算數值。
+
+### 修復
+- **🔧 表格數據遺失**：
+    - 修復了新成本指標在 KPI 卡片顯示正常，但在數據表格中顯示為空/橫線的問題。
+    - 原因：`async_services.py` 中的 `get_custom_report` 處理每列數據時，遺漏了這些新指標的映射邏輯。
+    - 解決方案：在表格列生成邏輯中補上所有新成本指標的明確計算與映射。
+
+---
+
 ## v1.6.1 (2025-12-30) - Permission System Bug Fixes & Token Status Enhancement
 
 ### Fixed
@@ -31,7 +63,6 @@
     - 修正 `team_id == None` 的 SQL NULL 比較語法錯誤。
 - **🔧 Super Admin 模組存取**：
     - 在 API 端點層級新增直接 Super Admin bypass。
-
 - **🔧 部署環境權限資料**：
     - 將權限初始化腳本 (`seed_permissions`) 整合至後端啟動流程，修復部署環境 (Zeabur) 缺失系統模組與角色的問題。
 

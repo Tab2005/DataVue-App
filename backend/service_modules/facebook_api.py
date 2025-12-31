@@ -18,7 +18,10 @@ class FacebookAPIClient:
     # Standard fields for API requests
     ACCOUNT_FIELDS = "id,name,account_status,currency,timezone_name"
     INSIGHTS_FIELDS = (
-        "impressions,clicks,spend,ctr,cpc,cpm,reach,frequency,"
+        "impressions,clicks,spend,ctr,cpc,cpm,cpp,reach,frequency,"
+        "unique_clicks,inline_link_clicks,"
+        "cost_per_unique_click,cost_per_inline_link_click,cost_per_outbound_click,"
+        "cost_per_thruplay,social_spend,cost_per_conversion,"
         "actions,action_values,cost_per_action_type"
     )
     

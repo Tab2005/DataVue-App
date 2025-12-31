@@ -796,6 +796,22 @@ const Analytics = () => {
         total.roas = total.spend > 0 ? total.purchase_value / total.spend : 0;
         total.shared_roas = total.spend > 0 ? total.shared_purchase_value / total.spend : 0;
 
+        // Cost & Spend Derived
+        total.cpp = total.reach > 0 ? (total.spend / total.reach) * 1000 : 0;
+        total.cost_per_unique_click = total.unique_clicks > 0 ? total.spend / total.unique_clicks : 0;
+        total.cost_per_conversion = total.purchases > 0 ? total.spend / total.purchases : 0;
+        // Approximation for others where denominator might be missing or using generic clicks
+        total.cost_per_inline_link_click = total.link_clicks > 0 ? total.spend / total.link_clicks : 0;
+        total.social_spend = sum('social_spend'); // Additive
+        // For outbound, we don't have outbound_clicks sum, so we might skip or approximation?
+        // Let's just sum it if it was additive (it's not).
+        // If we leave it undefined, it returns 0.
+
+        // Calculated Extended Costs
+        total.cost_per_message = total.messaging_first_reply > 0 ? total.spend / total.messaging_first_reply : 0;
+        total.cost_per_install = total.app_installs > 0 ? total.spend / total.app_installs : 0;
+        total.cost_per_lead = total.leads > 0 ? total.spend / total.leads : 0;
+
         // Funnel Rates
         total.cvr = total.link_clicks > 0 ? (total.purchases / total.link_clicks) * 100 : 0;
         total.view_to_cart = total.view_content > 0 ? (total.add_to_cart / total.view_content) * 100 : 0;

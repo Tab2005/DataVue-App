@@ -67,6 +67,37 @@ export const METRICS_REGISTRY = {
         source: 'direct', fb_field: 'cpm',
         is_default: true
     },
+    cpp: {
+        key: 'cpp', label_zh: 'CPP (每千人觸及成本)', label_en: 'CPP',
+        category: 'general', format: 'currency', isInverse: true,
+        source: 'direct', fb_field: 'cpp',
+        is_default: false
+    },
+    cost_per_unique_click: {
+        key: 'cost_per_unique_click', label_zh: '單次不重複點擊成本', label_en: 'Cost per Unique Click',
+        category: 'general', format: 'currency', isInverse: true,
+        source: 'direct', fb_field: 'cost_per_unique_click',
+        is_default: false
+    },
+    cost_per_inline_link_click: {
+        key: 'cost_per_inline_link_click', label_zh: '單次連結點擊成本', label_en: 'Cost per Link Click',
+        category: 'general', format: 'currency', isInverse: true,
+        source: 'direct', fb_field: 'cost_per_inline_link_click',
+        is_default: false
+    },
+    cost_per_outbound_click: {
+        key: 'cost_per_outbound_click', label_zh: '單次外連點擊成本', label_en: 'Cost per Outbound Click',
+        category: 'general', format: 'currency', isInverse: true,
+        source: 'direct', fb_field: 'cost_per_outbound_click',
+        is_default: false
+    },
+
+    cost_per_conversion: {
+        key: 'cost_per_conversion', label_zh: '單次轉換成本', label_en: 'Cost per Conversion',
+        category: 'general', format: 'currency', isInverse: true,
+        source: 'direct', fb_field: 'cost_per_conversion',
+        is_default: false
+    },
     ctr: {
         key: 'ctr', label_zh: 'CTR (連結點擊率)', label_en: 'CTR',
         category: 'general', format: 'percent',
