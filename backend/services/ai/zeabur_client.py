@@ -3,7 +3,7 @@ Zeabur AI Hub 統一客戶端
 使用 OpenAI 相容 API 支援多種 AI 模型: Gemini, Claude, GPT 等
 """
 from openai import OpenAI
-from typing import Generator, Optional, Dict, Iterator
+from typing import Generator, Optional, Dict, Iterator, Union
 import os
 
 
@@ -131,7 +131,7 @@ class ZeaburAIClient:
         max_tokens: Optional[int] = None,
         stream: bool = False,
         system_prompt: Optional[str] = None
-    ) -> str | Iterator[str]:
+    ) -> Union[str, Iterator[str]]:
         """
         生成 AI 內容
 
