@@ -161,6 +161,251 @@
 
 ---
 
+### 2. AI 模組升級計劃 (Zeabur AI Hub Multi-Model) 🆕
+
+**目標**: 將 AI 模組從單一 Gemini 模型升級為支援多種 AI 模型 (GPT, Claude, Gemini 等)，透過 Zeabur AI Hub 統一介面。
+
+#### 背景
+
+| 項目 | 現況 | 升級後 |
+|------|------|--------|
+| SDK | Google GenAI SDK | ✅ OpenAI SDK (更通用) |
+| 支援模型 | 僅 Gemini | ✅ 15+ 種模型 |
+| API 端點 | 寫死 Zeabur Gemini | ✅ 可選 東京/舊金山 |
+| 用戶選擇 | 無 | ✅ 前端可切換模型 |
+
+#### 技術架構
+
+```
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                          Zeabur AI Hub                                       │
+│                    (統一 API Gateway - OpenAI 相容)                          │
+├─────────────────────────────────────────────────────────────────────────────┤
+│                                                                              │
+│   ┌───────────┐   ┌───────────┐   ┌───────────┐   ┌───────────┐            │
+│   │  Gemini   │   │  Claude   │   │   GPT     │   │ DeepSeek  │            │
+│   │ 2.5/3.0   │   │ 4.5/Haiku │   │ 4o/5/mini │   │ v3.2      │            │
+│   └───────────┘   └───────────┘   └───────────┘   └───────────┘            │
+│                                                                              │
+└─────────────────────────────────────────────────────────────────────────────┘
+                                    ↑
+                                    │ OpenAI SDK
+                                    │ base_url = "https://hnd1.aihub.zeabur.ai/v1"
+                                    │
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                     ZeaburAIClient (新模組)                                  │
+│                     backend/services/ai/zeabur_client.py                    │
+└─────────────────────────────────────────────────────────────────────────────┘
+                                    ↑
+                                    │
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                     前端 AI 面板                                             │
+│                     - 廣告診斷                                               │
+│                     - 週報生成                                               │
+│                     - 搜尋意圖分類 (未來)                                    │
+└─────────────────────────────────────────────────────────────────────────────┘
+```
+
+#### 支援模型清單
+
+| Provider | 模型 ID | 說明 | 推薦場景 |
+|----------|---------|------|----------|
+| **Gemini** | `gemini-2.5-flash` | 快速、免費額度高 | ✅ 日常分析 (推薦) |
+| **Gemini** | `gemini-2.5-pro` | 高品質、長文本 | 深度報告 |
+| **Gemini** | `gemini-3-flash-preview` | 最新預覽版 | 測試新功能 |
+| **Claude** | `claude-sonnet-4-5` | Anthropic 高品質 | 複雜推理 |
+| **Claude** | `claude-haiku-4-5` | 快速、經濟 | 批量處理 |
+| **GPT** | `gpt-4o` | OpenAI 多模態 | 圖文分析 |
+| **GPT** | `gpt-4o-mini` | 經濟實惠 | 一般任務 |
+| **GPT** | `gpt-5` | 最新旗艦 | 最高品質 |
+| **DeepSeek** | `deepseek-v3.2` | 開源高品質 | 程式碼生成 |
+| **Qwen** | `qwen-3-32` | 通義千問 | 中文優化 |
+| **Llama** | `llama-3.3-70b` | Meta 開源 | 通用任務 |
+
+#### 核心程式碼 (參考 automatic-affiliates-king)
+
+```python
+# backend/services/ai/zeabur_client.py
+
+from openai import OpenAI
+from typing import Optional, Dict, Iterator
+import os
+
+
+class ZeaburAIClient:
+    """Zeabur AI Hub 客戶端 - 透過 OpenAI 相容 API 統一調用多種 AI 模型"""
+    
+    MODELS = {
+        "gemini-2.5-flash": {"provider": "gemini", "max_tokens": 8192, "description": "快速、免費額度高 ✅ 推薦"},
+        "gemini-2.5-pro": {"provider": "gemini", "max_tokens": 32000, "description": "高品質、長文本"},
+        "claude-sonnet-4-5": {"provider": "anthropic", "max_tokens": 8192, "description": "Anthropic 高品質"},
+        "claude-haiku-4-5": {"provider": "anthropic", "max_tokens": 8192, "description": "快速、經濟"},
+        "gpt-4o": {"provider": "openai", "max_tokens": 16000, "description": "多模態"},
+        "gpt-4o-mini": {"provider": "openai", "max_tokens": 16000, "description": "經濟實惠"},
+        "deepseek-v3.2": {"provider": "deepseek", "max_tokens": 8192, "description": "開源高品質"},
+    }
+    
+    ENDPOINTS = {
+        "tokyo": "https://hnd1.aihub.zeabur.ai/v1",
+        "sanfrancisco": "https://sfo1.aihub.zeabur.ai/v1"
+    }
+    
+    def __init__(self, api_key: Optional[str] = None, endpoint: str = "tokyo"):
+        self.api_key = api_key or os.getenv("ZEABUR_AI_HUB_API_KEY")
+        if not self.api_key:
+            raise RuntimeError("ZEABUR_AI_HUB_API_KEY is required.")
+        
+        self.base_url = self.ENDPOINTS.get(endpoint, endpoint)
+        
+        # 使用 OpenAI SDK 連接 Zeabur AI Hub
+        self.client = OpenAI(
+            api_key=self.api_key,
+            base_url=self.base_url
+        )
+    
+    def generate_content(
+        self,
+        prompt: str,
+        model: str = "gemini-2.5-flash",
+        temperature: float = 0.7,
+        max_tokens: Optional[int] = None,
+        stream: bool = False,
+        system_prompt: Optional[str] = None
+    ) -> str | Iterator[str]:
+        """生成 AI 內容，支援串流輸出"""
+        
+        messages = []
+        if system_prompt:
+            messages.append({"role": "system", "content": system_prompt})
+        messages.append({"role": "user", "content": prompt})
+        
+        model_config = self.MODELS.get(model, {"max_tokens": 8192})
+        max_output = max_tokens or model_config["max_tokens"]
+        
+        if stream:
+            response = self.client.chat.completions.create(
+                model=model,
+                messages=messages,
+                temperature=temperature,
+                max_tokens=max_output,
+                stream=True
+            )
+            
+            def stream_generator():
+                for chunk in response:
+                    if chunk.choices[0].delta.content:
+                        yield chunk.choices[0].delta.content
+            
+            return stream_generator()
+        else:
+            response = self.client.chat.completions.create(
+                model=model,
+                messages=messages,
+                temperature=temperature,
+                max_tokens=max_output
+            )
+            return response.choices[0].message.content
+    
+    def get_available_models(self) -> Dict[str, Dict]:
+        """獲取可用模型列表"""
+        return self.MODELS.copy()
+```
+
+#### 檔案變更清單
+
+| 操作 | 檔案路徑 | 說明 |
+|------|----------|------|
+| 🆕 新增 | `backend/services/ai/__init__.py` | AI 模組初始化 |
+| 🆕 新增 | `backend/services/ai/zeabur_client.py` | Zeabur AI Hub 客戶端 |
+| ✏️ 修改 | `backend/ai_service.py` | 改為呼叫 ZeaburAIClient |
+| ✏️ 修改 | `backend/routers/ai.py` | 新增模型選擇參數 |
+| ✏️ 修改 | `frontend/.../AIAnalyst.jsx` | 新增模型選擇下拉選單 |
+| 📦 新增 | `requirements.txt` | 添加 `openai` 套件 |
+
+#### 環境變數
+
+```bash
+# .env (Zeabur AI Hub)
+ZEABUR_AI_HUB_API_KEY=sk-xxxxxxxxxxxxxxxx
+ZEABUR_AI_HUB_ENDPOINT=https://hnd1.aihub.zeabur.ai  # 東京 (預設)
+# 或 https://sfo1.aihub.zeabur.ai (舊金山)
+```
+
+#### 前端設定 UI (整合中心)
+
+模型選擇整合到現有的「整合中心 (Integration Center)」設定頁面：
+
+```
+┌──────────────────────────────────────────────────────────────────┐
+│ 整合中心 (Integration Center)                              ✕    │
+├──────────────────────────────────────────────────────────────────┤
+│ [Facebook Ads]  [AI Intelligence]                                │
+│                                                                   │
+│ 🟢 已連線 (用戶自訂 Key)                                          │
+│ 請輸入您的 API Key                                                │
+│                                                                   │
+│ Provider                                                          │
+│ ┌──────────────────────────────────────────────────────────────┐ │
+│ │ ▼ Zeabur AI Hub (多模型支援) ✅ 推薦                         │ │
+│ │   ─────────────────────────────────────                      │ │
+│ │   Google Gemini (原有)                                       │ │
+│ │   Zeabur AI Hub (多模型支援) ✅ 推薦                         │ │
+│ └──────────────────────────────────────────────────────────────┘ │
+│                                                                   │
+│ AI 模型 (Zeabur AI Hub 專用)                                     │
+│ ┌──────────────────────────────────────────────────────────────┐ │
+│ │ ▼ gemini-2.5-flash (快速、免費額度高) ✅ 推薦               │ │
+│ │   ─────────────────────────────────────                      │ │
+│ │   gemini-2.5-pro (高品質、長文本)                           │ │
+│ │   claude-sonnet-4-5 (Anthropic 高品質)                      │ │
+│ │   gpt-4o (OpenAI 多模態)                                    │ │
+│ │   deepseek-v3.2 (開源高品質)                                │ │
+│ └──────────────────────────────────────────────────────────────┘ │
+│                                                                   │
+│ API Key                                                           │
+│ ┌──────────────────────────────────────────────────────────────┐ │
+│ │ sk-•••••••••••••••••••••••                                   │ │
+│ └──────────────────────────────────────────────────────────────┘ │
+│                                                                   │
+│                                       [清除]    [測試連線]        │
+└──────────────────────────────────────────────────────────────────┘
+```
+
+**設定儲存策略**：
+- `ai_provider`: 儲存於 `users` 表 (`google_gemini` | `zeabur`)
+- `ai_model`: 儲存於 `users` 表 (`gemini-2.5-flash` | `claude-sonnet-4-5` | ...)
+- 當 provider 為 `google_gemini` 時，model 選擇器隱藏
+
+**其他 UI 顯示**：
+- AI 分析面板標題顯示：「🤖 AI 廣告診斷 (gemini-2.5-flash)」
+- 週報生成同理
+
+
+#### 實作優先級
+
+| 優先級 | 項目 | 說明 | 工作量 |
+|--------|------|------|--------|
+| 🔴 P1 | 建立 `zeabur_client.py` | 核心 AI 客戶端 | 1 小時 |
+| 🔴 P1 | 整合到 `ai_service.py` | 替換現有實現 | 30 分鐘 |
+| 🔴 P1 | 更新 `routers/ai.py` | 添加模型選擇 API | 30 分鐘 |
+| 🟡 P2 | 前端模型選擇器 | 下拉選單 UI | 1 小時 |
+| 🟡 P2 | 模型偏好儲存 | 記住用戶選擇 | 30 分鐘 |
+| 🟢 P3 | 搜尋意圖分類整合 | 應用到 GSC 功能 | 2 小時 |
+
+#### 向下相容性
+
+| 現有功能 | 影響 | 處理方式 |
+|----------|------|----------|
+| 廣告診斷 | ✅ 無影響 | 預設使用 gemini-2.5-flash |
+| 週報生成 | ✅ 無影響 | 預設使用 gemini-2.5-flash |
+| 連線測試 | ✅ 無影響 | 自動偵測可用模型 |
+
+> **回滾計劃**: 若新模組有問題，保留 `ai_service.py` 原始版本，透過環境變數切換：
+> `USE_LEGACY_AI_SERVICE=true`
+
+---
+
+
 ## ✅ Completed Features (已完成功能)
 
 ### 1. 核心架構與安全性 (Core Architecture)
@@ -287,6 +532,814 @@ const getSimilarity = (str1, str2) => {
   }
 };
 ```
+
+---
+
+### 🔮 搜尋意圖分類 (Search Intent Classification) - 🆕 規劃中
+
+**目標**：自動分析 GSC 頁面/關鍵字的搜尋意圖，幫助用戶了解內容與搜尋需求的匹配程度。
+
+#### 概念說明
+
+| 意圖類型 | 英文 | 說明 | 典型關鍵字 |
+|----------|------|------|------------|
+| 🔵 資訊型 | Informational | 用戶想了解某事 | 如何、是什麼、教學、how, what, guide |
+| 🟠 商業型 | Commercial | 用戶在評估選項 | 推薦、評價、比較、best, review, vs |
+| 🟢 導航型 | Navigational | 用戶想到達特定網站 | 品牌名、網站名 |
+| 🔴 交易型 | Transactional | 用戶準備購買/行動 | 購買、價格、下載、buy, price, discount |
+
+#### 功能規劃
+
+**第一階段：頁面意圖分類**
+
+| 位置 | 顯示內容 | 說明 |
+|------|----------|------|
+| 頁面列表 | 意圖標籤 (pill) | 顯示該頁面的**主要意圖類型** (如 `🔵 資訊型`) |
+| 頁面詳情 | 雷達圖 | 顯示 4 種意圖的**分布比例** (如 資訊 42% / 商業 37% / 導航 11% / 交易 11%) |
+
+**第二階段：關鍵字意圖分類** (未來)
+
+| 功能 | 說明 |
+|------|------|
+| 關鍵字標籤 | 每個關鍵字旁顯示意圖標籤 |
+| 意圖篩選 | 只看特定意圖類型的關鍵字 |
+
+---
+
+#### 後端 API 設計
+
+##### 新增端點
+
+```python
+# routers/gsc.py
+
+@router.get("/api/gsc/{site_url}/pages/intents")
+async def get_page_intents(
+    site_url: str,
+    since: str,
+    until: str,
+    user: User = Depends(get_current_user)
+):
+    """
+    取得頁面的搜尋意圖分類
+    
+    Returns:
+    {
+        "pages": [
+            {
+                "page": "/blog/facebook-ads-tutorial",
+                "title": "Facebook 廣告教學 - 新手指南",
+                "primary_intent": "informational",
+                "intent_distribution": {
+                    "informational": 0.65,
+                    "commercial": 0.25,
+                    "navigational": 0.05,
+                    "transactional": 0.05
+                },
+                "top_queries": [
+                    {"query": "facebook 廣告教學", "intent": "informational", "clicks": 120},
+                    {"query": "fb 廣告設定", "intent": "informational", "clicks": 85}
+                ]
+            }
+        ]
+    }
+    """
+```
+
+##### 意圖分類服務
+
+```python
+# service_modules/intent_classifier.py
+
+class IntentClassifier:
+    """搜尋意圖分類器 (規則式)"""
+    
+    # 中英文規則庫
+    INTENT_RULES = {
+        "informational": {
+            "zh": ["如何", "是什麼", "為什麼", "教學", "方法", "步驟", "技巧", "入門", "指南", "完整"],
+            "en": ["how", "what", "why", "guide", "tutorial", "tips", "learn", "example", "definition"]
+        },
+        "commercial": {
+            "zh": ["推薦", "評價", "比較", "最佳", "排名", "優缺點", "選擇", "vs", "差異", "評測"],
+            "en": ["best", "review", "vs", "compare", "top", "alternative", "recommendation", "pros", "cons"]
+        },
+        "navigational": {
+            "zh": ["官網", "登入", "網站"],  # + 動態品牌名稱
+            "en": ["login", "sign in", "official", "website"]  # + 動態品牌名稱
+        },
+        "transactional": {
+            "zh": ["購買", "價格", "費用", "下載", "報名", "訂閱", "折扣", "優惠", "免費", "試用"],
+            "en": ["buy", "price", "discount", "download", "order", "subscribe", "free", "trial", "coupon"]
+        }
+    }
+    
+    @classmethod
+    def classify_query(cls, query: str) -> dict:
+        """
+        分類單一查詢
+        
+        Returns:
+            {
+                "intent": "informational",  # primary intent
+                "scores": {
+                    "informational": 0.7,
+                    "commercial": 0.2,
+                    "navigational": 0.05,
+                    "transactional": 0.05
+                }
+            }
+        """
+        query_lower = query.lower()
+        scores = {intent: 0.0 for intent in cls.INTENT_RULES}
+        
+        for intent, rules in cls.INTENT_RULES.items():
+            for keyword in rules["zh"] + rules["en"]:
+                if keyword in query_lower:
+                    scores[intent] += 1
+        
+        # Normalize scores
+        total = sum(scores.values()) or 1
+        scores = {k: v / total for k, v in scores.items()}
+        
+        # Determine primary intent
+        primary = max(scores, key=scores.get)
+        
+        # Default to informational if no match
+        if all(v == 0.25 for v in scores.values()):
+            primary = "informational"
+            scores["informational"] = 0.5
+            scores["commercial"] = 0.2
+            scores["navigational"] = 0.15
+            scores["transactional"] = 0.15
+        
+        return {"intent": primary, "scores": scores}
+    
+    @classmethod
+    def classify_page(cls, queries: list[dict]) -> dict:
+        """
+        根據頁面的所有關鍵字分類頁面意圖
+        
+        Args:
+            queries: [{"query": "...", "clicks": 50}, ...]
+        
+        Returns:
+            {
+                "primary_intent": "informational",
+                "intent_distribution": {...}
+            }
+        """
+        total_clicks = sum(q.get("clicks", 1) for q in queries)
+        weighted_scores = {
+            "informational": 0,
+            "commercial": 0,
+            "navigational": 0,
+            "transactional": 0
+        }
+        
+        for q in queries:
+            result = cls.classify_query(q["query"])
+            weight = q.get("clicks", 1) / total_clicks
+            for intent, score in result["scores"].items():
+                weighted_scores[intent] += score * weight
+        
+        primary = max(weighted_scores, key=weighted_scores.get)
+        
+        return {
+            "primary_intent": primary,
+            "intent_distribution": weighted_scores
+        }
+```
+
+---
+
+#### 前端 UI 設計
+
+##### 1. 頁面列表 - 意圖標籤
+
+```
+┌─────────────────────────────────────────────────────────────────────────────┐
+│ 📄 頁面分析                                                                  │
+├─────────────────────────────────────────────────────────────────────────────┤
+│ 頁面                                    │ 意圖  │ 點擊 │ 曝光  │ CTR   │ 排名 │
+├─────────────────────────────────────────┼───────┼──────┼───────┼───────┼──────┤
+│ Facebook 廣告教學 - 新手指南            │🔵 資訊│ 1,234│ 45,678│ 2.70% │ 3.2  │
+│ 2024 最佳 Facebook 廣告工具推薦         │🟠 商業│ 856  │ 32,100│ 2.67% │ 4.5  │
+│ Facebook 廣告費用一次看懂               │🔴 交易│ 543  │ 21,456│ 2.53% │ 5.1  │
+│ DataVue 官方網站                        │🟢 導航│ 321  │ 8,765 │ 3.66% │ 1.2  │
+└─────────────────────────────────────────┴───────┴──────┴───────┴───────┴──────┘
+```
+
+**標籤樣式 (CSS)**:
+
+```css
+.intent-pill {
+    display: inline-flex;
+    align-items: center;
+    padding: 4px 10px;
+    border-radius: 12px;
+    font-size: 0.8rem;
+    font-weight: 600;
+}
+
+.intent-informational { background: rgba(59, 130, 246, 0.2); color: #3b82f6; }
+.intent-commercial    { background: rgba(245, 158, 11, 0.2); color: #f59e0b; }
+.intent-navigational  { background: rgba(16, 185, 129, 0.2); color: #10b981; }
+.intent-transactional { background: rgba(239, 68, 68, 0.2); color: #ef4444; }
+```
+
+##### 2. 頁面詳情 - 雷達圖
+
+當用戶**點擊某頁面**時，展開/彈出詳情面板，顯示：
+
+```
+┌─────────────────────────────────────────────────────────────────────────────┐
+│ 📄 Facebook 廣告教學 - 新手指南                                              │
+├─────────────────────────────────────────────────────────────────────────────┤
+│                                                                              │
+│   ┌─────────────────────┐     ┌─────────────────────────────────────────┐   │
+│   │                     │     │ 📊 搜尋意圖分布                          │   │
+│   │   [雷達圖區域]       │     │                                         │   │
+│   │     資訊型 65%      │     │ 🔵 資訊型   ████████████████░░░░ 65%    │   │
+│   │     商業型 25%      │     │ 🟠 商業型   ██████████░░░░░░░░░░ 25%    │   │
+│   │     導航型 5%       │     │ 🟢 導航型   ██░░░░░░░░░░░░░░░░░░  5%    │   │
+│   │     交易型 5%       │     │ 🔴 交易型   ██░░░░░░░░░░░░░░░░░░  5%    │   │
+│   │                     │     │                                         │   │
+│   └─────────────────────┘     └─────────────────────────────────────────┘   │
+│                                                                              │
+│   🔑 主要關鍵字                                                              │
+│   ┌─────────────────────────────────────────────────────────────────────┐   │
+│   │ 關鍵字                        │ 意圖  │ 點擊 │ 曝光  │ 排名         │   │
+│   │ facebook 廣告教學             │🔵 資訊│ 450  │ 12,345│ 2.1          │   │
+│   │ fb 廣告 設定                  │🔵 資訊│ 320  │ 8,765 │ 3.4          │   │
+│   │ facebook 廣告 費用            │🔴 交易│ 180  │ 5,432 │ 4.2          │   │
+│   └─────────────────────────────────────────────────────────────────────┘   │
+└─────────────────────────────────────────────────────────────────────────────┘
+```
+
+**雷達圖實作 (Recharts)**:
+
+```jsx
+import { Radar, RadarChart, PolarGrid, PolarAngleAxis, PolarRadiusAxis, ResponsiveContainer } from 'recharts';
+
+const IntentRadarChart = ({ distribution }) => {
+    const data = [
+        { intent: '資訊型', value: distribution.informational * 100 },
+        { intent: '商業型', value: distribution.commercial * 100 },
+        { intent: '導航型', value: distribution.navigational * 100 },
+        { intent: '交易型', value: distribution.transactional * 100 },
+    ];
+
+    return (
+        <ResponsiveContainer width="100%" height={250}>
+            <RadarChart data={data}>
+                <PolarGrid />
+                <PolarAngleAxis dataKey="intent" />
+                <PolarRadiusAxis angle={30} domain={[0, 100]} />
+                <Radar
+                    name="Intent"
+                    dataKey="value"
+                    stroke="#8884d8"
+                    fill="#8884d8"
+                    fillOpacity={0.6}
+                />
+            </RadarChart>
+        </ResponsiveContainer>
+    );
+};
+```
+
+---
+
+#### 規則庫結構 (Constants)
+
+```javascript
+// frontend/src/constants/intentRules.js
+
+export const INTENT_TYPES = {
+    informational: {
+        key: 'informational',
+        label_zh: '資訊型',
+        label_en: 'Informational',
+        icon: '🔵',
+        color: '#3b82f6',
+        description_zh: '用戶想了解某事',
+        description_en: 'User wants to learn something'
+    },
+    commercial: {
+        key: 'commercial',
+        label_zh: '商業型',
+        label_en: 'Commercial',
+        icon: '🟠',
+        color: '#f59e0b',
+        description_zh: '用戶在評估選項',
+        description_en: 'User is evaluating options'
+    },
+    navigational: {
+        key: 'navigational',
+        label_zh: '導航型',
+        label_en: 'Navigational',
+        icon: '🟢',
+        color: '#10b981',
+        description_zh: '用戶想到達特定網站',
+        description_en: 'User wants to reach a specific site'
+    },
+    transactional: {
+        key: 'transactional',
+        label_zh: '交易型',
+        label_en: 'Transactional',
+        icon: '🔴',
+        color: '#ef4444',
+        description_zh: '用戶準備購買或行動',
+        description_en: 'User is ready to buy or take action'
+    }
+};
+
+export const INTENT_KEYWORDS = {
+    informational: {
+        zh: ['如何', '是什麼', '為什麼', '教學', '方法', '步驟', '技巧', '入門', '指南', '完整', '介紹', '分析', '說明'],
+        en: ['how', 'what', 'why', 'guide', 'tutorial', 'tips', 'learn', 'example', 'definition', 'explain', 'ways', 'steps']
+    },
+    commercial: {
+        zh: ['推薦', '評價', '比較', '最佳', '排名', '優缺點', '選擇', 'vs', '差異', '評測', '分析', '哪個好'],
+        en: ['best', 'review', 'vs', 'compare', 'top', 'alternative', 'recommendation', 'pros', 'cons', 'comparison', 'difference']
+    },
+    navigational: {
+        zh: ['官網', '登入', '網站', '首頁'],
+        en: ['login', 'sign in', 'official', 'website', 'home', 'portal']
+    },
+    transactional: {
+        zh: ['購買', '價格', '費用', '下載', '報名', '訂閱', '折扣', '優惠', '免費', '試用', '申請', '註冊', '預約'],
+        en: ['buy', 'price', 'discount', 'download', 'order', 'subscribe', 'free', 'trial', 'coupon', 'deal', 'cheap', 'cost']
+    }
+};
+```
+
+---
+
+#### 實作優先級
+
+| 優先級 | 項目 | 說明 | 工作量 |
+|--------|------|------|--------|
+| 🔴 P1 | `intent_classifier.py` | 後端規則式分類服務 | 1-2 小時 |
+| 🔴 P1 | GSC API 整合 | `/api/gsc/{site}/pages/intents` 端點 | 1-2 小時 |
+| 🔴 P1 | 頁面列表標籤 UI | 表格新增「意圖」欄位 + pill 標籤 | 1-2 小時 |
+| 🟡 P2 | 頁面詳情雷達圖 | 點擊展開詳情 + Recharts 雷達圖 | 2-3 小時 |
+| 🟡 P2 | 意圖篩選功能 | 只看特定意圖類型的頁面 | 1 小時 |
+| 🟢 P3 | AI 增強分類 | 使用 GPT/Claude 提升分類準確度 | 2-3 小時 |
+| 🟢 P3 | 品牌名稱自訂 | 讓用戶設定自家品牌名稱供導航型判斷 | 1 小時 |
+
+---
+
+#### 規則儲存策略
+
+##### 演進路徑
+
+```
+Phase 1 (MVP)              Phase 2 (進階)              Phase 3 (完整)
+┌─────────────────┐       ┌─────────────────┐       ┌─────────────────┐
+│ 純程式碼常數     │  →→→  │ 資料庫儲存       │  →→→  │ 視覺化管理介面   │
+│ intentRules.js  │       │ intent_rules 表 │       │ 規則編輯 UI     │
+└─────────────────┘       └─────────────────┘       └─────────────────┘
+   ✅ 快速上線               ✅ 可跨裝置同步            ✅ 用戶自主管理
+   ❌ 修改需部署             ✅ 用戶可自訂              ✅ 無需工程師
+```
+
+##### Phase 1: 程式碼常數 (目前規劃)
+
+```
+┌──────────────────────────────────────────────────────────────┐
+│  frontend/src/constants/intentRules.js  ← 前端常數           │
+│  backend/service_modules/intent_classifier.py ← 後端服務     │
+└──────────────────────────────────────────────────────────────┘
+```
+
+| 優點 | 缺點 |
+|------|------|
+| ✅ 實作簡單、快速上線 | ❌ 修改規則需改程式碼 |
+| ✅ 無需額外資料庫表 | ❌ 需重新部署才能生效 |
+| ✅ 效能最佳 (無 DB 查詢) | ❌ 用戶無法自訂 |
+
+##### Phase 2: 資料庫儲存 (未來)
+
+```sql
+-- Table: intent_rules
+CREATE TABLE intent_rules (
+    id SERIAL PRIMARY KEY,
+    user_id INTEGER REFERENCES users(id),      -- NULL = 系統規則
+    team_id INTEGER REFERENCES teams(id),      -- NULL = 個人規則
+    intent_type VARCHAR(20) NOT NULL,          -- informational/commercial/...
+    keyword VARCHAR(100) NOT NULL,
+    language VARCHAR(10) DEFAULT 'zh',         -- zh/en/mixed
+    weight FLOAT DEFAULT 1.0,                  -- 權重 (可調整優先級)
+    source VARCHAR(20) DEFAULT 'custom',       -- base/template/custom
+    created_at TIMESTAMP DEFAULT NOW()
+);
+```
+
+| 規則來源 | user_id | team_id | 說明 |
+|----------|---------|---------|------|
+| 系統基礎 | NULL | NULL | 所有用戶共用 |
+| 個人自訂 | 5 | NULL | 只有該用戶可見 |
+| 團隊自訂 | NULL | 10 | 團隊成員共用 |
+
+---
+
+#### 行業規則模板 (Industry Templates)
+
+##### 問題：不同類型網站的適用性
+
+| 網站類型 | 通用規則適用度 | 特殊需求 |
+|----------|:-------------:|----------|
+| **部落格/媒體** | ✅ 高 | 主要是資訊型內容 |
+| **電商網站** | ✅ 高 | 需加入購物流程關鍵字 |
+| **SaaS/軟體** | 🟡 中 | 需加入試用、API 相關詞 |
+| **品牌官網** | 🟡 中 | 需加入自家品牌名稱 |
+| **在地服務** | 🟡 中 | 需加入地點相關關鍵字 |
+| **教育培訓** | 🟡 中 | 需加入課程、認證關鍵字 |
+
+##### 解決方案：三層規則架構
+
+```
+┌─────────────────────────────────────────────────────────────────┐
+│  Layer 1: 通用規則 (Base Rules)                                  │
+│  └ 所有網站都適用的基礎關鍵字 (如何、購買、推薦、官網...)         │
+├─────────────────────────────────────────────────────────────────┤
+│  Layer 2: 行業模板 (Industry Templates) - 可選啟用               │
+│  ├ 🛒 電商模板 → 加入購物車、結帳、運費、退貨、ATM...             │
+│  ├ 💻 SaaS 模板 → API、整合、定價方案、企業版、試用...            │
+│  ├ 📚 教育模板 → 課程、學習、認證、報名、講師...                  │
+│  └ 🏪 在地商家模板 → 地址、營業時間、預約、附近...                │
+├─────────────────────────────────────────────────────────────────┤
+│  Layer 3: 用戶自訂 (Custom Rules) - 最高優先級                   │
+│  └ 用戶自行新增的品牌名稱、產品名、專有名詞                       │
+└─────────────────────────────────────────────────────────────────┘
+```
+
+##### 行業模板範例
+
+```javascript
+// constants/industryTemplates.js
+
+export const INDUSTRY_TEMPLATES = {
+    ecommerce: {
+        id: 'ecommerce',
+        name_zh: '電商網站',
+        name_en: 'E-commerce',
+        icon: '🛒',
+        rules: {
+            transactional: {
+                zh: ['加入購物車', '結帳', '運費', '退貨', 'ATM', '貨到付款', '免運', '特價'],
+                en: ['add to cart', 'checkout', 'shipping', 'refund', 'free delivery', 'on sale']
+            },
+            commercial: {
+                zh: ['開箱', '評測', '使用心得', '值得買嗎'],
+                en: ['unboxing', 'worth buying', 'honest review']
+            }
+        }
+    },
+    saas: {
+        id: 'saas',
+        name_zh: 'SaaS 軟體',
+        name_en: 'SaaS Software',
+        icon: '💻',
+        rules: {
+            commercial: {
+                zh: ['定價', '方案', '企業版', 'API', '整合', '替代方案'],
+                en: ['pricing', 'plan', 'enterprise', 'integration', 'alternative', 'features']
+            },
+            transactional: {
+                zh: ['免費試用', '申請 Demo', '聯繫業務'],
+                en: ['free trial', 'request demo', 'contact sales', 'start free']
+            }
+        }
+    },
+    education: {
+        id: 'education',
+        name_zh: '教育培訓',
+        name_en: 'Education',
+        icon: '📚',
+        rules: {
+            transactional: {
+                zh: ['報名', '課程費用', '上課時間', '講師', '證照', '補習'],
+                en: ['enroll', 'course fee', 'schedule', 'certification', 'instructor']
+            },
+            informational: {
+                zh: ['筆記', '考古題', '心得', '準備方法'],
+                en: ['notes', 'exam prep', 'study guide', 'learning path']
+            }
+        }
+    },
+    local_business: {
+        id: 'local_business',
+        name_zh: '在地商家',
+        name_en: 'Local Business',
+        icon: '🏪',
+        rules: {
+            transactional: {
+                zh: ['預約', '訂位', '營業時間', '地址', '電話', '停車'],
+                en: ['book', 'reservation', 'hours', 'location', 'directions', 'parking']
+            },
+            navigational: {
+                zh: ['附近', '最近', '台北', '高雄'],  // 可動態加入城市名
+                en: ['near me', 'nearby', 'closest']
+            }
+        }
+    }
+};
+```
+
+##### 模板選擇 UI 設計
+
+```
+┌──────────────────────────────────────────────────────────────────┐
+│ ⚙️ 搜尋意圖設定                                                   │
+├──────────────────────────────────────────────────────────────────┤
+│                                                                    │
+│  選擇網站類型 (會自動套用對應的關鍵字規則)：                        │
+│                                                                    │
+│  ┌────────────┐  ┌────────────┐  ┌────────────┐  ┌────────────┐   │
+│  │ 🌐 通用    │  │ 🛒 電商    │  │ 💻 SaaS   │  │ 📚 教育    │   │
+│  │   (預設)   │  │            │  │            │  │            │   │
+│  └────────────┘  └────────────┘  └────────────┘  └────────────┘   │
+│  ┌────────────┐  ┌────────────┐                                   │
+│  │ 🏪 在地商家│  │ ✏️ 自訂   │                                   │
+│  │            │  │            │                                   │
+│  └────────────┘  └────────────┘                                   │
+│                                                                    │
+└──────────────────────────────────────────────────────────────────┘
+```
+
+---
+
+#### 用戶自訂規則功能
+
+##### 核心需求：品牌名稱設定
+
+**問題**：導航型意圖需要知道「品牌名稱」，這因網站而異。
+
+| 情境 | 處理方式 |
+|------|----------|
+| 搜尋「DataVue 登入」 | 如果 DataVue 是用戶的品牌 → 導航型 |
+| 搜尋「Google Analytics 替代」 | 如果 GA 是競品 → 商業型 (比較) |
+| 搜尋「facebook 廣告費用」 | 通用詞 → 交易型 |
+
+##### 設定介面設計
+
+```
+┌──────────────────────────────────────────────────────────────────┐
+│ 🏷️ 品牌與自訂關鍵字                                               │
+├──────────────────────────────────────────────────────────────────┤
+│                                                                    │
+│  您的品牌名稱 (搜尋這些詞會被歸類為「導航型」)：                    │
+│  ┌────────────────────────────────────────────────────────────┐   │
+│  │ DataVue, 數據視野, datavue.com                     [+ 新增] │   │
+│  └────────────────────────────────────────────────────────────┘   │
+│                                                                    │
+│  自訂關鍵字規則：                                                  │
+│  ┌──────────────────┬────────────────────┬─────────────────────┐  │
+│  │ 關鍵字           │ 意圖類型           │ 操作                │  │
+│  ├──────────────────┼────────────────────┼─────────────────────┤  │
+│  │ 廣告成效診斷     │ 🟠 商業型          │ [編輯] [刪除]      │  │
+│  │ 免費試用         │ 🔴 交易型          │ [編輯] [刪除]      │  │
+│  │ API 文件         │ 🔵 資訊型          │ [編輯] [刪除]      │  │
+│  └──────────────────┴────────────────────┴─────────────────────┘  │
+│                                                       [+ 新增規則] │
+│                                                                    │
+└──────────────────────────────────────────────────────────────────┘
+```
+
+##### 後端資料結構
+
+```python
+# models/intent_settings.py
+
+class UserIntentSettings(Base):
+    __tablename__ = "user_intent_settings"
+    
+    id = Column(Integer, primary_key=True)
+    user_id = Column(Integer, ForeignKey("users.id"))
+    team_id = Column(Integer, ForeignKey("teams.id"), nullable=True)
+    
+    # 品牌名稱 (JSON array)
+    brand_names = Column(JSON, default=[])  # ["DataVue", "數據視野"]
+    
+    # 選擇的行業模板
+    industry_template = Column(String(50), default="general")
+    
+    # 自訂規則 (JSON array)
+    custom_rules = Column(JSON, default=[])
+    # [{"keyword": "API文件", "intent": "informational", "language": "zh"}]
+    
+    created_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, onupdate=datetime.utcnow)
+```
+
+---
+
+#### 規則管理 UI (Phase 3 - 未來)
+
+##### 功能規劃
+
+| 功能 | 說明 | 權限 |
+|------|------|------|
+| 查看系統規則 | 瀏覽所有基礎規則 (唯讀) | 所有用戶 |
+| 選擇行業模板 | 選擇適合的行業模板 | 所有用戶 |
+| 新增自訂規則 | 新增個人/團隊規則 | 所有用戶 |
+| 編輯自訂規則 | 修改自己建的規則 | 創建者 |
+| 匯入/匯出規則 | CSV/JSON 格式匯入匯出 | 進階用戶 |
+| 規則測試器 | 輸入關鍵字即時測試分類結果 | 所有用戶 |
+
+##### 規則測試器 UI
+
+```
+┌──────────────────────────────────────────────────────────────────┐
+│ 🧪 規則測試器                                                      │
+├──────────────────────────────────────────────────────────────────┤
+│                                                                    │
+│  輸入關鍵字測試分類結果：                                           │
+│  ┌────────────────────────────────────────────────────────────┐   │
+│  │ facebook 廣告 教學                                  [測試]  │   │
+│  └────────────────────────────────────────────────────────────┘   │
+│                                                                    │
+│  分類結果：                                                        │
+│  ┌────────────────────────────────────────────────────────────┐   │
+│  │  主要意圖：🔵 資訊型 (Informational)                        │   │
+│  │                                                              │   │
+│  │  匹配規則：                                                  │   │
+│  │  ├ ✅ "教學" → 資訊型 (來源: 系統基礎規則)                  │   │
+│  │  └ ✅ "廣告" → 無特定意圖                                   │   │
+│  │                                                              │   │
+│  │  信心分數：                                                  │   │
+│  │  資訊型 72% ████████████████░░░░░░                          │   │
+│  │  商業型 18% █████░░░░░░░░░░░░░░░░░                          │   │
+│  │  導航型  5% ██░░░░░░░░░░░░░░░░░░░░                          │   │
+│  │  交易型  5% ██░░░░░░░░░░░░░░░░░░░░                          │   │
+│  └────────────────────────────────────────────────────────────┘   │
+│                                                                    │
+└──────────────────────────────────────────────────────────────────┘
+```
+
+---
+
+#### AI 分類快取架構 (Site-Based Caching) 🆕
+
+##### 設計原則：以網站為中心，跨用戶共享
+
+**問題**：每次呼叫 AI 分類關鍵字都有成本，同一網站的多個用戶不應重複付費。
+
+**解決方案**：以 GSC 網站 (site_url) 為主鍵，所有有權限的用戶共享同一份快取。
+
+```
+┌─────────────────────────────────────────────────────────────────────────┐
+│                         關鍵字意圖快取                                   │
+│                    (以網站為單位，跨用戶共享)                            │
+├─────────────────────────────────────────────────────────────────────────┤
+│                                                                          │
+│   example.com                       another-site.com                     │
+│   ┌─────────────────────┐          ┌─────────────────────┐               │
+│   │ facebook 廣告 教學   │          │ 瑜珈課程 推薦       │               │
+│   │   → 🔵 資訊型       │          │   → 🟠 商業型       │               │
+│   │                     │          │                     │               │
+│   │ 廣告投放 費用        │          │ 瑜珈教室 預約       │               │
+│   │   → 🔴 交易型       │          │   → 🔴 交易型       │               │
+│   └─────────────────────┘          └─────────────────────┘               │
+│         ↑                                  ↑                             │
+│   ┌─────┴─────┐                      ┌─────┴─────┐                       │
+│   │ 用戶 A    │                      │ 用戶 C    │                       │
+│   │ 用戶 B    │ ← 共享快取           │ 用戶 D    │ ← 共享快取            │
+│   └───────────┘                      └───────────┘                       │
+│                                                                          │
+└─────────────────────────────────────────────────────────────────────────┘
+```
+
+##### 資料庫設計
+
+**表 1：關鍵字意圖快取 (`site_keyword_intents`)**
+
+```sql
+CREATE TABLE site_keyword_intents (
+    id SERIAL PRIMARY KEY,
+    
+    -- 以網站為主鍵
+    site_url VARCHAR(255) NOT NULL,  -- "sc-domain:example.com" 或 "https://example.com/"
+    
+    -- 關鍵字
+    keyword VARCHAR(500) NOT NULL,
+    keyword_hash VARCHAR(64) NOT NULL,  -- MD5 for fast lookup
+    
+    -- AI 分類結果
+    intent VARCHAR(20) NOT NULL,  -- informational/commercial/navigational/transactional
+    confidence FLOAT DEFAULT 0.9,
+    
+    -- 來源追蹤
+    source VARCHAR(20) DEFAULT 'ai',  -- 'ai' / 'rule' / 'manual'
+    model VARCHAR(50),  -- 'gemini-1.5-flash' / 'gpt-4o-mini'
+    
+    -- 時間
+    created_at TIMESTAMP DEFAULT NOW(),
+    updated_at TIMESTAMP,
+    
+    -- 聯合唯一鍵：同一網站同一關鍵字只有一筆
+    UNIQUE(site_url, keyword_hash)
+);
+
+-- 索引：加速查詢
+CREATE INDEX idx_site_keyword ON site_keyword_intents(site_url, keyword_hash);
+```
+
+**表 2：頁面意圖摘要 (`site_page_intents`)**
+
+```sql
+CREATE TABLE site_page_intents (
+    id SERIAL PRIMARY KEY,
+    
+    -- 以網站 + 頁面為主鍵
+    site_url VARCHAR(255) NOT NULL,
+    page_path VARCHAR(1000) NOT NULL,
+    
+    -- 意圖分布 (JSON)
+    intent_distribution JSONB NOT NULL,
+    -- {"informational": 0.65, "commercial": 0.25, "navigational": 0.05, "transactional": 0.05}
+    
+    primary_intent VARCHAR(20) NOT NULL,
+    
+    -- 計算依據
+    total_queries INT,
+    date_range_start DATE,
+    date_range_end DATE,
+    
+    -- 時間
+    calculated_at TIMESTAMP DEFAULT NOW(),
+    
+    -- 聯合唯一鍵
+    UNIQUE(site_url, page_path, date_range_start, date_range_end)
+);
+
+-- 索引
+CREATE INDEX idx_site_page ON site_page_intents(site_url, page_path);
+```
+
+##### 跨用戶共享流程
+
+```
+用戶 A (有 example.com 權限) 查看頁面分析
+                    ↓
+        查詢 site_keyword_intents
+        WHERE site_url = 'example.com'
+                    ↓
+        ┌─────有快取─────┴─────沒快取─────┐
+        ↓                                  ↓
+    返回已存意圖                      呼叫 AI 分類
+    (0 費用, < 50ms)                  (有費用, 1-2s)
+                                           ↓
+                                    存入 DB (site_url = 'example.com')
+                    ↓
+═══════════════════════════════════════════════════════════════════════════
+                    ↓
+用戶 B (也有 example.com 權限) 查看同頁面
+                    ↓
+        查詢 site_keyword_intents
+        WHERE site_url = 'example.com'
+                    ↓
+        已有快取 → 直接返回 (0 費用) ✅
+```
+
+##### 效益分析
+
+| 方案 | 用戶 A 查詢 | 用戶 B 查詢 (同網站) | 總 AI 呼叫 | 費用 |
+|------|-------------|---------------------|------------|------|
+| ❌ 無快取 | AI 分類 | AI 分類 | 2 次 | $$ |
+| ❌ 以用戶為主 | AI 分類 | AI 分類 | 2 次 | $$ |
+| ✅ **以網站為主** | AI 分類 | **快取命中** | **1 次** | **$** |
+
+##### 成本估算
+
+| 規模 | 第一次 (冷啟動) | 之後 (有快取) |
+|------|-----------------|---------------|
+| 100 頁 × 50 關鍵字 | ~5,000 AI 呼叫 ≈ $0.50 | $0 |
+| 1,000 頁 × 50 關鍵字 | ~50,000 AI 呼叫 ≈ $5.00 | $0 |
+| 10,000 頁 × 50 關鍵字 | ~500,000 AI 呼叫 ≈ $50 | $0 |
+
+> 使用 GPT-4o-mini 或 Gemini Flash 等低成本模型可進一步降低費用
+
+##### 快取失效策略
+
+| 情境 | 處理方式 |
+|------|----------|
+| 關鍵字意圖變化 | 設定 TTL (如 90 天) 自動過期重新分類 |
+| 用戶手動修正 | 提供「重新分類」按鈕，刪除快取後重跑 AI |
+| 新關鍵字出現 | 只對新關鍵字呼叫 AI，舊的繼續使用快取 |
+
+---
+
+#### 未來擴展
+
+| 功能 | 說明 |
+|------|------|
+| **意圖趨勢分析** | 追蹤意圖分布隨時間的變化 |
+| **內容建議** | 根據意圖缺口建議創作新內容 (例：缺乏交易型內容) |
+| **競品意圖分析** | 比較與競品的意圖覆蓋差異 |
 
 ---
 

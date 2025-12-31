@@ -1,40 +1,77 @@
 import os
 import json
 from typing import Optional, Dict, Any, Generator
-from google.genai import Client, types
-from pydantic import BaseModel
+
+# Legacy Google GenAI SDK (for backward compatibility)
+try:
+    from google.genai import Client, types
+    GOOGLE_GENAI_AVAILABLE = True
+except ImportError:
+    GOOGLE_GENAI_AVAILABLE = False
+    print("[WARN] google.genai not available, only Zeabur mode will work")
+
+# New Zeabur AI Hub client
+from services.ai.zeabur_client import ZeaburAIClient
+
 
 class AIService:
     """
-    Service for interacting with AI models (Google Gemini via Zeabur or Direct).
+    Service for interacting with AI models.
     Supports Dual-Mode:
-    1. Zeabur Managed: Uses ZEABUR_AI_HUB_API_KEY from env.
-    2. Standard: Uses user-provided API Key.
+    1. Legacy Mode (google_gemini): Uses Google GenAI SDK directly
+    2. Zeabur Mode (zeabur): Uses OpenAI-compatible API via Zeabur AI Hub (supports 10+ models)
     """
 
+    # Available providers
+    PROVIDERS = {
+        "google_gemini": {
+            "name": "Google Gemini",
+            "description": "直接使用 Google Gemini API",
+            "requires_sdk": True
+        },
+        "zeabur": {
+            "name": "Zeabur AI Hub",
+            "description": "透過 Zeabur 統一介面，支援多種模型 (Gemini, Claude, GPT 等)",
+            "requires_sdk": False
+        }
+    }
+
     @staticmethod
-    def get_client(api_key: Optional[str] = None) -> Optional[Client]:
+    def get_available_providers() -> Dict[str, Dict]:
+        """Get list of available AI providers"""
+        providers = {}
+        for key, config in AIService.PROVIDERS.items():
+            if key == "google_gemini" and not GOOGLE_GENAI_AVAILABLE:
+                continue  # Skip if SDK not available
+            providers[key] = config
+        return providers
+
+    @staticmethod
+    def get_available_models(provider: str = "zeabur") -> Dict[str, Dict]:
+        """Get available models for a provider"""
+        if provider == "zeabur":
+            return ZeaburAIClient.MODELS
+        elif provider == "google_gemini":
+            # Limited models for legacy mode
+            return {
+                "gemini-2.5-flash": {"description": "Gemini 2.5 Flash", "provider": "google"},
+                "gemini-2.5-pro": {"description": "Gemini 2.5 Pro", "provider": "google"},
+            }
+        return {}
+
+    @staticmethod
+    def get_legacy_client(api_key: Optional[str] = None) -> Optional["Client"]:
         """
-        Initialize Google GenAI Client based on available credentials.
-        Priority:
-        1. Zeabur Managed (Env Var) - Ignores user api_key if present? 
-           Actually, we might want to allow override. 
-           But for now, if Zeabur Key exists, we use it as the default system-wide AI.
-           
-        Wait, if the user explicitly provides a key in the request (e.g. BYOK mode), we should strictly use that.
-        If no key is provided in request, we check for Zeabur env var.
+        Initialize legacy Google GenAI Client.
+        For backward compatibility with existing google_gemini provider.
         """
-        
-        # 1. Zeabur Managed Mode (System Level)
-        # Check environment variable
+        if not GOOGLE_GENAI_AVAILABLE:
+            return None
+
         zeabur_key = os.getenv("ZEABUR_AI_HUB_API_KEY")
-        
-        # Logic: If api_key is provided (BYOK), use it standardly.
-        # If NOT provided, try Zeabur.
         
         if api_key:
             # Standard Mode (User's own key)
-            # Default to standard Google Endpoint
             try:
                 return Client(api_key=api_key)
             except Exception as e:
@@ -42,71 +79,88 @@ class AIService:
                 return None
                 
         elif zeabur_key:
-            # Zeabur Managed Mode
+            # Zeabur Managed Mode (Legacy path through Google SDK)
             try:
-                # Based on user provided example
                 return Client(
                     api_key=zeabur_key,
-                    vertexai=True, # User example used this, likely required for Zeabur Hub? Or maybe not, but let's follow example. 
-                    # Wait, user example: client = Client(api_key=..., vertexai=True, ...)
-                    # Let's stick to the example.
+                    vertexai=True,
                     http_options=types.HttpOptions(
-                        base_url="https://hnd1.aihub.zeabur.ai/gemini", # Default to Tokyo, maybe make configurable?
+                        base_url="https://hnd1.aihub.zeabur.ai/gemini",
                         headers={
                             "Authorization": zeabur_key
                         }
                     )
                 )
             except Exception as e:
-                print(f"Error initializing Zeabur Client: {e}")
+                print(f"Error initializing Zeabur Client (legacy): {e}")
                 return None
         
         return None
 
     @staticmethod
-    def test_connection(api_key: Optional[str] = None) -> bool:
+    def get_zeabur_client(api_key: Optional[str] = None) -> Optional[ZeaburAIClient]:
+        """
+        Initialize Zeabur AI Hub Client (OpenAI-compatible).
+        """
+        try:
+            return ZeaburAIClient(api_key=api_key)
+        except Exception as e:
+            print(f"Error initializing Zeabur Client: {e}")
+            return None
+
+    @staticmethod
+    def test_connection(
+        api_key: Optional[str] = None,
+        provider: str = "zeabur",
+        model: str = "gemini-2.5-flash"
+    ) -> bool:
         """
         Test if the AI service is reachable.
         """
-        client = AIService.get_client(api_key)
-        if not client:
-            return False
-            
-        try:
-            # Simple generation to test
-            response = client.models.generate_content(
-                model="gemini-2.5-flash", # Use a fast model
-                contents="Hello",
-            )
-            return True
-        except Exception as e:
-            print(f"AI Connection Test Failed: {e}")
-            return False
+        if provider == "zeabur":
+            client = AIService.get_zeabur_client(api_key)
+            if not client:
+                return False
+            return client.test_connection(model=model)
+        else:
+            # Legacy Google Gemini mode
+            client = AIService.get_legacy_client(api_key)
+            if not client:
+                return False
+            try:
+                response = client.models.generate_content(
+                    model="gemini-2.5-flash",
+                    contents="Hello",
+                )
+                return True
+            except Exception as e:
+                print(f"AI Connection Test Failed: {e}")
+                return False
 
     @staticmethod
     def analyze_data(
         data: Dict[str, Any], 
         context: str, 
         api_key: Optional[str] = None,
+        provider: str = "zeabur",
         model: str = "gemini-2.5-flash",
         report_type: str = "ad_analysis"
     ) -> Generator[str, None, None]:
         """
         Analyzes the provided data using the LLM.
         Returns a generator for streaming response.
+        
+        Args:
+            data: Data to analyze
+            context: Context description
+            api_key: User's API key (optional, falls back to env var)
+            provider: AI provider ('zeabur' or 'google_gemini')
+            model: Model to use
+            report_type: 'ad_analysis' or 'weekly_summary'
         """
-        client = AIService.get_client(api_key)
-        if not client:
-            yield "Error: No valid API Key or AI Service configured."
-            return
-
-        # key_metrics = ... (We assume data is already summarized or Raw)
-        # For Phase 1, we pass the JSON dumps directly but truncated if needed.
         
-        system_prompt = ""
-        
+        # Build system prompt based on report type
         if report_type == "weekly_summary":
-            # 🟢 WEEKLY SUMMARY REPORT PROMPT
             system_prompt = """
             You are a Senior Facebook Ads Consultant helping a client prepare a Weekly Performance Report (週報).
             Your goal is to write a cohesive, professional summary based on the provided data context.
@@ -122,7 +176,6 @@ class AIService:
             Format: Markdown (use bolding for key numbers).
             """
         else:
-            # 🔴 DEFAULT: DIRECT AD ANALYSIS PROMPT
             system_prompt = """
             You are an expert Facebook Ads Analyst (Senior Media Buyer).
             Your task is to analyze the provided ad performance data and generate a professional diagnosis report.
@@ -149,9 +202,68 @@ class AIService:
         Data:
         {json.dumps(data, indent=2, ensure_ascii=False)}
         """
-        
+
+        # Use appropriate provider
+        if provider == "zeabur":
+            yield from AIService._analyze_with_zeabur(
+                system_prompt=system_prompt,
+                user_message=user_message,
+                api_key=api_key,
+                model=model
+            )
+        else:
+            yield from AIService._analyze_with_legacy(
+                system_prompt=system_prompt,
+                user_message=user_message,
+                api_key=api_key,
+                model=model
+            )
+
+    @staticmethod
+    def _analyze_with_zeabur(
+        system_prompt: str,
+        user_message: str,
+        api_key: Optional[str],
+        model: str
+    ) -> Generator[str, None, None]:
+        """Use Zeabur AI Hub (OpenAI-compatible) for analysis"""
+        client = AIService.get_zeabur_client(api_key)
+        if not client:
+            yield "Error: No valid API Key or AI Service configured."
+            return
+
         try:
-            # Stream the response
+            response = client.generate_content(
+                prompt=user_message,
+                model=model,
+                system_prompt=system_prompt,
+                stream=True
+            )
+            
+            for chunk in response:
+                yield chunk
+                
+        except Exception as e:
+            yield f"\n[System Error during Analysis: {str(e)}]"
+
+    @staticmethod
+    def _analyze_with_legacy(
+        system_prompt: str,
+        user_message: str,
+        api_key: Optional[str],
+        model: str
+    ) -> Generator[str, None, None]:
+        """Use legacy Google GenAI SDK for analysis"""
+        if not GOOGLE_GENAI_AVAILABLE:
+            yield "Error: Google GenAI SDK not available. Please use Zeabur provider."
+            return
+
+        client = AIService.get_legacy_client(api_key)
+        if not client:
+            yield "Error: No valid API Key or AI Service configured."
+            return
+
+        try:
             response_stream = client.models.generate_content_stream(
                 model=model,
                 contents=[
