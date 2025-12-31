@@ -52,6 +52,7 @@
 | `photo_view` | ❌ | 照片瀏覽 |
 | `social_impressions` | ❌ | 社交曝光 (有好友互動) |
 | `social_reach` | ❌ | 社交觸及 |
+| `post_saves` | ✅ | 貼文儲存 |
 
 ## Clicks & CTR (9)
 
@@ -76,15 +77,17 @@
 | `initiate_checkout` | ✅ | 開始結帳 |
 | `add_payment_info` | ✅ | 新增付款資訊 |
 | `view_content` | ✅ | 查看內容 |
-| `lead` | ❌ | 潛在客戶 (名單) |
+| `lead` | ✅ | 潛在客戶 (名單) |
+| `onsite_leads` | ✅ | 站上潛在客戶 |
 | `contact` | ❌ | 聯絡 |
 | `search` | ❌ | 搜尋 |
 | `start_trial` | ❌ | 開始試用 |
 | `subscribe` | ❌ | 訂閱 |
-| `mobile_app_install` | ❌ | App 安裝 |
+| `mobile_app_install` | ✅ | App 安裝 |
 | `mobile_app_purchase_roas` | ❌ | App 購買 ROAS |
-| `cost_per_mobile_app_install` | ❌ | 單次 App 安裝成本 |
+| `cost_per_mobile_app_install` | ✅ | 單次 App 安裝成本 |
 | `app_use` | ❌ | App 使用 |
+| `app_events` | ✅ | App 事件 |
 | `credit_spent` | ❌ | 應用程式內點數花費 |
 
 ## Dimensions (Age, Gender, Location) (10)
@@ -112,6 +115,25 @@
 | `quality_score` | ❌ | 品質分數 |
 | `estimated_ad_recall_rate` | ❌ | 估計廣告回想率 |
 | `estimated_ad_recallers` | ❌ | 估計廣告回想人數 |
+
+## Messaging (3)
+
+| Metric Key | Used in System? | 中文備註 |
+| :--- | :---: | :--- |
+| `messaging_first_reply` | ✅ | 首次訊息回覆 |
+| `messaging_conversation_started` | ✅ | 開始對話 |
+| `cost_per_message` | ✅ | 每則訊息成本 |
+
+## CPAS (6)
+
+| Metric Key | Used in System? | 中文備註 |
+| :--- | :---: | :--- |
+| `shared_purchases` | ✅ | 共享購買次數 |
+| `shared_purchase_value` | ✅ | 共享購買值 |
+| `shared_roas` | ✅ | 共享 ROAS |
+| `shared_add_to_cart` | ✅ | 共享加購次數 |
+| `shared_atc_value` | ✅ | 共享加購值 |
+| `shared_view_content` | ✅ | 共享瀏覽次數 |
 
 ## Settings & ID (9)
 
