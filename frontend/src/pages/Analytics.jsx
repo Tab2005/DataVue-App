@@ -543,7 +543,8 @@ const Analytics = () => {
             const essentialMetrics = [
                 'spend', 'impressions', 'link_clicks', 'clicks', 'reach',
                 'purchases', 'purchase_value', 'add_to_cart', 'atc_value',
-                'view_content', 'initiate_checkout', 'add_payment_info'
+                'view_content', 'initiate_checkout', 'add_payment_info',
+                'outbound_clicks' // Essential for Cost per Outbound Click summary
             ];
 
             // Merge selected keys with essential metrics (avoid duplicates)
@@ -748,6 +749,7 @@ const Analytics = () => {
             clicks: sum('clicks'),  // NEW
             link_clicks: sum('link_clicks'),
             unique_clicks: sum('unique_clicks'),  // NEW
+            outbound_clicks: sum('outbound_clicks'), // NEW for Cost Per Outbound Click
             view_content: sum('view_content'),
             add_to_cart: sum('add_to_cart'),
             initiate_checkout: sum('initiate_checkout'),
@@ -802,10 +804,9 @@ const Analytics = () => {
         total.cost_per_conversion = total.purchases > 0 ? total.spend / total.purchases : 0;
         // Approximation for others where denominator might be missing or using generic clicks
         total.cost_per_inline_link_click = total.link_clicks > 0 ? total.spend / total.link_clicks : 0;
-        total.social_spend = sum('social_spend'); // Additive
-        // For outbound, we don't have outbound_clicks sum, so we might skip or approximation?
-        // Let's just sum it if it was additive (it's not).
-        // If we leave it undefined, it returns 0.
+
+        // Cost Per Outbound Click
+        total.cost_per_outbound_click = total.outbound_clicks > 0 ? total.spend / total.outbound_clicks : 0;
 
         // Calculated Extended Costs
         total.cost_per_message = total.messaging_first_reply > 0 ? total.spend / total.messaging_first_reply : 0;

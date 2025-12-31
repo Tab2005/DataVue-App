@@ -1,5 +1,22 @@
 # Changelog
 
+## v1.6.3 (2025-12-31) - Cost Per Outbound Click KPI Card Fix
+
+### Fixed
+- **🔧 Cost Per Outbound Click Not Showing in KPI Cards**:
+    - Fixed an issue where "Cost Per Outbound Click" metric displayed correctly in the data table but showed `$0` in KPI summary cards.
+    - **Root Cause**: In `backend/async_services.py`, the `METRICS_REGISTRY` incorrectly mapped `outbound_clicks` as `'source': 'actions'`, but Facebook API returns it as a **direct field** (array format), not as an action type.
+    - **Solution**: Changed `outbound_clicks` mapping from `{'source': 'actions', 'action_type': 'outbound_click'}` to `{'source': 'direct', 'fb_field': 'outbound_clicks'}`.
+    - Added `outbound_clicks` to default API fields and frontend's `essentialMetrics` list.
+
+### 修復
+- **🔧 單次外連點擊成本 KPI 圖卡無法顯示數據**：
+    - 修復了「單次外連點擊成本」指標在數據表格正常顯示，但在 KPI 圖卡顯示 `$0` 的問題。
+    - **根本原因**：`backend/async_services.py` 中的 `METRICS_REGISTRY` 錯誤地將 `outbound_clicks` 映射為 `'source': 'actions'`，但 Facebook API 實際上是以**獨立欄位**（陣列格式）回傳此數據。
+    - **解決方案**：將 `outbound_clicks` 的映射從 `{'source': 'actions'}` 改為 `{'source': 'direct', 'fb_field': 'outbound_clicks'}`。
+    - 同時將 `outbound_clicks` 加入後端預設 API 欄位與前端的 `essentialMetrics` 列表。
+
+---
 ## v1.6.2 (2025-12-31) - Analytics Cost Metrics Enhancement
 
 ### New Features

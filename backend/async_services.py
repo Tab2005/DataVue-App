@@ -33,6 +33,14 @@ METRICS_REGISTRY = {
     'link_clicks': {'source': 'direct', 'fb_field': 'inline_link_clicks'},
     'unique_clicks': {'source': 'direct', 'fb_field': 'unique_clicks'},
     
+    # --- General Cost Metrics ---
+    'cpp': {'source': 'direct', 'fb_field': 'cpp'},
+    'cost_per_unique_click': {'source': 'direct', 'fb_field': 'cost_per_unique_click'},
+    'cost_per_inline_link_click': {'source': 'direct', 'fb_field': 'cost_per_inline_link_click'},
+    'cost_per_outbound_click': {'source': 'direct', 'fb_field': 'cost_per_outbound_click'},
+    'cost_per_conversion': {'source': 'direct', 'fb_field': 'cost_per_conversion'},
+    'outbound_clicks': {'source': 'direct', 'fb_field': 'outbound_clicks'},
+
     # --- E-commerce Metrics ---
     'roas': {'source': 'purchase_roas', 'fb_field': 'purchase_roas'},
     'purchases': {'source': 'actions', 'action_type': 'purchase'},
@@ -391,7 +399,8 @@ class AsyncFacebookService:
             api_fields = (
                 "campaign_id,adset_id,ad_id,"
                 "campaign_name,adset_name,ad_name,"
-                "spend,impressions,reach,frequency,cpm,cpc,ctr,inline_link_clicks,clicks,unique_clicks,"  # Added frequency, unique_clicks
+                "spend,impressions,reach,frequency,cpm,cpc,ctr,inline_link_clicks,clicks,unique_clicks,"
+                "outbound_clicks,"  # Added for Cost per Outbound Click
                 "actions,action_values,purchase_roas,"
                 "quality_ranking,engagement_rate_ranking,conversion_rate_ranking,"
                 "catalog_segment_value,catalog_segment_actions,"
@@ -605,22 +614,32 @@ class AsyncFacebookService:
                     flat["cost_per_inline_link_click"] = float(row.get("cost_per_inline_link_click", 0))
 
                 # Cost Per Outbound Click
-                # Outbound clicks usually come from actions list with type 'outbound_click'
-                # But 'outbound_clicks' field might be available in top level for some versions or aggregated views
-                # We check actions first
-                outbound_clicks = acts.get("outbound_click", 0) 
+                # 'outbound_clicks' is a direct field from Facebook API (returns as array)
+                # Fallback to actions if direct field is not present
+                outbound_clicks = 0
+                outbound_clicks_list = row.get("outbound_clicks", [])
+                if isinstance(outbound_clicks_list, list) and outbound_clicks_list:
+                    outbound_clicks = int(outbound_clicks_list[0].get("value", 0))
+                
+                # Fallback to actions if direct field returned 0
                 if outbound_clicks == 0:
-                     # fallback to checking top level if it exists (though rare for this specific key format in actions)
-                     outbound_clicks_list = row.get("outbound_clicks", [])
-                     if isinstance(outbound_clicks_list, list) and outbound_clicks_list:
-                         outbound_clicks = int(outbound_clicks_list[0].get("value", 0))
+                    outbound_clicks = acts.get("outbound_click", 0)
                 
                 flat["outbound_clicks"] = outbound_clicks
                 
                 if outbound_clicks > 0:
                     flat["cost_per_outbound_click"] = flat["spend"] / outbound_clicks
                 else:
-                     flat["cost_per_outbound_click"] = float(row.get("cost_per_outbound_click", [{}])[0].get("value", 0) if isinstance(row.get("cost_per_outbound_click"), list) else row.get("cost_per_outbound_click", 0))
+                    # Try to get pre-calculated cost_per_outbound_click from API
+                    cpoc_raw = row.get("cost_per_outbound_click")
+                    if isinstance(cpoc_raw, list) and cpoc_raw:
+                        flat["cost_per_outbound_click"] = float(cpoc_raw[0].get("value", 0))
+                    elif cpoc_raw:
+                        flat["cost_per_outbound_click"] = float(cpoc_raw)
+                    else:
+                        flat["cost_per_outbound_click"] = 0
+
+
 
                 # Cost Per Conversion (CPA) - Already calculated as 'cpa' above, but mapping to key expected by frontend 'cost_per_conversion'
                 flat["cost_per_conversion"] = flat["cpa"]
