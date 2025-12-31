@@ -46,3 +46,30 @@
 ### 3. AI 演進 (Phase 2 & 3)
 - **Copilot (Phase 2)**: 對話式助理 (Chatbot)。
 - **Autopilot (Phase 3)**: 自動化規則執行。
+
+---
+
+## ⚡ 效能優化 (Performance Optimization)
+
+### 後端啟動速度優化
+**狀態**: 待實作
+**問題描述**: Zeabur 部署啟動速度慢，影響冷啟動回應時間。
+
+**已識別的瓶頸**:
+
+| 優先級 | 問題 | 位置 | 預期改善 |
+|--------|------|------|----------|
+| 🔴 高 | 每次啟動都執行 Alembic Migration | `main.py:143-146` | -3~5 秒 |
+| 🔴 高 | 多次 Schema Patching 檢查 (teams, users, saved_views) | `main.py:152-231` | -3~5 秒 |
+| 🔴 高 | Router 被重複註冊兩次 | `main.py:382-388, 456-460` | 減少混亂 |
+| 🟡 中 | 每次啟動都執行 Permission Seeding | `main.py:237-242` | -2~3 秒 |
+| 🟡 中 | AI 模組同步 import (google-genai, openai) | `ai_service.py` | -1~2 秒 |
+| 🟢 低 | 大量 debug print 輸出 | 全域 | 減少 log 量 |
+
+**建議優化方案**:
+1. 使用環境變數 `SKIP_MIGRATION=true` 控制是否執行 migration
+2. 將 schema patching 改為「僅首次部署」或「手動觸發」
+3. 移除重複的 router include
+4. AI 模組使用 lazy import（首次呼叫時才載入）
+5. 優化 seed_permissions 只在資料不存在時執行
+
