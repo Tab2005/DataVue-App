@@ -592,6 +592,7 @@ const GSCStats = ({ language, isMobile = false }) => {
             }
 
             const data = await resp.json();
+            console.log('API response data:', data);
 
             // Store each keyword's intent in the keyword-level cache
             const newKeywordIntents = {};
@@ -606,7 +607,12 @@ const GSCStats = ({ language, isMobile = false }) => {
                 }
             });
 
-            setKeywordIntents(prev => ({ ...prev, ...newKeywordIntents }));
+            console.log('New keyword intents to add:', Object.keys(newKeywordIntents).length, newKeywordIntents);
+            setKeywordIntents(prev => {
+                const updated = { ...prev, ...newKeywordIntents };
+                console.log('Total keyword intents after update:', Object.keys(updated).length);
+                return updated;
+            });
             console.log(`Analyzed ${Object.keys(newKeywordIntents).length} new keywords for ${pageUrl}`);
         } catch (err) {
             console.error('Failed to fetch page intent:', err);
@@ -1817,6 +1823,19 @@ const GSCStats = ({ language, isMobile = false }) => {
                                                                                                 <span style={{ fontSize: '10px', color: 'var(--text-tertiary)' }}>
                                                                                                     ({analyzedCount}/{allKeywords.length})
                                                                                                 </span>
+                                                                                                {/* Show loading indicator during continue analysis */}
+                                                                                                {intentLoading[pageUrl] && (
+                                                                                                    <span style={{
+                                                                                                        fontSize: '10px',
+                                                                                                        color: '#3B82F6',
+                                                                                                        display: 'inline-flex',
+                                                                                                        alignItems: 'center',
+                                                                                                        gap: '4px',
+                                                                                                        animation: 'pulse 1.5s ease-in-out infinite'
+                                                                                                    }}>
+                                                                                                        ⏳ {t('分析中', 'Analyzing')}...
+                                                                                                    </span>
+                                                                                                )}
                                                                                                 {/* Continue analysis button if there are uncached keywords */}
                                                                                                 {uncachedCount > 0 && !intentLoading[pageUrl] && (
                                                                                                     <button
