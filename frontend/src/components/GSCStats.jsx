@@ -561,20 +561,29 @@ const GSCStats = ({ language, isMobile = false }) => {
             const maxKeywords = analyzeAll ? 100 : 10;
             const keywordsToAnalyze = uncachedKeywords.slice(0, maxKeywords).map(kw => kw.keyword || kw.query);
 
+            // Build request body
+            // For first-time analysis (analyzeAll=false): don't send keywords, let backend fetch from GSC
+            // For continue analysis (analyzeAll=true): send specific keywords to skip GSC fetch
+            const requestBody = {
+                site_url: selectedSite,
+                page_url: pageUrl,
+                start_date: dateRange.start,
+                end_date: dateRange.end,
+                top_n: maxKeywords
+            };
+
+            // Only send keywords array for continue analysis
+            if (analyzeAll) {
+                requestBody.keywords = keywordsToAnalyze;
+            }
+
             const resp = await fetch(`${API_URL}/api/gsc/page-intents`, {
                 method: 'POST',
                 headers: {
                     'Authorization': `Bearer ${localStorage.getItem('google_token')}`,
                     'Content-Type': 'application/json'
                 },
-                body: JSON.stringify({
-                    site_url: selectedSite,
-                    page_url: pageUrl,
-                    start_date: dateRange.start,
-                    end_date: dateRange.end,
-                    top_n: keywordsToAnalyze.length,
-                    keywords: keywordsToAnalyze  // Send specific keywords to analyze
-                })
+                body: JSON.stringify(requestBody)
             });
 
             if (!resp.ok) {
