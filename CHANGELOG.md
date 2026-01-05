@@ -1,5 +1,34 @@
 # Changelog
 
+## v1.6.5 (2026-01-05) - GSC Search Intent Analysis UI
+
+### New Features
+- **🔮 Search Intent Analysis in GSC Page Analysis**:
+    - Added "🤖 Analyze Intent" button for each page in Page Analysis tab.
+    - AI-powered analysis using Zeabur AI Hub (Gemini 2.5 Flash).
+    - Displays primary intent badge (Informational/Commercial/Navigational/Transactional) with mini distribution bars.
+    - Each keyword shows individual intent label when page is expanded.
+    - LocalStorage persistence: analysis results survive page refreshes.
+- **🔌 New API Endpoint**: `POST /api/gsc/page-intents` for AI intent classification on GSC page keywords.
+
+### 新功能
+- **🔮 GSC 頁面分析搜尋意圖**：
+    - 在「頁面分析」標籤中，每個頁面新增「🤖 分析意圖」按鈕。
+    - 使用 Zeabur AI Hub（Gemini 2.5 Flash）進行 AI 分析。
+    - 顯示主要意圖標籤（資訊型/商業型/導航型/交易型）及迷你意圖分布條。
+    - 展開頁面後，每個關鍵字顯示個別意圖標籤。
+    - LocalStorage 持久化：分析結果在頁面刷新後仍保留。
+- **🔌 新增 API 端點**：`POST /api/gsc/page-intents` 用於 AI 意圖分類。
+
+### Files Modified
+- `frontend/src/components/GSCStats.jsx` - Added intent analysis UI
+- `backend/routers/gsc.py` - Added `/page-intents` endpoint
+
+### Configuration
+- Requires `ZEABUR_AI_HUB_API_KEY` environment variable in backend `.env`
+
+---
+
 ## v1.6.4 (2025-12-31) - AI Search Intent Classifier
 
 ### New Features

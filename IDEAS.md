@@ -1,7 +1,7 @@
 # Facebook Dashboard SaaS - 專案路線圖與創意筆記
 
-**最後更新**: 2025-12-30
-**專案狀態**: v1.6.1 (Stable Phase - 穩定版)
+**最後更新**: 2026-01-05
+**專案狀態**: v1.6.5 (Stable Phase - 穩定版)
 **品牌名稱**: **DataVue**
 
 本文檔用於追蹤 Facebook Dashboard SaaS 平台的開發路線圖、已完成的里程碑以及未來的架構計畫。
@@ -198,6 +198,26 @@
     *   **概念**: 允許用戶/團隊定義 System Prompts，客製化 AI 的分析風格 (Persona)。
     *   **儲存**: 資料庫 (`ai_system_prompt` 欄位)。
     *   **優先級**: 團隊指令 (Team Prompt) > 個人指令 (User Prompt) > 系統預設 (System Default)。
+
+*   **✅ 搜尋意圖分類 (Search Intent Classification) - v1.6.5 已實作**:
+    *   **概念**: 使用 AI 分析 GSC 頁面的搜尋關鍵字，判斷用戶搜尋意圖類型。
+    *   **意圖類型**:
+        | 類型 | Emoji | 說明 |
+        |------|-------|------|
+        | Informational | 🔵 資訊型 | 尋求資訊、知識的查詢 |
+        | Commercial | 🟠 商業型 | 購買前的研究比較 |
+        | Navigational | 🟢 導航型 | 尋找特定品牌/網站 |
+        | Transactional | 🔴 交易型 | 準備購買、行動 |
+    *   **功能實作**:
+        | 項目 | 狀態 |
+        |------|------|
+        | 後端 API (`/api/gsc/page-intents`) | ✅ |
+        | AI 分類器 (`AIIntentClassifier`) | ✅ |
+        | 前端分析按鈕 | ✅ |
+        | 意圖標籤顯示 | ✅ |
+        | 關鍵字級別意圖標籤 | ✅ |
+        | LocalStorage 持久化 | ✅ |
+        | 資料庫持久化 | 🚧 待開發 |
 
 ---
 
