@@ -314,10 +314,29 @@ const GSCStats = ({ language, isMobile = false }) => {
     // Page titles cache (for page tab and trend tab)
     const [pageTitles, setPageTitles] = useState({});
 
-    // Search Intent Analysis state (AI-powered)
-    const [pageIntents, setPageIntents] = useState({});  // { pageUrl: { primary_intent, intent_distribution, keywords } }
+    // Search Intent Analysis state (AI-powered) - with LocalStorage persistence
+    const [pageIntents, setPageIntents] = useState(() => {
+        // Load from LocalStorage on initial render
+        try {
+            const saved = localStorage.getItem('gsc_page_intents');
+            return saved ? JSON.parse(saved) : {};
+        } catch {
+            return {};
+        }
+    });
     const [intentLoading, setIntentLoading] = useState({});  // { pageUrl: boolean }
     const [intentError, setIntentError] = useState({});  // { pageUrl: string }
+
+    // Persist pageIntents to LocalStorage whenever it changes
+    useEffect(() => {
+        if (Object.keys(pageIntents).length > 0) {
+            try {
+                localStorage.setItem('gsc_page_intents', JSON.stringify(pageIntents));
+            } catch (e) {
+                console.warn('Failed to save intents to LocalStorage:', e);
+            }
+        }
+    }, [pageIntents]);
 
     // Intent type labels and colors
     const INTENT_TYPES = {
@@ -1805,39 +1824,80 @@ const GSCStats = ({ language, isMobile = false }) => {
                                                                             fontSize: '12px',
                                                                             color: 'var(--text-secondary)',
                                                                             marginBottom: '8px',
-                                                                            fontWeight: '500'
+                                                                            fontWeight: '500',
+                                                                            display: 'flex',
+                                                                            justifyContent: 'space-between',
+                                                                            alignItems: 'center'
                                                                         }}>
-                                                                            🔍 {t('核心關鍵字', 'Core Keywords')}
+                                                                            <span>🔍 {t('核心關鍵字', 'Core Keywords')}</span>
+                                                                            {pageIntents[pageUrl] && (
+                                                                                <span style={{ fontSize: '11px', color: 'var(--text-tertiary)' }}>
+                                                                                    ✨ AI {t('意圖分析', 'Intent Analysis')}
+                                                                                </span>
+                                                                            )}
                                                                         </div>
                                                                         <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
-                                                                            {keywords.map((kw, kIdx) => (
-                                                                                <div key={kIdx} style={{
-                                                                                    display: 'flex',
-                                                                                    justifyContent: 'space-between',
-                                                                                    alignItems: 'center',
-                                                                                    padding: '6px 10px',
-                                                                                    background: 'var(--bg-primary)',
-                                                                                    borderRadius: '6px',
-                                                                                    fontSize: '13px'
-                                                                                }}>
-                                                                                    <span style={{ color: 'var(--text-primary)', flex: 1 }}>
-                                                                                        {kw.keyword}
-                                                                                    </span>
-                                                                                    <div style={{ display: 'flex', gap: '16px', marginLeft: '12px' }}>
-                                                                                        <span style={{
-                                                                                            color: 'var(--accent-primary)',
-                                                                                            fontWeight: '500'
-                                                                                        }}>
-                                                                                            {kw.clicks.toLocaleString()} {t('點擊', 'clicks')}
-                                                                                        </span>
-                                                                                        <span style={{
-                                                                                            color: 'var(--text-secondary)'
-                                                                                        }}>
-                                                                                            {kw.impressions.toLocaleString()} {t('曝光', 'impr.')}
-                                                                                        </span>
+                                                                            {/* Use AI-analyzed keywords if available, otherwise fall back to pageKeywords */}
+                                                                            {(pageIntents[pageUrl]?.keywords || keywords).map((kw, kIdx) => {
+                                                                                // kw can be either from AI response (has .intent) or from pageKeywords
+                                                                                const intent = kw.intent || null;
+                                                                                const intentType = INTENT_TYPES[intent];
+                                                                                const query = kw.query || kw.keyword;
+                                                                                const clicks = kw.clicks || 0;
+                                                                                const impressions = kw.impressions || 0;
+
+                                                                                return (
+                                                                                    <div key={kIdx} style={{
+                                                                                        display: 'flex',
+                                                                                        justifyContent: 'space-between',
+                                                                                        alignItems: 'center',
+                                                                                        padding: '6px 10px',
+                                                                                        background: 'var(--bg-primary)',
+                                                                                        borderRadius: '6px',
+                                                                                        fontSize: '13px',
+                                                                                        gap: '8px'
+                                                                                    }}>
+                                                                                        <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flex: 1, minWidth: 0 }}>
+                                                                                            <span style={{ color: 'var(--text-primary)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                                                                                                {query}
+                                                                                            </span>
+                                                                                            {/* Intent badge for each keyword */}
+                                                                                            {intentType && (
+                                                                                                <span style={{
+                                                                                                    display: 'inline-flex',
+                                                                                                    alignItems: 'center',
+                                                                                                    gap: '2px',
+                                                                                                    background: `${intentType.color}15`,
+                                                                                                    color: intentType.color,
+                                                                                                    padding: '2px 6px',
+                                                                                                    borderRadius: '8px',
+                                                                                                    fontSize: '10px',
+                                                                                                    fontWeight: '500',
+                                                                                                    flexShrink: 0
+                                                                                                }}>
+                                                                                                    {intentType.emoji}
+                                                                                                    {language === 'zh' ? intentType.label_zh : intentType.label_en}
+                                                                                                </span>
+                                                                                            )}
+                                                                                        </div>
+                                                                                        <div style={{ display: 'flex', gap: '12px', flexShrink: 0 }}>
+                                                                                            <span style={{
+                                                                                                color: 'var(--accent-primary)',
+                                                                                                fontWeight: '500',
+                                                                                                fontSize: '12px'
+                                                                                            }}>
+                                                                                                {clicks.toLocaleString()} {t('點擊', 'clicks')}
+                                                                                            </span>
+                                                                                            <span style={{
+                                                                                                color: 'var(--text-secondary)',
+                                                                                                fontSize: '12px'
+                                                                                            }}>
+                                                                                                {impressions.toLocaleString()} {t('曝光', 'impr.')}
+                                                                                            </span>
+                                                                                        </div>
                                                                                     </div>
-                                                                                </div>
-                                                                            ))}
+                                                                                );
+                                                                            })}
                                                                         </div>
                                                                     </div>
                                                                 </td>
