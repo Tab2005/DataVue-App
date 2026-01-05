@@ -132,3 +132,169 @@ async def get_page_titles(
     except Exception as e:
         traceback.print_exc()
         raise HTTPException(status_code=500, detail=f"Failed to fetch titles: {str(e)}")
+
+
+# 5. Page Intent Analysis (AI-powered)
+class PageIntentRequest(BaseModel):
+    site_url: str           # GSC site URL (e.g., "sc-domain:example.com")
+    page_url: str           # Page URL to analyze
+    start_date: str         # YYYY-MM-DD
+    end_date: str           # YYYY-MM-DD
+    top_n: Optional[int] = 10  # Number of keywords to analyze
+
+@router.post("/page-intents")
+async def get_page_intents(
+    request: PageIntentRequest,
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+    _: bool = Depends(gsc_module_check)
+):
+    """
+    Analyze search intent for a specific page using AI.
+    
+    Fetches top keywords for the page from GSC, then uses AI to classify
+    each keyword's search intent (informational, commercial, navigational, transactional).
+    
+    Returns:
+        - Primary intent for the page
+        - Intent distribution percentages
+        - Keywords with individual intent classifications
+    """
+    import os
+    from services.ai import AIIntentClassifier
+    
+    try:
+        # Step 1: Fetch keywords for this page from GSC
+        query_data, error = GSCService.get_analytics(
+            user,
+            request.site_url,
+            request.start_date,
+            request.end_date,
+            dimensions=['page', 'query']
+        )
+        
+        if error:
+            raise HTTPException(status_code=400, detail=f"GSC Error: {error}")
+        
+        # Step 2: Filter keywords for the specified page
+        page_queries = []
+        for row in query_data:
+            keys = row.get('keys', [])
+            if len(keys) >= 2 and keys[0] == request.page_url:
+                page_queries.append({
+                    "query": keys[1],
+                    "clicks": row.get('clicks', 0),
+                    "impressions": row.get('impressions', 0),
+                    "ctr": row.get('ctr', 0),
+                    "position": row.get('position', 0)
+                })
+        
+        if not page_queries:
+            return {
+                "page": request.page_url,
+                "primary_intent": "unknown",
+                "intent_distribution": {
+                    "informational": 0.25,
+                    "commercial": 0.25,
+                    "navigational": 0.25,
+                    "transactional": 0.25
+                },
+                "keywords": [],
+                "message": "No keywords found for this page",
+                "model": None
+            }
+        
+        # Step 3: Sort by clicks and take top N
+        page_queries.sort(key=lambda x: x['clicks'], reverse=True)
+        top_queries = page_queries[:request.top_n]
+        
+        # Step 4: Check for AI API key
+        api_key = os.getenv("ZEABUR_AI_HUB_API_KEY")
+        if not api_key:
+            # Return without AI analysis if no key
+            return {
+                "page": request.page_url,
+                "primary_intent": "unknown",
+                "intent_distribution": {
+                    "informational": 0.25,
+                    "commercial": 0.25,
+                    "navigational": 0.25,
+                    "transactional": 0.25
+                },
+                "keywords": [
+                    {
+                        "query": q["query"],
+                        "clicks": q["clicks"],
+                        "impressions": q["impressions"],
+                        "position": q["position"],
+                        "intent": "unknown",
+                        "confidence": 0
+                    }
+                    for q in top_queries
+                ],
+                "message": "AI API key not configured",
+                "model": None
+            }
+        
+        # Step 5: Use AI to classify intents
+        classifier = AIIntentClassifier(api_key=api_key)
+        query_texts = [q["query"] for q in top_queries]
+        
+        result = classifier.classify_queries(query_texts)
+        
+        if not result.get("success"):
+            raise HTTPException(
+                status_code=500, 
+                detail=f"AI Classification failed: {result.get('error')}"
+            )
+        
+        # Step 6: Combine GSC data with AI results
+        ai_results = result.get("results", [])
+        keywords_with_intent = []
+        
+        for i, q in enumerate(top_queries):
+            ai_item = ai_results[i] if i < len(ai_results) else {}
+            keywords_with_intent.append({
+                "query": q["query"],
+                "clicks": q["clicks"],
+                "impressions": q["impressions"],
+                "position": round(q["position"], 1),
+                "intent": ai_item.get("primary_intent", "unknown"),
+                "confidence": ai_item.get("confidence", 0),
+                "intent_distribution": ai_item.get("intent_distribution", {})
+            })
+        
+        # Step 7: Calculate page-level intent (weighted by clicks)
+        total_clicks = sum(q["clicks"] for q in top_queries) or 1
+        page_distribution = {
+            "informational": 0.0,
+            "commercial": 0.0,
+            "navigational": 0.0,
+            "transactional": 0.0
+        }
+        
+        for i, kw in enumerate(keywords_with_intent):
+            weight = top_queries[i]["clicks"] / total_clicks
+            dist = kw.get("intent_distribution", {})
+            for intent_type in page_distribution:
+                page_distribution[intent_type] += dist.get(intent_type, 0.25) * weight
+        
+        primary_intent = max(page_distribution, key=page_distribution.get)
+        
+        return {
+            "page": request.page_url,
+            "primary_intent": primary_intent,
+            "intent_distribution": {
+                k: round(v, 3) for k, v in page_distribution.items()
+            },
+            "keywords": keywords_with_intent,
+            "keyword_count": len(keywords_with_intent),
+            "total_keywords": len(page_queries),
+            "model": classifier.model
+        }
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=f"Intent analysis failed: {str(e)}")
