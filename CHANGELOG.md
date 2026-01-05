@@ -1,5 +1,28 @@
 # Changelog
 
+## v1.6.4 (2025-12-31) - AI Search Intent Classifier
+
+### New Features
+- **🔮 AI Intent Classifier**:
+    - Added `AIIntentClassifier` class in `backend/services/ai/intent_classifier.py` for classifying search query intents using AI models.
+    - Supports 4 intent types: Informational (資訊型), Commercial (商業型), Navigational (導航型), Transactional (交易型).
+    - Uses Zeabur AI Hub (Gemini 2.5 Flash by default) for intelligent classification.
+    - Returns intent distribution percentages and confidence scores for each query.
+    - Designed for future integration with GSC page analysis to show page-level search intent.
+
+### 新功能
+- **🔮 AI 搜尋意圖分類器**：
+    - 新增 `AIIntentClassifier` 類別於 `backend/services/ai/intent_classifier.py`，使用 AI 模型分類搜尋關鍵字意圖。
+    - 支援 4 種意圖類型：資訊型、商業型、導航型、交易型。
+    - 使用 Zeabur AI Hub（預設 Gemini 2.5 Flash）進行智慧分類。
+    - 回傳各意圖分布比例與信心分數。
+    - 設計用於未來整合至 GSC 頁面分析，顯示頁面層級的搜尋意圖。
+
+### Files Added
+- `backend/services/ai/intent_classifier.py` - AI Intent Classifier core module
+
+---
+
 ## v1.6.3 (2025-12-31) - Cost Per Outbound Click KPI Card Fix
 
 ### Fixed
