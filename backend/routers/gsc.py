@@ -140,7 +140,7 @@ class PageIntentRequest(BaseModel):
     page_url: str           # Page URL to analyze
     start_date: str         # YYYY-MM-DD
     end_date: str           # YYYY-MM-DD
-    top_n: Optional[int] = 10  # Number of keywords to analyze
+    top_n: Optional[int] = 50  # Number of keywords to analyze (default 50)
 
 @router.post("/page-intents")
 async def get_page_intents(

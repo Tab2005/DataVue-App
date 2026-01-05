@@ -489,10 +489,10 @@ const GSCStats = ({ language, isMobile = false }) => {
                 }
             });
 
-            // Sort keywords by clicks and keep top 5 per page
+            // Sort keywords by clicks (keep all keywords, not just top 5)
             Object.keys(keywordMap).forEach(page => {
                 keywordMap[page].sort((a, b) => b.clicks - a.clicks);
-                keywordMap[page] = keywordMap[page].slice(0, 5);
+                // No longer slicing to top 5 - keep all keywords for full analysis
             });
 
             setPageKeywords(keywordMap);
@@ -566,7 +566,7 @@ const GSCStats = ({ language, isMobile = false }) => {
                     page_url: pageUrl,
                     start_date: dateRange.start,
                     end_date: dateRange.end,
-                    top_n: Math.min(uncachedKeywords.length, 50)  // Analyze up to 50 uncached keywords
+                    top_n: Math.min(uncachedKeywords.length, 100)  // Analyze up to 100 uncached keywords
                 })
             });
 
@@ -1825,7 +1825,14 @@ const GSCStats = ({ language, isMobile = false }) => {
                                                                                             </span>
                                                                                         );
                                                                                     } else {
-                                                                                        // Analyze button
+                                                                                        // Analyze button with keyword count
+                                                                                        const allKeywords = pageKeywords[pageUrl] || [];
+                                                                                        const analyzedCount = allKeywords.filter(kw => {
+                                                                                            const query = kw.keyword || kw.query;
+                                                                                            return keywordIntents[query];
+                                                                                        }).length;
+                                                                                        const uncachedCount = allKeywords.length - analyzedCount;
+
                                                                                         return (
                                                                                             <button
                                                                                                 onClick={(e) => {
@@ -1853,8 +1860,12 @@ const GSCStats = ({ language, isMobile = false }) => {
                                                                                                     e.currentTarget.style.borderColor = 'var(--glass-border)';
                                                                                                     e.currentTarget.style.color = 'var(--text-secondary)';
                                                                                                 }}
+                                                                                                title={t(`共 ${allKeywords.length} 個關鍵字，${uncachedCount} 個待分析`, `${allKeywords.length} keywords, ${uncachedCount} to analyze`)}
                                                                                             >
                                                                                                 🤖 {t('分析意圖', 'Analyze Intent')}
+                                                                                                <span style={{ opacity: 0.7 }}>
+                                                                                                    ({allKeywords.length})
+                                                                                                </span>
                                                                                             </button>
                                                                                         );
                                                                                     }
