@@ -143,17 +143,57 @@
 
 ## 🚧 Active Development (開發進行中)
 
+
 目前正在構建或即將進行的功能。
 
 ### 1. AI 智慧分析引擎 (Phase 1: 分析師)
 **目標**: 將儀表板從被動的報表工具轉變為「主動的 AI 顧問」。
-*   **✅ 後端服務**: 已實作透過 Google Gemini 整合的 `AIService`。
+*   **✅ 後端服務**: 已實作透過 Zeabur AI Hub 整合的 `AIService` 與 `AIIntentClassifier`。
 *   **✅ 前端介面**: 完成 "AI Analyst" 側邊滑出面板與連線測試按鈕。
 *   **✅ 診斷模式**: 自動分析目前畫面數據 (Campaign/AdSet)，找出關鍵問題與機會點。
-*   **🚧 分層金鑰管理 (Scope Key Management)**:
-    *   **個人金鑰 (User Level)**: 存於 `users` 資料表，僅限個人工作區使用。
-    *   **團隊金鑰 (Team Level)**: 存於 `teams` 資料表，供團隊成員協作使用。
-    *   **分享邏輯**: 明確的「複製到團隊 (Copy to Team)」按鈕 (不採用隱式共享)。
+*   **✅ 搜尋意圖分類**: `AIIntentClassifier` 可分析關鍵字意圖 (資訊/商業/導航/交易型)。
+
+#### 🔑 分層金鑰管理架構 (AI Key Management)
+
+**存取優先順序**:
+```
+1. 用戶個人 Key (users.ai_api_key) ← 需 ai:configure 權限
+   ↓
+2. 系統共用 Key (ZEABUR_AI_HUB_API_KEY 環境變數) ← 免費試用
+   ↓
+3. 無可用 Key → 返回錯誤
+```
+
+**權限控制**:
+
+| 權限 Key | 說明 | 預設授予 |
+|----------|------|----------|
+| `ai:use` | 使用 AI 功能（分析、診斷、意圖分類） | ✅ 所有用戶 |
+| `ai:configure` | 設定個人 AI API Key | ❌ 需管理員授權 |
+
+**資料庫欄位** (待新增):
+
+| 欄位 | 表 | 說明 |
+|------|------|------|
+| `ai_api_key` | `users` | 用戶個人 Zeabur AI Hub Key (加密) |
+| `ai_provider` | `users` | AI 提供者 (`zeabur`) |
+| `ai_model` | `users` | 偏好模型 (`gemini-2.5-flash`) |
+
+**環境變數**:
+
+| 變數 | 說明 | 設定位置 |
+|------|------|----------|
+| `ZEABUR_AI_HUB_API_KEY` | 系統共用金鑰 (免費試用) | Zeabur Dashboard → Backend → Variables |
+
+**實作狀態**:
+
+| 項目 | 狀態 |
+|------|------|
+| 環境變數讀取 | ✅ 已實作 |
+| 用戶個人 Key 儲存 | 🚧 待開發 |
+| 權限控制 (`ai:configure`) | 🚧 待開發 |
+| 前端 UI 權限判斷 | 🚧 待開發 |
+
 *   **🚧 AI 自訂指令系統 (Custom AI Instructions)**:
     *   **概念**: 允許用戶/團隊定義 System Prompts，客製化 AI 的分析風格 (Persona)。
     *   **儲存**: 資料庫 (`ai_system_prompt` 欄位)。
