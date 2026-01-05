@@ -314,6 +314,19 @@ const GSCStats = ({ language, isMobile = false }) => {
     // Page titles cache (for page tab and trend tab)
     const [pageTitles, setPageTitles] = useState({});
 
+    // Search Intent Analysis state (AI-powered)
+    const [pageIntents, setPageIntents] = useState({});  // { pageUrl: { primary_intent, intent_distribution, keywords } }
+    const [intentLoading, setIntentLoading] = useState({});  // { pageUrl: boolean }
+    const [intentError, setIntentError] = useState({});  // { pageUrl: string }
+
+    // Intent type labels and colors
+    const INTENT_TYPES = {
+        informational: { label_zh: '資訊型', label_en: 'Informational', color: '#3B82F6', emoji: '🔵' },
+        commercial: { label_zh: '商業型', label_en: 'Commercial', color: '#F59E0B', emoji: '🟠' },
+        navigational: { label_zh: '導航型', label_en: 'Navigational', color: '#10B981', emoji: '🟢' },
+        transactional: { label_zh: '交易型', label_en: 'Transactional', color: '#EF4444', emoji: '🔴' }
+    };
+
     useEffect(() => {
         fetchSites();
     }, []);
@@ -449,6 +462,46 @@ const GSCStats = ({ language, isMobile = false }) => {
             setPageTitles(prev => ({ ...prev, ...titles }));
         } catch (err) {
             console.error('Failed to fetch page titles:', err);
+        }
+    };
+
+    // Fetch AI-powered search intent analysis for a specific page
+    const fetchPageIntent = async (pageUrl) => {
+        if (!selectedSite || !dateRange.start || !dateRange.end) return;
+        if (pageIntents[pageUrl]) return; // Already fetched
+        if (intentLoading[pageUrl]) return; // Already loading
+
+        setIntentLoading(prev => ({ ...prev, [pageUrl]: true }));
+        setIntentError(prev => ({ ...prev, [pageUrl]: null }));
+
+        try {
+            const resp = await fetch(`${API_URL}/api/gsc/page-intents`, {
+                method: 'POST',
+                headers: {
+                    'Authorization': `Bearer ${localStorage.getItem('google_token')}`,
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({
+                    site_url: selectedSite,
+                    page_url: pageUrl,
+                    start_date: dateRange.start,
+                    end_date: dateRange.end,
+                    top_n: 10
+                })
+            });
+
+            if (!resp.ok) {
+                const error = await resp.json();
+                throw new Error(error.detail || 'Intent analysis failed');
+            }
+
+            const data = await resp.json();
+            setPageIntents(prev => ({ ...prev, [pageUrl]: data }));
+        } catch (err) {
+            console.error('Failed to fetch page intent:', err);
+            setIntentError(prev => ({ ...prev, [pageUrl]: err.message }));
+        } finally {
+            setIntentLoading(prev => ({ ...prev, [pageUrl]: false }));
         }
     };
 
@@ -1585,6 +1638,116 @@ const GSCStats = ({ language, isMobile = false }) => {
                                                                             </a>
                                                                         ) : (
                                                                             row.keys && row.keys[0]
+                                                                        )}
+
+                                                                        {/* Search Intent Badge (AI-powered) */}
+                                                                        {activeTab === 'page' && pageUrl && (
+                                                                            <div style={{
+                                                                                marginTop: '8px',
+                                                                                display: 'flex',
+                                                                                alignItems: 'center',
+                                                                                gap: '8px',
+                                                                                flexWrap: 'wrap'
+                                                                            }}>
+                                                                                {pageIntents[pageUrl] ? (
+                                                                                    // Show intent result
+                                                                                    <>
+                                                                                        <span
+                                                                                            style={{
+                                                                                                display: 'inline-flex',
+                                                                                                alignItems: 'center',
+                                                                                                gap: '4px',
+                                                                                                background: `${INTENT_TYPES[pageIntents[pageUrl].primary_intent]?.color}20`,
+                                                                                                color: INTENT_TYPES[pageIntents[pageUrl].primary_intent]?.color,
+                                                                                                padding: '3px 10px',
+                                                                                                borderRadius: '12px',
+                                                                                                fontSize: '11px',
+                                                                                                fontWeight: '600'
+                                                                                            }}
+                                                                                            title={t('AI 分析的主要搜尋意圖', 'AI-analyzed primary search intent')}
+                                                                                        >
+                                                                                            {INTENT_TYPES[pageIntents[pageUrl].primary_intent]?.emoji}
+                                                                                            {language === 'zh'
+                                                                                                ? INTENT_TYPES[pageIntents[pageUrl].primary_intent]?.label_zh
+                                                                                                : INTENT_TYPES[pageIntents[pageUrl].primary_intent]?.label_en}
+                                                                                        </span>
+                                                                                        {/* Mini distribution bars */}
+                                                                                        <div style={{
+                                                                                            display: 'flex',
+                                                                                            gap: '2px',
+                                                                                            alignItems: 'center'
+                                                                                        }}>
+                                                                                            {Object.entries(pageIntents[pageUrl].intent_distribution || {}).map(([intent, value]) => (
+                                                                                                <div
+                                                                                                    key={intent}
+                                                                                                    style={{
+                                                                                                        width: '4px',
+                                                                                                        height: `${Math.max(6, value * 20)}px`,
+                                                                                                        background: INTENT_TYPES[intent]?.color || '#666',
+                                                                                                        borderRadius: '2px',
+                                                                                                        opacity: value > 0.1 ? 1 : 0.3
+                                                                                                    }}
+                                                                                                    title={`${language === 'zh' ? INTENT_TYPES[intent]?.label_zh : INTENT_TYPES[intent]?.label_en}: ${(value * 100).toFixed(0)}%`}
+                                                                                                />
+                                                                                            ))}
+                                                                                        </div>
+                                                                                    </>
+                                                                                ) : intentLoading[pageUrl] ? (
+                                                                                    // Loading state
+                                                                                    <span style={{
+                                                                                        fontSize: '11px',
+                                                                                        color: 'var(--text-secondary)',
+                                                                                        display: 'flex',
+                                                                                        alignItems: 'center',
+                                                                                        gap: '4px'
+                                                                                    }}>
+                                                                                        <span style={{ animation: 'spin 1s linear infinite' }}>🔄</span>
+                                                                                        {t('分析中...', 'Analyzing...')}
+                                                                                    </span>
+                                                                                ) : intentError[pageUrl] ? (
+                                                                                    // Error state
+                                                                                    <span style={{
+                                                                                        fontSize: '11px',
+                                                                                        color: '#EF4444',
+                                                                                        display: 'flex',
+                                                                                        alignItems: 'center',
+                                                                                        gap: '4px'
+                                                                                    }}>
+                                                                                        ⚠️ {t('分析失敗', 'Analysis failed')}
+                                                                                    </span>
+                                                                                ) : (
+                                                                                    // Analyze button
+                                                                                    <button
+                                                                                        onClick={(e) => {
+                                                                                            e.stopPropagation();
+                                                                                            fetchPageIntent(pageUrl);
+                                                                                        }}
+                                                                                        style={{
+                                                                                            display: 'inline-flex',
+                                                                                            alignItems: 'center',
+                                                                                            gap: '4px',
+                                                                                            background: 'transparent',
+                                                                                            border: '1px dashed var(--glass-border)',
+                                                                                            color: 'var(--text-secondary)',
+                                                                                            padding: '3px 10px',
+                                                                                            borderRadius: '12px',
+                                                                                            fontSize: '11px',
+                                                                                            cursor: 'pointer',
+                                                                                            transition: 'all 0.2s'
+                                                                                        }}
+                                                                                        onMouseEnter={(e) => {
+                                                                                            e.currentTarget.style.borderColor = 'var(--accent-primary)';
+                                                                                            e.currentTarget.style.color = 'var(--accent-primary)';
+                                                                                        }}
+                                                                                        onMouseLeave={(e) => {
+                                                                                            e.currentTarget.style.borderColor = 'var(--glass-border)';
+                                                                                            e.currentTarget.style.color = 'var(--text-secondary)';
+                                                                                        }}
+                                                                                    >
+                                                                                        🤖 {t('分析意圖', 'Analyze Intent')}
+                                                                                    </button>
+                                                                                )}
+                                                                            </div>
                                                                         )}
 
                                                                         {/* Keyword tags (collapsed preview) */}
