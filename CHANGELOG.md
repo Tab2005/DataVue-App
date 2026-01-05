@@ -1,5 +1,67 @@
 # Changelog
 
+## v1.6.6 (2026-01-05) - Search Intent Keyword-Level Cache Architecture
+
+### New Features
+- **🧠 Keyword-Level Intent Cache**:
+    - Refactored from page-level to keyword-level intent caching.
+    - Keyword intents are fixed once analyzed (stored in `localStorage` as `gsc_keyword_intents`).
+    - Page-level intent is dynamically calculated from the current date range's top 10 keywords.
+    - This architecture allows intents to persist across different date ranges.
+
+- **💰 Cost-Saving Analysis Logic**:
+    - First-time analysis only analyzes **top 10 keywords** (not all).
+    - "Continue Analysis" button appears when uncached keywords exist.
+    - Confirmation dialog warns about API costs before continuing analysis.
+
+- **🔄 Continue Analysis Feature**:
+    - Blue "🔄 繼續分析 +N" button for incremental analysis.
+    - "⏳ 分析中..." loading indicator with pulse animation.
+    - Backend accepts `keywords` parameter to analyze specific keywords directly.
+
+### 新功能
+- **🧠 關鍵字級別意圖快取**：
+    - 從頁面級別重構為關鍵字級別快取。
+    - 關鍵字意圖分析後即固定（儲存於 `localStorage` 的 `gsc_keyword_intents`）。
+    - 頁面級別意圖根據當前日期區間的前 10 個關鍵字動態計算。
+    - 此架構允許意圖跨不同日期區間保持一致。
+
+- **💰 成本節約分析邏輯**：
+    - 首次分析僅分析**前 10 個關鍵字**。
+    - 當存在未分析的關鍵字時，顯示「繼續分析」按鈕。
+    - 繼續分析前會跳出 API 成本確認對話框。
+
+- **🔄 繼續分析功能**：
+    - 藍色「🔄 繼續分析 +N」按鈕用於增量分析。
+    - 「⏳ 分析中...」載入指示器帶有脈衝動畫。
+    - 後端接受 `keywords` 參數以直接分析指定關鍵字。
+
+### Architecture
+```
+┌─────────────────────────────────────────────────────────────┐
+│  Keyword-Level Intent Cache Architecture                     │
+├─────────────────────────────────────────────────────────────┤
+│  localStorage["gsc_keyword_intents"]                         │
+│  {                                                           │
+│    "老鼠 驅除": { intent: "informational", confidence: 0.9 },│
+│    "捕鼠器 推薦": { intent: "commercial", confidence: 0.85 },│
+│    ...                                                       │
+│  }                                                           │
+├─────────────────────────────────────────────────────────────┤
+│  Page Intent = dynamically calculated from:                  │
+│    - Current date range's top 10 keywords                    │
+│    - Weighted by clicks                                      │
+│    - Uses cached intents from keyword-level cache            │
+└─────────────────────────────────────────────────────────────┘
+```
+
+### Files Modified
+- `frontend/src/components/GSCStats.jsx` - Keyword-level cache, continue analysis UI
+- `frontend/src/components/PageLoading.css` - Added pulse animation
+- `backend/routers/gsc.py` - Added `keywords` parameter support
+
+---
+
 ## v1.6.5 (2026-01-05) - GSC Search Intent Analysis UI
 
 ### New Features
