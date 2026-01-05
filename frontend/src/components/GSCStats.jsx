@@ -527,8 +527,9 @@ const GSCStats = ({ language, isMobile = false }) => {
     };
 
     // Fetch AI-powered search intent analysis for a specific page
+    // analyzeAll: false = first-time analysis (top 10 only), true = continue analysis (all remaining up to 100)
     // Now stores results in KEYWORD-LEVEL cache, only analyzes uncached keywords
-    const fetchPageIntent = async (pageUrl) => {
+    const fetchPageIntent = async (pageUrl, analyzeAll = false) => {
         if (!selectedSite || !dateRange.start || !dateRange.end) return;
         if (intentLoading[pageUrl]) return; // Already loading
 
@@ -555,8 +556,10 @@ const GSCStats = ({ language, isMobile = false }) => {
         setIntentError(prev => ({ ...prev, [pageUrl]: null }));
 
         try {
-            // Extract just the keyword strings from uncached keywords
-            const keywordsToAnalyze = uncachedKeywords.slice(0, 100).map(kw => kw.keyword || kw.query);
+            // First-time analysis: only top 10 keywords (to save API costs)
+            // Continue analysis (analyzeAll=true): all remaining (up to 100)
+            const maxKeywords = analyzeAll ? 100 : 10;
+            const keywordsToAnalyze = uncachedKeywords.slice(0, maxKeywords).map(kw => kw.keyword || kw.query);
 
             const resp = await fetch(`${API_URL}/api/gsc/page-intents`, {
                 method: 'POST',
@@ -1810,7 +1813,13 @@ const GSCStats = ({ language, isMobile = false }) => {
                                                                                                     <button
                                                                                                         onClick={(e) => {
                                                                                                             e.stopPropagation();
-                                                                                                            fetchPageIntent(pageUrl);
+                                                                                                            // Show confirmation dialog for continue analysis (API cost warning)
+                                                                                                            const message = language === 'zh'
+                                                                                                                ? `⚠️ 繼續分析將分析剩餘 ${Math.min(uncachedCount, 100)} 個關鍵字\n\n這會消耗 AI API 額度，確定要繼續嗎？`
+                                                                                                                : `⚠️ Continue analysis will analyze ${Math.min(uncachedCount, 100)} more keywords\n\nThis will consume AI API credits. Continue?`;
+                                                                                                            if (window.confirm(message)) {
+                                                                                                                fetchPageIntent(pageUrl, true); // analyzeAll = true
+                                                                                                            }
                                                                                                         }}
                                                                                                         style={{
                                                                                                             display: 'inline-flex',
