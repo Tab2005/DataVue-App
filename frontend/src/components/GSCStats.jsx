@@ -1747,6 +1747,12 @@ const GSCStats = ({ language, isMobile = false }) => {
                                                                                 {(() => {
                                                                                     // Dynamically calculate page intent based on current keywords
                                                                                     const pageIntent = getPageIntent(pageUrl);
+                                                                                    const allKeywords = pageKeywords[pageUrl] || [];
+                                                                                    const analyzedCount = allKeywords.filter(kw => {
+                                                                                        const query = kw.keyword || kw.query;
+                                                                                        return keywordIntents[query];
+                                                                                    }).length;
+                                                                                    const uncachedCount = allKeywords.length - analyzedCount;
 
                                                                                     if (pageIntent) {
                                                                                         // Show dynamically calculated intent result
@@ -1791,10 +1797,43 @@ const GSCStats = ({ language, isMobile = false }) => {
                                                                                                         />
                                                                                                     ))}
                                                                                                 </div>
-                                                                                                {/* Show analyzed count */}
+                                                                                                {/* Show analyzed count and continue button if needed */}
                                                                                                 <span style={{ fontSize: '10px', color: 'var(--text-tertiary)' }}>
-                                                                                                    ({pageIntent.analyzed_count}/{pageIntent.total_count})
+                                                                                                    ({analyzedCount}/{allKeywords.length})
                                                                                                 </span>
+                                                                                                {/* Continue analysis button if there are uncached keywords */}
+                                                                                                {uncachedCount > 0 && !intentLoading[pageUrl] && (
+                                                                                                    <button
+                                                                                                        onClick={(e) => {
+                                                                                                            e.stopPropagation();
+                                                                                                            fetchPageIntent(pageUrl);
+                                                                                                        }}
+                                                                                                        style={{
+                                                                                                            display: 'inline-flex',
+                                                                                                            alignItems: 'center',
+                                                                                                            gap: '4px',
+                                                                                                            background: 'transparent',
+                                                                                                            border: '1px dashed var(--glass-border)',
+                                                                                                            color: 'var(--text-secondary)',
+                                                                                                            padding: '2px 8px',
+                                                                                                            borderRadius: '10px',
+                                                                                                            fontSize: '10px',
+                                                                                                            cursor: 'pointer',
+                                                                                                            transition: 'all 0.2s'
+                                                                                                        }}
+                                                                                                        onMouseEnter={(e) => {
+                                                                                                            e.currentTarget.style.borderColor = 'var(--accent-primary)';
+                                                                                                            e.currentTarget.style.color = 'var(--accent-primary)';
+                                                                                                        }}
+                                                                                                        onMouseLeave={(e) => {
+                                                                                                            e.currentTarget.style.borderColor = 'var(--glass-border)';
+                                                                                                            e.currentTarget.style.color = 'var(--text-secondary)';
+                                                                                                        }}
+                                                                                                        title={t(`還有 ${uncachedCount} 個關鍵字待分析`, `${uncachedCount} more keywords to analyze`)}
+                                                                                                    >
+                                                                                                        +{uncachedCount}
+                                                                                                    </button>
+                                                                                                )}
                                                                                             </>
                                                                                         );
                                                                                     } else if (intentLoading[pageUrl]) {
@@ -1951,8 +1990,8 @@ const GSCStats = ({ language, isMobile = false }) => {
                                                                             })()}
                                                                         </div>
                                                                         <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
-                                                                            {/* Always use pageKeywords (real-time GSC data), lookup intent from keywordIntents cache */}
-                                                                            {keywords.map((kw, kIdx) => {
+                                                                            {/* Show only top 5 keywords (sorted by clicks), lookup intent from cache */}
+                                                                            {keywords.slice(0, 5).map((kw, kIdx) => {
                                                                                 const query = kw.keyword || kw.query;
                                                                                 // Lookup intent from keyword-level cache
                                                                                 const cachedIntent = keywordIntents[query];
@@ -2013,6 +2052,18 @@ const GSCStats = ({ language, isMobile = false }) => {
                                                                                     </div>
                                                                                 );
                                                                             })}
+                                                                            {/* Show +N more indicator if there are more than 5 keywords */}
+                                                                            {keywords.length > 5 && (
+                                                                                <div style={{
+                                                                                    display: 'flex',
+                                                                                    justifyContent: 'center',
+                                                                                    padding: '4px',
+                                                                                    color: 'var(--text-tertiary)',
+                                                                                    fontSize: '11px'
+                                                                                }}>
+                                                                                    +{keywords.length - 5} {t('更多關鍵字', 'more keywords')}
+                                                                                </div>
+                                                                            )}
                                                                         </div>
                                                                     </div>
                                                                 </td>
