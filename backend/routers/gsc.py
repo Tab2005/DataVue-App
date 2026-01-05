@@ -169,6 +169,7 @@ async def get_page_intents(
         if request.keywords and len(request.keywords) > 0:
             # Use provided keywords directly - this is for "continue analysis" scenario
             top_queries = [{"query": kw, "clicks": 0, "impressions": 0, "ctr": 0, "position": 0} for kw in request.keywords[:request.top_n]]
+            page_queries = top_queries  # For continue analysis, page_queries equals top_queries
         else:
             # Step 1: Fetch keywords for this page from GSC
             query_data, error = GSCService.get_analytics(
