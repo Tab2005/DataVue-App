@@ -141,6 +141,7 @@ class PageIntentRequest(BaseModel):
     start_date: str         # YYYY-MM-DD
     end_date: str           # YYYY-MM-DD
     top_n: Optional[int] = 50  # Number of keywords to analyze (default 50)
+    keywords: Optional[List[str]] = None  # Optional: specific keywords to analyze (skip GSC fetch)
 
 @router.post("/page-intents")
 async def get_page_intents(
@@ -164,49 +165,54 @@ async def get_page_intents(
     from services.ai import AIIntentClassifier
     
     try:
-        # Step 1: Fetch keywords for this page from GSC
-        query_data, error = GSCService.get_analytics(
-            user,
-            request.site_url,
-            request.start_date,
-            request.end_date,
-            dimensions=['page', 'query']
-        )
-        
-        if error:
-            raise HTTPException(status_code=400, detail=f"GSC Error: {error}")
-        
-        # Step 2: Filter keywords for the specified page
-        page_queries = []
-        for row in query_data:
-            keys = row.get('keys', [])
-            if len(keys) >= 2 and keys[0] == request.page_url:
-                page_queries.append({
-                    "query": keys[1],
-                    "clicks": row.get('clicks', 0),
-                    "impressions": row.get('impressions', 0),
-                    "ctr": row.get('ctr', 0),
-                    "position": row.get('position', 0)
-                })
-        
-        if not page_queries:
-            return {
-                "page": request.page_url,
-                "primary_intent": "unknown",
-                "intent_distribution": {
-                    "informational": 0.25,
-                    "commercial": 0.25,
-                    "navigational": 0.25,
-                    "transactional": 0.25
-                },
-                "keywords": [],
-                "message": "No keywords found for this page",
-                "model": None
-            }
-        
-        # Step 3: Sort by clicks and take top N
-        page_queries.sort(key=lambda x: x['clicks'], reverse=True)
-        top_queries = page_queries[:request.top_n]
+        # Check if specific keywords were provided (skip GSC fetch if so)
+        if request.keywords and len(request.keywords) > 0:
+            # Use provided keywords directly - this is for "continue analysis" scenario
+            top_queries = [{"query": kw, "clicks": 0, "impressions": 0, "ctr": 0, "position": 0} for kw in request.keywords[:request.top_n]]
+        else:
+            # Step 1: Fetch keywords for this page from GSC
+            query_data, error = GSCService.get_analytics(
+                user,
+                request.site_url,
+                request.start_date,
+                request.end_date,
+                dimensions=['page', 'query']
+            )
+            
+            if error:
+                raise HTTPException(status_code=400, detail=f"GSC Error: {error}")
+            
+            # Step 2: Filter keywords for the specified page
+            page_queries = []
+            for row in query_data:
+                keys = row.get('keys', [])
+                if len(keys) >= 2 and keys[0] == request.page_url:
+                    page_queries.append({
+                        "query": keys[1],
+                        "clicks": row.get('clicks', 0),
+                        "impressions": row.get('impressions', 0),
+                        "ctr": row.get('ctr', 0),
+                        "position": row.get('position', 0)
+                    })
+            
+            if not page_queries:
+                return {
+                    "page": request.page_url,
+                    "primary_intent": "unknown",
+                    "intent_distribution": {
+                        "informational": 0.25,
+                        "commercial": 0.25,
+                        "navigational": 0.25,
+                        "transactional": 0.25
+                    },
+                    "keywords": [],
+                    "message": "No keywords found for this page",
+                    "model": None
+                }
+            
+            # Step 3: Sort by clicks and take top N
+            page_queries.sort(key=lambda x: x['clicks'], reverse=True)
+            top_queries = page_queries[:request.top_n]
         
         # Step 4: Check for AI API key
         api_key = os.getenv("ZEABUR_AI_HUB_API_KEY")

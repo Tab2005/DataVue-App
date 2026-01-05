@@ -555,6 +555,9 @@ const GSCStats = ({ language, isMobile = false }) => {
         setIntentError(prev => ({ ...prev, [pageUrl]: null }));
 
         try {
+            // Extract just the keyword strings from uncached keywords
+            const keywordsToAnalyze = uncachedKeywords.slice(0, 100).map(kw => kw.keyword || kw.query);
+
             const resp = await fetch(`${API_URL}/api/gsc/page-intents`, {
                 method: 'POST',
                 headers: {
@@ -566,7 +569,8 @@ const GSCStats = ({ language, isMobile = false }) => {
                     page_url: pageUrl,
                     start_date: dateRange.start,
                     end_date: dateRange.end,
-                    top_n: Math.min(uncachedKeywords.length, 100)  // Analyze up to 100 uncached keywords
+                    top_n: keywordsToAnalyze.length,
+                    keywords: keywordsToAnalyze  // Send specific keywords to analyze
                 })
             });
 
@@ -1812,26 +1816,25 @@ const GSCStats = ({ language, isMobile = false }) => {
                                                                                                             display: 'inline-flex',
                                                                                                             alignItems: 'center',
                                                                                                             gap: '4px',
-                                                                                                            background: 'transparent',
-                                                                                                            border: '1px dashed var(--glass-border)',
-                                                                                                            color: 'var(--text-secondary)',
-                                                                                                            padding: '2px 8px',
-                                                                                                            borderRadius: '10px',
+                                                                                                            background: 'rgba(59, 130, 246, 0.15)',
+                                                                                                            border: '1px solid rgba(59, 130, 246, 0.4)',
+                                                                                                            color: '#3B82F6',
+                                                                                                            padding: '3px 10px',
+                                                                                                            borderRadius: '12px',
                                                                                                             fontSize: '10px',
+                                                                                                            fontWeight: '500',
                                                                                                             cursor: 'pointer',
                                                                                                             transition: 'all 0.2s'
                                                                                                         }}
                                                                                                         onMouseEnter={(e) => {
-                                                                                                            e.currentTarget.style.borderColor = 'var(--accent-primary)';
-                                                                                                            e.currentTarget.style.color = 'var(--accent-primary)';
+                                                                                                            e.currentTarget.style.background = 'rgba(59, 130, 246, 0.25)';
                                                                                                         }}
                                                                                                         onMouseLeave={(e) => {
-                                                                                                            e.currentTarget.style.borderColor = 'var(--glass-border)';
-                                                                                                            e.currentTarget.style.color = 'var(--text-secondary)';
+                                                                                                            e.currentTarget.style.background = 'rgba(59, 130, 246, 0.15)';
                                                                                                         }}
                                                                                                         title={t(`還有 ${uncachedCount} 個關鍵字待分析`, `${uncachedCount} more keywords to analyze`)}
                                                                                                     >
-                                                                                                        +{uncachedCount}
+                                                                                                        🔄 {t('繼續分析', 'Continue')} +{uncachedCount}
                                                                                                     </button>
                                                                                                 )}
                                                                                             </>
