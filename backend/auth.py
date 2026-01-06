@@ -277,3 +277,98 @@ class TokenManager:
                 return False, data.get("error", {}).get("message", "Unknown error during token exchange.")
         except Exception as e:
             return False, str(e)
+
+    # ============================================================
+    # AI Settings Management (Encrypted)
+    # ============================================================
+    
+    @staticmethod
+    def save_ai_settings(google_id, zeabur_api_key=None, gemini_api_key=None, ai_provider=None, ai_model=None):
+        """
+        Save user's AI settings to database (API keys are encrypted).
+        
+        Args:
+            google_id: User's Google ID
+            zeabur_api_key: Zeabur AI Hub API Key (will be encrypted)
+            gemini_api_key: Google Gemini API Key (will be encrypted)
+            ai_provider: Active provider ('zeabur' or 'gemini')
+            ai_model: Selected AI model name
+        """
+        session = SessionLocal()
+        try:
+            user = session.query(User).filter(User.google_id == google_id).first()
+            if not user:
+                raise Exception("User not found")
+            
+            # Update only provided fields
+            if zeabur_api_key is not None:
+                user.zeabur_api_key = TokenManager._encrypt(zeabur_api_key) if zeabur_api_key else None
+            
+            if gemini_api_key is not None:
+                user.gemini_api_key = TokenManager._encrypt(gemini_api_key) if gemini_api_key else None
+            
+            if ai_provider is not None:
+                user.ai_provider = ai_provider
+            
+            if ai_model is not None:
+                user.ai_model = ai_model
+            
+            session.commit()
+            return True
+        except Exception as e:
+            session.rollback()
+            raise e
+        finally:
+            session.close()
+    
+    @staticmethod
+    def get_ai_settings(google_id):
+        """
+        Retrieve user's AI settings from database.
+        
+        Returns:
+            dict with ai_provider, ai_model, has_zeabur_key, has_gemini_key
+            (API keys are NOT returned for security, only whether they exist)
+        """
+        session = SessionLocal()
+        try:
+            user = session.query(User).filter(User.google_id == google_id).first()
+            if not user:
+                return None
+            
+            return {
+                "ai_provider": user.ai_provider or "zeabur",
+                "ai_model": user.ai_model or "gemini-2.5-flash",
+                "has_zeabur_key": bool(user.zeabur_api_key),
+                "has_gemini_key": bool(user.gemini_api_key)
+            }
+        finally:
+            session.close()
+    
+    @staticmethod
+    def get_ai_api_key(google_id, provider=None):
+        """
+        Retrieve decrypted AI API key for the specified or active provider.
+        
+        Args:
+            google_id: User's Google ID
+            provider: 'zeabur' or 'gemini' (if None, uses user's active provider)
+            
+        Returns:
+            Decrypted API key string, or None if not configured
+        """
+        session = SessionLocal()
+        try:
+            user = session.query(User).filter(User.google_id == google_id).first()
+            if not user:
+                return None
+            
+            # Use user's active provider if not specified
+            active_provider = provider or user.ai_provider or "zeabur"
+            
+            if active_provider == "gemini":
+                return TokenManager._decrypt(user.gemini_api_key) if user.gemini_api_key else None
+            else:
+                return TokenManager._decrypt(user.zeabur_api_key) if user.zeabur_api_key else None
+        finally:
+            session.close()

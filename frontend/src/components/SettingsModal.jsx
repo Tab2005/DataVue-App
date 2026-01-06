@@ -164,6 +164,53 @@ const SettingsModal = ({ isOpen, onClose, language, teamId, teamName, onSuccess 
     };
 
     // --- AI Logic ---
+
+    // Fetch AI settings from backend (encrypted storage)
+    const fetchAiSettings = async () => {
+        try {
+            const token = localStorage.getItem('google_token');
+            const apiUrl = import.meta.env.VITE_API_URL || 'http://localhost:8000';
+            const res = await fetch(`${apiUrl}/api/ai/settings`, {
+                headers: { 'Authorization': `Bearer ${token}` }
+            });
+            if (res.ok) {
+                const data = await res.json();
+                console.log('[SettingsModal] AI settings from DB:', data);
+                return data; // { ai_provider, ai_model, has_zeabur_key, has_gemini_key }
+            }
+        } catch (err) {
+            console.error('Failed to fetch AI settings', err);
+        }
+        return null;
+    };
+
+    // Save AI settings to backend (encrypted storage)
+    const saveAiSettingsToServer = async (settings) => {
+        try {
+            const token = localStorage.getItem('google_token');
+            const apiUrl = import.meta.env.VITE_API_URL || 'http://localhost:8000';
+            const res = await fetch(`${apiUrl}/api/ai/settings`, {
+                method: 'POST',
+                headers: {
+                    'Authorization': `Bearer ${token}`,
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify(settings)
+            });
+            if (res.ok) {
+                const data = await res.json();
+                console.log('[SettingsModal] AI settings saved:', data);
+                return data;
+            } else {
+                const error = await res.json();
+                throw new Error(error.detail || 'Failed to save settings');
+            }
+        } catch (err) {
+            console.error('Failed to save AI settings', err);
+            throw err;
+        }
+    };
+
     const fetchAvailableModels = async (provider = 'zeabur') => {
         try {
             const token = localStorage.getItem('google_token');
@@ -250,17 +297,25 @@ const SettingsModal = ({ isOpen, onClose, language, teamId, teamName, onSuccess 
         }
     };
 
-    const handleSaveAiKey = () => {
-        // Save provider and model preferences immediately
-        localStorage.setItem('ai_provider', aiData.provider);
-        localStorage.setItem('ai_model', aiData.model);
+    const handleSaveAiKey = async () => {
+        setAiLoading(true);
+        try {
+            // Save to backend (encrypted)
+            await saveAiSettingsToServer({
+                zeabur_api_key: aiData.apiKey || null,
+                ai_provider: 'zeabur',
+                ai_model: aiData.model
+            });
 
-        if (aiData.apiKey) {
-            localStorage.setItem('ai_api_key', aiData.apiKey);
+            // Sync provider to localStorage for GSCStats
+            localStorage.setItem('ai_provider', 'zeabur');
+
+            setStatus({ type: 'success', message: language === 'zh' ? '✅ 設定已儲存至伺服器！' : '✅ Settings saved to server!' });
+        } catch (err) {
+            setStatus({ type: 'error', message: language === 'zh' ? `❌ 儲存失敗: ${err.message}` : `❌ Save failed: ${err.message}` });
+        } finally {
+            setAiLoading(false);
         }
-
-        // Show success message immediately
-        setStatus({ type: 'success', message: language === 'zh' ? '設定已儲存！' : 'Settings Saved!' });
     };
 
     const handleTestConnection = async () => {
@@ -319,30 +374,32 @@ const SettingsModal = ({ isOpen, onClose, language, teamId, teamName, onSuccess 
             setStatus(null);
             // Fetch Facebook token status
             fetchTokenStatus();
-            // Load saved AI provider preference
-            const savedProvider = localStorage.getItem('ai_provider') || 'zeabur';
-            setActiveAiProvider(savedProvider);
-            // Don't auto-check AI connection - let user trigger it
+
+            // Fetch AI settings from backend
+            fetchAiSettings().then(settings => {
+                if (settings) {
+                    setActiveAiProvider(settings.ai_provider || 'zeabur');
+                    setAiData(prev => ({ ...prev, model: settings.ai_model || 'gemini-2.5-flash' }));
+                    // Store provider in localStorage for GSCStats to use (sync purpose only)
+                    localStorage.setItem('ai_provider', settings.ai_provider || 'zeabur');
+                }
+            });
         }
     }, [isOpen, teamId]);
 
-    // Switch to AI tab - just load saved settings, don't auto-test
+    // Switch to AI tab - load settings from backend
     useEffect(() => {
         if (isOpen && activeTab === 'ai') {
-            // Load saved settings from localStorage
-            const savedModel = localStorage.getItem('ai_model') || 'gemini-2.5-flash';
-            const savedKey = localStorage.getItem('ai_api_key') || '';
-            setAiData(prev => ({ ...prev, model: savedModel, apiKey: savedKey }));
             setAiConnectionStatus('unknown');
+            // Settings already loaded on modal open
         }
     }, [activeTab, isOpen]);
 
-    // Switch to Gemini tab - load saved settings
+    // Switch to Gemini tab - settings already loaded from backend
     useEffect(() => {
         if (isOpen && activeTab === 'gemini') {
-            const savedKey = localStorage.getItem('google_gemini_api_key') || '';
-            const savedModel = localStorage.getItem('google_gemini_model') || 'gemini-2.5-flash';
-            setGeminiData({ apiKey: savedKey, model: savedModel });
+            // Settings already loaded from backend on modal open
+            // geminiData.apiKey will be empty since we don't expose keys to frontend
         }
     }, [activeTab, isOpen]);
 
@@ -405,10 +462,16 @@ const SettingsModal = ({ isOpen, onClose, language, teamId, teamName, onSuccess 
                         </div>
                         <div style={{ display: 'flex', gap: '8px' }}>
                             <button
-                                onClick={() => {
+                                onClick={async () => {
                                     setActiveAiProvider('zeabur');
                                     localStorage.setItem('ai_provider', 'zeabur');
-                                    setStatus({ type: 'success', message: language === 'zh' ? '已切換為 Zeabur AI Hub' : 'Switched to Zeabur AI Hub' });
+                                    // Also save to backend
+                                    try {
+                                        await saveAiSettingsToServer({ ai_provider: 'zeabur' });
+                                        setStatus({ type: 'success', message: language === 'zh' ? '已切換為 Zeabur AI Hub' : 'Switched to Zeabur AI Hub' });
+                                    } catch (err) {
+                                        setStatus({ type: 'success', message: language === 'zh' ? '已切換為 Zeabur AI Hub (本地)' : 'Switched to Zeabur AI Hub (local)' });
+                                    }
                                 }}
                                 style={{
                                     padding: '6px 12px',
@@ -424,16 +487,22 @@ const SettingsModal = ({ isOpen, onClose, language, teamId, teamName, onSuccess 
                                 🚀 Zeabur
                             </button>
                             <button
-                                onClick={() => {
-                                    // Check if Gemini API key is configured
-                                    const geminiKey = localStorage.getItem('google_gemini_api_key');
-                                    if (!geminiKey) {
+                                onClick={async () => {
+                                    // Check from backend settings (loaded on modal open)
+                                    const settings = await fetchAiSettings();
+                                    if (!settings?.has_gemini_key) {
                                         setStatus({ type: 'error', message: language === 'zh' ? '請先在 Google Gemini 分頁設定 API Key' : 'Please configure API Key in Google Gemini tab first' });
                                         return;
                                     }
                                     setActiveAiProvider('gemini');
                                     localStorage.setItem('ai_provider', 'gemini');
-                                    setStatus({ type: 'success', message: language === 'zh' ? '已切換為 Google Gemini' : 'Switched to Google Gemini' });
+                                    // Also save to backend
+                                    try {
+                                        await saveAiSettingsToServer({ ai_provider: 'gemini' });
+                                        setStatus({ type: 'success', message: language === 'zh' ? '已切換為 Google Gemini' : 'Switched to Google Gemini' });
+                                    } catch (err) {
+                                        setStatus({ type: 'success', message: language === 'zh' ? '已切換為 Google Gemini (本地)' : 'Switched to Google Gemini (local)' });
+                                    }
                                 }}
                                 style={{
                                     padding: '6px 12px',
@@ -776,11 +845,17 @@ const SettingsModal = ({ isOpen, onClose, language, teamId, teamName, onSuccess 
                             <div style={{ display: 'flex', gap: '12px', justifyContent: 'flex-end' }}>
                                 {geminiData.apiKey && (
                                     <button
-                                        onClick={() => {
-                                            localStorage.removeItem('google_gemini_api_key');
-                                            localStorage.removeItem('google_gemini_model');
-                                            setGeminiData({ apiKey: '', model: 'gemini-2.5-flash' });
-                                            setStatus({ type: 'success', message: language === 'zh' ? '已清除 Google Gemini 設定' : 'Google Gemini settings cleared' });
+                                        onClick={async () => {
+                                            setAiLoading(true);
+                                            try {
+                                                await saveAiSettingsToServer({ gemini_api_key: '' });
+                                                setGeminiData({ apiKey: '', model: 'gemini-2.5-flash' });
+                                                setStatus({ type: 'success', message: language === 'zh' ? '已清除 Google Gemini 設定' : 'Google Gemini settings cleared' });
+                                            } catch (err) {
+                                                setStatus({ type: 'error', message: err.message });
+                                            } finally {
+                                                setAiLoading(false);
+                                            }
                                         }}
                                         style={{ padding: '10px 20px', borderRadius: '8px', border: '1px solid var(--glass-border)', background: 'transparent', color: '#f87171', cursor: 'pointer' }}
                                     >
@@ -788,33 +863,42 @@ const SettingsModal = ({ isOpen, onClose, language, teamId, teamName, onSuccess 
                                     </button>
                                 )}
                                 <button
-                                    onClick={() => {
-                                        // Save to localStorage
-                                        if (geminiData.apiKey) {
-                                            localStorage.setItem('google_gemini_api_key', geminiData.apiKey);
-                                            localStorage.setItem('google_gemini_model', geminiData.model);
-                                            setStatus({ type: 'success', message: language === 'zh' ? '✅ Google Gemini 設定已儲存' : '✅ Google Gemini settings saved' });
-                                        } else {
+                                    onClick={async () => {
+                                        if (!geminiData.apiKey) {
                                             setStatus({ type: 'error', message: language === 'zh' ? '請輸入 API Key' : 'Please enter API Key' });
+                                            return;
+                                        }
+                                        setAiLoading(true);
+                                        try {
+                                            await saveAiSettingsToServer({
+                                                gemini_api_key: geminiData.apiKey,
+                                                ai_model: geminiData.model
+                                            });
+                                            setStatus({ type: 'success', message: language === 'zh' ? '✅ Google Gemini 設定已儲存至伺服器' : '✅ Google Gemini settings saved to server' });
+                                        } catch (err) {
+                                            setStatus({ type: 'error', message: language === 'zh' ? `❌ 儲存失敗: ${err.message}` : `❌ Save failed: ${err.message}` });
+                                        } finally {
+                                            setAiLoading(false);
                                         }
                                     }}
-                                    style={{ padding: '10px 20px', borderRadius: '8px', border: 'none', background: 'var(--accent-primary)', color: 'white', cursor: 'pointer' }}
+                                    disabled={aiLoading}
+                                    style={{ padding: '10px 20px', borderRadius: '8px', border: 'none', background: aiLoading ? 'gray' : 'var(--accent-primary)', color: 'white', cursor: aiLoading ? 'not-allowed' : 'pointer' }}
                                 >
-                                    {language === 'zh' ? '儲存設定' : 'Save'}
+                                    {aiLoading ? (language === 'zh' ? '儲存中...' : 'Saving...') : (language === 'zh' ? '儲存設定' : 'Save')}
                                 </button>
                             </div>
 
-                            {/* Note */}
+                            {/* Info Note */}
                             <div style={{
                                 padding: '12px', borderRadius: '8px',
-                                background: 'rgba(251, 191, 36, 0.1)',
-                                border: '1px solid rgba(251, 191, 36, 0.2)',
+                                background: 'rgba(74, 222, 128, 0.1)',
+                                border: '1px solid rgba(74, 222, 128, 0.2)',
                                 fontSize: '0.85rem',
-                                color: '#fbbf24'
+                                color: '#4ade80'
                             }}>
-                                ⚠️ {language === 'zh'
-                                    ? '注意：此功能尚未完全實作。目前系統仍使用 Zeabur AI Hub。'
-                                    : 'Note: This feature is not fully implemented. System still uses Zeabur AI Hub.'}
+                                💡 {language === 'zh'
+                                    ? '儲存後，請到上方切換啟用的 AI 模組為「💎 Gemini」即可開始使用。'
+                                    : 'After saving, switch to "💎 Gemini" in the provider selector above to start using it.'}
                             </div>
                         </div>
                     )}

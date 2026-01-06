@@ -73,6 +73,12 @@ class User(Base):
     gsc_refresh_token = Column(String, nullable=True)
     gsc_expires_at = Column(DateTime, nullable=True)
     
+    # AI Integration (Encrypted API Keys)
+    zeabur_api_key = Column(String, nullable=True)  # Encrypted Zeabur AI Hub API Key
+    gemini_api_key = Column(String, nullable=True)  # Encrypted Google Gemini API Key
+    ai_provider = Column(String, nullable=True, default="zeabur")  # Active provider: 'zeabur' or 'gemini'
+    ai_model = Column(String, nullable=True, default="gemini-2.5-flash")  # Selected AI model
+    
     # Role Based Access Control (Legacy / Default Team Role)
     role = Column(SAEnum(UserRole), default=UserRole.VIEWER)
     status = Column(SAEnum(UserStatus), default=UserStatus.ACTIVE)

@@ -571,19 +571,12 @@ const GSCStats = ({ language, isMobile = false }) => {
                 end_date: dateRange.end,
                 top_n: maxKeywords
             };
-            // Determine AI provider based on user preference
+            // Determine AI provider based on user preference stored in localStorage (synced from backend)
             const savedProvider = localStorage.getItem('ai_provider') || 'zeabur';
 
-            if (savedProvider === 'gemini') {
-                // Use Google Gemini direct API
-                const geminiApiKey = localStorage.getItem('google_gemini_api_key');
-                if (geminiApiKey) {
-                    requestBody.provider = 'gemini';
-                    requestBody.ai_api_key = geminiApiKey;
-                }
-                // If no key configured, will fall through to backend default (Zeabur)
-            }
-            // Otherwise, backend will use Zeabur AI Hub (default)
+            // Just pass provider to backend - backend will retrieve encrypted API key from database
+            requestBody.provider = savedProvider;
+            // Note: No need to send ai_api_key - backend will fetch from user's encrypted storage
 
             // Only send keywords array for continue analysis
             if (analyzeAll) {

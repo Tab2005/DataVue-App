@@ -217,63 +217,45 @@ async def get_page_intents(
             page_queries.sort(key=lambda x: x['clicks'], reverse=True)
             top_queries = page_queries[:request.top_n]
         
-        # Step 4: Determine AI provider and API key
+        # Step 4: Determine AI provider and get API key from encrypted storage
         provider = request.provider or "zeabur"
         
-        if provider == "gemini":
-            # Use Google Gemini direct API
-            api_key = request.ai_api_key or os.getenv("GOOGLE_AI_API_KEY")
-            if not api_key:
-                return {
-                    "page": request.page_url,
-                    "primary_intent": "unknown",
-                    "intent_distribution": {
-                        "informational": 0.25,
-                        "commercial": 0.25,
-                        "navigational": 0.25,
-                        "transactional": 0.25
-                    },
-                    "keywords": [
-                        {
-                            "query": q["query"],
-                            "clicks": q["clicks"],
-                            "impressions": q["impressions"],
-                            "position": q["position"],
-                            "intent": "unknown",
-                            "confidence": 0
-                        }
-                        for q in top_queries
-                    ],
-                    "message": "Google AI API key not configured",
-                    "model": None
-                }
-        else:
-            # Use Zeabur AI Hub (default)
-            api_key = request.ai_api_key or os.getenv("ZEABUR_AI_HUB_API_KEY")
-            if not api_key:
-                return {
-                    "page": request.page_url,
-                    "primary_intent": "unknown",
-                    "intent_distribution": {
-                        "informational": 0.25,
-                        "commercial": 0.25,
-                        "navigational": 0.25,
-                        "transactional": 0.25
-                    },
-                    "keywords": [
-                        {
-                            "query": q["query"],
-                            "clicks": q["clicks"],
-                            "impressions": q["impressions"],
-                            "position": q["position"],
-                            "intent": "unknown",
-                            "confidence": 0
-                        }
-                        for q in top_queries
-                    ],
-                    "message": "AI API key not configured",
-                    "model": None
-                }
+        # Try to get API key from user's encrypted settings in database first
+        from auth import TokenManager
+        api_key = TokenManager.get_ai_api_key(user.google_id, provider=provider)
+        
+        # Fallback to request parameter or environment variable
+        if not api_key:
+            if provider == "gemini":
+                api_key = request.ai_api_key or os.getenv("GOOGLE_AI_API_KEY")
+            else:
+                api_key = request.ai_api_key or os.getenv("ZEABUR_AI_HUB_API_KEY")
+        
+        if not api_key:
+            provider_name = "Google Gemini" if provider == "gemini" else "Zeabur AI Hub"
+            return {
+                "page": request.page_url,
+                "primary_intent": "unknown",
+                "intent_distribution": {
+                    "informational": 0.25,
+                    "commercial": 0.25,
+                    "navigational": 0.25,
+                    "transactional": 0.25
+                },
+                "keywords": [
+                    {
+                        "query": q["query"],
+                        "clicks": q["clicks"],
+                        "impressions": q["impressions"],
+                        "position": q["position"],
+                        "intent": "unknown",
+                        "confidence": 0
+                    }
+                    for q in top_queries
+                ],
+                "message": f"{provider_name} API key not configured",
+                "model": None
+            }
         
         # Step 5: Use AI to classify intents
         classifier = AIIntentClassifier(api_key=api_key, provider=provider)
