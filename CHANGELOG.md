@@ -17,6 +17,21 @@
     - `SUPER_ADMIN_EMAIL` environment variable already implemented.
     - Any user with matching email is automatically promoted to Super Admin on login.
 
+- **💎 Google Gemini Connection Test**:
+    - Added `/api/ai/test-gemini` endpoint for testing Gemini API connection.
+    - Frontend "🔗 測試連線" button in Gemini settings tab.
+
+- **⏱️ Gemini Batch Processing (Rate Limit)**:
+    - Auto-splits keywords into batches of 10 when using Gemini free tier.
+    - 6-second delay between batches (complies with 10 RPM limit).
+    - Frontend warning dialog shows batch count and estimated time.
+
+- **📄 GSC Page Analysis UI Improvements**:
+    - Added Top 500 and "All" options to row limit dropdown.
+    - Added purple "📄 Indexed Pages" stats card (page analysis tab only).
+    - "Load More" button for keyword lists (+10 per click).
+    - Intent distribution bar changed to horizontal with direct percentage labels.
+
 ### 新功能
 - **🔐 加密 AI API Key 儲存**：
     - AI API Keys (Zeabur/Gemini) 現在儲存於 PostgreSQL 並使用 Fernet 加密。
@@ -32,8 +47,24 @@
     - `SUPER_ADMIN_EMAIL` 環境變數已實作。
     - 符合 Email 的使用者登入時會自動提升為超級管理員。
 
+- **💎 Google Gemini 連線測試**：
+    - 新增 `/api/ai/test-gemini` 端點用於測試 Gemini API 連線。
+    - 前端設定頁面加入「🔗 測試連線」按鈕。
+
+- **⏱️ Gemini 批次處理（Rate Limit）**：
+    - 使用 Gemini 免費版時，超過 10 個關鍵字自動分批處理。
+    - 批次間延遲 6 秒（符合 10 RPM 限制）。
+    - 前端繼續分析對話框顯示批次數量和預估時間。
+
+- **📄 GSC 頁面分析 UI 改進**：
+    - 新增 Top 500 和「全部」選項到頁面數量下拉選單。
+    - 新增「📄 索引頁面數」紫色統計卡（頁面分析分頁專屬）。
+    - 關鍵字列表「載入更多」功能（每次增加 10 個）。
+    - 意圖分析百分比圖改為水平條形並直接顯示百分比。
+
 ### Documentation
 - Added `docs/AI_SETTINGS_API.md` with complete API architecture documentation.
+- Updated AI_SETTINGS_API.md with Gemini connection test and batch processing docs.
 
 ---
 

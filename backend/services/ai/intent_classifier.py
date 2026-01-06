@@ -135,6 +135,22 @@ class AIIntentClassifier:
                 ]
             }
         """
+        import sys
+        import time
+        
+        # Batch processing for Gemini free tier rate limits
+        # Gemini 2.5 Flash: 10 RPM (requests per minute)
+        BATCH_SIZE = 10  # Keywords per batch
+        BATCH_DELAY = 6  # Seconds between batches (for 10 RPM)
+        
+        # Check if batch processing is needed for Gemini
+        use_batching = self.provider == "gemini" and len(queries) > BATCH_SIZE
+        
+        if use_batching:
+            print(f"[AIIntentClassifier] Using batch processing for {len(queries)} keywords (Gemini rate limit)", file=sys.stderr)
+            return self._classify_queries_batched(queries, temperature, BATCH_SIZE, BATCH_DELAY)
+        
+        # Regular single-request processing
         # 構建 prompt
         queries_text = "\n".join([f"- {q}" for q in queries])
         prompt = f"""請分析以下 {len(queries)} 個關鍵字的搜尋意圖：
@@ -169,6 +185,85 @@ class AIIntentClassifier:
                 "error": str(e),
                 "results": []
             }
+    
+    def _classify_queries_batched(
+        self,
+        queries: List[str],
+        temperature: float = 0.3,
+        batch_size: int = 10,
+        batch_delay: float = 6.0
+    ) -> Dict:
+        """
+        批次處理關鍵字分類（用於 Gemini 免費版 Rate Limit）
+        
+        Args:
+            queries: 關鍵字列表
+            temperature: AI 創意度
+            batch_size: 每批次的關鍵字數量
+            batch_delay: 批次間的延遲秒數
+            
+        Returns:
+            合併後的分類結果
+        """
+        import sys
+        import time
+        
+        all_results = []
+        total_batches = (len(queries) + batch_size - 1) // batch_size
+        
+        for i in range(0, len(queries), batch_size):
+            batch_num = i // batch_size + 1
+            batch = queries[i:i + batch_size]
+            
+            print(f"[AIIntentClassifier] Processing batch {batch_num}/{total_batches} ({len(batch)} keywords)", file=sys.stderr)
+            
+            # 構建 prompt
+            queries_text = "\n".join([f"- {q}" for q in batch])
+            prompt = f"""請分析以下 {len(batch)} 個關鍵字的搜尋意圖：
+
+{queries_text}
+
+請為每個關鍵字判斷主要意圖類型與意圖分布比例。"""
+            
+            try:
+                response = self.client.generate_content(
+                    prompt=prompt,
+                    model=self.model,
+                    temperature=temperature,
+                    system_prompt=self.SYSTEM_PROMPT
+                )
+                
+                parsed = self._parse_json_response(response)
+                batch_results = parsed.get("results", [])
+                all_results.extend(batch_results)
+                
+                print(f"[AIIntentClassifier] Batch {batch_num} complete: {len(batch_results)} results", file=sys.stderr)
+                
+            except Exception as e:
+                print(f"[AIIntentClassifier] Batch {batch_num} error: {str(e)}", file=sys.stderr)
+                # Add placeholder results for failed batch
+                for q in batch:
+                    all_results.append({
+                        "query": q,
+                        "primary_intent": "unknown",
+                        "confidence": 0,
+                        "intent_distribution": {"informational": 0.25, "commercial": 0.25, "navigational": 0.25, "transactional": 0.25},
+                        "reasoning": f"分析失敗: {str(e)}"
+                    })
+            
+            # Delay between batches (except for the last batch)
+            if i + batch_size < len(queries):
+                print(f"[AIIntentClassifier] Waiting {batch_delay}s for rate limit...", file=sys.stderr)
+                time.sleep(batch_delay)
+        
+        return {
+            "success": True,
+            "model": self.model,
+            "query_count": len(queries),
+            "results": all_results,
+            "batched": True,
+            "total_batches": total_batches
+        }
 
     def classify_single(self, query: str) -> Dict:
         """

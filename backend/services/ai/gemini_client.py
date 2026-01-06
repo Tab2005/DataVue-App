@@ -81,29 +81,41 @@ class GoogleGeminiClient:
         Returns:
             生成的文字內容
         """
+        import sys
         model_name = model or self.model_name
+        
+        print(f"[GoogleGeminiClient] generate_content called with model={model_name}", file=sys.stderr)
         
         # 構建完整提示詞
         full_prompt = prompt
         if system_prompt:
             full_prompt = f"{system_prompt}\n\n{prompt}"
 
-        # 取得模型
-        model_instance = genai.GenerativeModel(model_name)
+        try:
+            # 取得模型
+            model_instance = genai.GenerativeModel(model_name)
 
-        # 生成配置
-        generation_config = genai.types.GenerationConfig(
-            temperature=temperature,
-            max_output_tokens=max_tokens or self.MODELS.get(model_name, {}).get("max_tokens", 8192)
-        )
+            # 生成配置
+            generation_config = genai.types.GenerationConfig(
+                temperature=temperature,
+                max_output_tokens=max_tokens or self.MODELS.get(model_name, {}).get("max_tokens", 8192)
+            )
 
-        # 生成內容
-        response = model_instance.generate_content(
-            full_prompt,
-            generation_config=generation_config
-        )
+            # 生成內容
+            print(f"[GoogleGeminiClient] Calling Gemini API...", file=sys.stderr)
+            response = model_instance.generate_content(
+                full_prompt,
+                generation_config=generation_config
+            )
 
-        return response.text
+            print(f"[GoogleGeminiClient] Response received, length={len(response.text) if response.text else 0}", file=sys.stderr)
+            return response.text
+            
+        except Exception as e:
+            print(f"[GoogleGeminiClient] ERROR: {type(e).__name__}: {str(e)}", file=sys.stderr)
+            import traceback
+            traceback.print_exc(file=sys.stderr)
+            raise
 
     def test_connection(self) -> Dict:
         """

@@ -141,7 +141,13 @@ async def save_ai_settings(
     """
     Save user's AI settings (API keys are encrypted before storage).
     """
+    import sys
     from auth import TokenManager
+    
+    print(f"[AI API] save_ai_settings called for user: {user.email}", file=sys.stderr)
+    print(f"[AI API] Request data: gemini_key_len={len(request.gemini_api_key) if request.gemini_api_key else 0}, "
+          f"zeabur_key_len={len(request.zeabur_api_key) if request.zeabur_api_key else 0}, "
+          f"provider={request.ai_provider}, model={request.ai_model}", file=sys.stderr)
     
     try:
         TokenManager.save_ai_settings(
@@ -154,12 +160,16 @@ async def save_ai_settings(
         
         # Return updated settings
         settings = TokenManager.get_ai_settings(user.google_id)
+        print(f"[AI API] Settings saved. Result: {settings}", file=sys.stderr)
         return {
             "success": True,
             "message": "AI settings saved successfully",
             "settings": settings
         }
     except Exception as e:
+        print(f"[AI API] Save error: {type(e).__name__}: {str(e)}", file=sys.stderr)
+        import traceback
+        traceback.print_exc(file=sys.stderr)
         raise HTTPException(status_code=500, detail=str(e))
 
 
@@ -185,3 +195,50 @@ async def clear_ai_key(
         return {"success": True, "message": f"{provider} API key cleared"}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post("/test-gemini")
+async def test_gemini_connection(user: User = Depends(get_current_user)):
+    """
+    Test Google Gemini API connection using the user's saved API key.
+    """
+    import sys
+    from auth import TokenManager
+    
+    print(f"[AI API] Testing Gemini connection for user: {user.email}", file=sys.stderr)
+    
+    # Get the user's Gemini API key from encrypted storage
+    api_key = TokenManager.get_ai_api_key(user.google_id, provider="gemini")
+    
+    if not api_key:
+        print(f"[AI API] No Gemini API key found for user: {user.email}", file=sys.stderr)
+        return {
+            "success": False,
+            "message": "No Google Gemini API key configured. Please save your API key first.",
+            "provider": "gemini"
+        }
+    
+    print(f"[AI API] Found Gemini API key (length={len(api_key)})", file=sys.stderr)
+    
+    try:
+        from services.ai.gemini_client import GoogleGeminiClient
+        client = GoogleGeminiClient(api_key=api_key)
+        result = client.test_connection()
+        
+        print(f"[AI API] Gemini test result: {result}", file=sys.stderr)
+        
+        return {
+            "success": result.get("success", False),
+            "message": result.get("message", "Unknown result"),
+            "response": result.get("response", "")[:100] if result.get("response") else None,
+            "model": result.get("model"),
+            "provider": "gemini"
+        }
+    except Exception as e:
+        print(f"[AI API] Gemini test error: {type(e).__name__}: {str(e)}", file=sys.stderr)
+        return {
+            "success": False,
+            "message": f"Connection failed: {str(e)}",
+            "provider": "gemini"
+        }
+

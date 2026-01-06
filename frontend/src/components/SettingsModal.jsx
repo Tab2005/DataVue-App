@@ -886,6 +886,35 @@ const SettingsModal = ({ isOpen, onClose, language, teamId, teamName, onSuccess 
                                 >
                                     {aiLoading ? (language === 'zh' ? '儲存中...' : 'Saving...') : (language === 'zh' ? '儲存設定' : 'Save')}
                                 </button>
+                                {/* Test Connection Button */}
+                                <button
+                                    onClick={async () => {
+                                        setAiLoading(true);
+                                        setStatus({ type: 'info', message: language === 'zh' ? '正在測試連線...' : 'Testing connection...' });
+                                        try {
+                                            const token = localStorage.getItem('google_token');
+                                            const apiUrl = import.meta.env.VITE_API_URL || 'http://localhost:8000';
+                                            const res = await fetch(`${apiUrl}/api/ai/test-gemini`, {
+                                                method: 'POST',
+                                                headers: { 'Authorization': `Bearer ${token}` }
+                                            });
+                                            const data = await res.json();
+                                            if (data.success) {
+                                                setStatus({ type: 'success', message: language === 'zh' ? `✅ 連線成功！模型: ${data.model}` : `✅ Connected! Model: ${data.model}` });
+                                            } else {
+                                                setStatus({ type: 'error', message: language === 'zh' ? `❌ 連線失敗: ${data.message}` : `❌ Failed: ${data.message}` });
+                                            }
+                                        } catch (err) {
+                                            setStatus({ type: 'error', message: language === 'zh' ? `❌ 測試錯誤: ${err.message}` : `❌ Test error: ${err.message}` });
+                                        } finally {
+                                            setAiLoading(false);
+                                        }
+                                    }}
+                                    disabled={aiLoading}
+                                    style={{ padding: '10px 20px', borderRadius: '8px', border: '1px solid var(--glass-border)', background: 'transparent', color: 'var(--text-secondary)', cursor: aiLoading ? 'not-allowed' : 'pointer' }}
+                                >
+                                    {language === 'zh' ? '🔗 測試連線' : '🔗 Test'}
+                                </button>
                             </div>
 
                             {/* Info Note */}

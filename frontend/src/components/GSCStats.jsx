@@ -327,6 +327,9 @@ const GSCStats = ({ language, isMobile = false }) => {
     const [intentLoading, setIntentLoading] = useState({});  // { pageUrl: boolean }
     const [intentError, setIntentError] = useState({});  // { pageUrl: string }
 
+    // Expanded keywords count per page (for "Load More" feature)
+    const [expandedKeywordsCount, setExpandedKeywordsCount] = useState({});  // { pageUrl: number }
+
     // Persist keywordIntents to LocalStorage whenever it changes
     useEffect(() => {
         if (Object.keys(keywordIntents).length > 0) {
@@ -1199,6 +1202,15 @@ const GSCStats = ({ language, isMobile = false }) => {
                                     {(analytics.reduce((acc, row) => acc + row.position, 0) / (analytics.length || 1)).toFixed(1)}
                                 </div>
                             </div>
+                            {/* Indexed Pages Count - only for page tab */}
+                            {activeTab === 'page' && (
+                                <div style={{ ...cardStyle, background: 'linear-gradient(135deg, rgba(139, 92, 246, 0.1), rgba(139, 92, 246, 0.05))' }}>
+                                    <div style={cardLabelStyle}>📄 {t('索引頁面數', 'Indexed Pages')}</div>
+                                    <div style={{ ...cardValueStyle, color: '#8B5CF6' }}>
+                                        {analytics.length.toLocaleString()}
+                                    </div>
+                                </div>
+                            )}
                         </div>
                     )}
 
@@ -1246,12 +1258,14 @@ const GSCStats = ({ language, isMobile = false }) => {
                                     />
                                     <select
                                         value={rowLimit}
-                                        onChange={(e) => setRowLimit(Number(e.target.value))}
+                                        onChange={(e) => setRowLimit(Number(e.target.value) || 99999)}
                                         style={{ ...selectStyle, width: 'auto', padding: '8px 12px' }}
                                     >
                                         <option value={50}>Top 50</option>
                                         <option value={100}>Top 100</option>
                                         <option value={200}>Top 200</option>
+                                        <option value={500}>Top 500</option>
+                                        <option value={99999}>{t('全部', 'All')}</option>
                                     </select>
                                 </div>
                             </div>
@@ -1553,12 +1567,14 @@ const GSCStats = ({ language, isMobile = false }) => {
                                         />
                                         <select
                                             value={rowLimit}
-                                            onChange={(e) => setRowLimit(Number(e.target.value))}
+                                            onChange={(e) => setRowLimit(Number(e.target.value) || 99999)}
                                             style={{ ...selectStyle, width: 'auto', padding: '8px 12px' }}
                                         >
                                             <option value={50}>Top 50</option>
                                             <option value={100}>Top 100</option>
                                             <option value={200}>Top 200</option>
+                                            <option value={500}>Top 500</option>
+                                            <option value={99999}>{t('全部', 'All')}</option>
                                         </select>
                                     </div>
                                 )}
@@ -1805,25 +1821,42 @@ const GSCStats = ({ language, isMobile = false }) => {
                                                                                                         ? INTENT_TYPES[pageIntent.primary_intent]?.label_zh
                                                                                                         : INTENT_TYPES[pageIntent.primary_intent]?.label_en}
                                                                                                 </span>
-                                                                                                {/* Mini distribution bars */}
+                                                                                                {/* Horizontal distribution bar with labels */}
                                                                                                 <div style={{
                                                                                                     display: 'flex',
-                                                                                                    gap: '2px',
-                                                                                                    alignItems: 'center'
+                                                                                                    alignItems: 'center',
+                                                                                                    gap: '4px',
+                                                                                                    width: '160px',
+                                                                                                    height: '18px',
+                                                                                                    background: 'rgba(0,0,0,0.2)',
+                                                                                                    borderRadius: '4px',
+                                                                                                    overflow: 'hidden'
                                                                                                 }}>
-                                                                                                    {Object.entries(pageIntent.intent_distribution || {}).map(([intent, value]) => (
-                                                                                                        <div
-                                                                                                            key={intent}
-                                                                                                            style={{
-                                                                                                                width: '4px',
-                                                                                                                height: `${Math.max(6, value * 20)}px`,
-                                                                                                                background: INTENT_TYPES[intent]?.color || '#666',
-                                                                                                                borderRadius: '2px',
-                                                                                                                opacity: value > 0.1 ? 1 : 0.3
-                                                                                                            }}
-                                                                                                            title={`${language === 'zh' ? INTENT_TYPES[intent]?.label_zh : INTENT_TYPES[intent]?.label_en}: ${(value * 100).toFixed(0)}%`}
-                                                                                                        />
-                                                                                                    ))}
+                                                                                                    {Object.entries(pageIntent.intent_distribution || {})
+                                                                                                        .filter(([_, value]) => value > 0.05)
+                                                                                                        .sort((a, b) => b[1] - a[1])
+                                                                                                        .map(([intent, value]) => (
+                                                                                                            <div
+                                                                                                                key={intent}
+                                                                                                                style={{
+                                                                                                                    display: 'flex',
+                                                                                                                    alignItems: 'center',
+                                                                                                                    justifyContent: 'center',
+                                                                                                                    width: `${value * 100}%`,
+                                                                                                                    height: '100%',
+                                                                                                                    background: INTENT_TYPES[intent]?.color || '#666',
+                                                                                                                    fontSize: '9px',
+                                                                                                                    fontWeight: '500',
+                                                                                                                    color: 'white',
+                                                                                                                    whiteSpace: 'nowrap',
+                                                                                                                    overflow: 'hidden',
+                                                                                                                    textShadow: '0 1px 2px rgba(0,0,0,0.5)'
+                                                                                                                }}
+                                                                                                                title={`${language === 'zh' ? INTENT_TYPES[intent]?.label_zh : INTENT_TYPES[intent]?.label_en}: ${(value * 100).toFixed(0)}%`}
+                                                                                                            >
+                                                                                                                {value >= 0.15 && `${(value * 100).toFixed(0)}%`}
+                                                                                                            </div>
+                                                                                                        ))}
                                                                                                 </div>
                                                                                                 {/* Show analyzed count and continue button if needed */}
                                                                                                 <span style={{ fontSize: '10px', color: 'var(--text-tertiary)' }}>
@@ -1847,10 +1880,24 @@ const GSCStats = ({ language, isMobile = false }) => {
                                                                                                     <button
                                                                                                         onClick={(e) => {
                                                                                                             e.stopPropagation();
+                                                                                                            // Check if using Gemini provider
+                                                                                                            const provider = localStorage.getItem('ai_provider') || 'zeabur';
+                                                                                                            const isGemini = provider === 'gemini';
+                                                                                                            const batchCount = Math.ceil(uncachedCount / 10);
+                                                                                                            const estimatedTime = isGemini && batchCount > 1 ? Math.round(batchCount * 6) : 0;
+
                                                                                                             // Show confirmation dialog for continue analysis (API cost warning)
-                                                                                                            const message = language === 'zh'
+                                                                                                            let message = language === 'zh'
                                                                                                                 ? `⚠️ 繼續分析將分析剩餘 ${Math.min(uncachedCount, 100)} 個關鍵字\n\n這會消耗 AI API 額度，確定要繼續嗎？`
                                                                                                                 : `⚠️ Continue analysis will analyze ${Math.min(uncachedCount, 100)} more keywords\n\nThis will consume AI API credits. Continue?`;
+
+                                                                                                            // Add Gemini rate limit warning
+                                                                                                            if (isGemini && batchCount > 1) {
+                                                                                                                message += language === 'zh'
+                                                                                                                    ? `\n\n💎 您正在使用 Google Gemini，因免費版有請求限制，\n分析將分 ${batchCount} 批次進行，預計需要 ${estimatedTime} 秒。`
+                                                                                                                    : `\n\n💎 You're using Google Gemini. Due to free tier rate limits,\nanalysis will be processed in ${batchCount} batches (~${estimatedTime}s).`;
+                                                                                                            }
+
                                                                                                             if (window.confirm(message)) {
                                                                                                                 fetchPageIntent(pageUrl, true); // analyzeAll = true
                                                                                                             }
@@ -2036,8 +2083,8 @@ const GSCStats = ({ language, isMobile = false }) => {
                                                                             })()}
                                                                         </div>
                                                                         <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
-                                                                            {/* Show only top 5 keywords (sorted by clicks), lookup intent from cache */}
-                                                                            {keywords.slice(0, 5).map((kw, kIdx) => {
+                                                                            {/* Show keywords with dynamic limit (default 5, increases with load more) */}
+                                                                            {keywords.slice(0, expandedKeywordsCount[pageUrl] || 5).map((kw, kIdx) => {
                                                                                 const query = kw.keyword || kw.query;
                                                                                 // Lookup intent from keyword-level cache
                                                                                 const cachedIntent = keywordIntents[query];
@@ -2098,18 +2145,45 @@ const GSCStats = ({ language, isMobile = false }) => {
                                                                                     </div>
                                                                                 );
                                                                             })}
-                                                                            {/* Show +N more indicator if there are more than 5 keywords */}
-                                                                            {keywords.length > 5 && (
-                                                                                <div style={{
-                                                                                    display: 'flex',
-                                                                                    justifyContent: 'center',
-                                                                                    padding: '4px',
-                                                                                    color: 'var(--text-tertiary)',
-                                                                                    fontSize: '11px'
-                                                                                }}>
-                                                                                    +{keywords.length - 5} {t('更多關鍵字', 'more keywords')}
-                                                                                </div>
-                                                                            )}
+                                                                            {/* Show "Load More" button if there are more keywords (dynamic) */}
+                                                                            {(() => {
+                                                                                const currentLimit = expandedKeywordsCount[pageUrl] || 5;
+                                                                                const remaining = keywords.length - currentLimit;
+
+                                                                                if (remaining > 0) {
+                                                                                    return (
+                                                                                        <button
+                                                                                            onClick={(e) => {
+                                                                                                e.stopPropagation();
+                                                                                                // Load more keywords (increase by 10)
+                                                                                                setExpandedKeywordsCount(prev => ({
+                                                                                                    ...prev,
+                                                                                                    [pageUrl]: currentLimit + 10
+                                                                                                }));
+                                                                                            }}
+                                                                                            style={{
+                                                                                                display: 'flex',
+                                                                                                justifyContent: 'center',
+                                                                                                alignItems: 'center',
+                                                                                                gap: '4px',
+                                                                                                padding: '6px 12px',
+                                                                                                margin: '4px 0',
+                                                                                                background: 'rgba(59, 130, 246, 0.1)',
+                                                                                                border: '1px solid rgba(59, 130, 246, 0.3)',
+                                                                                                borderRadius: '6px',
+                                                                                                color: '#3B82F6',
+                                                                                                fontSize: '11px',
+                                                                                                fontWeight: '500',
+                                                                                                cursor: 'pointer',
+                                                                                                transition: 'all 0.2s'
+                                                                                            }}
+                                                                                        >
+                                                                                            ⬇️ {t('載入更多', 'Load More')} (+{Math.min(remaining, 10)})
+                                                                                        </button>
+                                                                                    );
+                                                                                }
+                                                                                return null;
+                                                                            })()}
                                                                         </div>
                                                                     </div>
                                                                 </td>

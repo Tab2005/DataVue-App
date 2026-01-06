@@ -126,6 +126,93 @@ Authorization: Bearer {google_token}
 
 ---
 
+### `POST /api/ai/test-gemini`
+
+測試 Google Gemini API 連線狀態。
+
+**Request Headers:**
+```
+Authorization: Bearer {google_token}
+```
+
+**Response (成功):**
+```json
+{
+    "success": true,
+    "message": "Connected to Google Gemini API",
+    "response": "Connection successful!",
+    "model": "gemini-2.5-flash",
+    "provider": "gemini"
+}
+```
+
+**Response (失敗 - 無 API Key):**
+```json
+{
+    "success": false,
+    "message": "No Google Gemini API key configured. Please save your API key first.",
+    "provider": "gemini"
+}
+```
+
+---
+
+## Google Gemini Rate Limit 批次處理
+
+### 免費版限制
+
+| 模型 | RPM | TPM | RPD |
+|------|-----|-----|-----|
+| gemini-2.5-flash | 10 | 250,000 | 500 |
+| gemini-2.5-pro | 2 | 50,000 | 25 |
+
+> **RPM** = Requests Per Minute, **TPM** = Tokens Per Minute, **RPD** = Requests Per Day
+
+### 批次處理機制
+
+當使用 Gemini 免費版分析超過 10 個關鍵字時，後端會自動啟用批次處理：
+
+```
+┌─────────────────────────────────────────────────────────────────┐
+│                   Gemini 批次處理流程                            │
+├─────────────────────────────────────────────────────────────────┤
+│                                                                 │
+│   25 個關鍵字 → 分成 3 批次                                       │
+│                                                                 │
+│   Batch 1 (10 KWs) ─→ 6 秒延遲 ─→                               │
+│   Batch 2 (10 KWs) ─→ 6 秒延遲 ─→                               │
+│   Batch 3 (5 KWs)                                               │
+│                                                                 │
+│   總預估時間: 3 × 6 = 18 秒                                      │
+│                                                                 │
+└─────────────────────────────────────────────────────────────────┘
+```
+
+### 實作程式碼 (`intent_classifier.py`)
+
+```python
+BATCH_SIZE = 10  # 每批次關鍵字數量
+BATCH_DELAY = 6  # 批次間延遲秒數 (符合 10 RPM)
+
+# 自動判斷是否需要批次處理
+use_batching = self.provider == "gemini" and len(queries) > BATCH_SIZE
+```
+
+### 前端提示
+
+當使用 Gemini 進行「繼續分析」時，會顯示批次處理提示：
+
+```
+⚠️ 繼續分析將分析剩餘 25 個關鍵字
+
+這會消耗 AI API 額度，確定要繼續嗎？
+
+💎 您正在使用 Google Gemini，因免費版有請求限制，
+分析將分 3 批次進行，預計需要 18 秒。
+```
+
+---
+
 ## 後端實作
 
 ### TokenManager 新增方法 (`auth.py`)
