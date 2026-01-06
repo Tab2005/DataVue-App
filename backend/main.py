@@ -258,7 +258,7 @@ try:
     # --- AUTO-SEED PERMISSIONS ---
     try:
         print("Running Permission Seeding...")
-        from seed_permissions import seed_permissions
+        from scripts.seed_permissions import seed_permissions
         seed_permissions()
     except Exception as e:
         print(f"⚠️ Permission Seeding Warning: {str(e)}", file=sys.stderr)
