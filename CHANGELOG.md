@@ -1,5 +1,42 @@
 # Changelog
 
+## v1.6.7 (2026-01-06) - Encrypted AI API Key Storage
+
+### New Features
+- **🔐 Encrypted AI API Key Storage**:
+    - AI API Keys (Zeabur/Gemini) now stored in PostgreSQL with Fernet encryption.
+    - Per-user storage scope (not shared with team members, unlike Facebook tokens).
+    - New database columns: `zeabur_api_key`, `gemini_api_key`, `ai_provider`, `ai_model`.
+    - API endpoints: `GET/POST /api/ai/settings`, `DELETE /api/ai/settings/{provider}`.
+
+- **🔄 API Key Fallback Mechanism**:
+    - Priority: User DB (encrypted) → Request parameter → Environment variable.
+    - Supports `ZEABUR_AI_HUB_API_KEY` and `GOOGLE_AI_API_KEY` as global fallbacks.
+
+- **🛡️ Super Admin via Environment Variable**:
+    - `SUPER_ADMIN_EMAIL` environment variable already implemented.
+    - Any user with matching email is automatically promoted to Super Admin on login.
+
+### 新功能
+- **🔐 加密 AI API Key 儲存**：
+    - AI API Keys (Zeabur/Gemini) 現在儲存於 PostgreSQL 並使用 Fernet 加密。
+    - 個人專屬儲存範圍（不像 Facebook Token 那樣團隊共用）。
+    - 新資料庫欄位：`zeabur_api_key`, `gemini_api_key`, `ai_provider`, `ai_model`。
+    - API 端點：`GET/POST /api/ai/settings`, `DELETE /api/ai/settings/{provider}`。
+
+- **🔄 API Key Fallback 機制**：
+    - 優先順序：使用者資料庫（加密）→ 請求參數 → 環境變數。
+    - 支援 `ZEABUR_AI_HUB_API_KEY` 和 `GOOGLE_AI_API_KEY` 作為全域 Fallback。
+
+- **🛡️ 環境變數設定超級管理員**：
+    - `SUPER_ADMIN_EMAIL` 環境變數已實作。
+    - 符合 Email 的使用者登入時會自動提升為超級管理員。
+
+### Documentation
+- Added `docs/AI_SETTINGS_API.md` with complete API architecture documentation.
+
+---
+
 ## v1.6.6 (2026-01-05) - Search Intent Keyword-Level Cache Architecture
 
 ### New Features

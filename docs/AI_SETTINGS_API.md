@@ -195,13 +195,73 @@ const requestBody = {
 | **API 層** | 不回傳 Key 原文 |
 | **前端層** | 不儲存 Key 在 localStorage |
 
-### Fallback 順序
+### API Key Fallback 機制
 
-當後端需要 API Key 時，依以下順序尋找：
+當後端需要 API Key 時，會依以下優先順序尋找：
 
-1. 使用者資料庫設定 (已加密)
-2. Request 參數 (向後相容)
-3. 環境變數 (`ZEABUR_AI_HUB_API_KEY` / `GOOGLE_AI_API_KEY`)
+```
+┌─────────────────────────────────────────────────────────────────┐
+│                   API Key 優先順序 (由高到低)                     │
+├─────────────────────────────────────────────────────────────────┤
+│                                                                 │
+│   1️⃣ 使用者資料庫設定 (個人加密儲存)                              │
+│         ↓ 如果沒有                                               │
+│   2️⃣ Request 參數 (向後相容)                                     │
+│         ↓ 如果沒有                                               │
+│   3️⃣ 環境變數 (全域共用 / Fallback)                              │
+│         ↓ 如果沒有                                               │
+│   ❌ 回傳錯誤訊息                                                 │
+│                                                                 │
+└─────────────────────────────────────────────────────────────────┘
+```
+
+### 環境變數設定
+
+| 環境變數 | Provider | 用途 |
+|---------|----------|------|
+| `ZEABUR_AI_HUB_API_KEY` | `zeabur` | Zeabur AI Hub 全域金鑰 |
+| `GOOGLE_AI_API_KEY` | `gemini` | Google Gemini 全域金鑰 |
+
+> 💡 **提示**: 環境變數作為 Fallback，當使用者沒有設定個人 API Key 時會自動使用。
+
+### 實際程式碼邏輯
+
+```python
+# backend/routers/gsc.py
+
+# Step 1: 從資料庫取得加密的 API Key
+api_key = TokenManager.get_ai_api_key(user.google_id, provider=provider)
+
+# Step 2: Fallback 到環境變數
+if not api_key:
+    if provider == "gemini":
+        api_key = request.ai_api_key or os.getenv("GOOGLE_AI_API_KEY")
+    else:
+        api_key = request.ai_api_key or os.getenv("ZEABUR_AI_HUB_API_KEY")
+```
+
+### 使用情境範例
+
+| 情境 | Zeabur 選擇時 | Gemini 選擇時 |
+|------|--------------|--------------|
+| 使用者有設定個人 Key | ✅ 用個人 Key | ✅ 用個人 Key |
+| 使用者沒設定，有環境變數 | ✅ 用環境變數 | ✅ 用環境變數 |
+| 都沒設定 | ❌ 回傳錯誤 | ❌ 回傳錯誤 |
+
+### 典型部署配置
+
+```bash
+# .env (後端環境變數)
+
+# 必要 - 用於加密所有敏感資料
+ENCRYPTION_KEY=your-fernet-key-here
+
+# 選填 - 全域 Fallback (所有使用者共用)
+ZEABUR_AI_HUB_API_KEY=sk-zeabur-xxx...
+
+# 選填 - Google Gemini 全域 Fallback
+GOOGLE_AI_API_KEY=AIza...
+```
 
 ---
 
