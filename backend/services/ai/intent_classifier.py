@@ -85,17 +85,28 @@ class AIIntentClassifier:
     def __init__(
         self,
         api_key: Optional[str] = None,
-        model: str = "gemini-2.5-flash"
+        model: str = "gemini-2.5-flash",
+        provider: str = "zeabur"  # "zeabur" or "gemini"
     ):
         """
         初始化 AI 意圖分類器
 
         Args:
-            api_key: Zeabur AI Hub API Key
+            api_key: API Key (Zeabur AI Hub 或 Google AI Studio)
             model: 使用的 AI 模型
+            provider: AI 提供者 ("zeabur" 使用 Zeabur AI Hub, "gemini" 使用 Google Gemini 直連)
         """
-        self.client = ZeaburAIClient(api_key=api_key)
+        self.provider = provider
         self.model = model
+        
+        if provider == "gemini":
+            # 使用 Google Gemini 直連
+            from .gemini_client import GoogleGeminiClient
+            self.client = GoogleGeminiClient(api_key=api_key)
+            self.client.set_model(model)
+        else:
+            # 預設使用 Zeabur AI Hub
+            self.client = ZeaburAIClient(api_key=api_key)
 
     def classify_queries(
         self,

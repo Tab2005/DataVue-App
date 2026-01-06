@@ -572,6 +572,14 @@ const GSCStats = ({ language, isMobile = false }) => {
                 top_n: maxKeywords
             };
 
+            // Check if user has configured Google Gemini direct API
+            const geminiApiKey = localStorage.getItem('google_gemini_api_key');
+            if (geminiApiKey) {
+                requestBody.provider = 'gemini';
+                requestBody.ai_api_key = geminiApiKey;
+            }
+            // Otherwise, backend will use Zeabur AI Hub (default)
+
             // Only send keywords array for continue analysis
             if (analyzeAll) {
                 requestBody.keywords = keywordsToAnalyze;

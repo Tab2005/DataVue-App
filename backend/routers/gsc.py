@@ -142,6 +142,8 @@ class PageIntentRequest(BaseModel):
     end_date: str           # YYYY-MM-DD
     top_n: Optional[int] = 50  # Number of keywords to analyze (default 50)
     keywords: Optional[List[str]] = None  # Optional: specific keywords to analyze (skip GSC fetch)
+    provider: Optional[str] = "zeabur"  # AI provider: "zeabur" or "gemini"
+    ai_api_key: Optional[str] = None  # Optional: user-provided API key
 
 @router.post("/page-intents")
 async def get_page_intents(
@@ -215,36 +217,66 @@ async def get_page_intents(
             page_queries.sort(key=lambda x: x['clicks'], reverse=True)
             top_queries = page_queries[:request.top_n]
         
-        # Step 4: Check for AI API key
-        api_key = os.getenv("ZEABUR_AI_HUB_API_KEY")
-        if not api_key:
-            # Return without AI analysis if no key
-            return {
-                "page": request.page_url,
-                "primary_intent": "unknown",
-                "intent_distribution": {
-                    "informational": 0.25,
-                    "commercial": 0.25,
-                    "navigational": 0.25,
-                    "transactional": 0.25
-                },
-                "keywords": [
-                    {
-                        "query": q["query"],
-                        "clicks": q["clicks"],
-                        "impressions": q["impressions"],
-                        "position": q["position"],
-                        "intent": "unknown",
-                        "confidence": 0
-                    }
-                    for q in top_queries
-                ],
-                "message": "AI API key not configured",
-                "model": None
-            }
+        # Step 4: Determine AI provider and API key
+        provider = request.provider or "zeabur"
+        
+        if provider == "gemini":
+            # Use Google Gemini direct API
+            api_key = request.ai_api_key or os.getenv("GOOGLE_AI_API_KEY")
+            if not api_key:
+                return {
+                    "page": request.page_url,
+                    "primary_intent": "unknown",
+                    "intent_distribution": {
+                        "informational": 0.25,
+                        "commercial": 0.25,
+                        "navigational": 0.25,
+                        "transactional": 0.25
+                    },
+                    "keywords": [
+                        {
+                            "query": q["query"],
+                            "clicks": q["clicks"],
+                            "impressions": q["impressions"],
+                            "position": q["position"],
+                            "intent": "unknown",
+                            "confidence": 0
+                        }
+                        for q in top_queries
+                    ],
+                    "message": "Google AI API key not configured",
+                    "model": None
+                }
+        else:
+            # Use Zeabur AI Hub (default)
+            api_key = request.ai_api_key or os.getenv("ZEABUR_AI_HUB_API_KEY")
+            if not api_key:
+                return {
+                    "page": request.page_url,
+                    "primary_intent": "unknown",
+                    "intent_distribution": {
+                        "informational": 0.25,
+                        "commercial": 0.25,
+                        "navigational": 0.25,
+                        "transactional": 0.25
+                    },
+                    "keywords": [
+                        {
+                            "query": q["query"],
+                            "clicks": q["clicks"],
+                            "impressions": q["impressions"],
+                            "position": q["position"],
+                            "intent": "unknown",
+                            "confidence": 0
+                        }
+                        for q in top_queries
+                    ],
+                    "message": "AI API key not configured",
+                    "model": None
+                }
         
         # Step 5: Use AI to classify intents
-        classifier = AIIntentClassifier(api_key=api_key)
+        classifier = AIIntentClassifier(api_key=api_key, provider=provider)
         query_texts = [q["query"] for q in top_queries]
         
         result = classifier.classify_queries(query_texts)
