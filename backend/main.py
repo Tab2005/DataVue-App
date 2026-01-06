@@ -194,12 +194,33 @@ try:
             user_columns = [c["name"] for c in inspector.get_columns("users")]
             print(f"DEBUG: Current Users Columns: {user_columns}")
             
+            # GSC columns
             for col, col_type in [("gsc_access_token", "VARCHAR"), ("gsc_refresh_token", "VARCHAR"), ("gsc_expires_at", "TIMESTAMP")]:
                 if col not in user_columns:
                     print(f"⚠️ Schema Drift: Adding '{col}' to users table...")
                     with engine.connect() as conn:
                         conn.execute(text(f"ALTER TABLE users ADD COLUMN {col} {col_type}"))
                         conn.commit()
+            
+            # AI-related columns (for AI Content Generation feature)
+            ai_columns = [
+                ("zeabur_api_key", "VARCHAR"),
+                ("gemini_api_key", "VARCHAR"),
+                ("ai_provider", "VARCHAR DEFAULT 'zeabur'"),
+                ("ai_model", "VARCHAR DEFAULT 'gemini-2.5-flash'")
+            ]
+            for col, col_type in ai_columns:
+                col_name = col  # Extract column name for checking
+                if col_name not in user_columns:
+                    print(f"⚠️ Schema Drift: Adding '{col_name}' to users table...")
+                    try:
+                        with engine.connect() as conn:
+                            conn.execute(text(f"ALTER TABLE users ADD COLUMN {col} {col_type}"))
+                            conn.commit()
+                        print(f"✅ Added column: {col_name}")
+                    except Exception as col_err:
+                        print(f"⚠️ Failed to add {col_name}: {col_err}")
+                        
     except Exception as e:
         print(f"⚠️ User Schema Patching Warning: {e}")
 
