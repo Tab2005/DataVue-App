@@ -38,6 +38,9 @@ const SettingsModal = ({ isOpen, onClose, language, teamId, teamName, onSuccess 
     // Zeabur / AI Status
     const [aiConnectionStatus, setAiConnectionStatus] = useState('unknown'); // unknown, connected_zeabur, connected_user, disconnected
 
+    // Active AI Provider preference: 'zeabur' | 'gemini'
+    const [activeAiProvider, setActiveAiProvider] = useState('zeabur');
+
     const t = {
         title: language === 'zh' ? '整合中心 (Integration Center)' : 'Integration Center',
         tabs: {
@@ -316,6 +319,9 @@ const SettingsModal = ({ isOpen, onClose, language, teamId, teamName, onSuccess 
             setStatus(null);
             // Fetch Facebook token status
             fetchTokenStatus();
+            // Load saved AI provider preference
+            const savedProvider = localStorage.getItem('ai_provider') || 'zeabur';
+            setActiveAiProvider(savedProvider);
             // Don't auto-check AI connection - let user trigger it
         }
     }, [isOpen, teamId]);
@@ -370,6 +376,81 @@ const SettingsModal = ({ isOpen, onClose, language, teamId, teamName, onSuccess 
                     <h2 style={{ fontSize: '1.5rem', margin: 0 }}>{t.title}</h2>
                     <button onClick={onClose} style={{ background: 'transparent', border: 'none', color: 'var(--text-secondary)', fontSize: '24px', cursor: 'pointer' }}>×</button>
                 </div>
+
+                {/* Active AI Provider Selector - only show when on AI-related tabs */}
+                {(activeTab === 'ai' || activeTab === 'gemini') && (
+                    <div style={{
+                        marginBottom: '16px',
+                        padding: '12px 16px',
+                        borderRadius: '8px',
+                        background: 'rgba(102, 126, 234, 0.1)',
+                        border: '1px solid rgba(102, 126, 234, 0.2)',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'space-between'
+                    }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                            <span style={{ fontSize: '14px', color: 'var(--text-secondary)' }}>
+                                {language === 'zh' ? '目前啟用的 AI 模組：' : 'Active AI Module:'}
+                            </span>
+                            <span style={{
+                                fontWeight: 'bold',
+                                color: activeAiProvider === 'gemini' ? '#60a5fa' : '#4ade80',
+                                display: 'flex',
+                                alignItems: 'center',
+                                gap: '4px'
+                            }}>
+                                {activeAiProvider === 'gemini' ? '💎 Google Gemini' : '🚀 Zeabur AI Hub'}
+                            </span>
+                        </div>
+                        <div style={{ display: 'flex', gap: '8px' }}>
+                            <button
+                                onClick={() => {
+                                    setActiveAiProvider('zeabur');
+                                    localStorage.setItem('ai_provider', 'zeabur');
+                                    setStatus({ type: 'success', message: language === 'zh' ? '已切換為 Zeabur AI Hub' : 'Switched to Zeabur AI Hub' });
+                                }}
+                                style={{
+                                    padding: '6px 12px',
+                                    borderRadius: '6px',
+                                    border: activeAiProvider === 'zeabur' ? '2px solid #4ade80' : '1px solid var(--glass-border)',
+                                    background: activeAiProvider === 'zeabur' ? 'rgba(74, 222, 128, 0.1)' : 'transparent',
+                                    color: activeAiProvider === 'zeabur' ? '#4ade80' : 'var(--text-secondary)',
+                                    cursor: 'pointer',
+                                    fontSize: '12px',
+                                    fontWeight: activeAiProvider === 'zeabur' ? 'bold' : 'normal'
+                                }}
+                            >
+                                🚀 Zeabur
+                            </button>
+                            <button
+                                onClick={() => {
+                                    // Check if Gemini API key is configured
+                                    const geminiKey = localStorage.getItem('google_gemini_api_key');
+                                    if (!geminiKey) {
+                                        setStatus({ type: 'error', message: language === 'zh' ? '請先在 Google Gemini 分頁設定 API Key' : 'Please configure API Key in Google Gemini tab first' });
+                                        return;
+                                    }
+                                    setActiveAiProvider('gemini');
+                                    localStorage.setItem('ai_provider', 'gemini');
+                                    setStatus({ type: 'success', message: language === 'zh' ? '已切換為 Google Gemini' : 'Switched to Google Gemini' });
+                                }}
+                                style={{
+                                    padding: '6px 12px',
+                                    borderRadius: '6px',
+                                    border: activeAiProvider === 'gemini' ? '2px solid #60a5fa' : '1px solid var(--glass-border)',
+                                    background: activeAiProvider === 'gemini' ? 'rgba(96, 165, 250, 0.1)' : 'transparent',
+                                    color: activeAiProvider === 'gemini' ? '#60a5fa' : 'var(--text-secondary)',
+                                    cursor: 'pointer',
+                                    fontSize: '12px',
+                                    fontWeight: activeAiProvider === 'gemini' ? 'bold' : 'normal'
+                                }}
+                            >
+                                💎 Gemini
+                            </button>
+                        </div>
+                    </div>
+                )}
 
                 {/* Tabs Config */}
                 <div style={{ display: 'flex', gap: '8px', marginBottom: '24px', borderBottom: '1px solid var(--glass-border)' }}>

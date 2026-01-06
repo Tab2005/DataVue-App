@@ -571,12 +571,17 @@ const GSCStats = ({ language, isMobile = false }) => {
                 end_date: dateRange.end,
                 top_n: maxKeywords
             };
+            // Determine AI provider based on user preference
+            const savedProvider = localStorage.getItem('ai_provider') || 'zeabur';
 
-            // Check if user has configured Google Gemini direct API
-            const geminiApiKey = localStorage.getItem('google_gemini_api_key');
-            if (geminiApiKey) {
-                requestBody.provider = 'gemini';
-                requestBody.ai_api_key = geminiApiKey;
+            if (savedProvider === 'gemini') {
+                // Use Google Gemini direct API
+                const geminiApiKey = localStorage.getItem('google_gemini_api_key');
+                if (geminiApiKey) {
+                    requestBody.provider = 'gemini';
+                    requestBody.ai_api_key = geminiApiKey;
+                }
+                // If no key configured, will fall through to backend default (Zeabur)
             }
             // Otherwise, backend will use Zeabur AI Hub (default)
 
