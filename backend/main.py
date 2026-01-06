@@ -548,6 +548,53 @@ def debug_permissions(team_id: str, token: str):
     finally:
         session.close()
 
+@app.get("/api/debug/super-admin-check")
+def debug_super_admin_check(token: str):
+    """
+    診斷端點：檢查 Super Admin 環境變數和用戶狀態
+    透過瀏覽器直接存取：/api/debug/super-admin-check?token=YOUR_GOOGLE_TOKEN
+    """
+    # Manual verify to allow browser access
+    try:
+        id_info = id_token.verify_oauth2_token(token, google_requests.Request(), GOOGLE_CLIENT_ID, clock_skew_in_seconds=60)
+        user_google_id = id_info['sub']
+        user_email = id_info.get('email', '')
+    except Exception as e:
+        return {"error": f"Invalid Token: {e}"}
+
+    session = SessionLocal()
+    try:
+        user = session.query(User).filter(User.google_id == user_google_id).first()
+        
+        # Environment variable check
+        super_admin_email_env = os.getenv("SUPER_ADMIN_EMAIL", "NOT_SET")
+        
+        # Email comparison logic (same as in dependencies.py)
+        email_match = False
+        if super_admin_email_env and super_admin_email_env != "NOT_SET" and user_email:
+            email_match = super_admin_email_env.strip().lower() == user_email.strip().lower()
+        
+        return {
+            "diagnosis": "Super Admin Check",
+            "user_found": user is not None,
+            "user_email_from_token": user_email,
+            "user_email_in_db": user.email if user else None,
+            "is_super_admin_in_db": user.is_super_admin if user else None,
+            "env_SUPER_ADMIN_EMAIL": super_admin_email_env,
+            "email_comparison": {
+                "env_value_lower": super_admin_email_env.strip().lower() if super_admin_email_env != "NOT_SET" else None,
+                "user_email_lower": user_email.strip().lower() if user_email else None,
+                "match": email_match
+            },
+            "fix_suggestion": (
+                "如果 email_comparison.match 為 true 但 is_super_admin_in_db 為 false，"
+                "表示資料庫需要更新。請重新登入網站讓系統自動修復，或手動執行 SQL: "
+                f"UPDATE users SET is_super_admin = true WHERE email = '{user_email}';"
+            ) if not (user and user.is_super_admin) and email_match else None
+        }
+    finally:
+        session.close()
+
 @app.get("/api/debug/test-auction-metrics")
 async def test_auction_metrics(
     account_id: str,
