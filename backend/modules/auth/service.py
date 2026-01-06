@@ -1,55 +1,74 @@
+"""
+Token Manager Service
+處理 Facebook Token 和 AI API Key 的加密儲存與讀取
+
+此模組是從 auth.py 抽取出來的獨立服務，可複用於其他專案
+"""
+
+import sys
 import requests
-import os
-from dotenv import load_dotenv
-load_dotenv(override=True)
+from datetime import datetime, timedelta, timezone
+from typing import Optional
+
+# 使用 core 模組的加密功能
+from core.security import encrypt_value, decrypt_value
+
+# 資料庫依賴（保持向後相容）
 from database import SessionLocal, User, UserRole, Team, TeamMember
 
-# Encryption Setup - 使用 core.security（向後相容）
-from cryptography.fernet import Fernet
-import sys
-
-# 從 core.security 重新導出 get_encryption_key（向後相容）
-from core.security import get_encryption_key
 
 class TokenManager:
+    """
+    Token 管理服務
+    
+    功能:
+    - Facebook Access Token 加密儲存與讀取
+    - Team Token 管理
+    - AI API Key 加密儲存
+    """
+    
+    # ============================================================
+    # 內部加密方法（使用 core.security）
+    # ============================================================
+    
     @staticmethod
-    def _encrypt(message):
-        if not message: return None
-        try:
-            f = Fernet(get_encryption_key())
-            return f.encrypt(message.encode()).decode()
-        except Exception as e:
-            print(f"Encryption error: {e}", file=sys.stderr)
-            return None
+    def _encrypt(message: str) -> Optional[str]:
+        """加密字串 (封裝 core.security)"""
+        return encrypt_value(message)
 
     @staticmethod
-    def _decrypt(token):
-        if not token: return None
-        try:
-            f = Fernet(get_encryption_key())
-            return f.decrypt(token.encode()).decode()
-        except Exception as e:
-            # Replaced with standard logging, but keep enough info for us
-            print(f"[DEBUG_AUTH] Decryption failed. Error: {e}", file=sys.stderr)
-            return None
+    def _decrypt(token: str) -> Optional[str]:
+        """解密字串 (封裝 core.security)"""
+        return decrypt_value(token)
 
+    # ============================================================
+    # Facebook Token 管理
+    # ============================================================
+    
     @staticmethod
-    def save_user_token(google_id, long_lived_token, app_id=None, app_secret=None, expires_in=None):
-        # ... (Implementation remains same, just ensuring context)
-        """Save or update user's Facebook token in the database (Encrypted)."""
+    def save_user_token(google_id: str, long_lived_token: str, 
+                        app_id: str = None, app_secret: str = None, 
+                        expires_in: int = None):
+        """
+        儲存用戶的 Facebook Token（加密）
+        
+        Args:
+            google_id: 用戶的 Google ID
+            long_lived_token: Facebook 長效 Token
+            app_id: Facebook App ID
+            app_secret: Facebook App Secret
+            expires_in: Token 過期時間（秒）
+        """
         session = SessionLocal()
         try:
             user = session.query(User).filter(User.google_id == google_id).first()
             if not user:
-                # Provide a default name/email placeholder if creating via this flow
-                # Check if this is the FIRST user ever
                 user_count = session.query(User).count()
                 new_role = UserRole.ADMIN if user_count == 0 else UserRole.VIEWER
-                
                 user = User(google_id=google_id, role=new_role)
                 session.add(user)
             
-            # Encrypt sensitive data
+            # 加密敏感資料
             user.fb_access_token = TokenManager._encrypt(long_lived_token)
             
             if app_id:
@@ -58,7 +77,6 @@ class TokenManager:
                 user.fb_app_secret = TokenManager._encrypt(app_secret)
             
             if expires_in:
-                from datetime import datetime, timedelta, timezone
                 expires_at = datetime.now(timezone.utc) + timedelta(seconds=int(expires_in))
                 user.token_expires_at = expires_at
             
@@ -71,28 +89,26 @@ class TokenManager:
             session.close()
 
     @staticmethod
-    def save_team_token(team_id, long_lived_token, app_id, user_id, expires_in=None):
-        """Save or update TEAM'S Facebook token."""
+    def save_team_token(team_id: str, long_lived_token: str, 
+                        app_id: str, user_id: str, expires_in: int = None):
+        """
+        儲存團隊的 Facebook Token
+        
+        Args:
+            team_id: 團隊 ID
+            long_lived_token: Facebook 長效 Token
+            app_id: Facebook App ID
+            user_id: 操作者的 Google ID（需要是團隊管理員）
+            expires_in: Token 過期時間（秒）
+        """
         session = SessionLocal()
         try:
-            # 1. Verification: Is user an ADMIN of this team?
-            # Although API router might check, we double check here for safety
-            member = session.query(TeamMember).filter(
-                TeamMember.team_id == team_id,
-                TeamMember.user_id == user_id,
-                TeamMember.role == UserRole.ADMIN
-            ).first()
-
-            # Also allow Super Admin (user.is_super_admin) - strict for now?
-            # Let's assume caller handled authorization or we check strictly here.
-            # Ideally getting User object to check super admin is better.
-            
-            # Fetch User ID (internal UUID) from google_id
+            # 取得用戶
             user = session.query(User).filter(User.google_id == user_id).first()
             if not user:
                 raise Exception("User not found")
 
-            # Check Team Member Admin or Team Owner or Super Admin
+            # 檢查權限：Super Admin 或 Team Admin
             is_admin = False
             if user.is_super_admin:
                 is_admin = True
@@ -108,7 +124,7 @@ class TokenManager:
             if not is_admin:
                 raise Exception("Permission Denied: Only Team Admins can update tokens.")
 
-            # 2. Update Team
+            # 更新 Team Token
             team = session.query(Team).filter(Team.id == team_id).first()
             if not team:
                 raise Exception("Team not found")
@@ -117,24 +133,8 @@ class TokenManager:
             team.fb_app_id = app_id
             
             if expires_in:
-                from datetime import datetime, timedelta, timezone
                 expires_at = datetime.now(timezone.utc) + timedelta(seconds=int(expires_in))
                 team.token_expires_at = expires_at
-            # team.fb_app_secret # Schema doesn't have app_secret for Team yet? Checked database.py, it does NOT.
-            # Ideally we should add it. For now, assuming only ID/Token is enough? 
-            # Wait, `get_long_lived` needs secret. If we ever refresh it for Team, we need secret.
-            # User table HAS fb_app_secret. Team table SHOULD have it.
-            # database.py check: fb_app_id OK. fb_app_secret MISSING.
-            # I should add it to DB first? Or just skip for now?
-            # User requested "Feature Complete". I should probably add it.
-            # But changing DB requires Alembic.
-            # Let's check database.py again via memory.
-            # Line 81: fb_access_token. Line 82: fb_app_id.
-            # Missing fb_app_secret.
-            # I will skip app_secret for Team for now (just like Phase 1 didn't use it much after exchange).
-            # BUT if we want to refresh token automatically later, we need it.
-            # I'll stick to ID + Token for now to avoid schema migration delay, unless critical.
-            # Let's proceed with ID + Token.
             
             session.commit()
         except Exception as e:
@@ -144,35 +144,33 @@ class TokenManager:
             session.close()
 
     @staticmethod
-    def get_user_token(google_id, allow_fallback=True):
+    def get_user_token(google_id: str, allow_fallback: bool = True) -> Optional[str]:
         """
-        Retrieve the long-lived token.
-        **New Logic (Collaborative Mode)**: 
-        1. Try to get the CURRENT user's token.
-        2. If missing AND allow_fallback is True, look for an ADMIN's token (Shared Workspace concept).
-        This allows invited members to view data setup by the Admin.
+        取得用戶的 Facebook Token
+        
+        Args:
+            google_id: 用戶的 Google ID
+            allow_fallback: 是否允許降級使用 Admin Token
+            
+        Returns:
+            解密後的 Token，或 None
         """
         session = SessionLocal()
         try:
-            # 1. Check Current User
             user = session.query(User).filter(User.google_id == google_id).first()
             if not user:
-                print(f"[DEBUG_AUTH] User not found for google_id: {google_id}", file=sys.stderr)
+                print(f"[DEBUG_AUTH] User not found: {google_id}", file=sys.stderr)
             elif not user.fb_access_token:
-                print(f"[DEBUG_AUTH] User found but fb_access_token is missing for: {google_id}", file=sys.stderr)
+                print(f"[DEBUG_AUTH] No token for: {google_id}", file=sys.stderr)
             else:
                 decrypted = TokenManager._decrypt(user.fb_access_token)
-                if not decrypted:
-                    print(f"[DEBUG_AUTH] Decryption failed for user: {google_id}", file=sys.stderr)
-                else:
+                if decrypted:
                     return decrypted
             
             if not allow_fallback:
-                print(f"[DEBUG_AUTH] Fallback disabled, returning None", file=sys.stderr)
                 return None
 
-            # 2. Fallback: Search for any ADMIN with a valid token
-            # We prioritize the "first" admin found with a token.
+            # Fallback: 使用任一 Admin 的 Token
             admin_user = session.query(User).filter(
                 User.role == UserRole.ADMIN,
                 User.fb_access_token.isnot(None)
@@ -186,10 +184,11 @@ class TokenManager:
             session.close()
 
     @staticmethod
-    def get_team_token(team_id):
+    def get_team_token(team_id: str) -> Optional[str]:
         """
-        Retrieve the TEAM's long-lived token.
-        Fallback: If Team has no token, use the Team Owner's token.
+        取得團隊的 Facebook Token
+        
+        Fallback: 若團隊無 Token，使用團隊 Owner 的 Token
         """
         session = SessionLocal()
         try:
@@ -197,12 +196,11 @@ class TokenManager:
             if not team:
                 return None
             
-            # 1. Check Team-Level Token
+            # 優先使用團隊 Token
             if team.fb_access_token:
                 return TokenManager._decrypt(team.fb_access_token)
             
-            # 2. Fallback: Check Team Owner's Token
-            # This is critical for "Team Ad Account Isolation" where the Owner provides the connection.
+            # Fallback: 使用 Owner Token
             if team.owner_id:
                 owner = session.query(User).filter(User.id == team.owner_id).first()
                 if owner and owner.fb_access_token:
@@ -214,10 +212,14 @@ class TokenManager:
             session.close()
 
     @staticmethod
-    def exchange_for_long_lived_token(app_id, app_secret, short_lived_token, user_id, team_id=None):
+    def exchange_for_long_lived_token(app_id: str, app_secret: str, 
+                                       short_lived_token: str, user_id: str, 
+                                       team_id: str = None) -> tuple[bool, str]:
         """
-        Exchange a short-lived user access token for a long-lived one (60 days).
-        https://developers.facebook.com/docs/facebook-login/guides/access-tokens/get-long-lived
+        將短效 Token 換成長效 Token（60 天）
+        
+        Returns:
+            (success, message)
         """
         url = "https://graph.facebook.com/v24.0/oauth/access_token"
         params = {
@@ -232,7 +234,6 @@ class TokenManager:
             data = response.json()
             
             if "access_token" in data:
-                # Save the new token to the database
                 if team_id:
                     TokenManager.save_team_token(
                         team_id=team_id,
@@ -250,27 +251,29 @@ class TokenManager:
                         app_secret=app_secret,
                         expires_in=data.get("expires_in")
                     )
-                    return True, "Token exchanged and saved successfully to User."
+                    return True, "Token exchanged and saved successfully."
             else:
-                return False, data.get("error", {}).get("message", "Unknown error during token exchange.")
+                return False, data.get("error", {}).get("message", "Unknown error")
         except Exception as e:
             return False, str(e)
 
     # ============================================================
-    # AI Settings Management (Encrypted)
+    # AI Settings 管理
     # ============================================================
     
     @staticmethod
-    def save_ai_settings(google_id, zeabur_api_key=None, gemini_api_key=None, ai_provider=None, ai_model=None):
+    def save_ai_settings(google_id: str, zeabur_api_key: str = None,
+                         gemini_api_key: str = None, ai_provider: str = None,
+                         ai_model: str = None) -> bool:
         """
-        Save user's AI settings to database (API keys are encrypted).
+        儲存用戶的 AI 設定（API Key 加密儲存）
         
         Args:
-            google_id: User's Google ID
-            zeabur_api_key: Zeabur AI Hub API Key (will be encrypted)
-            gemini_api_key: Google Gemini API Key (will be encrypted)
-            ai_provider: Active provider ('zeabur' or 'gemini')
-            ai_model: Selected AI model name
+            google_id: 用戶的 Google ID
+            zeabur_api_key: Zeabur AI Hub API Key
+            gemini_api_key: Google Gemini API Key
+            ai_provider: 使用的 AI 提供者 ('zeabur' 或 'gemini')
+            ai_model: 使用的 AI 模型名稱
         """
         session = SessionLocal()
         try:
@@ -278,7 +281,6 @@ class TokenManager:
             if not user:
                 raise Exception("User not found")
             
-            # Update only provided fields
             if zeabur_api_key is not None:
                 user.zeabur_api_key = TokenManager._encrypt(zeabur_api_key) if zeabur_api_key else None
             
@@ -300,13 +302,12 @@ class TokenManager:
             session.close()
     
     @staticmethod
-    def get_ai_settings(google_id):
+    def get_ai_settings(google_id: str) -> Optional[dict]:
         """
-        Retrieve user's AI settings from database.
+        取得用戶的 AI 設定
         
         Returns:
-            dict with ai_provider, ai_model, has_zeabur_key, has_gemini_key
-            (API keys are NOT returned for security, only whether they exist)
+            包含 ai_provider, ai_model, has_zeabur_key, has_gemini_key 的字典
         """
         session = SessionLocal()
         try:
@@ -324,16 +325,13 @@ class TokenManager:
             session.close()
     
     @staticmethod
-    def get_ai_api_key(google_id, provider=None):
+    def get_ai_api_key(google_id: str, provider: str = None) -> Optional[str]:
         """
-        Retrieve decrypted AI API key for the specified or active provider.
+        取得解密後的 AI API Key
         
         Args:
-            google_id: User's Google ID
-            provider: 'zeabur' or 'gemini' (if None, uses user's active provider)
-            
-        Returns:
-            Decrypted API key string, or None if not configured
+            google_id: 用戶的 Google ID
+            provider: 'zeabur' 或 'gemini'（若未指定，使用用戶設定的 provider）
         """
         session = SessionLocal()
         try:
@@ -341,7 +339,6 @@ class TokenManager:
             if not user:
                 return None
             
-            # Use user's active provider if not specified
             active_provider = provider or user.ai_provider or "zeabur"
             
             if active_provider == "gemini":
