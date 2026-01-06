@@ -1,5 +1,76 @@
 # Changelog
 
+## v1.6.8 (2026-01-06) - Super Admin Architecture Overhaul
+
+### New Features
+- **🏗️ Database-First Super Admin Architecture**:
+    - Refactored super admin system to use database as the authoritative source.
+    - **Startup Sync**: Server automatically syncs `SUPER_ADMIN_EMAIL` to database on every start/deploy.
+    - **Multi-Admin Support**: `SUPER_ADMIN_EMAIL` now supports comma-separated emails for multiple super admins.
+    - **Emergency Recovery**: If no super admin exists in database, login flow auto-recovers from env var.
+    - Removes reliance on runtime environment variable checks for existing users.
+
+- **🔧 Super Admin CLI Management Tool** (`manage_admin.py`):
+    - `python manage_admin.py list` - List all super admins.
+    - `python manage_admin.py grant <email>` - Grant super admin privileges.
+    - `python manage_admin.py revoke <email>` - Revoke super admin privileges.
+    - `python manage_admin.py check <email>` - Check user status.
+    - Safety check: Cannot revoke the last remaining super admin.
+    - Auto-detects SQLite (local) or PostgreSQL (Zeabur) database.
+
+- **📊 Diagnostic Endpoint**:
+    - Added `/api/debug/super-admin-check` for troubleshooting super admin issues.
+    - Shows environment variable status, email comparison result, and database state.
+
+### Architecture
+```
+┌─────────────────────────────────────────────────────────────┐
+│                    Server Startup                           │
+│  ┌─────────────────────────────────────────────────────┐    │
+│  │ Read SUPER_ADMIN_EMAIL → Sync to Database           │    │
+│  │ (Ensures specified users have Super Admin rights)   │    │
+│  └─────────────────────────────────────────────────────┘    │
+└─────────────────────────────────────────────────────────────┘
+                              ↓
+┌─────────────────────────────────────────────────────────────┐
+│                    User Login                               │
+│  ┌─────────────────────────────────────────────────────┐    │
+│  │ Read is_super_admin directly from Database          │    │
+│  │ (No runtime env var checks for existing users)      │    │
+│  └─────────────────────────────────────────────────────┘    │
+│                                                             │
+│  🚨 Emergency Recovery (only when DB has NO super admin):  │
+│  ┌─────────────────────────────────────────────────────┐    │
+│  │ If user email matches SUPER_ADMIN_EMAIL             │    │
+│  │ → Auto-restore as Super Admin                       │    │
+│  └─────────────────────────────────────────────────────┘    │
+└─────────────────────────────────────────────────────────────┘
+```
+
+### 新功能
+- **🏗️ 資料庫優先的超級管理員架構**：
+    - 重構超級管理員系統，以資料庫作為權威來源。
+    - **啟動時同步**：伺服器每次啟動/部署時自動將 `SUPER_ADMIN_EMAIL` 同步到資料庫。
+    - **多管理員支援**：`SUPER_ADMIN_EMAIL` 現支援逗號分隔的多個 Email。
+    - **緊急恢復機制**：資料庫中若無任何超級管理員，登入時會自動從環境變數恢復。
+
+- **🔧 超級管理員 CLI 管理工具** (`manage_admin.py`)：
+    - `list` - 列出所有超級管理員。
+    - `grant <email>` - 授予超級管理員權限。
+    - `revoke <email>` - 撤銷超級管理員權限。
+    - `check <email>` - 檢查用戶狀態。
+    - 安全保護：無法撤銷最後一位超級管理員。
+
+- **📊 診斷端點**：
+    - 新增 `/api/debug/super-admin-check` 用於排查超級管理員問題。
+
+### Files Modified/Added
+- `backend/main.py` - Startup sync function, AI columns schema patch
+- `backend/dependencies.py` - Database-first architecture with emergency recovery
+- `backend/manage_admin.py` - CLI management tool (NEW)
+
+---
+
 ## v1.6.7 (2026-01-06) - Encrypted AI API Key Storage
 
 ### New Features

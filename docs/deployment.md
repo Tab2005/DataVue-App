@@ -56,6 +56,52 @@
 
 ---
 
+## 5. Super Admin 管理
+
+### 環境變數自動同步
+伺服器每次啟動時會自動將 `SUPER_ADMIN_EMAIL` 同步到資料庫，確保指定的用戶具有超級管理員權限。
+
+```
+# 支援逗號分隔的多個 Email
+SUPER_ADMIN_EMAIL=admin1@example.com,admin2@example.com
+```
+
+### CLI 管理工具
+在 `backend` 目錄下可使用 CLI 工具管理超級管理員：
+
+```bash
+# 列出所有超級管理員
+python manage_admin.py list
+
+# 授予超級管理員權限
+python manage_admin.py grant user@example.com
+
+# 撤銷超級管理員權限 (無法撤銷最後一位)
+python manage_admin.py revoke user@example.com
+
+# 檢查用戶狀態
+python manage_admin.py check user@example.com
+```
+
+### 連線 Zeabur PostgreSQL
+若要在本地端管理線上資料庫：
+
+```powershell
+# 設定環境變數 (使用 Zeabur PostgreSQL 公開連線字串)
+$env:DATABASE_URL = "postgresql://root:密碼@xxx.zeabur.app:5432/postgres"
+
+# 執行管理指令
+python manage_admin.py list
+```
+
+> **注意**：建議使用 Zeabur Terminal 直接在後端服務中執行，可使用內網連線。
+
+---
+
 ## 🛠️ 除錯 (Troubleshooting)
 - **登入無反應**: 檢查 `VITE_API_URL` 是否正確指向後端，且 Google Cloud Console 是否已授權新的前端網址。
 - **資料庫連線失敗**: 檢查後端 Log，確認 `DATABASE_URL` 是否正確，並確認使用的是內網連線。
+- **超級管理員權限遺失**: 
+  1. 確認 `SUPER_ADMIN_EMAIL` 環境變數已正確設定
+  2. 重新部署後端服務 (觸發啟動時同步)
+  3. 或使用 `/api/debug/super-admin-check?token=YOUR_TOKEN` 診斷
