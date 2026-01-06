@@ -241,6 +241,72 @@ try:
         seed_permissions()
     except Exception as e:
         print(f"⚠️ Permission Seeding Warning: {str(e)}", file=sys.stderr)
+    
+    # --- AUTO-SYNC SUPER ADMIN (Solution A) ---
+    def sync_super_admin_on_startup():
+        """
+        確保 SUPER_ADMIN_EMAIL 對應的用戶具有 Super Admin 權限
+        這個函數在每次伺服器啟動時執行，確保權限狀態的一致性
+        支援多個 Email（以逗號分隔）
+        """
+        from database import UserRole
+        from sqlalchemy import func
+        
+        super_admin_emails_raw = os.getenv("SUPER_ADMIN_EMAIL", "")
+        if not super_admin_emails_raw:
+            print("⚠️ [STARTUP] SUPER_ADMIN_EMAIL not set, skipping sync.", file=sys.stderr)
+            return
+        
+        # 支援逗號分隔的多個 Email
+        emails = [e.strip().lower() for e in super_admin_emails_raw.split(",") if e.strip()]
+        print(f"🔒 [STARTUP] Super Admin emails to sync: {emails}", file=sys.stderr)
+        
+        session = SessionLocal()
+        try:
+            synced = []
+            confirmed = []
+            not_found = []
+            
+            for email in emails:
+                user = session.query(User).filter(
+                    func.lower(User.email) == email
+                ).first()
+                
+                if user:
+                    if not user.is_super_admin:
+                        user.is_super_admin = True
+                        user.role = UserRole.ADMIN
+                        synced.append(email)
+                        print(f"✅ [STARTUP] Super Admin GRANTED: {email}", file=sys.stderr)
+                    else:
+                        confirmed.append(email)
+                        print(f"✓ [STARTUP] Super Admin confirmed: {email}", file=sys.stderr)
+                else:
+                    not_found.append(email)
+                    print(f"⚠️ [STARTUP] User not found (will sync on first login): {email}", file=sys.stderr)
+            
+            if synced:
+                session.commit()
+                print(f"🔒 [STARTUP] Super Admin sync complete: {len(synced)} user(s) updated.", file=sys.stderr)
+            
+            # Summary
+            print(f"📊 [STARTUP] Sync Summary: granted={len(synced)}, confirmed={len(confirmed)}, pending={len(not_found)}", file=sys.stderr)
+            
+        except Exception as e:
+            print(f"❌ [STARTUP] Super Admin sync error: {e}", file=sys.stderr)
+            import traceback
+            traceback.print_exc()
+            session.rollback()
+        finally:
+            session.close()
+
+    # 執行 Super Admin 同步
+    try:
+        print("Running Super Admin Sync...", file=sys.stderr)
+        sync_super_admin_on_startup()
+    except Exception as e:
+        print(f"⚠️ Super Admin Sync Warning: {e}", file=sys.stderr)
+
 except Exception as e:
     print(f"Database Migration/Initialization Failed: {str(e)}")
 
