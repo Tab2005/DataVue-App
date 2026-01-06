@@ -11,9 +11,15 @@ const SettingsModal = ({ isOpen, onClose, language, teamId, teamName, onSuccess 
         shortToken: ''
     });
 
-    // AI Form Data
+    // AI Form Data (Zeabur AI Hub)
     const [aiData, setAiData] = useState({
         provider: 'zeabur', // Default to Zeabur AI Hub
+        apiKey: '',
+        model: 'gemini-2.5-flash'
+    });
+
+    // Google Gemini Direct API Data
+    const [geminiData, setGeminiData] = useState({
         apiKey: '',
         model: 'gemini-2.5-flash'
     });
@@ -36,7 +42,8 @@ const SettingsModal = ({ isOpen, onClose, language, teamId, teamName, onSuccess 
         title: language === 'zh' ? '整合中心 (Integration Center)' : 'Integration Center',
         tabs: {
             facebook: 'Facebook Ads',
-            ai: 'AI Intelligence'
+            ai: 'Zeabur AI Hub',
+            gemini: 'Google Gemini'
         },
         fb: {
             appId: 'App ID',
@@ -324,6 +331,14 @@ const SettingsModal = ({ isOpen, onClose, language, teamId, teamName, onSuccess 
         }
     }, [activeTab, isOpen]);
 
+    // Switch to Gemini tab - load saved settings
+    useEffect(() => {
+        if (isOpen && activeTab === 'gemini') {
+            const savedKey = localStorage.getItem('google_gemini_api_key') || '';
+            const savedModel = localStorage.getItem('google_gemini_model') || 'gemini-2.5-flash';
+            setGeminiData({ apiKey: savedKey, model: savedModel });
+        }
+    }, [activeTab, isOpen]);
 
     if (!isOpen) return null;
 
@@ -595,6 +610,131 @@ const SettingsModal = ({ isOpen, onClose, language, teamId, teamName, onSuccess 
                                 </div>
                             )}
 
+                        </div>
+                    )}
+
+                    {/* --- GOOGLE GEMINI TAB --- */}
+                    {activeTab === 'gemini' && (
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
+
+                            {/* Info Banner */}
+                            <div style={{
+                                padding: '16px', borderRadius: '8px',
+                                border: '1px solid rgba(59, 130, 246, 0.2)',
+                                background: 'rgba(59, 130, 246, 0.05)',
+                                display: 'flex', alignItems: 'flex-start', gap: '12px'
+                            }}>
+                                <div style={{ fontSize: '24px' }}>💎</div>
+                                <div>
+                                    <div style={{ fontWeight: 'bold', color: '#60a5fa' }}>
+                                        {language === 'zh' ? 'Google Gemini 直連模式' : 'Google Gemini Direct Mode'}
+                                    </div>
+                                    <div style={{ fontSize: '0.85rem', color: 'var(--text-secondary)', marginTop: '4px' }}>
+                                        {language === 'zh'
+                                            ? '直接使用 Google AI Studio 的 API Key，繞過 Zeabur AI Hub。'
+                                            : 'Directly use Google AI Studio API Key, bypass Zeabur AI Hub.'}
+                                    </div>
+                                    <a
+                                        href="https://aistudio.google.com/app/apikey"
+                                        target="_blank"
+                                        rel="noopener noreferrer"
+                                        style={{ fontSize: '0.85rem', color: '#60a5fa', textDecoration: 'underline', marginTop: '8px', display: 'inline-block' }}
+                                    >
+                                        {language === 'zh' ? '👉 前往 Google AI Studio 取得 API Key' : '👉 Get API Key from Google AI Studio'}
+                                    </a>
+                                </div>
+                            </div>
+
+                            {/* Model Selection */}
+                            <div>
+                                <label style={{ display: 'block', marginBottom: '8px', color: 'var(--text-secondary)' }}>
+                                    {language === 'zh' ? 'Gemini 模型' : 'Gemini Model'}
+                                </label>
+                                <select
+                                    value={geminiData.model}
+                                    onChange={(e) => setGeminiData({ ...geminiData, model: e.target.value })}
+                                    style={{
+                                        width: '100%',
+                                        padding: '12px',
+                                        borderRadius: '8px',
+                                        border: '1px solid var(--glass-border)',
+                                        background: '#1a1a1a',
+                                        color: 'white'
+                                    }}
+                                >
+                                    <option value="gemini-2.5-flash">gemini-2.5-flash (快速、免費額度高) ✅ 推薦</option>
+                                    <option value="gemini-2.5-pro">gemini-2.5-pro (高品質、長文本)</option>
+                                    <option value="gemini-2.0-flash">gemini-2.0-flash (上一代快速)</option>
+                                    <option value="gemini-1.5-flash">gemini-1.5-flash (穩定版)</option>
+                                    <option value="gemini-1.5-pro">gemini-1.5-pro (穩定高品質)</option>
+                                </select>
+                            </div>
+
+                            {/* API Key */}
+                            <div>
+                                <label style={{ display: 'block', marginBottom: '8px', color: 'var(--text-secondary)' }}>
+                                    Google AI API Key
+                                </label>
+                                <input
+                                    type="password"
+                                    value={geminiData.apiKey}
+                                    onChange={(e) => setGeminiData({ ...geminiData, apiKey: e.target.value })}
+                                    placeholder={language === 'zh' ? '輸入您的 Google AI API Key...' : 'Enter your Google AI API Key...'}
+                                    style={{
+                                        width: '100%',
+                                        padding: '12px',
+                                        borderRadius: '8px',
+                                        border: '1px solid var(--glass-border)',
+                                        background: '#1a1a1a',
+                                        color: 'white'
+                                    }}
+                                />
+                            </div>
+
+                            {/* Buttons */}
+                            <div style={{ display: 'flex', gap: '12px', justifyContent: 'flex-end' }}>
+                                {geminiData.apiKey && (
+                                    <button
+                                        onClick={() => {
+                                            localStorage.removeItem('google_gemini_api_key');
+                                            localStorage.removeItem('google_gemini_model');
+                                            setGeminiData({ apiKey: '', model: 'gemini-2.5-flash' });
+                                            setStatus({ type: 'success', message: language === 'zh' ? '已清除 Google Gemini 設定' : 'Google Gemini settings cleared' });
+                                        }}
+                                        style={{ padding: '10px 20px', borderRadius: '8px', border: '1px solid var(--glass-border)', background: 'transparent', color: '#f87171', cursor: 'pointer' }}
+                                    >
+                                        {language === 'zh' ? '清除' : 'Clear'}
+                                    </button>
+                                )}
+                                <button
+                                    onClick={() => {
+                                        // Save to localStorage
+                                        if (geminiData.apiKey) {
+                                            localStorage.setItem('google_gemini_api_key', geminiData.apiKey);
+                                            localStorage.setItem('google_gemini_model', geminiData.model);
+                                            setStatus({ type: 'success', message: language === 'zh' ? '✅ Google Gemini 設定已儲存' : '✅ Google Gemini settings saved' });
+                                        } else {
+                                            setStatus({ type: 'error', message: language === 'zh' ? '請輸入 API Key' : 'Please enter API Key' });
+                                        }
+                                    }}
+                                    style={{ padding: '10px 20px', borderRadius: '8px', border: 'none', background: 'var(--accent-primary)', color: 'white', cursor: 'pointer' }}
+                                >
+                                    {language === 'zh' ? '儲存設定' : 'Save'}
+                                </button>
+                            </div>
+
+                            {/* Note */}
+                            <div style={{
+                                padding: '12px', borderRadius: '8px',
+                                background: 'rgba(251, 191, 36, 0.1)',
+                                border: '1px solid rgba(251, 191, 36, 0.2)',
+                                fontSize: '0.85rem',
+                                color: '#fbbf24'
+                            }}>
+                                ⚠️ {language === 'zh'
+                                    ? '注意：此功能尚未完全實作。目前系統仍使用 Zeabur AI Hub。'
+                                    : 'Note: This feature is not fully implemented. System still uses Zeabur AI Hub.'}
+                            </div>
                         </div>
                     )}
                 </div>
