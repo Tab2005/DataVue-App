@@ -116,16 +116,27 @@ def get_current_user(
                  user.name = name
                  # Not committing updates to avoid write-conflicts
             
-            # [Security hardening] Recursive Check for Existing Users
-            # If an existing user logs in and their email matches SUPER_ADMIN_EMAIL, promote them dynamically.
-            super_admin_email = os.getenv("SUPER_ADMIN_EMAIL")
-            if super_admin_email and email and super_admin_email.strip().lower() == email.strip().lower():
-                if not user.is_super_admin:
-                    print(f"🔒 SUPER_ADMIN_EMAIL match detected for Existing User! Promoting {email}...", file=sys.stderr)
-                    user.is_super_admin = True
-                    user.role = UserRole.ADMIN
-                    db.commit()
-                    db.refresh(user)
+            # [DATABASE-FIRST ARCHITECTURE]
+            # Super Admin 狀態由資料庫決定，啟動時同步確保正確性
+            # 只有在「緊急恢復」情況下才使用環境變數提升權限
+            
+            if not user.is_super_admin:
+                # 緊急恢復機制：檢查是否資料庫中完全沒有 Super Admin
+                has_any_super_admin = db.query(User).filter(User.is_super_admin == True).count() > 0
+                
+                if not has_any_super_admin:
+                    # 沒有任何 Super Admin，啟用緊急恢復
+                    super_admin_email = os.getenv("SUPER_ADMIN_EMAIL")
+                    if super_admin_email and email:
+                        # 支援逗號分隔的多個 Email
+                        allowed_emails = [e.strip().lower() for e in super_admin_email.split(",")]
+                        if email.strip().lower() in allowed_emails:
+                            print(f"🚨 [EMERGENCY RECOVERY] No Super Admin in DB! Restoring {email}...", file=sys.stderr)
+                            user.is_super_admin = True
+                            user.role = UserRole.ADMIN
+                            db.commit()
+                            db.refresh(user)
+                            print(f"✅ [EMERGENCY RECOVERY] {email} promoted to Super Admin.", file=sys.stderr)
         
         # Update last login - DISABLED PERMANENTLY FOR STABILITY (Concurrency Crash prevention)
         # from datetime import datetime
