@@ -251,15 +251,45 @@ try:
     except Exception as e:
         print(f"⚠️ saved_views Auto-Patch Warning: {e}")
 
+    # --- PATCH: Auto-create page_titles table if missing ---
+    try:
+        from sqlalchemy import text, inspect
+        inspector = inspect(engine)
+        if not inspector.has_table("page_titles"):
+            print("⚠️ Table 'page_titles' not found. Creating via DDL...")
+            with engine.connect() as conn:
+                conn.execute(text("""
+                    CREATE TABLE IF NOT EXISTS page_titles (
+                        id VARCHAR PRIMARY KEY,
+                        url VARCHAR UNIQUE NOT NULL,
+                        title VARCHAR,
+                        fetched_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                    )
+                """))
+                conn.execute(text("CREATE INDEX IF NOT EXISTS ix_page_titles_url ON page_titles(url)"))
+                conn.commit()
+            print("✅ Table 'page_titles' created successfully.")
+        else:
+            print("✅ Table 'page_titles' already exists.")
+    except Exception as e:
+        print(f"⚠️ page_titles Auto-Patch Warning: {e}")
+
     init_db() 
     
     print("Schema Verified.")
 
-    # --- AUTO-SEED PERMISSIONS ---
+    # --- AUTO-SEED PERMISSIONS (Guarded) ---
     try:
-        print("Running Permission Seeding...")
-        from seed_permissions import seed_permissions
-        seed_permissions()
+        print("Running Permission Seeding (guarded)...")
+        from sqlalchemy import inspect
+        inspector = inspect(engine)
+        required_permission_tables = ["modules","permissions","roles","role_permissions","user_module_access","user_permissions"]
+        missing = [t for t in required_permission_tables if not inspector.has_table(t)]
+        if missing:
+            print(f"⚠️ Permission tables missing: {missing}. Skipping seeding. Please run migrations to create permission tables.", file=sys.stderr)
+        else:
+            from seed_permissions import seed_permissions
+            seed_permissions()
     except Exception as e:
         print(f"⚠️ Permission Seeding Warning: {str(e)}", file=sys.stderr)
     

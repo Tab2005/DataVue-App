@@ -619,6 +619,59 @@ ZEABUR_AI_HUB_ENDPOINT=https://hnd1.aihub.zeabur.ai  # 東京 (預設)
 | 🟢 低 | **資料匯出 CSV/Excel** | 表格資料匯出功能 |
 | 🟢 低 | **GSC Token 團隊共享** | 將 GSC Token 綁定至團隊層級 |
 
+##### 🚧 頁面標題資料庫快取 (Page Title Database Cache) - 實作中
+
+**目標**：將頁面標題存入資料庫，避免每次載入都重新爬取，大幅提升載入速度。
+
+**問題背景**：
+- 目前頁面標題使用前端 React State 暫存，重新整理或換電腦後需重新抓取
+- 雲端環境 (Zeabur) 對外 HTTP 請求較慢，首次載入可能等待數十秒
+- 所有用戶無法共享快取，每人第一次都要重新抓取
+
+**解決方案**：
+| 策略 | 說明 |
+|------|------|
+| **按需抓取** | 資料庫沒有該 URL 時才發送 HTTP 請求抓取標題 |
+| **伺服器端儲存** | 抓取後存入 `page_titles` 資料表，所有用戶共享 |
+| **手動刷新按鈕** | 用戶可點擊「🔄 重新整理標題」強制重抓特定頁面 |
+
+**資料庫結構**：
+```sql
+CREATE TABLE page_titles (
+    id VARCHAR PRIMARY KEY,
+    url VARCHAR UNIQUE NOT NULL,  -- 頁面 URL
+    title VARCHAR,                -- 抓取到的標題
+    fetched_at TIMESTAMP          -- 抓取時間
+);
+CREATE INDEX ix_page_titles_url ON page_titles(url);
+```
+
+**API 變更**：
+| 端點 | 變更 |
+|------|------|
+| `POST /api/gsc/page-titles` | 新增 `force_refresh` 參數，支援強制重抓 |
+
+**後端邏輯**：
+1. 接收 URL 列表
+2. 查詢資料庫，過濾出未快取的 URL
+3. 對未快取 URL 發送 HTTP 請求抓取標題
+4. 將新標題存入資料庫
+5. 回傳完整標題列表（含快取 + 新抓取）
+
+**前端變更**：
+- 頁面分析 Tab 標題列新增「🔄」按鈕
+- 點擊後呼叫 API 並顯示載入狀態
+
+**實作狀態**：
+| 項目 | 狀態 |
+|------|------|
+| 資料庫 Model (`PageTitle`) | 🚧 進行中 |
+| Schema Auto-Patch | 🚧 進行中 |
+| API 快取邏輯 | 🚧 進行中 |
+| 前端刷新按鈕 | 🚧 待開發 |
+
+---
+
 ##### 智慧語言分群 (Hybrid Language Grouping)
 
 **問題**：目前使用「詞分割」(word split) 對英文有效，但中文無空格會失敗。
