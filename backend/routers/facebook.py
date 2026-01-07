@@ -131,13 +131,13 @@ async def get_dashboard_data(
     if not account_id:
         return {"error": "Account ID is required"}
         
-    data, error = await AsyncFacebookService.get_account_insights(
+    result = await AsyncFacebookService.get_account_insights(
         account_id, user_id, days=days, team_id=team_id
     )
     
-    if error:
-        return {"error": error}
-    return data
+    if result is None:
+        return {"error": "Failed to fetch dashboard data"}
+    return result
 
 
 @router.get("/analytics", dependencies=[Depends(fb_ads_check)])
@@ -164,14 +164,14 @@ async def get_analytics_data(
     
     team_id = team.id if team else None
     
-    data, error = await AsyncFacebookService.get_custom_report(
+    result = await AsyncFacebookService.get_custom_report(
         account_id, user_id, since, until, level=level, 
         custom_fields=fields, team_id=team_id
     )
     
-    if error:
-        return {"error": error}
-    return data
+    if result is None:
+        return {"error": "Failed to fetch analytics data"}
+    return result
 
 
 @router.get("/analytics-trend", dependencies=[Depends(fb_ads_check)])
@@ -191,12 +191,12 @@ async def get_analytics_trend_data(
     
     team_id = team.id if team else None
     
-    data, error = await AsyncFacebookService.get_analytics_trend(
+    result = await AsyncFacebookService.get_analytics_trend(
         account_id, user_id, since, until, 
         prev_since=prev_since, prev_until=prev_until,
         team_id=team_id
     )
     
-    if error:
-        return {"error": error}
-    return data
+    if result is None:
+        return {"error": "Failed to fetch trend data"}
+    return result
