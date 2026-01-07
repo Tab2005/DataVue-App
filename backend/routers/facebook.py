@@ -131,8 +131,8 @@ async def get_dashboard_data(
     if not account_id:
         return {"error": "Account ID is required"}
         
-    data, error = await AsyncFacebookService.get_dashboard_data(
-        user_id, account_id, days, team_id=team_id
+    data, error = await AsyncFacebookService.get_account_insights(
+        account_id, user_id, days=days, team_id=team_id
     )
     
     if error:
@@ -164,9 +164,9 @@ async def get_analytics_data(
     
     team_id = team.id if team else None
     
-    data, error = await AsyncFacebookService.get_analytics_data(
-        user_id, account_id, since, until, level, 
-        fields_str=fields, team_id=team_id
+    data, error = await AsyncFacebookService.get_custom_report(
+        account_id, user_id, since, until, level=level, 
+        custom_fields=fields, team_id=team_id
     )
     
     if error:
@@ -191,8 +191,8 @@ async def get_analytics_trend_data(
     
     team_id = team.id if team else None
     
-    data, error = await AsyncFacebookService.get_daily_trend_data(
-        user_id, account_id, since, until, 
+    data, error = await AsyncFacebookService.get_analytics_trend(
+        account_id, user_id, since, until, 
         prev_since=prev_since, prev_until=prev_until,
         team_id=team_id
     )
