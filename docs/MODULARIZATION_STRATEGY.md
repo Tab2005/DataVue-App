@@ -86,51 +86,60 @@ backend/
 
 ## 🔧 實作階段（建議 4-6 週）
 
-### Phase 1：建立 Core 基礎 (Week 1)
-- [ ] 建立 `core/config.py` - 集中環境變數
-- [ ] 建立 `core/security.py` - 從 `auth.py` 抽取加密邏輯
-- [ ] 建立 `core/exceptions.py` - 移動例外類別
-- [ ] 整理 `scripts/` 資料夾
+### Phase 1：建立 Core 基礎 (Week 1) ✅
+- [x] 建立 `core/config.py` - 集中環境變數
+- [x] 建立 `core/security.py` - 從 `auth.py` 抽取加密邏輯
+- [x] 建立 `core/exceptions.py` - 移動例外類別
+- [x] 整理 `scripts/` 資料夾
 
-**驗收**：現有功能不受影響
-
----
-
-### Phase 2：Auth 模組化 (Week 2)
-- [ ] 建立 `modules/auth/`
-- [ ] 移動 TokenManager、Google OAuth 邏輯
-- [ ] 更新 main.py 使用新模組
-- [ ] 撰寫 README.md 使用說明
-
-**驗收**：登入功能正常，模組可獨立測試
+**驗收**：現有功能不受影響 ✅
 
 ---
 
-### Phase 3：AI Hub 模組化 (Week 2-3)
-- [ ] 建立 `modules/ai_hub/`
-- [ ] 移動 Gemini/Zeabur 客戶端
-- [ ] 移動 Intent Classifier
-- [ ] 移動 AI Settings Router
+### Phase 2：Auth 模組化 (Week 2) ✅
+- [x] 建立 `modules/auth/`
+- [x] 移動 TokenManager、Google OAuth 邏輯
+- [x] 建立 `modules/auth/dependencies.py` (get_current_user 等)
+- [x] 建立 `modules/auth/router.py` (認證 API 端點)
+- [x] 撰寫 README.md 使用說明
 
-**驗收**：AI 功能正常，可複製到其他專案
-
----
-
-### Phase 4：GSC 模組化 (Week 3-4)
-- [ ] 建立 `modules/gsc/`
-- [ ] 移動 GSC Router 和 Service
-- [ ] 整合 Intent 分析
-
-**驗收**：GSC 分析功能正常
+**驗收**：登入功能正常，模組可獨立測試 ✅
 
 ---
 
-### Phase 5：精簡 main.py (Week 4-5)
-- [ ] 移除重複代碼
-- [ ] 使用模組導入方式
-- [ ] 目標：< 200 行
+### Phase 3：AI Hub 模組化 (Week 2-3) ✅
+- [x] 建立 `modules/ai_hub/`
+- [x] 整合 Gemini/Zeabur 客戶端 (`clients/`)
+- [x] 整合 Intent Classifier
+- [x] 整合 AI Settings Router
+- [x] 撰寫 README.md 使用說明
 
-**驗收**：main.py 乾淨可讀
+**驗收**：AI 功能正常，可複製到其他專案 ✅
+
+---
+
+### Phase 4：GSC 模組化 (Week 3-4) ✅
+- [x] 建立 `modules/gsc/`
+- [x] 整合 GSC Router 和 Service
+- [x] 整合 Intent 分析（透過 ai_hub 模組）
+- [x] 撰寫 README.md 使用說明
+
+**驗收**：GSC 分析功能正常 ✅
+
+---
+
+### Phase 5：精簡 main.py (Week 4-5) ✅
+- [x] 建立 `core/startup.py` - 啟動邏輯模組
+- [x] 建立 `routers/facebook.py` - Facebook 業務端點
+- [x] 建立 `routers/debug.py` - Debug 端點
+- [x] 建立 `main_v2.py` - 精簡版入口（166 行）
+- [ ] 替換 main.py（待用戶確認）
+
+**成果**：
+- 原 main.py: 1554 行
+- 新 main_v2.py: 166 行（減少 89%）
+
+**驗收**：main_v2.py 成功導入，55 個路由 ✅
 
 ---
 
