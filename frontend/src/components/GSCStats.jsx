@@ -1603,6 +1603,63 @@ const GSCStats = ({ language, isMobile = false }) => {
                                             </button>
                                         )}
 
+                                        {/* Download CSV button (only for page tab) */}
+                                        {activeTab === 'page' && (
+                                            <button
+                                                onClick={() => {
+                                                    // Get displayed data based on current settings
+                                                    const limit = rowLimit === 99999 ? sortedData.length : rowLimit;
+                                                    const displayData = sortedData.slice(0, limit);
+
+                                                    // Prepare CSV content
+                                                    const headers = ['URL', t('頁面標題', 'Page Title'), t('點擊', 'Clicks'), t('曝光', 'Impressions'), 'CTR', t('排名', 'Position')];
+                                                    const csvRows = [headers.join(',')];
+
+                                                    displayData.forEach(row => {
+                                                        const pageUrl = row.keys?.[0] || '';
+                                                        const title = pageTitles[pageUrl] || getTitleFromUrl(pageUrl);
+                                                        const clicks = row.clicks || 0;
+                                                        const impressions = row.impressions || 0;
+                                                        const ctr = row.ctr ? (row.ctr * 100).toFixed(2) + '%' : '0%';
+                                                        const position = row.position ? row.position.toFixed(1) : '-';
+
+                                                        // Escape CSV fields (handle commas and quotes in title/URL)
+                                                        const escapeCSV = (str) => {
+                                                            if (str.includes(',') || str.includes('"') || str.includes('\n')) {
+                                                                return `"${str.replace(/"/g, '""')}"`;
+                                                            }
+                                                            return str;
+                                                        };
+
+                                                        csvRows.push([
+                                                            escapeCSV(pageUrl),
+                                                            escapeCSV(title),
+                                                            clicks,
+                                                            impressions,
+                                                            ctr,
+                                                            position
+                                                        ].join(','));
+                                                    });
+
+                                                    // Create and download file
+                                                    const csvContent = '\uFEFF' + csvRows.join('\n'); // BOM for Excel UTF-8
+                                                    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+                                                    const url = URL.createObjectURL(blob);
+                                                    const link = document.createElement('a');
+                                                    link.href = url;
+                                                    link.download = `gsc_page_analysis_${new Date().toISOString().split('T')[0]}.csv`;
+                                                    document.body.appendChild(link);
+                                                    link.click();
+                                                    document.body.removeChild(link);
+                                                    URL.revokeObjectURL(url);
+                                                }}
+                                                style={toggleButtonStyle(false)}
+                                                title={t('下載頁面分析資料為 CSV', 'Download page analysis data as CSV')}
+                                            >
+                                                📥 {t('下載 CSV', 'Download CSV')}
+                                            </button>
+                                        )}
+
                                         <input
                                             type="text"
                                             placeholder={t('搜尋...', 'Search...')}
