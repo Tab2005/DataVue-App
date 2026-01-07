@@ -132,14 +132,14 @@ backend/
 - [x] 建立 `core/startup.py` - 啟動邏輯模組
 - [x] 建立 `routers/facebook.py` - Facebook 業務端點
 - [x] 建立 `routers/debug.py` - Debug 端點
-- [x] 建立 `main_v2.py` - 精簡版入口（166 行）
-- [ ] 替換 main.py（待用戶確認）
+- [x] 建立 `main_v2.py` - 精簡版入口
+- [x] 替換 main.py 為模組化版本 ✅
 
 **成果**：
 - 原 main.py: 1554 行
-- 新 main_v2.py: 166 行（減少 89%）
+- 新 main.py: 260 行（減少 83%）
 
-**驗收**：main_v2.py 成功導入，55 個路由 ✅
+**驗收**：模組化 main.py 部署成功 ✅
 
 ---
 
@@ -210,23 +210,23 @@ backend/
 │   ├── facebook.py        # 🆕 FB 業務端點
 │   └── debug.py           # 🆕 Debug 端點
 │
-├── main.py                # 原始版本 (1554 行) - 保留
-└── main_v2.py             # 🆕 精簡版本 (166 行)
+├── main.py                # 🆕 精簡版本 (260 行)
+└── main_legacy.py         # 舊版備份 (1554 行)
 ```
 
 ### 📊 程式碼減量成果
 
 | 項目 | 原始 | 模組化後 | 減少 |
 |------|------|----------|------|
-| main.py 行數 | 1554 | 166 (main_v2.py) | **89%** ↓ |
+| main.py 行數 | 1554 | 260 | **83%** ↓ |
 | 路由數量 | 55 | 55 | 無變化 |
 
-### 📌 後續步驟
+### ✅ 已完成部署
 
-1. 測試 `main_v2.py`：`uvicorn main_v2:app --reload`
-2. 合併 `feature/modularization` 到 `dev-saas` 或 `main`
-3. 替換 `main.py` 為 `main_v2.py`
+- [x] 合併 `feature/modularization` 到 `dev-saas` ✅
+- [x] Zeabur 部署驗證通過 ✅
+- [ ] 合併到 `main` 分支正式上線
 
 ---
 
-**文件最後更新**: 2026-01-07 14:46
+**文件最後更新**: 2026-01-07 21:25

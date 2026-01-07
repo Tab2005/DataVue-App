@@ -1,5 +1,45 @@
 # Changelog
 
+## v2.0.0 (2026-01-07) - Backend Modularization Complete 🎉
+
+### 🏗️ Architecture Overhaul
+- **Modular Backend**: Refactored 1,554-line monolithic `main.py` into 260-line modular version
+  - 83% code reduction in entry point
+  - All 55 routes preserved and functional
+
+### New Directory Structure
+```
+backend/
+├── core/                 # Shared utilities
+│   ├── config.py         # Centralized env vars
+│   ├── security.py       # Encryption/decryption
+│   ├── exceptions.py     # Unified exceptions
+│   └── startup.py        # Startup tasks
+├── modules/              # Reusable modules
+│   ├── auth/             # Token management
+│   ├── ai_hub/           # AI services (Gemini/Zeabur)
+│   └── gsc/              # Google Search Console
+├── routers/              # API routes
+│   ├── facebook.py       # FB Ads endpoints
+│   └── debug.py          # Debug endpoints
+├── scripts/              # Utility scripts
+├── main.py               # ✨ Modular entry (260 lines)
+└── main_legacy.py        # Backup (1,554 lines)
+```
+
+### Technical Improvements
+- Centralized environment variable management in `core/config.py`
+- Encryption logic extracted to `core/security.py`
+- Startup tasks modularized in `core/startup.py`
+- Each module has its own README.md for documentation
+
+### Migration Notes
+- Old `main.py` preserved as `main_legacy.py` for reference
+- `main_v2.py` was development version, can be deleted
+- All existing API endpoints remain unchanged
+
+---
+
 ## v1.6.8 (2026-01-06) - Super Admin Architecture Overhaul
 
 ### New Features

@@ -4,6 +4,36 @@ This document provides technical deep-dives into specific subsystems of the Face
 
 ---
 
+## 📁 Backend Structure (v2.0.0)
+
+```
+backend/
+├── core/                    # Shared core utilities
+│   ├── config.py            # Environment variable management
+│   ├── security.py          # Encryption/decryption (Fernet)
+│   ├── exceptions.py        # Custom exception classes
+│   └── startup.py           # Startup tasks (DB, migrations)
+│
+├── modules/                 # Reusable, independent modules
+│   ├── auth/                # Authentication & token management
+│   ├── ai_hub/              # AI services (Gemini, Zeabur)
+│   └── gsc/                 # Google Search Console integration
+│
+├── routers/                 # FastAPI API routers
+│   ├── users.py             # /api/users/*
+│   ├── teams.py             # /api/teams/*
+│   ├── facebook.py          # /api/ad-accounts, /api/dashboard-data
+│   ├── ai.py                # /api/ai/*
+│   └── ...                  # Other routers
+│
+├── services/                # Business logic services
+├── scripts/                 # Utility scripts (manage_admin, etc.)
+├── main.py                  # Entry point (260 lines)
+└── main_legacy.py           # Backup (1,554 lines)
+```
+
+---
+
 ## 🔐 Permission System (RBAC)
 
 ### Multi-Level Hierarchy
