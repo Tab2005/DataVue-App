@@ -341,7 +341,7 @@ class AsyncFacebookService:
             
             result = {
                 "kpi": FacebookService._format_kpi(cur_data, prev_data),
-                "charts": FacebookService._format_charts(trend_list),
+                "chart_data": FacebookService._format_charts(trend_list),
                 "date_range": {
                     "start": date_start,
                     "stop": date_stop
