@@ -50,7 +50,9 @@ def _get_fernet() -> Fernet:
     return Fernet(get_encryption_key())
 
 
-def encrypt_value(message: str) -> str | None:
+from typing import Optional
+
+def encrypt_value(message: str) -> Optional[str]:
     """
     加密字串
     
@@ -70,7 +72,7 @@ def encrypt_value(message: str) -> str | None:
         return None
 
 
-def decrypt_value(token: str) -> str | None:
+def decrypt_value(token: str) -> Optional[str]:
     """
     解密字串
     

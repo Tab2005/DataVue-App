@@ -8,7 +8,7 @@ Token Manager Service
 import sys
 import requests
 from datetime import datetime, timedelta, timezone
-from typing import Optional
+from typing import Optional, Tuple
 
 # 使用 core 模組的加密功能
 from core.security import encrypt_value, decrypt_value
@@ -214,7 +214,7 @@ class TokenManager:
     @staticmethod
     def exchange_for_long_lived_token(app_id: str, app_secret: str, 
                                        short_lived_token: str, user_id: str, 
-                                       team_id: str = None) -> tuple[bool, str]:
+                                       team_id: str = None) -> Tuple[bool, str]:
         """
         將短效 Token 換成長效 Token（60 天）
         
