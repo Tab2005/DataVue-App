@@ -160,6 +160,19 @@ class SavedView(Base):
     created_at = Column(DateTime, default=text("CURRENT_TIMESTAMP"))
 
 
+class PageTitle(Base):
+    """
+    Cached page titles for GSC pages.
+    Stores fetched <title> tags to avoid repeated HTTP requests.
+    """
+    __tablename__ = "page_titles"
+
+    id = Column(String, primary_key=True, default=lambda: str(uuid.uuid4()))
+    url = Column(String, unique=True, index=True, nullable=False)
+    title = Column(String, nullable=True)
+    fetched_at = Column(DateTime, default=text("CURRENT_TIMESTAMP"))
+
+
 # ============================================
 # 權限管理系統 Models (Phase 2)
 # ============================================

@@ -313,6 +313,7 @@ const GSCStats = ({ language, isMobile = false }) => {
 
     // Page titles cache (for page tab and trend tab)
     const [pageTitles, setPageTitles] = useState({});
+    const [titlesRefreshing, setTitlesRefreshing] = useState(false);
 
     // Search Intent Analysis state (AI-powered) - KEYWORD-LEVEL cache
     // Structure: { "關鍵字": { intent: "informational", confidence: 0.92 } }
@@ -504,10 +505,11 @@ const GSCStats = ({ language, isMobile = false }) => {
         }
     };
 
-    // Fetch real page titles from backend (scrapes URLs)
-    const fetchPageTitles = async (urls) => {
-        // Filter URLs we don't already have titles for
-        const newUrls = urls.filter(url => !pageTitles[url]);
+    // Fetch real page titles from backend (with database caching)
+    // forceRefresh=true will bypass cache and re-fetch all titles
+    const fetchPageTitles = async (urls, forceRefresh = false) => {
+        // When not forcing refresh, filter URLs we don't already have titles for
+        const newUrls = forceRefresh ? urls : urls.filter(url => !pageTitles[url]);
         if (newUrls.length === 0) return;
 
         try {
@@ -517,7 +519,10 @@ const GSCStats = ({ language, isMobile = false }) => {
                     'Authorization': `Bearer ${localStorage.getItem('google_token')}`,
                     'Content-Type': 'application/json'
                 },
-                body: JSON.stringify({ urls: newUrls.slice(0, 50) })
+                body: JSON.stringify({
+                    urls: newUrls.slice(0, 50),
+                    force_refresh: forceRefresh
+                })
             });
 
             if (!resp.ok) return;
@@ -603,13 +608,21 @@ const GSCStats = ({ language, isMobile = false }) => {
             const data = await resp.json();
             console.log('API response data:', data);
 
+            // Check if API key was missing (backend returns message about configuration)
+            if (data.message && data.message.includes('not configured')) {
+                throw new Error(data.message);
+            }
+
             // Store each keyword's intent in the keyword-level cache
+            // Skip 'unknown' intents - they indicate API failure and should be re-analyzable
             const newKeywordIntents = {};
             (data.keywords || []).forEach(kw => {
                 const query = kw.query || kw.keyword;
-                if (query && kw.intent) {
+                const intent = kw.intent;
+                // Only cache valid intents, not 'unknown'
+                if (query && intent && intent !== 'unknown') {
                     newKeywordIntents[query] = {
-                        intent: kw.intent,
+                        intent: intent,
                         confidence: kw.confidence || 0.8,
                         analyzed_at: new Date().toISOString()
                     };
@@ -1555,6 +1568,95 @@ const GSCStats = ({ language, isMobile = false }) => {
                                                 title={t('將類似關鍵字歸為一組', 'Group similar keywords')}
                                             >
                                                 📦 {t('群組', 'Group')}
+                                            </button>
+                                        )}
+
+                                        {/* Refresh Titles button (only for page tab) */}
+                                        {activeTab === 'page' && (
+                                            <button
+                                                onClick={async () => {
+                                                    setTitlesRefreshing(true);
+
+                                                    // Get URLs based on current rowLimit setting
+                                                    const limit = rowLimit === 99999 ? analytics.length : rowLimit;
+                                                    const allUrls = analytics.slice(0, limit).map(row => row.keys?.[0]).filter(Boolean);
+
+                                                    // Process in batches of 50 (API limit)
+                                                    const batchSize = 50;
+                                                    for (let i = 0; i < allUrls.length; i += batchSize) {
+                                                        const batch = allUrls.slice(i, i + batchSize);
+                                                        console.log(`[Refresh] Processing batch ${Math.floor(i / batchSize) + 1}/${Math.ceil(allUrls.length / batchSize)} (${batch.length} URLs)`);
+                                                        await fetchPageTitles(batch, true); // force refresh
+                                                    }
+
+                                                    setTitlesRefreshing(false);
+                                                }}
+                                                disabled={titlesRefreshing}
+                                                style={{
+                                                    ...toggleButtonStyle(false),
+                                                    opacity: titlesRefreshing ? 0.6 : 1,
+                                                    cursor: titlesRefreshing ? 'wait' : 'pointer'
+                                                }}
+                                                title={t('重新抓取頁面標題（依照顯示數量）', 'Refresh page titles (based on display count)')}
+                                            >
+                                                {titlesRefreshing ? '⏳' : '🔄'} {t('刷新標題', 'Refresh Titles')}
+                                            </button>
+                                        )}
+
+                                        {/* Download CSV button (only for page tab) */}
+                                        {activeTab === 'page' && (
+                                            <button
+                                                onClick={() => {
+                                                    // Get displayed data based on current settings
+                                                    const limit = rowLimit === 99999 ? sortedData.length : rowLimit;
+                                                    const displayData = sortedData.slice(0, limit);
+
+                                                    // Prepare CSV content
+                                                    const headers = ['URL', t('頁面標題', 'Page Title'), t('點擊', 'Clicks'), t('曝光', 'Impressions'), 'CTR', t('排名', 'Position')];
+                                                    const csvRows = [headers.join(',')];
+
+                                                    displayData.forEach(row => {
+                                                        const pageUrl = row.keys?.[0] || '';
+                                                        const title = pageTitles[pageUrl] || getTitleFromUrl(pageUrl);
+                                                        const clicks = row.clicks || 0;
+                                                        const impressions = row.impressions || 0;
+                                                        const ctr = row.ctr ? (row.ctr * 100).toFixed(2) + '%' : '0%';
+                                                        const position = row.position ? row.position.toFixed(1) : '-';
+
+                                                        // Escape CSV fields (handle commas and quotes in title/URL)
+                                                        const escapeCSV = (str) => {
+                                                            if (str.includes(',') || str.includes('"') || str.includes('\n')) {
+                                                                return `"${str.replace(/"/g, '""')}"`;
+                                                            }
+                                                            return str;
+                                                        };
+
+                                                        csvRows.push([
+                                                            escapeCSV(pageUrl),
+                                                            escapeCSV(title),
+                                                            clicks,
+                                                            impressions,
+                                                            ctr,
+                                                            position
+                                                        ].join(','));
+                                                    });
+
+                                                    // Create and download file
+                                                    const csvContent = '\uFEFF' + csvRows.join('\n'); // BOM for Excel UTF-8
+                                                    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+                                                    const url = URL.createObjectURL(blob);
+                                                    const link = document.createElement('a');
+                                                    link.href = url;
+                                                    link.download = `gsc_page_analysis_${new Date().toISOString().split('T')[0]}.csv`;
+                                                    document.body.appendChild(link);
+                                                    link.click();
+                                                    document.body.removeChild(link);
+                                                    URL.revokeObjectURL(url);
+                                                }}
+                                                style={toggleButtonStyle(false)}
+                                                title={t('下載頁面分析資料為 CSV', 'Download page analysis data as CSV')}
+                                            >
+                                                📥 {t('下載 CSV', 'Download CSV')}
                                             </button>
                                         )}
 

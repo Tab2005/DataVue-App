@@ -85,26 +85,42 @@ def get_gsc_analytics(
         traceback.print_exc()
         raise HTTPException(status_code=500, detail=f"Internal Server Error: {str(e)}")
 
-# 4. Fetch Page Titles
+# 4. Fetch Page Titles (with Database Caching)
 class PageTitlesRequest(BaseModel):
     urls: List[str]
+    force_refresh: Optional[bool] = False
 
 @router.post("/page-titles")
 async def get_page_titles(
     request: PageTitlesRequest,
-    user: User = Depends(get_current_user)
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
 ):
     """
-    Fetches page titles by scraping the provided URLs.
+    Fetches page titles with database caching.
+    - First checks database for cached titles
+    - Only fetches uncached URLs via HTTP
+    - Stores newly fetched titles in database
+    - force_refresh=True ignores cache and re-fetches all
+    
     Returns a dictionary mapping URL to title.
     """
     import httpx
     from bs4 import BeautifulSoup
     import asyncio
+    from datetime import datetime
+    from database import PageTitle
+    import uuid
     
     async def fetch_title(client: httpx.AsyncClient, url: str) -> tuple:
+        """Fetch a single page title via HTTP."""
+        # Skip invalid URLs
+        if not url.startswith(('http://', 'https://')):
+            print(f"Skipping invalid URL (no protocol): {url}")
+            return (url, None)
+        
         try:
-            response = await client.get(url, timeout=5.0, follow_redirects=True)
+            response = await client.get(url, timeout=3.0, follow_redirects=True)
             if response.status_code == 200:
                 soup = BeautifulSoup(response.text, 'html.parser')
                 title_tag = soup.find('title')
@@ -116,18 +132,65 @@ async def get_page_titles(
             return (url, None)
     
     try:
-        # Limit to 50 URLs to balance performance and coverage
-        urls_to_fetch = request.urls[:50]
+        # Limit to 50 URLs
+        urls_to_process = request.urls[:50]
         
-        async with httpx.AsyncClient(
-            headers={'User-Agent': 'Mozilla/5.0 (compatible; GSCDashboard/1.0)'}
-        ) as client:
-            tasks = [fetch_title(client, url) for url in urls_to_fetch]
-            results = await asyncio.gather(*tasks)
+        # Filter out invalid URLs early
+        valid_urls = [u for u in urls_to_process if u.startswith(('http://', 'https://'))]
         
-        # Convert to dictionary
-        titles = {url: title for url, title in results if title}
-        return titles
+        result_titles = {}
+        urls_to_fetch = []
+        
+        if not request.force_refresh:
+            # Check database cache first
+            cached_titles = db.query(PageTitle).filter(PageTitle.url.in_(valid_urls)).all()
+            cached_map = {pt.url: pt.title for pt in cached_titles}
+            
+            # Separate cached from uncached
+            for url in valid_urls:
+                if url in cached_map and cached_map[url]:
+                    result_titles[url] = cached_map[url]
+                else:
+                    urls_to_fetch.append(url)
+            
+            print(f"[PageTitles] Cache hit: {len(result_titles)}, Need fetch: {len(urls_to_fetch)}")
+        else:
+            # Force refresh - fetch all
+            urls_to_fetch = valid_urls
+            print(f"[PageTitles] Force refresh: fetching {len(urls_to_fetch)} URLs")
+        
+        # Fetch uncached URLs
+        if urls_to_fetch:
+            async with httpx.AsyncClient(
+                headers={'User-Agent': 'Mozilla/5.0 (compatible; DataVue/1.0)'},
+                timeout=httpx.Timeout(3.0, connect=2.0)
+            ) as client:
+                tasks = [fetch_title(client, url) for url in urls_to_fetch]
+                fetched_results = await asyncio.gather(*tasks)
+            
+            # Store new titles in database
+            for url, title in fetched_results:
+                if title:
+                    result_titles[url] = title
+                    
+                    # Upsert to database
+                    existing = db.query(PageTitle).filter(PageTitle.url == url).first()
+                    if existing:
+                        existing.title = title
+                        existing.fetched_at = datetime.utcnow()
+                    else:
+                        new_entry = PageTitle(
+                            id=str(uuid.uuid4()),
+                            url=url,
+                            title=title,
+                            fetched_at=datetime.utcnow()
+                        )
+                        db.add(new_entry)
+            
+            db.commit()
+            print(f"[PageTitles] Stored {len([t for _, t in fetched_results if t])} new titles")
+        
+        return result_titles
         
     except Exception as e:
         traceback.print_exc()
