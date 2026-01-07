@@ -105,7 +105,7 @@ async def general_exception_handler(request: Request, exc: Exception):
 # Router Registration
 # ============================================================
 
-from routers import users, teams, invites, admin, ai, saved_views, gsc
+from routers import users, teams, invites, admin, ai, saved_views, gsc, permissions
 from routers import facebook, debug
 
 # Core Feature Routers
@@ -116,6 +116,7 @@ app.include_router(admin.router)  # /api/admin
 app.include_router(ai.router, prefix="/api/ai", tags=["ai"])
 app.include_router(saved_views.router)  # /api/saved-views
 app.include_router(gsc.router)  # /api/gsc
+app.include_router(permissions.router)  # /api/permissions
 
 # Business Routers
 app.include_router(facebook.router)  # /api/ad-accounts, /api/dashboard-data, /api/analytics
