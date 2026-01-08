@@ -161,17 +161,30 @@ async def get_analytics_data(
         fields: 可選的指標欄位（逗號分隔）
     """
     from async_services import AsyncFacebookService
+    from fastapi import HTTPException
     
     team_id = team.id if team else None
     
+    # CRITICAL: Strict Mode - prevent data leak
+    strict = True if team_id is None else False
+    
     result = await AsyncFacebookService.get_custom_report(
         account_id, user_id, since, until, level=level, 
-        custom_fields=fields, team_id=team_id
+        custom_fields=fields, team_id=team_id, strict_token=strict
     )
     
     if result is None:
-        return {"error": "Failed to fetch analytics data"}
-    return result
+        raise HTTPException(status_code=400, detail="Failed to fetch analytics data")
+    
+    # Return wrapped format that frontend expects
+    return {
+        "data": result,
+        "meta": {
+            "level": level,
+            "period": f"{since} ~ {until}",
+            "custom_fields": fields
+        }
+    }
 
 
 @router.get("/analytics-trend", dependencies=[Depends(fb_ads_check)])
@@ -191,12 +204,16 @@ async def get_analytics_trend_data(
     
     team_id = team.id if team else None
     
+    # CRITICAL: Strict Mode - prevent data leak
+    strict = True if team_id is None else False
+    
     result = await AsyncFacebookService.get_analytics_trend(
         account_id, user_id, since, until, 
         prev_since=prev_since, prev_until=prev_until,
-        team_id=team_id
+        team_id=team_id, strict_token=strict
     )
     
     if result is None:
-        return {"error": "Failed to fetch trend data"}
+        return []
     return result
+
