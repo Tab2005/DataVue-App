@@ -8,8 +8,8 @@
 
 ### 1. 取得程式碼
 ```bash
-git clone https://github.com/Tab2005/Facebook-Dashboard-Web-App.git
-cd Facebook-Dashboard-Web-App
+git clone https://github.com/Tab2005/DataVue-App.git
+cd DataVue-App
 git checkout dev-saas
 ```
 
