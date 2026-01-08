@@ -1571,6 +1571,64 @@ const GSCStats = ({ language, isMobile = false }) => {
                                             </button>
                                         )}
 
+                                        {/* Download CSV button (only for query tab when grouping is enabled) */}
+                                        {activeTab === 'query' && groupingEnabled && groupedData && groupedData.length > 0 && (
+                                            <button
+                                                onClick={() => {
+                                                    // Prepare CSV content for grouped keywords
+                                                    const headers = [
+                                                        t('群組關鍵字', 'Group Keyword'),
+                                                        t('群組總點擊', 'Group Total Clicks'),
+                                                        t('群組總曝光', 'Group Total Impressions'),
+                                                        t('子關鍵字數量', 'Sub-keywords Count'),
+                                                        t('子關鍵字列表', 'Sub-keywords List')
+                                                    ];
+                                                    const csvRows = [headers.join(',')];
+
+                                                    // Escape CSV fields (handle commas and quotes)
+                                                    const escapeCSV = (str) => {
+                                                        const strVal = String(str);
+                                                        if (strVal.includes(',') || strVal.includes('"') || strVal.includes('\n')) {
+                                                            return `"${strVal.replace(/"/g, '""')}"`;
+                                                        }
+                                                        return strVal;
+                                                    };
+
+                                                    groupedData.forEach(group => {
+                                                        // Collect all sub-keywords (excluding the main keyword)
+                                                        const subKeywords = group.items
+                                                            .map(item => item.keys?.[0] || '')
+                                                            .filter(kw => kw !== group.mainKeyword)
+                                                            .join(' | ');
+
+                                                        csvRows.push([
+                                                            escapeCSV(group.mainKeyword),
+                                                            group.totalClicks,
+                                                            group.totalImpressions,
+                                                            group.items.length,
+                                                            escapeCSV(subKeywords || '-')
+                                                        ].join(','));
+                                                    });
+
+                                                    // Create and download file
+                                                    const csvContent = '\uFEFF' + csvRows.join('\n'); // BOM for Excel UTF-8
+                                                    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+                                                    const url = URL.createObjectURL(blob);
+                                                    const link = document.createElement('a');
+                                                    link.href = url;
+                                                    link.download = `gsc_keyword_groups_${new Date().toISOString().split('T')[0]}.csv`;
+                                                    document.body.appendChild(link);
+                                                    link.click();
+                                                    document.body.removeChild(link);
+                                                    URL.revokeObjectURL(url);
+                                                }}
+                                                style={toggleButtonStyle(false)}
+                                                title={t('下載群組關鍵字為 CSV', 'Download grouped keywords as CSV')}
+                                            >
+                                                📥 {t('下載 CSV', 'Download CSV')}
+                                            </button>
+                                        )}
+
                                         {/* Refresh Titles button (only for page tab) */}
                                         {activeTab === 'page' && (
                                             <button
