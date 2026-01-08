@@ -140,7 +140,7 @@ async def get_dashboard_data(
     return result
 
 
-@router.get("/analytics", dependencies=[Depends(fb_ads_check)])
+@router.get("/analytics-data", dependencies=[Depends(fb_ads_check)])
 async def get_analytics_data(
     account_id: str,
     since: str, 
