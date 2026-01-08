@@ -174,6 +174,8 @@ class GSCService:
     def get_analytics(user: User, site_url: str, start_date: str, end_date: str, dimensions=['date']):
         """
         Fetches search analytics data (clicks, impressions, ctr, position).
+        Automatically paginates through all results in batches of 1000 rows.
+        Maximum supported: 25,000 rows (GSC API limit).
         """
         creds = GSCService.get_credentials(user)
         if not creds:
@@ -181,13 +183,39 @@ class GSCService:
             
         try:
             service = build('searchconsole', 'v1', credentials=creds)
-            request = {
-                'startDate': start_date,
-                'endDate': end_date,
-                'dimensions': dimensions,
-                'rowLimit': 1000
-            }
-            response = service.searchanalytics().query(siteUrl=site_url, body=request).execute()
-            return response.get('rows', []), None
+            
+            all_rows = []
+            start_row = 0
+            batch_size = 1000
+            max_rows = 25000  # GSC API maximum
+            
+            while start_row < max_rows:
+                request = {
+                    'startDate': start_date,
+                    'endDate': end_date,
+                    'dimensions': dimensions,
+                    'rowLimit': batch_size,
+                    'startRow': start_row
+                }
+                
+                response = service.searchanalytics().query(siteUrl=site_url, body=request).execute()
+                rows = response.get('rows', [])
+                
+                if not rows:
+                    # No more data available
+                    break
+                    
+                all_rows.extend(rows)
+                
+                if len(rows) < batch_size:
+                    # Less than batch_size means we've reached the end
+                    break
+                    
+                start_row += batch_size
+                print(f"[GSC Pagination] Loaded {len(all_rows)} rows so far...")
+            
+            print(f"[GSC Pagination] Total rows fetched: {len(all_rows)}")
+            return all_rows, None
         except Exception as e:
             return None, str(e)
+
