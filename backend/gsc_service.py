@@ -2,11 +2,18 @@ from datetime import datetime, timedelta
 import os
 import sys
 import json
+import asyncio
+import time
 from google.oauth2.credentials import Credentials
 from googleapiclient.discovery import build
 from sqlalchemy.orm import Session
 from database import User
 from auth import TokenManager
+
+# Simple in-memory cache for GSC analytics data
+# Format: { cache_key: { 'data': [...], 'expires_at': timestamp } }
+_gsc_cache = {}
+_CACHE_TTL = 300  # 5 minutes
 
 class GSCService:
     """
@@ -174,48 +181,137 @@ class GSCService:
     def get_analytics(user: User, site_url: str, start_date: str, end_date: str, dimensions=['date']):
         """
         Fetches search analytics data (clicks, impressions, ctr, position).
-        Automatically paginates through all results in batches of 1000 rows.
-        Maximum supported: 25,000 rows (GSC API limit).
+        Features:
+        - In-memory caching (5 min TTL)
+        - Parallel batch fetching (3 concurrent requests)
+        - Auto-pagination up to 25,000 rows
         """
+        global _gsc_cache
+        
+        # Generate cache key
+        dim_str = ','.join(sorted(dimensions)) if isinstance(dimensions, list) else dimensions
+        cache_key = f"{site_url}:{start_date}:{end_date}:{dim_str}"
+        
+        # Check cache
+        if cache_key in _gsc_cache:
+            cached = _gsc_cache[cache_key]
+            if time.time() < cached['expires_at']:
+                print(f"[GSC Cache] HIT - returning {len(cached['data'])} cached rows")
+                return cached['data'], None
+            else:
+                # Expired, remove from cache
+                del _gsc_cache[cache_key]
+                print(f"[GSC Cache] EXPIRED - refetching")
+        
         creds = GSCService.get_credentials(user)
         if not creds:
             return None, "No GSC credentials found"
             
         try:
-            service = build('searchconsole', 'v1', credentials=creds)
+            from concurrent.futures import ThreadPoolExecutor, as_completed
+            
+            batch_size = 1000
+            max_rows = 25000
+            concurrent_batches = 3  # Reduced from 5 to avoid SSL errors
+            
+            def fetch_batch(creds_dict, start_row):
+                """Fetch a single batch of rows with its own service instance"""
+                try:
+                    # Create independent credentials and service for each thread
+                    thread_creds = Credentials(
+                        token=creds_dict['token'],
+                        refresh_token=creds_dict['refresh_token'],
+                        token_uri=creds_dict['token_uri'],
+                        client_id=creds_dict['client_id'],
+                        client_secret=creds_dict['client_secret'],
+                        scopes=creds_dict['scopes']
+                    )
+                    thread_service = build('searchconsole', 'v1', credentials=thread_creds)
+                    
+                    request = {
+                        'startDate': start_date,
+                        'endDate': end_date,
+                        'dimensions': dimensions,
+                        'rowLimit': batch_size,
+                        'startRow': start_row
+                    }
+                    response = thread_service.searchanalytics().query(siteUrl=site_url, body=request).execute()
+                    return start_row, response.get('rows', []), None
+                except Exception as e:
+                    return start_row, [], str(e)
+            
+            # Prepare credentials dict for passing to threads
+            creds_dict = {
+                'token': creds.token,
+                'refresh_token': creds.refresh_token,
+                'token_uri': creds.token_uri,
+                'client_id': creds.client_id,
+                'client_secret': creds.client_secret,
+                'scopes': creds.scopes
+            }
+            
             
             all_rows = []
             start_row = 0
-            batch_size = 1000
-            max_rows = 25000  # GSC API maximum
+            
+            start_time = time.time()
             
             while start_row < max_rows:
-                request = {
-                    'startDate': start_date,
-                    'endDate': end_date,
-                    'dimensions': dimensions,
-                    'rowLimit': batch_size,
-                    'startRow': start_row
-                }
+                # Prepare batch of start_rows for parallel fetching
+                batch_starts = []
+                for i in range(concurrent_batches):
+                    batch_start = start_row + (i * batch_size)
+                    if batch_start < max_rows:
+                        batch_starts.append(batch_start)
                 
-                response = service.searchanalytics().query(siteUrl=site_url, body=request).execute()
-                rows = response.get('rows', [])
+                if not batch_starts:
+                    break
                 
-                if not rows:
-                    # No more data available
+                # Fetch in parallel using ThreadPoolExecutor
+                batch_results = {}
+                should_stop = False
+                
+                with ThreadPoolExecutor(max_workers=concurrent_batches) as executor:
+                    futures = {executor.submit(fetch_batch, creds_dict, bs): bs for bs in batch_starts}
+                    
+                    for future in as_completed(futures):
+                        try:
+                            batch_start, rows, error = future.result()
+                            if error:
+                                print(f"[GSC Parallel] Error at batch {batch_start}: {error}")
+                            batch_results[batch_start] = rows
+                            
+                            if len(rows) < batch_size:
+                                should_stop = True
+                        except Exception as e:
+                            print(f"[GSC Parallel] Exception in future: {e}")
+                
+                # Add results in order
+                for bs in sorted(batch_results.keys()):
+                    rows = batch_results[bs]
+                    if rows:
+                        all_rows.extend(rows)
+                    if not rows or len(rows) < batch_size:
+                        should_stop = True
+                        break
+                
+                if should_stop:
                     break
                     
-                all_rows.extend(rows)
-                
-                if len(rows) < batch_size:
-                    # Less than batch_size means we've reached the end
-                    break
-                    
-                start_row += batch_size
-                print(f"[GSC Pagination] Loaded {len(all_rows)} rows so far...")
+                start_row += concurrent_batches * batch_size
+                print(f"[GSC Parallel] Loaded {len(all_rows)} rows so far...")
             
-            print(f"[GSC Pagination] Total rows fetched: {len(all_rows)}")
+            elapsed = time.time() - start_time
+            print(f"[GSC Parallel] Total: {len(all_rows)} rows in {elapsed:.2f}s")
+            
+            # Store in cache
+            _gsc_cache[cache_key] = {
+                'data': all_rows,
+                'expires_at': time.time() + _CACHE_TTL
+            }
+            
             return all_rows, None
         except Exception as e:
+            import traceback
+            traceback.print_exc()
             return None, str(e)
-
