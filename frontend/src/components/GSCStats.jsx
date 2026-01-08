@@ -297,6 +297,7 @@ const GSCStats = ({ language, isMobile = false }) => {
     const [searchKeyword, setSearchKeyword] = useState('');
     const [sortConfig, setSortConfig] = useState({ key: 'clicks', direction: 'desc' });
     const [rowLimit, setRowLimit] = useState(50);
+    const [displayLimit, setDisplayLimit] = useState(100); // Progressive rendering: start with 100 rows
 
     // Grouping state (for keyword tab)
     const [groupingEnabled, setGroupingEnabled] = useState(false);
@@ -416,6 +417,12 @@ const GSCStats = ({ language, isMobile = false }) => {
             setLoading(false);
         }
     };
+
+
+    // Reset displayLimit when switching tabs, sites, or date range
+    useEffect(() => {
+        setDisplayLimit(100);
+    }, [selectedSite, dateRange, activeTab, rowLimit]);
 
     useEffect(() => {
         if (selectedSite && dateRange.start && dateRange.end) {
@@ -841,6 +848,7 @@ const GSCStats = ({ language, isMobile = false }) => {
     }, [analytics, groupingEnabled, activeTab, searchKeyword, sortConfig, rowLimit]);
 
     // Get sorted and filtered data (non-grouped view)
+    // Returns { displayData, totalCount, hasMore } for progressive rendering
     const getSortedFilteredData = () => {
         let data = [...analytics];
 
@@ -865,11 +873,18 @@ const GSCStats = ({ language, isMobile = false }) => {
             return sortConfig.direction === 'desc' ? bVal - aVal : aVal - bVal;
         });
 
+        // Apply rowLimit first (user's selection)
         if (activeTab !== 'daily') {
             data = data.slice(0, rowLimit);
         }
 
-        return data;
+        const totalCount = data.length;
+        // Apply displayLimit for progressive rendering
+        const effectiveLimit = Math.min(displayLimit, totalCount);
+        const displayData = data.slice(0, effectiveLimit);
+        const hasMore = effectiveLimit < totalCount;
+
+        return { displayData, totalCount, hasMore };
     };
 
     // Get sorted trend data based on sub-tab selection
@@ -1098,7 +1113,7 @@ const GSCStats = ({ language, isMobile = false }) => {
         </div>
     );
 
-    const sortedData = getSortedFilteredData();
+    const { displayData: sortedData, totalCount: sortedDataTotal, hasMore: sortedDataHasMore } = getSortedFilteredData();
     const showGroupedView = groupingEnabled && activeTab === 'query' && groupedData;
 
     return (
@@ -2356,6 +2371,69 @@ const GSCStats = ({ language, isMobile = false }) => {
                                     </tbody>
                                 </table>
                             </div>
+
+                            {/* Load More Button for progressive rendering */}
+                            {!showGroupedView && sortedDataHasMore && (
+                                <div style={{
+                                    padding: '16px',
+                                    borderTop: '1px solid var(--glass-border)',
+                                    display: 'flex',
+                                    justifyContent: 'center',
+                                    alignItems: 'center',
+                                    gap: '12px'
+                                }}>
+                                    <span style={{ color: 'var(--text-secondary)', fontSize: '13px' }}>
+                                        {t(`顯示 ${sortedData.length} / ${sortedDataTotal} 筆`, `Showing ${sortedData.length} of ${sortedDataTotal}`)}
+                                    </span>
+                                    <button
+                                        onClick={() => setDisplayLimit(prev => prev + 100)}
+                                        style={{
+                                            padding: '8px 20px',
+                                            background: 'var(--accent-primary)',
+                                            border: 'none',
+                                            borderRadius: '8px',
+                                            color: 'white',
+                                            fontSize: '13px',
+                                            fontWeight: '500',
+                                            cursor: 'pointer',
+                                            transition: 'all 0.2s'
+                                        }}
+                                    >
+                                        ⬇️ {t('載入更多', 'Load More')} (+{Math.min(100, sortedDataTotal - sortedData.length)})
+                                    </button>
+                                    <button
+                                        onClick={() => setDisplayLimit(sortedDataTotal)}
+                                        style={{
+                                            padding: '8px 16px',
+                                            background: 'transparent',
+                                            border: '1px solid var(--glass-border)',
+                                            borderRadius: '8px',
+                                            color: 'var(--text-secondary)',
+                                            fontSize: '13px',
+                                            cursor: 'pointer',
+                                            transition: 'all 0.2s'
+                                        }}
+                                        title={sortedDataTotal > 1000
+                                            ? t('大量資料可能導致瀏覽器變慢', 'Large data may slow down the browser')
+                                            : ''}
+                                    >
+                                        {t('載入全部', 'Load All')}
+                                        {sortedDataTotal > 1000 && ' ⚠️'}
+                                    </button>
+                                    {/* Warning for large datasets */}
+                                    {sortedDataTotal > 5000 && (
+                                        <span style={{
+                                            fontSize: '11px',
+                                            color: '#F59E0B',
+                                            display: 'flex',
+                                            alignItems: 'center',
+                                            gap: '4px'
+                                        }}>
+                                            ⚠️ {t('大量資料載入可能較慢', 'Large dataset may be slow')}
+                                        </span>
+                                    )}
+                                </div>
+                            )}
                         </div>
                     )}
                 </>
