@@ -69,7 +69,7 @@ def list_ga4_properties(
     取得用戶可存取的 GA4 屬性列表
     """
     try:
-        properties, error = GA4Service.list_properties(user)
+        properties, error = GA4Service.list_properties(user, db)
         if error:
             raise HTTPException(status_code=400, detail=error)
 
@@ -107,7 +107,8 @@ def get_ga4_analytics(
             start_date=start_date,
             end_date=end_date,
             metrics=metrics_list,
-            dimensions=dimensions_list
+            dimensions=dimensions_list,
+            db=db
         )
 
         if error:

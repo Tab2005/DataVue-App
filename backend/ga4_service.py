@@ -141,13 +141,14 @@ class GA4Service:
             return False, str(e)
 
     @staticmethod
-    def get_credentials(user: User) -> Optional[Credentials]:
+    def get_credentials(user: User, db: Session = None) -> Optional[Credentials]:
         """
         取得 Google Credentials 物件
-        處理 token refresh 如果過期
+        處理 token refresh 如果過期，並回寫資料庫
 
         Args:
             user: User 物件
+            db: 資料庫 session（可選，用於更新 token）
 
         Returns:
             Credentials 物件或 None
@@ -172,6 +173,12 @@ class GA4Service:
             try:
                 creds.refresh(GoogleAuthRequest())
                 print("[GA4] Token refreshed successfully")
+                # 回寫新 token 到資料庫
+                if db:
+                    user.ga4_access_token = creds.token
+                    user.ga4_expires_at = datetime.utcnow() + timedelta(seconds=3600)
+                    db.commit()
+                    print("[GA4] New token saved to database")
             except Exception as e:
                 print(f"[GA4] Token refresh failed: {e}")
                 return None
@@ -179,18 +186,19 @@ class GA4Service:
         return creds
 
     @staticmethod
-    def list_properties(user: User) -> Tuple[List[Dict[str, Any]], Optional[str]]:
+    def list_properties(user: User, db: Session = None) -> Tuple[List[Dict[str, Any]], Optional[str]]:
         """
         列出用戶的 GA4 屬性
         使用 Google Analytics Admin API
 
         Args:
             user: User 物件
+            db: 資料庫 session（可選，用於更新 token）
 
         Returns:
             tuple: (properties_list, error_message)
         """
-        creds = GA4Service.get_credentials(user)
+        creds = GA4Service.get_credentials(user, db)
         if not creds:
             return [], "No GA4 credentials found"
 
@@ -258,7 +266,8 @@ class GA4Service:
         start_date: str,
         end_date: str,
         metrics: Optional[List[str]] = None,
-        dimensions: Optional[List[str]] = None
+        dimensions: Optional[List[str]] = None,
+        db: Session = None
     ) -> Tuple[Optional[Dict[str, Any]], Optional[str]]:
         """
         取得 GA4 分析資料
@@ -271,11 +280,12 @@ class GA4Service:
             end_date: 結束日期 (YYYY-MM-DD)
             metrics: 指標列表，預設使用常見指標
             dimensions: 維度列表，預設使用日期
+            db: 資料庫 session（可選，用於更新 token）
 
         Returns:
             tuple: (analytics_data, error_message)
         """
-        creds = GA4Service.get_credentials(user)
+        creds = GA4Service.get_credentials(user, db)
         if not creds:
             return None, "No GA4 credentials found"
 
