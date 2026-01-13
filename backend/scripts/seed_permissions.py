@@ -25,8 +25,27 @@ def seed_permissions():
                 module_map[m["key"]] = module.id
                 print(f"  ✅ Created module: {m['key']} ({m['name']})")
             else:
+                # 更新現有模組的屬性（尤其是 enabled 狀態）
+                updated = False
+                if existing.enabled != m.get("enabled", True):
+                    existing.enabled = m.get("enabled", True)
+                    updated = True
+                if existing.name != m["name"]:
+                    existing.name = m["name"]
+                    updated = True
+                if existing.icon != m.get("icon"):
+                    existing.icon = m.get("icon")
+                    updated = True
+                if existing.sort_order != m.get("sort_order", 0):
+                    existing.sort_order = m.get("sort_order", 0)
+                    updated = True
+                
+                if updated:
+                    print(f"  🔄 Updated module: {m['key']} ({m['name']})")
+                else:
+                    print(f"  ⏭️ Module exists: {m['key']}")
+                
                 module_map[m["key"]] = existing.id
-                print(f"  ⏭️ Module exists: {m['key']}")
 
         # 2. Seed Permissions
         print("\n🔑 建立權限...")

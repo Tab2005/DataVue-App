@@ -18,7 +18,9 @@ import os
 from dotenv import load_dotenv
 
 # Load environment variables FIRST
-load_dotenv()
+# Load from backend/.env regardless of current working directory
+dotenv_path = os.path.join(os.path.dirname(__file__), '.env')
+load_dotenv(dotenv_path)
 
 # ============================================================
 # Startup Tasks
@@ -106,7 +108,7 @@ async def general_exception_handler(request: Request, exc: Exception):
 # ============================================================
 
 from routers import users, teams, invites, admin, ai, saved_views, gsc, permissions
-from routers import facebook, debug
+from routers import facebook, debug, ga4
 
 # Core Feature Routers
 app.include_router(users.router, prefix="/api/users", tags=["users"])
@@ -117,6 +119,7 @@ app.include_router(ai.router, prefix="/api/ai", tags=["ai"])
 app.include_router(saved_views.router)  # /api/saved-views
 app.include_router(gsc.router)  # /api/gsc
 app.include_router(permissions.router)  # /api/permissions
+app.include_router(ga4.router)  # /api/ga4
 
 # Business Routers
 app.include_router(facebook.router)  # /api/ad-accounts, /api/dashboard-data, /api/analytics

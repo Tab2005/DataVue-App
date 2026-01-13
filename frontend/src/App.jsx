@@ -19,6 +19,7 @@ const InvitePage = lazy(() => import('./pages/InvitePage'));
 const UserManagement = lazy(() => import('./pages/UserManagement'));
 const MetricsManager = lazy(() => import('./pages/MetricsManager'));
 const SearchConsole = lazy(() => import('./pages/SearchConsole'));
+const GA4Analytics = lazy(() => import('./pages/GA4Analytics'));
 
 function App() {
   // 優先從環境變數讀取 Client ID，如果沒有則使用空字串 (避免報錯，但功能會失效)
@@ -68,6 +69,13 @@ function App() {
                   <ProtectedModule module="gsc">
                     <ErrorBoundary>
                       <SearchConsole />
+                    </ErrorBoundary>
+                  </ProtectedModule>
+                } />
+                <Route path="/ga4" element={
+                  <ProtectedModule module="ga4">
+                    <ErrorBoundary>
+                      <GA4Analytics />
                     </ErrorBoundary>
                   </ProtectedModule>
                 } />

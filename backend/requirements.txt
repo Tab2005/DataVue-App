@@ -17,4 +17,6 @@ httpx
 email-validator
 cachetools
 google-api-python-client
+google-analytics-admin
+google-analytics-data
 beautifulsoup4
