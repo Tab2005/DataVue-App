@@ -39,10 +39,18 @@ const GA4Stats = ({ language, isMobile }) => {
     const [activeTab, setActiveTab] = useState('overview');
     const [showCustomDatePicker, setShowCustomDatePicker] = useState(false);
     const [compareMode, setCompareMode] = useState('none');
-    const [dateRange, setDateRange] = useState({
-        startDate: new Date(Date.now() - 28 * 24 * 60 * 60 * 1000).toISOString().split('T')[0],
-        endDate: new Date().toISOString().split('T')[0],
-        preset: 'last_28d'
+    // 日期計算：「過去 N 天」不包含今天（業界標準，因為今天數據不完整）
+    // 例如：過去 28 天 = 昨天往前推 27 天 = 共 28 天
+    const [dateRange, setDateRange] = useState(() => {
+        const yesterday = new Date();
+        yesterday.setDate(yesterday.getDate() - 1);
+        const startDate = new Date(yesterday);
+        startDate.setDate(startDate.getDate() - 27); // 28 days total (including yesterday)
+        return {
+            startDate: startDate.toISOString().split('T')[0],
+            endDate: yesterday.toISOString().split('T')[0],
+            preset: 'last_28d'
+        };
     });
     const [sortConfig, setSortConfig] = useState({ key: 'date', direction: 'desc' });
 
@@ -197,11 +205,15 @@ const GA4Stats = ({ language, isMobile }) => {
     const handleDatePresetChange = (preset) => {
         const presetConfig = DATE_PRESETS.find(p => p.key === preset);
         if (presetConfig.days) {
-            const endDate = new Date();
-            const startDate = new Date(Date.now() - presetConfig.days * 24 * 60 * 60 * 1000);
+            // 「過去 N 天」不包含今天（業界標準）
+            // endDate = 昨天，startDate = 昨天往前推 (N-1) 天
+            const yesterday = new Date();
+            yesterday.setDate(yesterday.getDate() - 1);
+            const startDate = new Date(yesterday);
+            startDate.setDate(startDate.getDate() - (presetConfig.days - 1));
             setDateRange({
                 startDate: startDate.toISOString().split('T')[0],
-                endDate: endDate.toISOString().split('T')[0],
+                endDate: yesterday.toISOString().split('T')[0],
                 preset
             });
             setShowCustomDatePicker(false);
@@ -705,21 +717,52 @@ const GA4Stats = ({ language, isMobile }) => {
                                 {t('快速選擇：', 'Quick select:')}
                             </span>
                             {[
-                                { label: t('今天', 'Today'), days: 0 },
-                                { label: t('昨天', 'Yesterday'), days: 1 },
-                                { label: t('本週', 'This Week'), days: 7 },
-                                { label: t('本月', 'This Month'), days: 30 },
-                                { label: t('本季', 'This Quarter'), days: 90 }
+                                { label: t('今天', 'Today'), type: 'today' },
+                                { label: t('昨天', 'Yesterday'), type: 'yesterday' },
+                                { label: t('本週', 'This Week'), type: 'thisWeek' },
+                                { label: t('本月', 'This Month'), type: 'thisMonth' },
+                                { label: t('本季', 'This Quarter'), type: 'thisQuarter' }
                             ].map(quick => (
                                 <button
                                     key={quick.label}
                                     onClick={() => {
-                                        const end = quick.days === 1 
-                                            ? new Date(Date.now() - 24 * 60 * 60 * 1000)
-                                            : new Date();
-                                        const start = quick.days === 0 
-                                            ? new Date()
-                                            : new Date(end.getTime() - quick.days * 24 * 60 * 60 * 1000);
+                                        const today = new Date();
+                                        let start, end;
+                                        
+                                        switch (quick.type) {
+                                            case 'today':
+                                                start = end = new Date(today);
+                                                break;
+                                            case 'yesterday':
+                                                start = end = new Date(today);
+                                                start.setDate(start.getDate() - 1);
+                                                break;
+                                            case 'thisWeek':
+                                                // 本週：從本週一到昨天（不含今天）
+                                                end = new Date(today);
+                                                end.setDate(end.getDate() - 1); // 昨天
+                                                start = new Date(today);
+                                                const dayOfWeek = start.getDay();
+                                                const daysToMonday = dayOfWeek === 0 ? 6 : dayOfWeek - 1;
+                                                start.setDate(start.getDate() - daysToMonday);
+                                                break;
+                                            case 'thisMonth':
+                                                // 本月：從本月1日到昨天
+                                                end = new Date(today);
+                                                end.setDate(end.getDate() - 1); // 昨天
+                                                start = new Date(today.getFullYear(), today.getMonth(), 1);
+                                                break;
+                                            case 'thisQuarter':
+                                                // 本季：從本季第一天到昨天
+                                                end = new Date(today);
+                                                end.setDate(end.getDate() - 1); // 昨天
+                                                const quarterStartMonth = Math.floor(today.getMonth() / 3) * 3;
+                                                start = new Date(today.getFullYear(), quarterStartMonth, 1);
+                                                break;
+                                            default:
+                                                start = end = new Date(today);
+                                        }
+                                        
                                         setDateRange({
                                             startDate: start.toISOString().split('T')[0],
                                             endDate: end.toISOString().split('T')[0],
