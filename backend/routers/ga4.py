@@ -99,7 +99,14 @@ def get_ga4_analytics(
     try:
         # 將字串參數轉換為列表
         metrics_list = metrics.split(",") if metrics else None
-        dimensions_list = dimensions.split(",") if dimensions else None
+        
+        # 特別處理 dimensions：空字串表示不要任何 dimension（用於獲取去重總數）
+        if dimensions == '':
+            dimensions_list = []  # 明確傳遞空列表
+        elif dimensions:
+            dimensions_list = dimensions.split(",")
+        else:
+            dimensions_list = None  # None 會使用預設值
 
         data, error = GA4Service.get_analytics(
             user=user,
