@@ -317,19 +317,35 @@ class GA4Service:
                     "bounceRate"        # 跳出率
                 ]
 
+            # 允許空的 dimensions 來獲取去重的總數
+            # 如果 dimensions 是 None，使用預設值；如果是空列表或空字串，則不使用 dimension
+            use_dimensions = True
             if dimensions is None:
                 dimensions = ["date"]
+            elif isinstance(dimensions, list) and len(dimensions) == 0:
+                use_dimensions = False
+            elif isinstance(dimensions, list) and len(dimensions) == 1 and dimensions[0] == '':
+                use_dimensions = False
 
             # Use Analytics Data API
             data_client = BetaAnalyticsDataClient(credentials=creds)
 
-            # Build the request
-            request = RunReportRequest(
-                property=f"properties/{property_id}",
-                date_ranges=[DateRange(start_date=start_date, end_date=end_date)],
-                dimensions=[Dimension(name=dim) for dim in dimensions],
-                metrics=[Metric(name=met) for met in metrics],
-            )
+            # Build the request - 根據是否有 dimension 來決定請求格式
+            if use_dimensions:
+                request = RunReportRequest(
+                    property=f"properties/{property_id}",
+                    date_ranges=[DateRange(start_date=start_date, end_date=end_date)],
+                    dimensions=[Dimension(name=dim) for dim in dimensions],
+                    metrics=[Metric(name=met) for met in metrics],
+                )
+            else:
+                # 不帶 dimension 的請求，會返回整個期間的去重總數
+                request = RunReportRequest(
+                    property=f"properties/{property_id}",
+                    date_ranges=[DateRange(start_date=start_date, end_date=end_date)],
+                    metrics=[Metric(name=met) for met in metrics],
+                )
+                dimensions = []  # 確保後續處理正確
 
             # Execute the report
             response = data_client.run_report(request)

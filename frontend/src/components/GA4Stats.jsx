@@ -33,7 +33,9 @@ const GA4Stats = ({ language, isMobile }) => {
     const [properties, setProperties] = useState([]);
     const [selectedProperty, setSelectedProperty] = useState('');
     const [analyticsData, setAnalyticsData] = useState(null);
+    const [summaryData, setSummaryData] = useState(null); // 新增：用於 KPI 卡片的去重總數
     const [compareData, setCompareData] = useState(null);
+    const [compareSummaryData, setCompareSummaryData] = useState(null); // 新增：比較期間的去重總數
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState(null);
     const [activeTab, setActiveTab] = useState('overview');
@@ -105,17 +107,21 @@ const GA4Stats = ({ language, isMobile }) => {
     };
 
     // Fetch analytics data with caching
+    // 同時獲取兩組數據：帶 dimension（表格）和不帶 dimension（KPI 總數去重）
     const fetchAnalytics = useCallback(async (forceRefresh = false) => {
         if (!selectedProperty) return;
 
         const cacheKey = getCacheKey(selectedProperty, activeTab, dateRange.startDate, dateRange.endDate);
+        const summaryCacheKey = `${cacheKey}|summary`;
         
         // Check cache first (unless force refresh)
         if (!forceRefresh) {
             const cachedData = getCachedData(cacheKey);
-            if (cachedData) {
+            const cachedSummary = getCachedData(summaryCacheKey);
+            if (cachedData && cachedSummary) {
                 console.log('📦 Using cached data for:', cacheKey);
                 setAnalyticsData(cachedData);
+                setSummaryData(cachedSummary);
                 return;
             }
         }
@@ -127,6 +133,7 @@ const GA4Stats = ({ language, isMobile }) => {
             const apiUrl = import.meta.env.VITE_API_URL || 'http://localhost:8000';
             const tabConfig = TABS.find(tab => tab.key === activeTab);
 
+            // 1. 帶 dimension 的請求（用於表格顯示每日數據）
             const params = new URLSearchParams({
                 property_id: selectedProperty,
                 start_date: dateRange.startDate,
@@ -135,21 +142,41 @@ const GA4Stats = ({ language, isMobile }) => {
                 dimensions: tabConfig.dimensions.join(',')
             });
 
-            const response = await fetch(`${apiUrl}/api/ga4/report?${params}`, {
-                headers: { 'Authorization': `Bearer ${localStorage.getItem('google_token')}` }
+            // 2. 不帶 dimension 的請求（用於 KPI 卡片顯示去重總數）
+            const summaryParams = new URLSearchParams({
+                property_id: selectedProperty,
+                start_date: dateRange.startDate,
+                end_date: dateRange.endDate,
+                metrics: tabConfig.metrics.join(','),
+                dimensions: '' // 空字串表示不帶 dimension
             });
+
+            // 並行請求兩組數據
+            const [response, summaryResponse] = await Promise.all([
+                fetch(`${apiUrl}/api/ga4/report?${params}`, {
+                    headers: { 'Authorization': `Bearer ${localStorage.getItem('google_token')}` }
+                }),
+                fetch(`${apiUrl}/api/ga4/report?${summaryParams}`, {
+                    headers: { 'Authorization': `Bearer ${localStorage.getItem('google_token')}` }
+                })
+            ]);
 
             if (!response.ok) {
                 throw new Error('Failed to fetch analytics data');
             }
 
             const data = await response.json();
+            const summary = summaryResponse.ok ? await summaryResponse.json() : null;
             
             // Store in cache
             setCachedData(cacheKey, data);
+            if (summary) {
+                setCachedData(summaryCacheKey, summary);
+            }
             console.log('💾 Cached data for:', cacheKey);
             
             setAnalyticsData(data);
+            setSummaryData(summary);
         } catch (err) {
             console.error('Error fetching GA4 analytics:', err);
             setError('Failed to load analytics data');
@@ -158,20 +185,24 @@ const GA4Stats = ({ language, isMobile }) => {
         }
     }, [selectedProperty, activeTab, dateRange.startDate, dateRange.endDate, getCacheKey, getCachedData, setCachedData]);
 
-    // Fetch comparison data
+    // Fetch comparison data (also with summary for KPI)
     const fetchCompareData = useCallback(async (compareDateRange) => {
         if (!selectedProperty || !compareDateRange) {
             setCompareData(null);
+            setCompareSummaryData(null);
             return;
         }
 
         const cacheKey = getCacheKey(selectedProperty, activeTab, compareDateRange.startDate, compareDateRange.endDate);
+        const summaryCacheKey = `${cacheKey}|summary`;
         
         // Check cache first
         const cachedData = getCachedData(cacheKey);
-        if (cachedData) {
+        const cachedSummary = getCachedData(summaryCacheKey);
+        if (cachedData && cachedSummary) {
             console.log('📦 Using cached compare data for:', cacheKey);
             setCompareData(cachedData);
+            setCompareSummaryData(cachedSummary);
             return;
         }
 
@@ -187,14 +218,33 @@ const GA4Stats = ({ language, isMobile }) => {
                 dimensions: tabConfig.dimensions.join(',')
             });
 
-            const response = await fetch(`${apiUrl}/api/ga4/report?${params}`, {
-                headers: { 'Authorization': `Bearer ${localStorage.getItem('google_token')}` }
+            // 比較期間也需要不帶 dimension 的總數
+            const summaryParams = new URLSearchParams({
+                property_id: selectedProperty,
+                start_date: compareDateRange.startDate,
+                end_date: compareDateRange.endDate,
+                metrics: tabConfig.metrics.join(','),
+                dimensions: ''
             });
+
+            const [response, summaryResponse] = await Promise.all([
+                fetch(`${apiUrl}/api/ga4/report?${params}`, {
+                    headers: { 'Authorization': `Bearer ${localStorage.getItem('google_token')}` }
+                }),
+                fetch(`${apiUrl}/api/ga4/report?${summaryParams}`, {
+                    headers: { 'Authorization': `Bearer ${localStorage.getItem('google_token')}` }
+                })
+            ]);
 
             if (response.ok) {
                 const data = await response.json();
+                const summary = summaryResponse.ok ? await summaryResponse.json() : null;
                 setCachedData(cacheKey, data);
+                if (summary) {
+                    setCachedData(summaryCacheKey, summary);
+                }
                 setCompareData(data);
+                setCompareSummaryData(summary);
             }
         } catch (err) {
             console.error('Error fetching compare data:', err);
@@ -308,33 +358,54 @@ const GA4Stats = ({ language, isMobile }) => {
     };
 
     // Get KPI data from analytics
+    // 使用 summaryData（不帶 dimension 的去重數據）來顯示 KPI 卡片
     const getKPIData = () => {
         if (!analyticsData || !analyticsData.rows) return [];
 
-        const rows = analyticsData.rows;
-        
-        // Calculate totals for current period (all rows) - parse as float to avoid string concatenation
+        // 優先使用 summaryData（去重總數），如果沒有則 fallback 到加總
         const currentTotals = {};
-        rows.forEach(row => {
+        
+        if (summaryData && summaryData.rows && summaryData.rows.length > 0) {
+            // 使用去重的總數（正確的方式）
+            const summaryRow = summaryData.rows[0];
             analyticsData.metrics.forEach(metric => {
-                if (!currentTotals[metric]) currentTotals[metric] = 0;
-                currentTotals[metric] += parseFloat(row[metric]) || 0;
+                currentTotals[metric] = parseFloat(summaryRow[metric]) || 0;
             });
-        });
+            console.log('📊 Using summary data for KPIs (deduplicated)');
+        } else {
+            // Fallback: 加總每日數據（對於 sessions, pageviews 等可加總指標是正確的）
+            analyticsData.rows.forEach(row => {
+                analyticsData.metrics.forEach(metric => {
+                    if (!currentTotals[metric]) currentTotals[metric] = 0;
+                    currentTotals[metric] += parseFloat(row[metric]) || 0;
+                });
+            });
+            console.log('⚠️ Fallback: summing daily data for KPIs');
+        }
 
         // Determine comparison data source based on compare mode
         let previousTotals = {};
         
-        if (compareMode !== 'none' && compareData && compareData.rows) {
-            // Use compare data from different period/year
-            compareData.rows.forEach(row => {
+        if (compareMode !== 'none') {
+            if (compareSummaryData && compareSummaryData.rows && compareSummaryData.rows.length > 0) {
+                // 使用去重的比較總數
+                const compareSummaryRow = compareSummaryData.rows[0];
                 analyticsData.metrics.forEach(metric => {
-                    if (!previousTotals[metric]) previousTotals[metric] = 0;
-                    previousTotals[metric] += parseFloat(row[metric]) || 0;
+                    previousTotals[metric] = parseFloat(compareSummaryRow[metric]) || 0;
                 });
-            });
+            } else if (compareData && compareData.rows) {
+                // Fallback: 加總比較期間數據
+                compareData.rows.forEach(row => {
+                    analyticsData.metrics.forEach(metric => {
+                        if (!previousTotals[metric]) previousTotals[metric] = 0;
+                        previousTotals[metric] += parseFloat(row[metric]) || 0;
+                    });
+                });
+            }
         } else {
-            // Default: split current data for period-over-period comparison
+            // 無比較模式時，使用當前期間的前半段作為比較基準
+            // 但這對用戶類指標也不準確，所以只用於顯示變化趨勢
+            const rows = analyticsData.rows;
             const midPoint = Math.floor(rows.length / 2);
             const previousPeriodRows = rows.slice(0, midPoint);
             previousPeriodRows.forEach(row => {
@@ -470,10 +541,11 @@ const GA4Stats = ({ language, isMobile }) => {
             }
         } else {
             setCompareData(null);
+            setCompareSummaryData(null);
         }
     }, [compareMode, getCompareDateRange, fetchCompareData, selectedProperty, analyticsData]);
 
-    const kpiData = useMemo(() => getKPIData(), [analyticsData, compareData, compareMode]);
+    const kpiData = useMemo(() => getKPIData(), [analyticsData, summaryData, compareData, compareSummaryData, compareMode]);
 
     return (
         <div style={{ width: '100%', padding: isMobile ? '16px' : '24px' }}>
