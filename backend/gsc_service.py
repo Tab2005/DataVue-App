@@ -123,26 +123,23 @@ class GSCService:
             return False, str(e)
 
     @staticmethod
-    def get_credentials(user: User):
+    def get_credentials(user: User, db: Session = None):
         """
         Constructs google.oauth2.credentials.Credentials from user's stored tokens.
         Handles token refresh if expired.
+        
+        Args:
+            user: User object
+            db: Database session (optional, for updating refreshed token)
         """
         if not user.gsc_access_token or not user.gsc_refresh_token:
             return None
         
-        # specific to how we stored them (encrypted or raw? Assuming raw for now based on database.py)
-        # Ideally should use TokenManager for encryption, but for MVP let's check database.py approach
-        # The database.py definition: gsc_access_token = Column(String)
-        
-        # Check if we need to decrypt (Assuming standard practice in this codebase is manual encryption if sensitive)
-        # For this step, I'll assume they are stored as raw strings for simplicity, 
-        # OR use TokenManager if it has generic encrypt/decrypt.
-        # Checking auth.py previously, TokenManager handles FB tokens. 
-        # I will implement basic storage first.
-        
         token = user.gsc_access_token
         refresh_token = user.gsc_refresh_token
+        
+        # 取得 expiry 時間（如果有的話）
+        expiry = user.gsc_expires_at if hasattr(user, 'gsc_expires_at') else None
         
         creds = Credentials(
             token=token,
@@ -150,16 +147,40 @@ class GSCService:
             token_uri="https://oauth2.googleapis.com/token",
             client_id=os.getenv("GOOGLE_CLIENT_ID"),
             client_secret=os.getenv("GOOGLE_CLIENT_SECRET"),
-            scopes=GSCService.SCOPES
+            scopes=GSCService.SCOPES,
+            expiry=expiry  # 加入 expiry 讓 expired 檢查正確運作
         )
+        
+        # 檢查是否需要刷新 token
+        needs_refresh = False
+        if expiry:
+            from datetime import datetime
+            if creds.expired or (expiry - datetime.utcnow()).total_seconds() < 300:
+                needs_refresh = True
+        
+        if needs_refresh and db:
+            try:
+                from google.auth.transport.requests import Request as GoogleAuthRequest
+                creds.refresh(GoogleAuthRequest())
+                print("[GSC] Token refreshed successfully")
+                # 回寫新 token 到資料庫
+                from datetime import datetime, timedelta
+                user.gsc_access_token = creds.token
+                user.gsc_expires_at = datetime.utcnow() + timedelta(seconds=3600)
+                db.commit()
+                print("[GSC] New token saved to database")
+            except Exception as e:
+                print(f"[GSC] Token refresh failed: {e}")
+                # 不返回 None，讓 googleapiclient 嘗試自動刷新
+        
         return creds
 
     @staticmethod
-    def list_sites(user: User):
+    def list_sites(user: User, db: Session = None):
         """
         Lists all sites verified in GSC for the user.
         """
-        creds = GSCService.get_credentials(user)
+        creds = GSCService.get_credentials(user, db)
         if not creds:
             return None, "No GSC credentials found"
             
@@ -171,13 +192,13 @@ class GSCService:
             return None, str(e)
 
     @staticmethod
-    def get_analytics(user: User, site_url: str, start_date: str, end_date: str, dimensions=['date']):
+    def get_analytics(user: User, site_url: str, start_date: str, end_date: str, dimensions=['date'], db: Session = None):
         """
         Fetches search analytics data (clicks, impressions, ctr, position).
         Automatically paginates through all results in batches of 1000 rows.
         Maximum supported: 25,000 rows (GSC API limit).
         """
-        creds = GSCService.get_credentials(user)
+        creds = GSCService.get_credentials(user, db)
         if not creds:
             return None, "No GSC credentials found"
             

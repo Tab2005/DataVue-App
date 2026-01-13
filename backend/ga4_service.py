@@ -158,6 +158,9 @@ class GA4Service:
 
         token = user.ga4_access_token
         refresh_token = user.ga4_refresh_token
+        
+        # 取得 expiry 時間（如果有的話）
+        expiry = user.ga4_expires_at if hasattr(user, 'ga4_expires_at') else None
 
         creds = Credentials(
             token=token,
@@ -165,11 +168,23 @@ class GA4Service:
             token_uri="https://oauth2.googleapis.com/token",
             client_id=os.getenv("GOOGLE_CLIENT_ID"),
             client_secret=os.getenv("GOOGLE_CLIENT_SECRET"),
-            scopes=GA4Service.SCOPES
+            scopes=GA4Service.SCOPES,
+            expiry=expiry  # 加入 expiry 讓 expired 檢查正確運作
         )
 
-        # Check if token is expired and refresh if needed
-        if creds.expired:
+        # Check if token is expired or will expire soon (within 5 minutes)
+        # Note: creds.expired 需要 expiry 才能正確判斷
+        # 如果沒有 expiry 或 token 過期，嘗試刷新
+        needs_refresh = False
+        if expiry:
+            # 檢查是否已過期或即將在 5 分鐘內過期
+            if creds.expired or (expiry - datetime.utcnow()).total_seconds() < 300:
+                needs_refresh = True
+        else:
+            # 沒有 expiry 資訊，嘗試呼叫 API 前先刷新
+            needs_refresh = True
+        
+        if needs_refresh:
             try:
                 creds.refresh(GoogleAuthRequest())
                 print("[GA4] Token refreshed successfully")

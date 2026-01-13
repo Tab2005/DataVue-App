@@ -46,8 +46,8 @@ const GA4Stats = ({ language, isMobile }) => {
     });
     const [sortConfig, setSortConfig] = useState({ key: 'date', direction: 'desc' });
 
-    // Define column order for overview table (including calculated field)
-    const OVERVIEW_COLUMN_ORDER = ['date', 'activeUsers', 'totalUsers', 'newUsers', 'screenPageViews', 'ecommercePurchases', 'purchaseRevenue', 'addToCarts', 'averageOrderValue'];
+    // Define column order for overview table (including calculated fields)
+    const OVERVIEW_COLUMN_ORDER = ['date', 'activeUsers', 'totalUsers', 'newUsers', 'screenPageViews', 'ecommercePurchases', 'purchaseRevenue', 'addToCarts', 'averageOrderValue', 'purchaseConversionRate'];
 
     // Cache ref for analytics data
     const cacheRef = useRef(new Map());
@@ -372,6 +372,23 @@ const GA4Stats = ({ language, isMobile }) => {
             previousValue: compareMode !== 'none' ? formatNumber(previousAOV, 'currency') : null
         });
 
+        // Add derived metric: 購買轉換率 (Purchase Conversion Rate = ecommercePurchases / totalUsers)
+        const currentUsers = currentTotals['totalUsers'] || 0;
+        const currentConversionRate = currentUsers > 0 ? (currentPurchases / currentUsers) * 100 : 0;
+
+        const previousUsers = previousTotals['totalUsers'] || 0;
+        const previousConversionRate = previousUsers > 0 ? (previousPurchases / previousUsers) * 100 : 0;
+
+        const conversionRateChange = calculateChange(currentConversionRate, previousConversionRate);
+
+        kpis.push({
+            label: getMetricLabel('purchaseConversionRate'),
+            value: `${currentConversionRate.toFixed(2)}%`,
+            change: conversionRateChange,
+            icon: getMetricIcon('purchaseConversionRate'),
+            previousValue: compareMode !== 'none' ? `${previousConversionRate.toFixed(2)}%` : null
+        });
+
         return kpis;
     };
 
@@ -390,6 +407,7 @@ const GA4Stats = ({ language, isMobile }) => {
             purchaseRevenue: t('總購買收益', 'Total Revenue'),
             addToCarts: t('加入購物車', 'Add to Cart'),
             averageOrderValue: t('客單價', 'Avg. Order Value'),
+            purchaseConversionRate: t('購買轉換率', 'Conversion Rate'),
             // Dimensions
             date: t('日期', 'Date'),
             pagePath: t('頁面路徑', 'Page Path'),
@@ -414,7 +432,8 @@ const GA4Stats = ({ language, isMobile }) => {
             ecommercePurchases: '🛒',
             purchaseRevenue: '💰',
             addToCarts: '🛍️',
-            averageOrderValue: '💵'
+            averageOrderValue: '💵',
+            purchaseConversionRate: '📊'
         };
         return icons[metric] || '📊';
     };
@@ -825,33 +844,35 @@ const GA4Stats = ({ language, isMobile }) => {
                 </div>
             )}
 
-            {/* KPI Cards - 2 rows x 4 columns */}
+            {/* KPI Cards - 3x3 Grid Layout */}
             {!loading && !error && kpiData.length > 0 && (
                 <div style={{
                     display: 'grid',
-                    gridTemplateColumns: isMobile ? 'repeat(2, 1fr)' : 'repeat(4, 1fr)',
-                    gap: '16px',
+                    gridTemplateColumns: isMobile ? 'repeat(3, 1fr)' : 'repeat(3, 1fr)',
+                    gap: isMobile ? '8px' : '16px',
                     marginBottom: '24px'
                 }}>
                     {kpiData.map((kpi, index) => (
                         <div
                             key={index}
                             style={{
-                                padding: '20px',
+                                padding: isMobile ? '12px' : '20px',
                                 background: 'rgba(255, 255, 255, 0.03)',
                                 border: '1px solid var(--glass-border)',
                                 borderRadius: '12px',
                                 display: 'flex',
-                                alignItems: 'flex-start',
-                                gap: '16px'
+                                flexDirection: isMobile ? 'column' : 'row',
+                                alignItems: isMobile ? 'center' : 'flex-start',
+                                gap: isMobile ? '8px' : '16px',
+                                textAlign: isMobile ? 'center' : 'left'
                             }}
                         >
-                            <div style={{ fontSize: '28px', opacity: 0.9 }}>{kpi.icon}</div>
-                            <div style={{ flex: 1 }}>
-                                <div style={{ fontSize: '13px', color: 'var(--text-secondary)', marginBottom: '6px' }}>
+                            <div style={{ fontSize: isMobile ? '24px' : '28px', opacity: 0.9 }}>{kpi.icon}</div>
+                            <div style={{ flex: 1, width: '100%' }}>
+                                <div style={{ fontSize: isMobile ? '11px' : '13px', color: 'var(--text-secondary)', marginBottom: isMobile ? '4px' : '6px' }}>
                                     {kpi.label}
                                 </div>
-                                <div style={{ fontSize: '26px', fontWeight: '700', color: 'var(--text-primary)' }}>
+                                <div style={{ fontSize: isMobile ? '18px' : '26px', fontWeight: '700', color: 'var(--text-primary)' }}>
                                     {kpi.value}
                                 </div>
                                 <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginTop: '6px' }}>
@@ -907,7 +928,7 @@ const GA4Stats = ({ language, isMobile }) => {
                             <thead>
                                 <tr style={{ borderBottom: '1px solid var(--glass-border)' }}>
                                     {OVERVIEW_COLUMN_ORDER.filter(col => 
-                                        col === 'averageOrderValue' || analyticsData.dimensions.includes(col) || analyticsData.metrics.includes(col)
+                                        col === 'averageOrderValue' || col === 'purchaseConversionRate' || analyticsData.dimensions.includes(col) || analyticsData.metrics.includes(col)
                                     ).map(col => (
                                         <th 
                                             key={col} 
@@ -939,13 +960,18 @@ const GA4Stats = ({ language, isMobile }) => {
                             </thead>
                             <tbody>
                                 {[...analyticsData.rows]
-                                    .map(row => ({
-                                        ...row,
-                                        // Calculate averageOrderValue for each row
-                                        averageOrderValue: (parseFloat(row.ecommercePurchases) || 0) > 0 
-                                            ? (parseFloat(row.purchaseRevenue) || 0) / (parseFloat(row.ecommercePurchases) || 1)
-                                            : 0
-                                    }))
+                                    .map(row => {
+                                        const purchases = parseFloat(row.ecommercePurchases) || 0;
+                                        const revenue = parseFloat(row.purchaseRevenue) || 0;
+                                        const users = parseFloat(row.totalUsers) || 0;
+                                        return {
+                                            ...row,
+                                            // Calculate averageOrderValue for each row
+                                            averageOrderValue: purchases > 0 ? revenue / purchases : 0,
+                                            // Calculate purchaseConversionRate for each row
+                                            purchaseConversionRate: users > 0 ? (purchases / users) * 100 : 0
+                                        };
+                                    })
                                     .sort((a, b) => {
                                         const aVal = a[sortConfig.key];
                                         const bVal = b[sortConfig.key];
@@ -970,7 +996,7 @@ const GA4Stats = ({ language, isMobile }) => {
                                             background: index % 2 === 0 ? 'transparent' : 'rgba(255,255,255,0.02)'
                                         }}>
                                             {OVERVIEW_COLUMN_ORDER.filter(col => 
-                                                col === 'averageOrderValue' || analyticsData.dimensions.includes(col) || analyticsData.metrics.includes(col)
+                                                col === 'averageOrderValue' || col === 'purchaseConversionRate' || analyticsData.dimensions.includes(col) || analyticsData.metrics.includes(col)
                                             ).map(col => (
                                                 <td key={col} style={{
                                                     padding: '12px 8px',
@@ -980,11 +1006,13 @@ const GA4Stats = ({ language, isMobile }) => {
                                                         ? row[col] // Keep date as-is without formatting
                                                         : col === 'purchaseRevenue' || col === 'averageOrderValue'
                                                             ? formatNumber(parseFloat(row[col]) || 0, 'currency')
-                                                            : col === 'bounceRate' 
-                                                                ? formatNumber(parseFloat(row[col]) || 0, 'percentage')
-                                                                : col === 'averageSessionDuration' 
-                                                                    ? formatNumber(parseFloat(row[col]) || 0, 'duration')
-                                                                    : formatNumber(parseFloat(row[col]) || 0, 'number')
+                                                            : col === 'purchaseConversionRate'
+                                                                ? `${(parseFloat(row[col]) || 0).toFixed(2)}%`
+                                                                : col === 'bounceRate' 
+                                                                    ? formatNumber(parseFloat(row[col]) || 0, 'percentage')
+                                                                    : col === 'averageSessionDuration' 
+                                                                        ? formatNumber(parseFloat(row[col]) || 0, 'duration')
+                                                                        : formatNumber(parseFloat(row[col]) || 0, 'number')
                                                     }
                                                 </td>
                                             ))}
