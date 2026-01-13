@@ -1,10 +1,16 @@
 import React, { useEffect, useState, useMemo, useCallback, useRef } from 'react';
 
-// Date Range Presets Configuration
+// Date Range Presets Configuration (aligned with Analytics page)
 const DATE_PRESETS = [
-    { key: 'last_7d', label_zh: '過去 7 天', label_en: 'Last 7 Days', days: 7 },
-    { key: 'last_28d', label_zh: '過去 28 天', label_en: 'Last 28 Days', days: 28 },
-    { key: 'last_3m', label_zh: '過去 3 個月', label_en: 'Last 3 Months', days: 90 },
+    { key: 'today', label_zh: '今日', label_en: 'Today', days: 0, isToday: true },
+    { key: 'yesterday', label_zh: '昨天', label_en: 'Yesterday', days: 1, isYesterday: true },
+    { key: 'this_week', label_zh: '本週', label_en: 'This Week', days: null, isThisWeek: true },
+    { key: 'last_week', label_zh: '上週', label_en: 'Last Week', days: null, isLastWeek: true },
+    { key: 'this_month', label_zh: '本月', label_en: 'This Month', days: null, isThisMonth: true },
+    { key: 'last_month', label_zh: '上月', label_en: 'Last Month', days: null, isLastMonth: true },
+    { key: 'last_7d', label_zh: '過去 7 天', label_en: 'Past 7 Days', days: 7 },
+    { key: 'last_14d', label_zh: '過去 14 天', label_en: 'Past 14 Days', days: 14 },
+    { key: 'last_28d', label_zh: '過去 28 天', label_en: 'Past 28 Days', days: 28 },
     { key: 'custom', label_zh: '自訂', label_en: 'Custom', days: null }
 ];
 
@@ -113,7 +119,7 @@ const GA4Stats = ({ language, isMobile }) => {
 
         const cacheKey = getCacheKey(selectedProperty, activeTab, dateRange.startDate, dateRange.endDate);
         const summaryCacheKey = `${cacheKey}|summary`;
-        
+
         // Check cache first (unless force refresh)
         if (!forceRefresh) {
             const cachedData = getCachedData(cacheKey);
@@ -167,14 +173,14 @@ const GA4Stats = ({ language, isMobile }) => {
 
             const data = await response.json();
             const summary = summaryResponse.ok ? await summaryResponse.json() : null;
-            
+
             // Store in cache
             setCachedData(cacheKey, data);
             if (summary) {
                 setCachedData(summaryCacheKey, summary);
             }
             console.log('💾 Cached data for:', cacheKey);
-            
+
             setAnalyticsData(data);
             setSummaryData(summary);
         } catch (err) {
@@ -195,7 +201,7 @@ const GA4Stats = ({ language, isMobile }) => {
 
         const cacheKey = getCacheKey(selectedProperty, activeTab, compareDateRange.startDate, compareDateRange.endDate);
         const summaryCacheKey = `${cacheKey}|summary`;
-        
+
         // Check cache first
         const cachedData = getCachedData(cacheKey);
         const cachedSummary = getCachedData(summaryCacheKey);
@@ -251,28 +257,67 @@ const GA4Stats = ({ language, isMobile }) => {
         }
     }, [selectedProperty, activeTab, getCacheKey, getCachedData, setCachedData]);
 
-    // Handle date preset change
+    // Handle date preset change (aligned with Analytics page logic)
     const handleDatePresetChange = (preset) => {
         const presetConfig = DATE_PRESETS.find(p => p.key === preset);
-        if (presetConfig.days) {
+        const today = new Date();
+        let startDate, endDate;
+
+        // Handle special presets that need custom date calculation
+        if (presetConfig.isToday) {
+            startDate = endDate = new Date(today);
+        } else if (presetConfig.isYesterday) {
+            startDate = endDate = new Date(today);
+            startDate.setDate(startDate.getDate() - 1);
+        } else if (presetConfig.isThisWeek) {
+            // 本週：從本週一到今天
+            endDate = new Date(today);
+            startDate = new Date(today);
+            const dayOfWeek = startDate.getDay();
+            const daysToMonday = dayOfWeek === 0 ? 6 : dayOfWeek - 1;
+            startDate.setDate(startDate.getDate() - daysToMonday);
+        } else if (presetConfig.isLastWeek) {
+            // 上週：從上週一到上週日
+            const lastWeekEnd = new Date(today);
+            const dayOfWeek = lastWeekEnd.getDay();
+            const daysToLastSunday = dayOfWeek === 0 ? 7 : dayOfWeek;
+            lastWeekEnd.setDate(lastWeekEnd.getDate() - daysToLastSunday);
+            endDate = new Date(lastWeekEnd);
+            startDate = new Date(lastWeekEnd);
+            startDate.setDate(startDate.getDate() - 6);
+        } else if (presetConfig.isThisMonth) {
+            // 本月：從本月1日到今天
+            endDate = new Date(today);
+            startDate = new Date(today.getFullYear(), today.getMonth(), 1);
+        } else if (presetConfig.isLastMonth) {
+            // 上月：從上月1日到上月最後一天
+            startDate = new Date(today.getFullYear(), today.getMonth() - 1, 1);
+            endDate = new Date(today.getFullYear(), today.getMonth(), 0);
+        } else if (presetConfig.days !== null && presetConfig.days > 0) {
             // 「過去 N 天」不包含今天（業界標準）
             // endDate = 昨天，startDate = 昨天往前推 (N-1) 天
-            const yesterday = new Date();
+            const yesterday = new Date(today);
             yesterday.setDate(yesterday.getDate() - 1);
-            const startDate = new Date(yesterday);
+            endDate = new Date(yesterday);
+            startDate = new Date(yesterday);
             startDate.setDate(startDate.getDate() - (presetConfig.days - 1));
+        } else if (preset === 'custom') {
+            // Custom preset - toggle date picker
+            setShowCustomDatePicker(true);
+            setDateRange(prev => ({ ...prev, preset: 'custom' }));
+            return;
+        }
+
+        if (startDate && endDate) {
             setDateRange({
                 startDate: startDate.toISOString().split('T')[0],
-                endDate: yesterday.toISOString().split('T')[0],
+                endDate: endDate.toISOString().split('T')[0],
                 preset
             });
             setShowCustomDatePicker(false);
-        } else {
-            // Custom preset - toggle date picker (fix: always show when clicking custom)
-            setShowCustomDatePicker(true);
-            setDateRange(prev => ({ ...prev, preset: 'custom' }));
         }
     };
+
 
     // Toggle custom date picker visibility
     const toggleCustomDatePicker = () => {
@@ -286,11 +331,11 @@ const GA4Stats = ({ language, isMobile }) => {
     // Calculate comparison date range
     const getCompareDateRange = useCallback(() => {
         if (compareMode === 'none') return null;
-        
+
         const start = new Date(dateRange.startDate);
         const end = new Date(dateRange.endDate);
         const daysDiff = Math.ceil((end - start) / (1000 * 60 * 60 * 24));
-        
+
         if (compareMode === 'previous_period') {
             const compareEnd = new Date(start.getTime() - 24 * 60 * 60 * 1000);
             const compareStart = new Date(compareEnd.getTime() - daysDiff * 24 * 60 * 60 * 1000);
@@ -364,7 +409,7 @@ const GA4Stats = ({ language, isMobile }) => {
 
         // 優先使用 summaryData（去重總數），如果沒有則 fallback 到加總
         const currentTotals = {};
-        
+
         if (summaryData && summaryData.rows && summaryData.rows.length > 0) {
             // 使用去重的總數（正確的方式）
             const summaryRow = summaryData.rows[0];
@@ -385,7 +430,7 @@ const GA4Stats = ({ language, isMobile }) => {
 
         // Determine comparison data source based on compare mode
         let previousTotals = {};
-        
+
         if (compareMode !== 'none') {
             if (compareSummaryData && compareSummaryData.rows && compareSummaryData.rows.length > 0) {
                 // 使用去重的比較總數
@@ -558,9 +603,9 @@ const GA4Stats = ({ language, isMobile }) => {
                 border: '1px solid var(--glass-border)',
                 backdropFilter: 'blur(10px)'
             }}>
-                <h3 style={{ 
-                    margin: '0 0 20px 0', 
-                    fontSize: '0.95rem', 
+                <h3 style={{
+                    margin: '0 0 20px 0',
+                    fontSize: '0.95rem',
                     color: 'var(--text-secondary)',
                     fontWeight: 600,
                     display: 'flex',
@@ -579,10 +624,10 @@ const GA4Stats = ({ language, isMobile }) => {
                 }}>
                     {/* Account Selector */}
                     <div style={{ flex: 1, minWidth: isMobile ? '100%' : '200px' }}>
-                        <label style={{ 
-                            display: 'block', 
-                            marginBottom: '8px', 
-                            fontWeight: 600, 
+                        <label style={{
+                            display: 'block',
+                            marginBottom: '8px',
+                            fontWeight: 600,
                             color: 'var(--text-secondary)',
                             fontSize: '0.85rem'
                         }}>
@@ -612,10 +657,10 @@ const GA4Stats = ({ language, isMobile }) => {
 
                     {/* Date Range Selector */}
                     <div style={{ flex: 1, minWidth: isMobile ? '100%' : '180px' }}>
-                        <label style={{ 
-                            display: 'block', 
-                            marginBottom: '8px', 
-                            fontWeight: 600, 
+                        <label style={{
+                            display: 'block',
+                            marginBottom: '8px',
+                            fontWeight: 600,
                             color: 'var(--text-secondary)',
                             fontSize: '0.85rem'
                         }}>
@@ -644,10 +689,10 @@ const GA4Stats = ({ language, isMobile }) => {
 
                     {/* Compare Mode Selector */}
                     <div style={{ flex: 1, minWidth: isMobile ? '100%' : '180px' }}>
-                        <label style={{ 
-                            display: 'block', 
-                            marginBottom: '8px', 
-                            fontWeight: 600, 
+                        <label style={{
+                            display: 'block',
+                            marginBottom: '8px',
+                            fontWeight: 600,
                             color: 'var(--text-secondary)',
                             fontSize: '0.85rem'
                         }}>
@@ -781,8 +826,8 @@ const GA4Stats = ({ language, isMobile }) => {
                             marginTop: '16px',
                             alignItems: 'center'
                         }}>
-                            <span style={{ 
-                                fontSize: '13px', 
+                            <span style={{
+                                fontSize: '13px',
                                 color: 'var(--text-secondary)',
                                 marginRight: '8px'
                             }}>
@@ -792,15 +837,16 @@ const GA4Stats = ({ language, isMobile }) => {
                                 { label: t('今天', 'Today'), type: 'today' },
                                 { label: t('昨天', 'Yesterday'), type: 'yesterday' },
                                 { label: t('本週', 'This Week'), type: 'thisWeek' },
+                                { label: t('上週', 'Last Week'), type: 'lastWeek' },
                                 { label: t('本月', 'This Month'), type: 'thisMonth' },
-                                { label: t('本季', 'This Quarter'), type: 'thisQuarter' }
+                                { label: t('上月', 'Last Month'), type: 'lastMonth' }
                             ].map(quick => (
                                 <button
                                     key={quick.label}
                                     onClick={() => {
                                         const today = new Date();
                                         let start, end;
-                                        
+
                                         switch (quick.type) {
                                             case 'today':
                                                 start = end = new Date(today);
@@ -810,31 +856,37 @@ const GA4Stats = ({ language, isMobile }) => {
                                                 start.setDate(start.getDate() - 1);
                                                 break;
                                             case 'thisWeek':
-                                                // 本週：從本週一到昨天（不含今天）
+                                                // 本週：從本週一到今天
                                                 end = new Date(today);
-                                                end.setDate(end.getDate() - 1); // 昨天
                                                 start = new Date(today);
                                                 const dayOfWeek = start.getDay();
                                                 const daysToMonday = dayOfWeek === 0 ? 6 : dayOfWeek - 1;
                                                 start.setDate(start.getDate() - daysToMonday);
                                                 break;
+                                            case 'lastWeek':
+                                                // 上週：從上週一到上週日
+                                                const lastWeekEnd = new Date(today);
+                                                const dow = lastWeekEnd.getDay();
+                                                const daysToLastSunday = dow === 0 ? 7 : dow;
+                                                lastWeekEnd.setDate(lastWeekEnd.getDate() - daysToLastSunday);
+                                                end = new Date(lastWeekEnd);
+                                                start = new Date(lastWeekEnd);
+                                                start.setDate(start.getDate() - 6);
+                                                break;
                                             case 'thisMonth':
-                                                // 本月：從本月1日到昨天
+                                                // 本月：從本月1日到今天
                                                 end = new Date(today);
-                                                end.setDate(end.getDate() - 1); // 昨天
                                                 start = new Date(today.getFullYear(), today.getMonth(), 1);
                                                 break;
-                                            case 'thisQuarter':
-                                                // 本季：從本季第一天到昨天
-                                                end = new Date(today);
-                                                end.setDate(end.getDate() - 1); // 昨天
-                                                const quarterStartMonth = Math.floor(today.getMonth() / 3) * 3;
-                                                start = new Date(today.getFullYear(), quarterStartMonth, 1);
+                                            case 'lastMonth':
+                                                // 上月：從上月1日到上月最後一天
+                                                start = new Date(today.getFullYear(), today.getMonth() - 1, 1);
+                                                end = new Date(today.getFullYear(), today.getMonth(), 0);
                                                 break;
                                             default:
                                                 start = end = new Date(today);
                                         }
-                                        
+
                                         setDateRange({
                                             startDate: start.toISOString().split('T')[0],
                                             endDate: end.toISOString().split('T')[0],
@@ -863,7 +915,8 @@ const GA4Stats = ({ language, isMobile }) => {
                                     {quick.label}
                                 </button>
                             ))}
-                            
+
+
                             {/* Selected Range Display */}
                             <div style={{
                                 marginLeft: 'auto',
@@ -1042,11 +1095,11 @@ const GA4Stats = ({ language, isMobile }) => {
                         }}>
                             <thead>
                                 <tr style={{ borderBottom: '1px solid var(--glass-border)' }}>
-                                    {OVERVIEW_COLUMN_ORDER.filter(col => 
+                                    {OVERVIEW_COLUMN_ORDER.filter(col =>
                                         col === 'averageOrderValue' || col === 'purchaseConversionRate' || analyticsData.dimensions.includes(col) || analyticsData.metrics.includes(col)
                                     ).map(col => (
-                                        <th 
-                                            key={col} 
+                                        <th
+                                            key={col}
                                             onClick={() => {
                                                 setSortConfig(prev => ({
                                                     key: col,
@@ -1092,7 +1145,7 @@ const GA4Stats = ({ language, isMobile }) => {
                                         const bVal = b[sortConfig.key];
                                         const aNum = parseFloat(aVal);
                                         const bNum = parseFloat(bVal);
-                                        
+
                                         // Check if both are valid numbers
                                         if (!isNaN(aNum) && !isNaN(bNum)) {
                                             return sortConfig.direction === 'asc' ? aNum - bNum : bNum - aNum;
@@ -1100,8 +1153,8 @@ const GA4Stats = ({ language, isMobile }) => {
                                         // String comparison
                                         const aStr = String(aVal || '');
                                         const bStr = String(bVal || '');
-                                        return sortConfig.direction === 'asc' 
-                                            ? aStr.localeCompare(bStr) 
+                                        return sortConfig.direction === 'asc'
+                                            ? aStr.localeCompare(bStr)
                                             : bStr.localeCompare(aStr);
                                     })
                                     .slice(0, 20)
@@ -1110,7 +1163,7 @@ const GA4Stats = ({ language, isMobile }) => {
                                             borderBottom: '1px solid var(--glass-border)',
                                             background: index % 2 === 0 ? 'transparent' : 'rgba(255,255,255,0.02)'
                                         }}>
-                                            {OVERVIEW_COLUMN_ORDER.filter(col => 
+                                            {OVERVIEW_COLUMN_ORDER.filter(col =>
                                                 col === 'averageOrderValue' || col === 'purchaseConversionRate' || analyticsData.dimensions.includes(col) || analyticsData.metrics.includes(col)
                                             ).map(col => (
                                                 <td key={col} style={{
@@ -1123,9 +1176,9 @@ const GA4Stats = ({ language, isMobile }) => {
                                                             ? formatNumber(parseFloat(row[col]) || 0, 'currency')
                                                             : col === 'purchaseConversionRate'
                                                                 ? `${(parseFloat(row[col]) || 0).toFixed(2)}%`
-                                                                : col === 'bounceRate' 
+                                                                : col === 'bounceRate'
                                                                     ? formatNumber(parseFloat(row[col]) || 0, 'percentage')
-                                                                    : col === 'averageSessionDuration' 
+                                                                    : col === 'averageSessionDuration'
                                                                         ? formatNumber(parseFloat(row[col]) || 0, 'duration')
                                                                         : formatNumber(parseFloat(row[col]) || 0, 'number')
                                                     }
