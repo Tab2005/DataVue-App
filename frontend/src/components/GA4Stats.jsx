@@ -17,7 +17,7 @@ const COMPARE_OPTIONS = [
 
 // Tab Configuration
 const TABS = [
-    { key: 'overview', label_zh: '📊 總覽', label_en: '📊 Overview', metrics: ['activeUsers', 'totalUsers', 'newUsers', 'sessions'], dimensions: ['date'] },
+    { key: 'overview', label_zh: '📊 總覽', label_en: '📊 Overview', metrics: ['activeUsers', 'totalUsers', 'newUsers', 'screenPageViews', 'ecommercePurchases', 'purchaseRevenue', 'addToCarts'], dimensions: ['date'] },
     { key: 'traffic', label_zh: '🌐 流量來源', label_en: '🌐 Traffic Sources', metrics: ['sessions', 'screenPageViews'], dimensions: ['sessionDefaultChannelGrouping'] },
     { key: 'behavior', label_zh: '👥 用戶行為', label_en: '👥 User Behavior', metrics: ['bounceRate', 'averageSessionDuration'], dimensions: ['date'] },
     { key: 'content', label_zh: '📄 內容分析', label_en: '📄 Content Analysis', metrics: ['screenPageViews', 'sessions'], dimensions: ['pagePath'] }
@@ -44,6 +44,10 @@ const GA4Stats = ({ language, isMobile }) => {
         endDate: new Date().toISOString().split('T')[0],
         preset: 'last_28d'
     });
+    const [sortConfig, setSortConfig] = useState({ key: 'date', direction: 'desc' });
+
+    // Define column order for overview table (including calculated field)
+    const OVERVIEW_COLUMN_ORDER = ['date', 'activeUsers', 'totalUsers', 'newUsers', 'screenPageViews', 'ecommercePurchases', 'purchaseRevenue', 'addToCarts', 'averageOrderValue'];
 
     // Cache ref for analytics data
     const cacheRef = useRef(new Map());
@@ -273,6 +277,8 @@ const GA4Stats = ({ language, isMobile }) => {
                 return `${minutes}:${seconds.toString().padStart(2, '0')}`;
             case 'decimal':
                 return num.toFixed(2);
+            case 'currency':
+                return `$${num.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}`;
             default:
                 return num.toLocaleString();
         }
@@ -295,12 +301,12 @@ const GA4Stats = ({ language, isMobile }) => {
 
         const rows = analyticsData.rows;
         
-        // Calculate totals for current period (all rows)
+        // Calculate totals for current period (all rows) - parse as float to avoid string concatenation
         const currentTotals = {};
         rows.forEach(row => {
             analyticsData.metrics.forEach(metric => {
                 if (!currentTotals[metric]) currentTotals[metric] = 0;
-                currentTotals[metric] += row[metric] || 0;
+                currentTotals[metric] += parseFloat(row[metric]) || 0;
             });
         });
 
@@ -312,7 +318,7 @@ const GA4Stats = ({ language, isMobile }) => {
             compareData.rows.forEach(row => {
                 analyticsData.metrics.forEach(metric => {
                     if (!previousTotals[metric]) previousTotals[metric] = 0;
-                    previousTotals[metric] += row[metric] || 0;
+                    previousTotals[metric] += parseFloat(row[metric]) || 0;
                 });
             });
         } else {
@@ -322,7 +328,7 @@ const GA4Stats = ({ language, isMobile }) => {
             previousPeriodRows.forEach(row => {
                 analyticsData.metrics.forEach(metric => {
                     if (!previousTotals[metric]) previousTotals[metric] = 0;
-                    previousTotals[metric] += row[metric] || 0;
+                    previousTotals[metric] += parseFloat(row[metric]) || 0;
                 });
             });
         }
@@ -336,6 +342,7 @@ const GA4Stats = ({ language, isMobile }) => {
             let type = 'number';
             if (metric === 'bounceRate') type = 'percentage';
             if (metric === 'averageSessionDuration') type = 'duration';
+            if (metric === 'purchaseRevenue') type = 'currency';
 
             kpis.push({
                 label: getMetricLabel(metric),
@@ -346,6 +353,25 @@ const GA4Stats = ({ language, isMobile }) => {
             });
         });
 
+        // Add derived metric: 客單價 (AOV = purchaseRevenue / ecommercePurchases)
+        const currentRevenue = currentTotals['purchaseRevenue'] || 0;
+        const currentPurchases = currentTotals['ecommercePurchases'] || 0;
+        const currentAOV = currentPurchases > 0 ? currentRevenue / currentPurchases : 0;
+
+        const previousRevenue = previousTotals['purchaseRevenue'] || 0;
+        const previousPurchases = previousTotals['ecommercePurchases'] || 0;
+        const previousAOV = previousPurchases > 0 ? previousRevenue / previousPurchases : 0;
+
+        const aovChange = calculateChange(currentAOV, previousAOV);
+
+        kpis.push({
+            label: getMetricLabel('averageOrderValue'),
+            value: formatNumber(currentAOV, 'currency'),
+            change: aovChange,
+            icon: getMetricIcon('averageOrderValue'),
+            previousValue: compareMode !== 'none' ? formatNumber(previousAOV, 'currency') : null
+        });
+
         return kpis;
     };
 
@@ -353,13 +379,17 @@ const GA4Stats = ({ language, isMobile }) => {
     const getMetricLabel = (metric) => {
         const labels = {
             // Metrics
-            activeUsers: t('活躍用戶', 'Active Users'),
-            totalUsers: t('總用戶', 'Total Users'),
-            newUsers: t('新用戶', 'New Users'),
+            activeUsers: t('活躍使用者', 'Active Users'),
+            totalUsers: t('總人數', 'Total Users'),
+            newUsers: t('新使用者人數', 'New Users'),
             sessions: t('工作階段', 'Sessions'),
-            screenPageViews: t('頁面瀏覽', 'Page Views'),
+            screenPageViews: t('瀏覽', 'Page Views'),
             averageSessionDuration: t('平均工作階段持續時間', 'Avg. Session Duration'),
             bounceRate: t('跳出率', 'Bounce Rate'),
+            ecommercePurchases: t('購買', 'Purchases'),
+            purchaseRevenue: t('總購買收益', 'Total Revenue'),
+            addToCarts: t('加入購物車', 'Add to Cart'),
+            averageOrderValue: t('客單價', 'Avg. Order Value'),
             // Dimensions
             date: t('日期', 'Date'),
             pagePath: t('頁面路徑', 'Page Path'),
@@ -380,7 +410,11 @@ const GA4Stats = ({ language, isMobile }) => {
             sessions: '🔄',
             screenPageViews: '👁️',
             averageSessionDuration: '⏱️',
-            bounceRate: '📈'
+            bounceRate: '📈',
+            ecommercePurchases: '🛒',
+            purchaseRevenue: '💰',
+            addToCarts: '🛍️',
+            averageOrderValue: '💵'
         };
         return icons[metric] || '📊';
     };
@@ -791,11 +825,11 @@ const GA4Stats = ({ language, isMobile }) => {
                 </div>
             )}
 
-            {/* KPI Cards */}
+            {/* KPI Cards - 2 rows x 4 columns */}
             {!loading && !error && kpiData.length > 0 && (
                 <div style={{
                     display: 'grid',
-                    gridTemplateColumns: isMobile ? '1fr' : 'repeat(auto-fit, minmax(220px, 1fr))',
+                    gridTemplateColumns: isMobile ? 'repeat(2, 1fr)' : 'repeat(4, 1fr)',
                     gap: '16px',
                     marginBottom: '24px'
                 }}>
@@ -872,53 +906,90 @@ const GA4Stats = ({ language, isMobile }) => {
                         }}>
                             <thead>
                                 <tr style={{ borderBottom: '1px solid var(--glass-border)' }}>
-                                    {analyticsData.dimensions.map(dim => (
-                                        <th key={dim} style={{
-                                            padding: '12px 8px',
-                                            textAlign: 'left',
-                                            color: 'var(--text-secondary)',
-                                            fontWeight: '500'
-                                        }}>
-                                            {getMetricLabel(dim)}
-                                        </th>
-                                    ))}
-                                    {analyticsData.metrics.map(metric => (
-                                        <th key={metric} style={{
-                                            padding: '12px 8px',
-                                            textAlign: 'left',
-                                            color: 'var(--text-secondary)',
-                                            fontWeight: '500'
-                                        }}>
-                                            {getMetricLabel(metric)}
+                                    {OVERVIEW_COLUMN_ORDER.filter(col => 
+                                        col === 'averageOrderValue' || analyticsData.dimensions.includes(col) || analyticsData.metrics.includes(col)
+                                    ).map(col => (
+                                        <th 
+                                            key={col} 
+                                            onClick={() => {
+                                                setSortConfig(prev => ({
+                                                    key: col,
+                                                    direction: prev.key === col && prev.direction === 'asc' ? 'desc' : 'asc'
+                                                }));
+                                            }}
+                                            style={{
+                                                padding: '12px 8px',
+                                                textAlign: 'left',
+                                                color: 'var(--text-secondary)',
+                                                fontWeight: '500',
+                                                cursor: 'pointer',
+                                                userSelect: 'none',
+                                                whiteSpace: 'nowrap'
+                                            }}
+                                        >
+                                            {getMetricLabel(col)}
+                                            {sortConfig.key === col && (
+                                                <span style={{ marginLeft: '4px' }}>
+                                                    {sortConfig.direction === 'asc' ? '▲' : '▼'}
+                                                </span>
+                                            )}
                                         </th>
                                     ))}
                                 </tr>
                             </thead>
                             <tbody>
-                                {analyticsData.rows.slice(0, 20).map((row, index) => (
-                                    <tr key={index} style={{
-                                        borderBottom: '1px solid var(--glass-border)',
-                                        background: index % 2 === 0 ? 'transparent' : 'rgba(255,255,255,0.02)'
-                                    }}>
-                                        {analyticsData.dimensions.map(dim => (
-                                            <td key={dim} style={{
-                                                padding: '12px 8px',
-                                                color: 'var(--text-primary)'
-                                            }}>
-                                                {row[dim]}
-                                            </td>
-                                        ))}
-                                        {analyticsData.metrics.map(metric => (
-                                            <td key={metric} style={{
-                                                padding: '12px 8px',
-                                                color: 'var(--text-primary)'
-                                            }}>
-                                                {formatNumber(row[metric], metric === 'bounceRate' ? 'percentage' :
-                                                    metric === 'averageSessionDuration' ? 'duration' : 'number')}
-                                            </td>
-                                        ))}
-                                    </tr>
-                                ))}
+                                {[...analyticsData.rows]
+                                    .map(row => ({
+                                        ...row,
+                                        // Calculate averageOrderValue for each row
+                                        averageOrderValue: (parseFloat(row.ecommercePurchases) || 0) > 0 
+                                            ? (parseFloat(row.purchaseRevenue) || 0) / (parseFloat(row.ecommercePurchases) || 1)
+                                            : 0
+                                    }))
+                                    .sort((a, b) => {
+                                        const aVal = a[sortConfig.key];
+                                        const bVal = b[sortConfig.key];
+                                        const aNum = parseFloat(aVal);
+                                        const bNum = parseFloat(bVal);
+                                        
+                                        // Check if both are valid numbers
+                                        if (!isNaN(aNum) && !isNaN(bNum)) {
+                                            return sortConfig.direction === 'asc' ? aNum - bNum : bNum - aNum;
+                                        }
+                                        // String comparison
+                                        const aStr = String(aVal || '');
+                                        const bStr = String(bVal || '');
+                                        return sortConfig.direction === 'asc' 
+                                            ? aStr.localeCompare(bStr) 
+                                            : bStr.localeCompare(aStr);
+                                    })
+                                    .slice(0, 20)
+                                    .map((row, index) => (
+                                        <tr key={index} style={{
+                                            borderBottom: '1px solid var(--glass-border)',
+                                            background: index % 2 === 0 ? 'transparent' : 'rgba(255,255,255,0.02)'
+                                        }}>
+                                            {OVERVIEW_COLUMN_ORDER.filter(col => 
+                                                col === 'averageOrderValue' || analyticsData.dimensions.includes(col) || analyticsData.metrics.includes(col)
+                                            ).map(col => (
+                                                <td key={col} style={{
+                                                    padding: '12px 8px',
+                                                    color: 'var(--text-primary)'
+                                                }}>
+                                                    {col === 'date'
+                                                        ? row[col] // Keep date as-is without formatting
+                                                        : col === 'purchaseRevenue' || col === 'averageOrderValue'
+                                                            ? formatNumber(parseFloat(row[col]) || 0, 'currency')
+                                                            : col === 'bounceRate' 
+                                                                ? formatNumber(parseFloat(row[col]) || 0, 'percentage')
+                                                                : col === 'averageSessionDuration' 
+                                                                    ? formatNumber(parseFloat(row[col]) || 0, 'duration')
+                                                                    : formatNumber(parseFloat(row[col]) || 0, 'number')
+                                                    }
+                                                </td>
+                                            ))}
+                                        </tr>
+                                    ))}
                             </tbody>
                         </table>
                     </div>

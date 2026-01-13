@@ -72,4 +72,14 @@
 
 - Metadata API 範例：`GET https://analyticsdata.googleapis.com/v1beta/properties/{propertyId}:getMetadata`
 
+### FAQ — Metadata API 與權限
+
+- 問：有 GA4 Data API 權限就能呼叫 Metadata API 嗎？
+- 答：是的。Metadata API 屬於 Google Analytics Data API 生態系的一部分，通常使用相同的 OAuth scope（例如 `https://www.googleapis.com/auth/analytics.readonly`）。只要你的 OAuth token 有讀取 Analytics 的權限，且該帳號/服務帳號可以存取目標 property，就能呼叫 `properties:getMetadata` 來取得該 property 可用的維度與指標（含自訂欄位）。
+
+- 注意事項：
+	- Metadata 回傳的是該 property 支援的欄位清單與欄位細節，但並不會回傳實際的報表資料（報表資料仍由 Data API 回傳）。
+	- 某些自訂維度/指標或重要事件的字串必須依照 Metadata 提供的格式使用（例如 `customEvent:parameter_name[event_name]`）。
+	- 若你的帳號沒有對該 property 的存取權，Metadata API 也會因授權錯誤而失敗；管理員層級通常不是必要，但 property 的讀取權限必須存在。
+
 需要我把這份對照轉成 JSON（供前端下拉選單使用）或把某些常用組合加入到後端預設範本嗎？
