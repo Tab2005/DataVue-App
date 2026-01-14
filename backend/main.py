@@ -115,6 +115,7 @@ app.include_router(users.router, prefix="/api/users", tags=["users"])
 app.include_router(teams.router, prefix="/api/teams", tags=["teams"])
 app.include_router(invites.router, prefix="/api", tags=["invites"])
 app.include_router(admin.router)  # /api/admin
+app.include_router(admin.emergency_router)  # /api/emergency (緊急修復端點)
 app.include_router(ai.router, prefix="/api/ai", tags=["ai"])
 app.include_router(saved_views.router)  # /api/saved-views
 app.include_router(gsc.router)  # /api/gsc
