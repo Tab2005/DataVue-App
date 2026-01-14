@@ -112,11 +112,45 @@ def seed_permissions():
             if added_count > 0:
                 print(f"  ✅ {role_key}: 新增 {added_count} 個權限")
 
+        # 5. 為超級管理員自動加入所有模組的存取權限
+        print("\n👑 同步超級管理員模組存取權限...")
+        from database import User, UserModuleAccess
+        super_admins = db.query(User).filter(User.is_super_admin == True).all()
+        
+        for admin in super_admins:
+            admin_updated = 0
+            for module_key, module_id in module_map.items():
+                # 檢查是否已有該模組的存取權限（個人工作區）
+                existing_access = db.query(UserModuleAccess).filter(
+                    UserModuleAccess.user_id == admin.id,
+                    UserModuleAccess.module_id == module_id,
+                    UserModuleAccess.team_id.is_(None)
+                ).first()
+                
+                if not existing_access:
+                    access = UserModuleAccess(
+                        user_id=admin.id,
+                        module_id=module_id,
+                        team_id=None,
+                        enabled=True
+                    )
+                    db.add(access)
+                    admin_updated += 1
+                elif not existing_access.enabled:
+                    existing_access.enabled = True
+                    admin_updated += 1
+            
+            if admin_updated > 0:
+                print(f"  ✅ {admin.email}: 新增/啟用 {admin_updated} 個模組存取")
+            else:
+                print(f"  ⏭️ {admin.email}: 已擁有所有模組存取權限")
+
         db.commit()
         print("\n🎉 權限系統 Seeding 完成!")
         print(f"   - 模組: {len(module_map)}")
         print(f"   - 權限: {len(permission_map)}")
         print(f"   - 角色: {len(role_map)}")
+        print(f"   - 超級管理員: {len(super_admins)}")
         
     except Exception as e:
         db.rollback()

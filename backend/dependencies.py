@@ -116,27 +116,46 @@ def get_current_user(
                  user.name = name
                  # Not committing updates to avoid write-conflicts
             
-            # [DATABASE-FIRST ARCHITECTURE]
-            # Super Admin 狀態由資料庫決定，啟動時同步確保正確性
-            # 只有在「緊急恢復」情況下才使用環境變數提升權限
+            # [ENHANCED SUPER ADMIN SYNC]
+            # 每次登入時檢查 SUPER_ADMIN_EMAIL 環境變數
+            # 確保環境變數中指定的用戶始終擁有超級管理員權限
             
             if not user.is_super_admin:
-                # 緊急恢復機制：檢查是否資料庫中完全沒有 Super Admin
-                has_any_super_admin = db.query(User).filter(User.is_super_admin == True).count() > 0
-                
-                if not has_any_super_admin:
-                    # 沒有任何 Super Admin，啟用緊急恢復
-                    super_admin_email = os.getenv("SUPER_ADMIN_EMAIL")
-                    if super_admin_email and email:
-                        # 支援逗號分隔的多個 Email
-                        allowed_emails = [e.strip().lower() for e in super_admin_email.split(",")]
-                        if email.strip().lower() in allowed_emails:
-                            print(f"🚨 [EMERGENCY RECOVERY] No Super Admin in DB! Restoring {email}...", file=sys.stderr)
-                            user.is_super_admin = True
-                            user.role = UserRole.ADMIN
-                            db.commit()
-                            db.refresh(user)
-                            print(f"✅ [EMERGENCY RECOVERY] {email} promoted to Super Admin.", file=sys.stderr)
+                super_admin_email = os.getenv("SUPER_ADMIN_EMAIL")
+                if super_admin_email and email:
+                    # 支援逗號分隔的多個 Email
+                    allowed_emails = [e.strip().lower() for e in super_admin_email.split(",")]
+                    if email.strip().lower() in allowed_emails:
+                        print(f"🔒 [SUPER_ADMIN_SYNC] Restoring Super Admin status for {email}...", file=sys.stderr)
+                        user.is_super_admin = True
+                        user.role = UserRole.ADMIN
+                        
+                        # 同時確保有所有模組的存取權限
+                        try:
+                            from database import Module, UserModuleAccess
+                            modules = db.query(Module).all()
+                            for module in modules:
+                                existing_access = db.query(UserModuleAccess).filter(
+                                    UserModuleAccess.user_id == user.id,
+                                    UserModuleAccess.module_id == module.id,
+                                    UserModuleAccess.team_id.is_(None)
+                                ).first()
+                                if not existing_access:
+                                    access = UserModuleAccess(
+                                        user_id=user.id,
+                                        module_id=module.id,
+                                        team_id=None,
+                                        enabled=True
+                                    )
+                                    db.add(access)
+                                elif not existing_access.enabled:
+                                    existing_access.enabled = True
+                        except Exception as mod_err:
+                            print(f"⚠️ Failed to sync module access: {mod_err}", file=sys.stderr)
+                        
+                        db.commit()
+                        db.refresh(user)
+                        print(f"✅ [SUPER_ADMIN_SYNC] {email} restored as Super Admin with all modules.", file=sys.stderr)
         
         # Update last login - DISABLED PERMANENTLY FOR STABILITY (Concurrency Crash prevention)
         # from datetime import datetime
