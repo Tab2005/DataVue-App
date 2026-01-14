@@ -15,8 +15,16 @@ const DATE_PRESETS = [
     { key: 'custom', label_zh: '自訂', label_en: 'Custom', days: null }
 ];
 
+// Compare Mode Options (aligned with GA4)
+const COMPARE_OPTIONS = [
+    { key: 'none', label_zh: '不比較', label_en: 'No Comparison' },
+    { key: 'previous_period', label_zh: '前一時段', label_en: 'Previous Period' },
+    { key: 'previous_year', label_zh: '去年同期', label_en: 'Previous Year' }
+];
+
 
 // Tab Configuration
+
 const TABS = [
     { key: 'daily', label_zh: '📈 每日成效', label_en: '📈 Daily Performance', dimension: 'date' },
     { key: 'query', label_zh: '🔍 關鍵字分析', label_en: '🔍 Keyword Analysis', dimension: 'query' },
@@ -343,6 +351,12 @@ const GSCStats = ({ language, isMobile = false }) => {
     const [datePreset, setDatePreset] = useState('last_28d');
     const [dateRange, setDateRange] = useState(getDateRangeFromPreset('last_28d'));
     const [showCustomDate, setShowCustomDate] = useState(false);
+
+    // Compare Mode State
+    const [compareMode, setCompareMode] = useState('none');
+    const [compareData, setCompareData] = useState([]);
+    const [compareLoading, setCompareLoading] = useState(false);
+
 
     // Keyword/Page specific state
     const [searchKeyword, setSearchKeyword] = useState('');
@@ -796,6 +810,99 @@ const GSCStats = ({ language, isMobile = false }) => {
         const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24)) + 1;
         return diffDays;
     };
+
+    // Compare Mode Functions
+    const getCompareDateRange = () => {
+        if (compareMode === 'none') return null;
+
+        const start = new Date(dateRange.start);
+        const end = new Date(dateRange.end);
+        const daysDiff = Math.ceil((end - start) / (1000 * 60 * 60 * 24)) + 1;
+
+        if (compareMode === 'previous_period') {
+            // 前一時段：相同天數往前推
+            const prevEnd = new Date(start);
+            prevEnd.setDate(prevEnd.getDate() - 1);
+            const prevStart = new Date(prevEnd);
+            prevStart.setDate(prevStart.getDate() - daysDiff + 1);
+            return { start: formatDate(prevStart), end: formatDate(prevEnd) };
+        } else if (compareMode === 'previous_year') {
+            // 去年同期
+            const prevStart = new Date(start);
+            prevStart.setFullYear(prevStart.getFullYear() - 1);
+            const prevEnd = new Date(end);
+            prevEnd.setFullYear(prevEnd.getFullYear() - 1);
+            return { start: formatDate(prevStart), end: formatDate(prevEnd) };
+        }
+        return null;
+    };
+
+    const fetchCompareData = async (compareDateRange) => {
+        if (!selectedSite || !compareDateRange) return;
+
+        setCompareLoading(true);
+        try {
+            const currentTab = TABS.find(tab => tab.key === activeTab);
+            const dimension = currentTab?.dimension || 'date';
+
+            const resp = await fetch(
+                `${API_URL}/api/gsc/analytics?site_url=${encodeURIComponent(selectedSite)}&start_date=${compareDateRange.start}&end_date=${compareDateRange.end}&dimensions=${dimension}`,
+                { headers: { 'Authorization': `Bearer ${localStorage.getItem('google_token')}` } }
+            );
+            const data = await resp.json();
+            if (resp.ok) {
+                setCompareData(data);
+            }
+        } catch (err) {
+            console.error('Failed to fetch compare data:', err);
+        } finally {
+            setCompareLoading(false);
+        }
+    };
+
+    const calculateChange = (current, previous) => {
+        if (previous === 0) return current > 0 ? 100 : 0;
+        return ((current - previous) / previous * 100);
+    };
+
+    // Compute compare totals from compare data
+    const getCompareTotals = () => {
+        if (!compareData || compareData.length === 0) return null;
+
+        const totals = {
+            clicks: 0,
+            impressions: 0,
+            ctr: 0,
+            position: 0
+        };
+
+        compareData.forEach(row => {
+            totals.clicks += row.clicks || 0;
+            totals.impressions += row.impressions || 0;
+            totals.ctr += row.ctr || 0;
+            totals.position += row.position || 0;
+        });
+
+        // Average CTR and position
+        const count = compareData.length || 1;
+        totals.ctr = totals.ctr / count;
+        totals.position = totals.position / count;
+
+        return totals;
+    };
+
+    // Effect: Fetch compare data when compare mode changes
+    useEffect(() => {
+        if (compareMode !== 'none' && selectedSite && dateRange.start && dateRange.end) {
+            const compareDateRange = getCompareDateRange();
+            if (compareDateRange) {
+                fetchCompareData(compareDateRange);
+            }
+        } else {
+            setCompareData([]);
+        }
+    }, [compareMode, selectedSite, dateRange, activeTab]);
+
 
     const handleSort = (key) => {
         setSortConfig(prev => ({
@@ -1261,24 +1368,76 @@ const GSCStats = ({ language, isMobile = false }) => {
                         </select>
                     </div>
 
-                    {/* Date Range Display */}
-                    <div style={{
-                        display: 'flex',
-                        alignItems: 'flex-end',
-                        minWidth: isMobile ? '100%' : 'auto'
-                    }}>
-                        <div style={{
-                            padding: '10px 16px',
-                            background: 'rgba(66, 133, 244, 0.1)',
-                            borderRadius: '8px',
-                            fontSize: '13px',
+                    {/* Compare Mode Selector */}
+                    <div style={{ flex: 1, minWidth: isMobile ? '100%' : '150px' }}>
+                        <label style={{
+                            display: 'block',
+                            marginBottom: '8px',
+                            fontWeight: 600,
                             color: 'var(--text-secondary)',
-                            whiteSpace: 'nowrap'
+                            fontSize: '0.85rem'
                         }}>
-                            📆 {dateRange.start} ~ {dateRange.end} ({getDaysInRange()} {t('天', 'days')})
-                        </div>
+                            📊 {t('比較模式', 'Compare Mode')}
+                        </label>
+                        <select
+                            value={compareMode}
+                            onChange={(e) => setCompareMode(e.target.value)}
+                            style={{
+                                width: '100%',
+                                padding: '10px 12px',
+                                border: '1px solid var(--glass-border)',
+                                borderRadius: '8px',
+                                background: 'rgba(255, 255, 255, 0.05)',
+                                color: 'var(--text-primary)',
+                                fontSize: '14px'
+                            }}
+                        >
+                            {COMPARE_OPTIONS.map(opt => (
+                                <option key={opt.key} value={opt.key} style={{ color: 'black' }}>
+                                    {language === 'zh' ? opt.label_zh : opt.label_en}
+                                </option>
+                            ))}
+                        </select>
                     </div>
                 </div>
+
+                {/* Date Range Info Bar - Always visible (aligned with GA4) */}
+                <div style={{
+                    marginTop: '16px',
+                    padding: '12px 16px',
+                    background: compareMode !== 'none' ? 'rgba(139, 92, 246, 0.1)' : 'rgba(66, 133, 244, 0.1)',
+                    borderRadius: '8px',
+                    border: `1px solid ${compareMode !== 'none' ? 'rgba(139, 92, 246, 0.2)' : 'rgba(66, 133, 244, 0.2)'}`,
+                    fontSize: '13px',
+                    color: 'var(--text-secondary)',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '12px',
+                    flexWrap: 'wrap'
+                }}>
+                    {/* Current Period */}
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                        📆 {t('目前期間', 'Current Period')}:
+                        <strong style={{ color: 'var(--text-primary)' }}>
+                            {dateRange.start} ~ {dateRange.end}
+                        </strong>
+                        <span style={{ opacity: 0.7 }}>
+                            ({getDaysInRange()} {t('天', 'days')})
+                        </span>
+                    </div>
+
+                    {/* Compare Period - Only when enabled */}
+                    {compareMode !== 'none' && getCompareDateRange() && (
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                            <span style={{ color: 'var(--text-secondary)' }}>|</span>
+                            📊 {compareMode === 'previous_period' ? t('前一時段', 'Previous Period') : t('去年同期', 'Previous Year')}:
+                            <strong style={{ color: '#a78bfa' }}>
+                                {getCompareDateRange().start} ~ {getCompareDateRange().end}
+                            </strong>
+                        </div>
+                    )}
+                </div>
+
 
                 {/* Custom Date Picker - Inline when selected */}
                 {showCustomDate && (
@@ -1430,43 +1589,101 @@ const GSCStats = ({ language, isMobile = false }) => {
             ) : (
                 <>
                     {/* Summary Cards - hide for trend tab */}
-                    {activeTab !== 'trend' && (
-                        <div style={gridStyle}>
-                            <div style={cardStyle}>
-                                <div style={cardLabelStyle}>{t(`總點擊數 (${getDaysInRange()}天)`, `Total Clicks (${getDaysInRange()}d)`)}</div>
-                                <div style={cardValueStyle}>
-                                    {analytics.reduce((acc, row) => acc + row.clicks, 0).toLocaleString()}
+                    {activeTab !== 'trend' && (() => {
+                        // Calculate current totals
+                        const currentClicks = analytics.reduce((acc, row) => acc + row.clicks, 0);
+                        const currentImpressions = analytics.reduce((acc, row) => acc + row.impressions, 0);
+                        const currentCtr = analytics.reduce((acc, row) => acc + row.ctr, 0) / (analytics.length || 1) * 100;
+                        const currentPosition = analytics.reduce((acc, row) => acc + row.position, 0) / (analytics.length || 1);
+
+                        // Get compare totals
+                        const compareTotals = getCompareTotals();
+
+                        // Calculate changes if compare mode is active
+                        const clicksChange = compareTotals ? calculateChange(currentClicks, compareTotals.clicks) : null;
+                        const impressionsChange = compareTotals ? calculateChange(currentImpressions, compareTotals.impressions) : null;
+                        const ctrChange = compareTotals ? calculateChange(currentCtr, compareTotals.ctr * 100) : null;
+                        const positionChange = compareTotals ? calculateChange(currentPosition, compareTotals.position) : null;
+
+                        // Helper to render change badge with previous value
+                        const renderCompareInfo = (change, previousValue, formatter = (v) => v.toLocaleString(), isPositionMetric = false) => {
+                            if (compareMode === 'none' || change === null) return null;
+                            // For position, lower is better so reverse the color logic
+                            const isPositive = isPositionMetric ? change < 0 : change >= 0;
+                            const displayChange = isPositionMetric ? -change : change;
+                            return (
+                                <div style={{
+                                    display: 'flex',
+                                    alignItems: 'center',
+                                    gap: '8px',
+                                    marginTop: '6px'
+                                }}>
+                                    <span style={{
+                                        fontSize: '12px',
+                                        padding: '2px 8px',
+                                        borderRadius: '12px',
+                                        background: isPositive ? 'rgba(52, 168, 83, 0.15)' : 'rgba(234, 67, 53, 0.15)',
+                                        color: isPositive ? '#34a853' : '#ea4335',
+                                        fontWeight: 600
+                                    }}>
+                                        {isPositive ? '▲' : '▼'} {Math.abs(displayChange).toFixed(1)}%
+                                    </span>
+                                    <span style={{
+                                        fontSize: '11px',
+                                        color: 'var(--text-secondary)',
+                                        opacity: 0.7
+                                    }}>
+                                        vs {formatter(previousValue)}
+                                    </span>
                                 </div>
-                            </div>
-                            <div style={cardStyle}>
-                                <div style={cardLabelStyle}>{t(`總曝光數 (${getDaysInRange()}天)`, `Total Impressions (${getDaysInRange()}d)`)}</div>
-                                <div style={cardValueStyle}>
-                                    {analytics.reduce((acc, row) => acc + row.impressions, 0).toLocaleString()}
-                                </div>
-                            </div>
-                            <div style={cardStyle}>
-                                <div style={cardLabelStyle}>{t('平均點閱率', 'Avg CTR')}</div>
-                                <div style={cardValueStyle}>
-                                    {(analytics.reduce((acc, row) => acc + row.ctr, 0) / (analytics.length || 1) * 100).toFixed(2)}%
-                                </div>
-                            </div>
-                            <div style={cardStyle}>
-                                <div style={cardLabelStyle}>{t('平均排名', 'Avg Position')}</div>
-                                <div style={cardValueStyle}>
-                                    {(analytics.reduce((acc, row) => acc + row.position, 0) / (analytics.length || 1)).toFixed(1)}
-                                </div>
-                            </div>
-                            {/* Indexed Pages Count - only for page tab */}
-                            {activeTab === 'page' && (
-                                <div style={{ ...cardStyle, background: 'linear-gradient(135deg, rgba(139, 92, 246, 0.1), rgba(139, 92, 246, 0.05))' }}>
-                                    <div style={cardLabelStyle}>📄 {t('索引頁面數', 'Indexed Pages')}</div>
-                                    <div style={{ ...cardValueStyle, color: '#8B5CF6' }}>
-                                        {analytics.length.toLocaleString()}
+                            );
+                        };
+
+                        return (
+                            <div style={gridStyle}>
+                                <div style={cardStyle}>
+                                    <div style={cardLabelStyle}>{t(`總點擊數 (${getDaysInRange()}天)`, `Total Clicks (${getDaysInRange()}d)`)}</div>
+                                    <div style={cardValueStyle}>
+                                        {currentClicks.toLocaleString()}
                                     </div>
+                                    {renderCompareInfo(clicksChange, compareTotals?.clicks || 0)}
                                 </div>
-                            )}
-                        </div>
-                    )}
+                                <div style={cardStyle}>
+                                    <div style={cardLabelStyle}>{t(`總曝光數 (${getDaysInRange()}天)`, `Total Impressions (${getDaysInRange()}d)`)}</div>
+                                    <div style={cardValueStyle}>
+                                        {currentImpressions.toLocaleString()}
+                                    </div>
+                                    {renderCompareInfo(impressionsChange, compareTotals?.impressions || 0)}
+                                </div>
+                                <div style={cardStyle}>
+                                    <div style={cardLabelStyle}>{t('平均點閱率', 'Avg CTR')}</div>
+                                    <div style={cardValueStyle}>
+                                        {currentCtr.toFixed(2)}%
+                                    </div>
+                                    {renderCompareInfo(ctrChange, (compareTotals?.ctr || 0) * 100, (v) => `${v.toFixed(2)}%`)}
+                                </div>
+                                <div style={cardStyle}>
+                                    <div style={cardLabelStyle}>{t('平均排名', 'Avg Position')}</div>
+                                    <div style={cardValueStyle}>
+                                        {currentPosition.toFixed(1)}
+                                    </div>
+                                    {renderCompareInfo(positionChange, compareTotals?.position || 0, (v) => v.toFixed(1), true)}
+                                </div>
+                                {/* Indexed Pages Count - only for page tab */}
+                                {activeTab === 'page' && (
+                                    <div style={{ ...cardStyle, background: 'linear-gradient(135deg, rgba(139, 92, 246, 0.1), rgba(139, 92, 246, 0.05))' }}>
+                                        <div style={cardLabelStyle}>📄 {t('索引頁面數', 'Indexed Pages')}</div>
+                                        <div style={{ ...cardValueStyle, color: '#8B5CF6' }}>
+                                            {analytics.length.toLocaleString()}
+                                        </div>
+                                    </div>
+                                )}
+                            </div>
+                        );
+                    })()}
+
+
+
 
                     {/* Trend Tab Content */}
                     {activeTab === 'trend' ? (

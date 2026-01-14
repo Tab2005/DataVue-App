@@ -21,13 +21,99 @@ const COMPARE_OPTIONS = [
     { key: 'previous_year', label_zh: '去年同期', label_en: 'Previous Year' }
 ];
 
+// Traffic Dimensions Configuration (for traffic tab)
+const TRAFFIC_DIMENSIONS = [
+    { key: 'sessionDefaultChannelGrouping', label_zh: '管道分組', label_en: 'Channel Grouping' },
+    { key: 'sessionSource', label_zh: '來源', label_en: 'Source' },
+    { key: 'sessionMedium', label_zh: '媒介', label_en: 'Medium' },
+    { key: 'sessionSourceMedium', label_zh: '來源/媒介', label_en: 'Source/Medium' },
+    { key: 'sessionCampaignName', label_zh: '廣告活動', label_en: 'Campaign' }
+];
+
+// Traffic Tab Metrics (9 metrics as requested)
+// 總人數, 工作階段, 互動工作階段, 參與度, 平均參與時間, 加入購物車, 購買, 總購買收益, 轉換率(計算)
+const TRAFFIC_METRICS = [
+    'totalUsers', 'sessions', 'engagedSessions', 'engagementRate',
+    'averageSessionDuration', 'addToCarts', 'ecommercePurchases', 'purchaseRevenue'
+    // conversionRate is calculated as: ecommercePurchases / totalUsers * 100
+];
+
+// Traffic metrics column headers (for table display)
+const TRAFFIC_COLUMN_HEADERS = {
+    totalUsers: { zh: '總人數', en: 'Total Users' },
+    sessions: { zh: '工作階段', en: 'Sessions' },
+    engagedSessions: { zh: '互動工作階段', en: 'Engaged Sessions' },
+    engagementRate: { zh: '參與度', en: 'Engagement Rate' },
+    averageSessionDuration: { zh: '平均參與時間', en: 'Avg Duration' },
+    addToCarts: { zh: '加入購物車', en: 'Add to Carts' },
+    ecommercePurchases: { zh: '購買', en: 'Purchases' },
+    purchaseRevenue: { zh: '總購買收益', en: 'Revenue' },
+    conversionRate: { zh: '轉換率', en: 'Conversion Rate' }
+};
+
+// Source Groups Configuration - patterns to match multiple related sources
+const SOURCE_GROUPS = [
+    {
+        key: 'group_facebook',
+        label_zh: '📁 Facebook (集合)',
+        label_en: '📁 Facebook (Group)',
+        patterns: ['facebook', 'fb', 'meta.com']
+    },
+    {
+        key: 'group_google',
+        label_zh: '📁 Google (集合)',
+        label_en: '📁 Google (Group)',
+        patterns: ['google', 'googleapis', 'goo.gl']
+    },
+    {
+        key: 'group_instagram',
+        label_zh: '📁 Instagram (集合)',
+        label_en: '📁 Instagram (Group)',
+        patterns: ['instagram', 'ig', 'l.instagram']
+    },
+    {
+        key: 'group_line',
+        label_zh: '📁 LINE (集合)',
+        label_en: '📁 LINE (Group)',
+        patterns: ['line', 'lin.ee']
+    },
+    {
+        key: 'group_threads',
+        label_zh: '📁 Threads (集合)',
+        label_en: '📁 Threads (Group)',
+        patterns: ['threads', 'l.threads']
+    },
+    {
+        key: 'group_bing',
+        label_zh: '📁 Bing (集合)',
+        label_en: '📁 Bing (Group)',
+        patterns: ['bing', 'cn.bing']
+    },
+    {
+        key: 'group_yahoo',
+        label_zh: '📁 Yahoo (集合)',
+        label_en: '📁 Yahoo (Group)',
+        patterns: ['yahoo']
+    },
+    {
+        key: 'group_ai',
+        label_zh: '🤖 AI 流量 (集合)',
+        label_en: '🤖 AI Traffic (Group)',
+        patterns: ['chatgpt', 'openai', 'gemini', 'claude', 'anthropic', 'copilot', 'perplexity', 'bard', 'bing.com/chat', 'you.com', 'phind', 'poe.com']
+    }
+];
+
+
+
+
 // Tab Configuration
 const TABS = [
     { key: 'overview', label_zh: '📊 總覽', label_en: '📊 Overview', metrics: ['activeUsers', 'totalUsers', 'newUsers', 'screenPageViews', 'ecommercePurchases', 'purchaseRevenue', 'addToCarts'], dimensions: ['date'] },
-    { key: 'traffic', label_zh: '🌐 流量來源', label_en: '🌐 Traffic Sources', metrics: ['sessions', 'screenPageViews'], dimensions: ['sessionDefaultChannelGrouping'] },
+    { key: 'traffic', label_zh: '🌐 流量來源', label_en: '🌐 Traffic Sources', metrics: TRAFFIC_METRICS, dimensions: ['sessionDefaultChannelGrouping'] },
     { key: 'behavior', label_zh: '👥 用戶行為', label_en: '👥 User Behavior', metrics: ['bounceRate', 'averageSessionDuration'], dimensions: ['date'] },
     { key: 'content', label_zh: '📄 內容分析', label_en: '📄 Content Analysis', metrics: ['screenPageViews', 'sessions'], dimensions: ['pagePath'] }
 ];
+
 
 // Cache TTL in milliseconds (5 minutes)
 const CACHE_TTL = 5 * 60 * 1000;
@@ -62,8 +148,35 @@ const GA4Stats = ({ language, isMobile }) => {
     });
     const [sortConfig, setSortConfig] = useState({ key: 'date', direction: 'desc' });
 
+    // Traffic Tab State
+    const [trafficDimension, setTrafficDimension] = useState('sessionDefaultChannelGrouping');
+    const [sourceFilter, setSourceFilter] = useState('all'); // 'all' or specific source value
+
+
     // Define column order for overview table (including calculated fields)
     const OVERVIEW_COLUMN_ORDER = ['date', 'activeUsers', 'totalUsers', 'newUsers', 'screenPageViews', 'ecommercePurchases', 'purchaseRevenue', 'addToCarts', 'averageOrderValue', 'purchaseConversionRate'];
+
+    // Define column order for traffic table (dynamic first column + 9 metrics)
+    const getTrafficColumnOrder = () => [
+        trafficDimension, // Dynamic first column based on selected dimension
+        'totalUsers', 'sessions', 'engagedSessions', 'engagementRate',
+        'averageSessionDuration', 'addToCarts', 'ecommercePurchases', 'purchaseRevenue', 'conversionRate'
+    ];
+
+    // Get dynamic column label for traffic tab
+    const getTrafficColumnLabel = (col) => {
+        // Check if it's the dimension column
+        const dimConfig = TRAFFIC_DIMENSIONS.find(d => d.key === col);
+        if (dimConfig) {
+            return language === 'zh' ? dimConfig.label_zh : dimConfig.label_en;
+        }
+        // Check if it's a metric column
+        if (TRAFFIC_COLUMN_HEADERS[col]) {
+            return language === 'zh' ? TRAFFIC_COLUMN_HEADERS[col].zh : TRAFFIC_COLUMN_HEADERS[col].en;
+        }
+        return col;
+    };
+
 
     // Cache ref for analytics data
     const cacheRef = useRef(new Map());
@@ -117,7 +230,9 @@ const GA4Stats = ({ language, isMobile }) => {
     const fetchAnalytics = useCallback(async (forceRefresh = false) => {
         if (!selectedProperty) return;
 
-        const cacheKey = getCacheKey(selectedProperty, activeTab, dateRange.startDate, dateRange.endDate);
+        // Include trafficDimension in cache key for traffic tab
+        const dimensionKey = activeTab === 'traffic' ? trafficDimension : 'default';
+        const cacheKey = getCacheKey(selectedProperty, activeTab + '|' + dimensionKey, dateRange.startDate, dateRange.endDate);
         const summaryCacheKey = `${cacheKey}|summary`;
 
         // Check cache first (unless force refresh)
@@ -139,14 +254,18 @@ const GA4Stats = ({ language, isMobile }) => {
             const apiUrl = import.meta.env.VITE_API_URL || 'http://localhost:8000';
             const tabConfig = TABS.find(tab => tab.key === activeTab);
 
+            // For traffic tab, use dynamic dimension; otherwise use tab config
+            const activeDimension = activeTab === 'traffic' ? trafficDimension : tabConfig.dimensions[0];
+
             // 1. 帶 dimension 的請求（用於表格顯示每日數據）
             const params = new URLSearchParams({
                 property_id: selectedProperty,
                 start_date: dateRange.startDate,
                 end_date: dateRange.endDate,
                 metrics: tabConfig.metrics.join(','),
-                dimensions: tabConfig.dimensions.join(',')
+                dimensions: activeDimension
             });
+
 
             // 2. 不帶 dimension 的請求（用於 KPI 卡片顯示去重總數）
             const summaryParams = new URLSearchParams({
@@ -189,7 +308,7 @@ const GA4Stats = ({ language, isMobile }) => {
         } finally {
             setLoading(false);
         }
-    }, [selectedProperty, activeTab, dateRange.startDate, dateRange.endDate, getCacheKey, getCachedData, setCachedData]);
+    }, [selectedProperty, activeTab, dateRange.startDate, dateRange.endDate, trafficDimension, getCacheKey, getCachedData, setCachedData]);
 
     // Fetch comparison data (also with summary for KPI)
     const fetchCompareData = useCallback(async (compareDateRange) => {
@@ -199,7 +318,9 @@ const GA4Stats = ({ language, isMobile }) => {
             return;
         }
 
-        const cacheKey = getCacheKey(selectedProperty, activeTab, compareDateRange.startDate, compareDateRange.endDate);
+        // Include trafficDimension in cache key for traffic tab
+        const dimensionKey = activeTab === 'traffic' ? trafficDimension : 'default';
+        const cacheKey = getCacheKey(selectedProperty, activeTab + '|compare|' + dimensionKey, compareDateRange.startDate, compareDateRange.endDate);
         const summaryCacheKey = `${cacheKey}|summary`;
 
         // Check cache first
@@ -216,13 +337,17 @@ const GA4Stats = ({ language, isMobile }) => {
             const apiUrl = import.meta.env.VITE_API_URL || 'http://localhost:8000';
             const tabConfig = TABS.find(tab => tab.key === activeTab);
 
+            // For traffic tab, use dynamic dimension; otherwise use tab config
+            const activeDimension = activeTab === 'traffic' ? trafficDimension : tabConfig.dimensions[0];
+
             const params = new URLSearchParams({
                 property_id: selectedProperty,
                 start_date: compareDateRange.startDate,
                 end_date: compareDateRange.endDate,
                 metrics: tabConfig.metrics.join(','),
-                dimensions: tabConfig.dimensions.join(',')
+                dimensions: activeDimension
             });
+
 
             // 比較期間也需要不帶 dimension 的總數
             const summaryParams = new URLSearchParams({
@@ -255,7 +380,7 @@ const GA4Stats = ({ language, isMobile }) => {
         } catch (err) {
             console.error('Error fetching compare data:', err);
         }
-    }, [selectedProperty, activeTab, getCacheKey, getCachedData, setCachedData]);
+    }, [selectedProperty, activeTab, trafficDimension, getCacheKey, getCachedData, setCachedData]);
 
     // Handle date preset change (aligned with Analytics page logic)
     const handleDatePresetChange = (preset) => {
@@ -520,6 +645,142 @@ const GA4Stats = ({ language, isMobile }) => {
         return kpis;
     };
 
+    // Get Traffic Tab KPI data with source filter
+    const getTrafficKPIData = () => {
+        if (!analyticsData || !analyticsData.rows) return [];
+
+        // Filter rows by source if a specific source is selected
+        let filteredRows = analyticsData.rows;
+        if (sourceFilter !== 'all') {
+            if (sourceFilter.startsWith('group_')) {
+                // Group filter - match against patterns
+                const group = SOURCE_GROUPS.find(g => g.key === sourceFilter);
+                if (group) {
+                    filteredRows = analyticsData.rows.filter(row => {
+                        const dimValue = (row[trafficDimension] || row.dimension || '').toLowerCase();
+                        return group.patterns.some(pattern => dimValue.includes(pattern.toLowerCase()));
+                    });
+                }
+            } else {
+                // Individual source filter - exact match
+                filteredRows = analyticsData.rows.filter(row => {
+                    const dimValue = row[trafficDimension] || row.dimension || '';
+                    return dimValue === sourceFilter;
+                });
+            }
+        }
+
+
+        // Calculate totals from filtered rows
+        const totals = {};
+        TRAFFIC_METRICS.forEach(metric => {
+            totals[metric] = 0;
+        });
+
+        filteredRows.forEach(row => {
+            TRAFFIC_METRICS.forEach(metric => {
+                totals[metric] += parseFloat(row[metric]) || 0;
+            });
+        });
+
+        // Average for rate metrics
+        const rowCount = filteredRows.length || 1;
+        totals['engagementRate'] = totals['engagementRate'] / rowCount;
+        totals['averageSessionDuration'] = totals['averageSessionDuration'] / rowCount;
+
+        // Calculate conversion rate
+        const conversionRate = totals['totalUsers'] > 0
+            ? (totals['ecommercePurchases'] / totals['totalUsers']) * 100 : 0;
+
+        // Calculate compare period totals if compare mode is active
+        let prevTotals = {};
+        let prevConversionRate = 0;
+
+        if (compareMode !== 'none' && compareData && compareData.rows) {
+            // Apply same source filter to compare data
+            let filteredCompareRows = compareData.rows;
+            if (sourceFilter !== 'all') {
+                if (sourceFilter.startsWith('group_')) {
+                    const group = SOURCE_GROUPS.find(g => g.key === sourceFilter);
+                    if (group) {
+                        filteredCompareRows = compareData.rows.filter(row => {
+                            const dimValue = (row[trafficDimension] || row.dimension || '').toLowerCase();
+                            return group.patterns.some(pattern => dimValue.includes(pattern.toLowerCase()));
+                        });
+                    }
+                } else {
+                    filteredCompareRows = compareData.rows.filter(row => {
+                        const dimValue = row[trafficDimension] || row.dimension || '';
+                        return dimValue === sourceFilter;
+                    });
+                }
+            }
+
+            TRAFFIC_METRICS.forEach(metric => {
+                prevTotals[metric] = 0;
+            });
+            filteredCompareRows.forEach(row => {
+                TRAFFIC_METRICS.forEach(metric => {
+                    prevTotals[metric] += parseFloat(row[metric]) || 0;
+                });
+            });
+
+            const prevRowCount = filteredCompareRows.length || 1;
+            prevTotals['engagementRate'] = prevTotals['engagementRate'] / prevRowCount;
+            prevTotals['averageSessionDuration'] = prevTotals['averageSessionDuration'] / prevRowCount;
+            prevConversionRate = prevTotals['totalUsers'] > 0
+                ? (prevTotals['ecommercePurchases'] / prevTotals['totalUsers']) * 100 : 0;
+        }
+
+        // Helper to build KPI with compare data
+        const buildKPI = (label, currentVal, prevVal, type, icon) => {
+            const change = compareMode !== 'none' ? calculateChange(currentVal, prevVal) : null;
+            let formattedValue, formattedPrev;
+
+            if (type === 'percentage') {
+                formattedValue = `${(currentVal * 100).toFixed(1)}%`;
+                formattedPrev = `${(prevVal * 100).toFixed(1)}%`;
+            } else if (type === 'percentRaw') {
+                formattedValue = `${currentVal.toFixed(2)}%`;
+                formattedPrev = `${prevVal.toFixed(2)}%`;
+            } else if (type === 'currency') {
+                formattedValue = formatNumber(currentVal, 'currency');
+                formattedPrev = formatNumber(prevVal, 'currency');
+            } else if (type === 'duration') {
+                formattedValue = formatNumber(currentVal, 'duration');
+                formattedPrev = formatNumber(prevVal, 'duration');
+            } else {
+                formattedValue = formatNumber(currentVal, 'number');
+                formattedPrev = formatNumber(prevVal, 'number');
+            }
+
+            return {
+                label,
+                value: formattedValue,
+                icon,
+                change,
+                previousValue: compareMode !== 'none' ? formattedPrev : null
+            };
+        };
+
+        // Build KPI array with all 9 metrics including compare data
+        const kpis = [
+            buildKPI(getMetricLabel('totalUsers') || '總人數', totals['totalUsers'], prevTotals['totalUsers'] || 0, 'number', '👥'),
+            buildKPI(getMetricLabel('sessions') || '工作階段', totals['sessions'], prevTotals['sessions'] || 0, 'number', '📊'),
+            buildKPI(TRAFFIC_COLUMN_HEADERS.engagedSessions[language === 'zh' ? 'zh' : 'en'], totals['engagedSessions'], prevTotals['engagedSessions'] || 0, 'number', '✨'),
+            buildKPI(TRAFFIC_COLUMN_HEADERS.engagementRate[language === 'zh' ? 'zh' : 'en'], totals['engagementRate'], prevTotals['engagementRate'] || 0, 'percentage', '📈'),
+            buildKPI(TRAFFIC_COLUMN_HEADERS.averageSessionDuration[language === 'zh' ? 'zh' : 'en'], totals['averageSessionDuration'], prevTotals['averageSessionDuration'] || 0, 'duration', '⏱️'),
+            buildKPI(TRAFFIC_COLUMN_HEADERS.addToCarts[language === 'zh' ? 'zh' : 'en'], totals['addToCarts'], prevTotals['addToCarts'] || 0, 'number', '🛒'),
+            buildKPI(TRAFFIC_COLUMN_HEADERS.ecommercePurchases[language === 'zh' ? 'zh' : 'en'], totals['ecommercePurchases'], prevTotals['ecommercePurchases'] || 0, 'number', '💰'),
+            buildKPI(TRAFFIC_COLUMN_HEADERS.purchaseRevenue[language === 'zh' ? 'zh' : 'en'], totals['purchaseRevenue'], prevTotals['purchaseRevenue'] || 0, 'currency', '💵'),
+            buildKPI(TRAFFIC_COLUMN_HEADERS.conversionRate[language === 'zh' ? 'zh' : 'en'], conversionRate, prevConversionRate, 'percentRaw', '🎯')
+        ];
+
+        return kpis;
+    };
+
+
+
     // Get metric display labels
     const getMetricLabel = (metric) => {
         const labels = {
@@ -588,9 +849,22 @@ const GA4Stats = ({ language, isMobile }) => {
             setCompareData(null);
             setCompareSummaryData(null);
         }
-    }, [compareMode, getCompareDateRange, fetchCompareData, selectedProperty, analyticsData]);
+    }, [compareMode, getCompareDateRange, fetchCompareData, selectedProperty, analyticsData, trafficDimension]);
 
-    const kpiData = useMemo(() => getKPIData(), [analyticsData, summaryData, compareData, compareSummaryData, compareMode]);
+    // Reset source filter when dimension changes (for traffic tab)
+    useEffect(() => {
+        setSourceFilter('all');
+    }, [trafficDimension]);
+
+
+    // Use traffic-specific KPIs when on traffic tab, otherwise use general KPIs
+    const kpiData = useMemo(() => {
+        if (activeTab === 'traffic') {
+            return getTrafficKPIData();
+        }
+        return getKPIData();
+    }, [analyticsData, summaryData, compareData, compareSummaryData, compareMode, activeTab, sourceFilter, trafficDimension]);
+
 
     return (
         <div style={{ width: '100%', padding: isMobile ? '16px' : '24px' }}>
@@ -935,31 +1209,43 @@ const GA4Stats = ({ language, isMobile }) => {
                     </div>
                 )}
 
-                {/* Compare Mode Info */}
-                {compareMode !== 'none' && (
-                    <div style={{
-                        marginTop: '16px',
-                        padding: '12px 16px',
-                        background: 'rgba(139, 92, 246, 0.1)',
-                        borderRadius: '8px',
-                        border: '1px solid rgba(139, 92, 246, 0.2)',
-                        fontSize: '13px',
-                        color: 'var(--text-secondary)',
-                        display: 'flex',
-                        alignItems: 'center',
-                        gap: '8px'
-                    }}>
-                        📊 {t('比較模式已啟用', 'Compare mode enabled')}:
-                        <strong style={{ color: '#a78bfa' }}>
-                            {compareMode === 'previous_period' ? t('前一時段', 'Previous Period') : t('去年同期', 'Previous Year')}
+                {/* Date Range Info Bar - Always visible */}
+                <div style={{
+                    marginTop: '16px',
+                    padding: '12px 16px',
+                    background: compareMode !== 'none' ? 'rgba(139, 92, 246, 0.1)' : 'rgba(66, 133, 244, 0.1)',
+                    borderRadius: '8px',
+                    border: `1px solid ${compareMode !== 'none' ? 'rgba(139, 92, 246, 0.2)' : 'rgba(66, 133, 244, 0.2)'}`,
+                    fontSize: '13px',
+                    color: 'var(--text-secondary)',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '12px',
+                    flexWrap: 'wrap'
+                }}>
+                    {/* Current Period */}
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                        📆 {t('目前期間', 'Current Period')}:
+                        <strong style={{ color: 'var(--text-primary)' }}>
+                            {dateRange.startDate} ~ {dateRange.endDate}
                         </strong>
-                        {getCompareDateRange() && (
-                            <span style={{ marginLeft: '8px' }}>
-                                ({getCompareDateRange().startDate} ~ {getCompareDateRange().endDate})
-                            </span>
-                        )}
+                        <span style={{ opacity: 0.7 }}>
+                            ({Math.ceil((new Date(dateRange.endDate) - new Date(dateRange.startDate)) / (1000 * 60 * 60 * 24)) + 1} {t('天', 'days')})
+                        </span>
                     </div>
-                )}
+
+                    {/* Compare Period - Only when enabled */}
+                    {compareMode !== 'none' && getCompareDateRange() && (
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                            <span style={{ color: 'var(--text-secondary)' }}>|</span>
+                            📊 {compareMode === 'previous_period' ? t('前一時段', 'Previous Period') : t('去年同期', 'Previous Year')}:
+                            <strong style={{ color: '#a78bfa' }}>
+                                {getCompareDateRange().startDate} ~ {getCompareDateRange().endDate}
+                            </strong>
+                        </div>
+                    )}
+                </div>
+
             </div>
 
             {/* Content Area - Glass Panel Wrapper (aligned with GSC) */}
@@ -999,6 +1285,114 @@ const GA4Stats = ({ language, isMobile }) => {
                         </button>
                     ))}
                 </div>
+
+                {/* Traffic Tab Controls */}
+                {activeTab === 'traffic' && (
+                    <div style={{
+                        display: 'flex',
+                        flexDirection: isMobile ? 'column' : 'row',
+                        gap: '16px',
+                        marginBottom: '20px',
+                        padding: '16px',
+                        background: 'rgba(255, 255, 255, 0.02)',
+                        borderRadius: '12px',
+                        border: '1px solid var(--glass-border)'
+                    }}>
+                        {/* Dimension Selector */}
+                        <div style={{ flex: 1 }}>
+                            <label style={{
+                                display: 'block',
+                                marginBottom: '8px',
+                                fontSize: '13px',
+                                fontWeight: 600,
+                                color: 'var(--text-secondary)'
+                            }}>
+                                📊 {t('分析維度', 'Analysis Dimension')}
+                            </label>
+                            <select
+                                value={trafficDimension}
+                                onChange={(e) => setTrafficDimension(e.target.value)}
+                                style={{
+                                    width: '100%',
+                                    padding: '10px 12px',
+                                    border: '1px solid var(--glass-border)',
+                                    borderRadius: '8px',
+                                    background: 'rgba(255, 255, 255, 0.05)',
+                                    color: 'var(--text-primary)',
+                                    fontSize: '14px'
+                                }}
+                            >
+                                {TRAFFIC_DIMENSIONS.map(dim => (
+                                    <option key={dim.key} value={dim.key} style={{ color: 'black' }}>
+                                        {language === 'zh' ? dim.label_zh : dim.label_en}
+                                    </option>
+                                ))}
+                            </select>
+                        </div>
+
+                        {/* Dynamic Source Filter */}
+                        <div style={{ flex: 1 }}>
+                            <label style={{
+                                display: 'block',
+                                marginBottom: '8px',
+                                fontSize: '13px',
+                                fontWeight: 600,
+                                color: 'var(--text-secondary)'
+                            }}>
+                                🎯 {t('來源篩選', 'Source Filter')}
+                            </label>
+                            <select
+                                value={sourceFilter}
+                                onChange={(e) => setSourceFilter(e.target.value)}
+                                style={{
+                                    width: '100%',
+                                    padding: '10px 12px',
+                                    border: '1px solid var(--glass-border)',
+                                    borderRadius: '8px',
+                                    background: 'rgba(255, 255, 255, 0.05)',
+                                    color: 'var(--text-primary)',
+                                    fontSize: '14px'
+                                }}
+                            >
+                                <option value="all" style={{ color: 'black' }}>
+                                    {t('全部來源', 'All Sources')}
+                                </option>
+
+                                {/* Source Groups - only show groups that have matching data */}
+                                {analyticsData && analyticsData.rows && SOURCE_GROUPS.filter(group => {
+                                    // Only show group if there are matching sources in data
+                                    const sources = analyticsData.rows.map(row =>
+                                        (row[trafficDimension] || row.dimension || '').toLowerCase()
+                                    );
+                                    return group.patterns.some(pattern =>
+                                        sources.some(source => source.includes(pattern.toLowerCase()))
+                                    );
+                                }).map(group => (
+                                    <option key={group.key} value={group.key} style={{ color: 'black', fontWeight: 'bold' }}>
+                                        {language === 'zh' ? group.label_zh : group.label_en}
+                                    </option>
+                                ))}
+
+                                {/* Separator */}
+                                <option disabled style={{ color: '#666' }}>──────────────</option>
+
+                                {/* Individual sources */}
+                                {analyticsData && analyticsData.rows &&
+                                    [...new Set(analyticsData.rows.map(row => {
+                                        const dimKey = trafficDimension.replace('session', '').replace('Default', '').toLowerCase();
+                                        return row[trafficDimension] || row[dimKey] || row.dimension;
+                                    }).filter(Boolean))].sort().map(source => (
+                                        <option key={source} value={source} style={{ color: 'black' }}>
+                                            {source}
+                                        </option>
+                                    ))
+                                }
+                            </select>
+
+                        </div>
+                    </div>
+                )}
+
 
                 {/* Loading State */}
                 {loading && (
@@ -1104,9 +1498,9 @@ const GA4Stats = ({ language, isMobile }) => {
                             }}>
                                 <thead>
                                     <tr style={{ borderBottom: '1px solid var(--glass-border)' }}>
-                                        {OVERVIEW_COLUMN_ORDER.filter(col =>
+                                        {(activeTab === 'traffic' ? getTrafficColumnOrder() : OVERVIEW_COLUMN_ORDER.filter(col =>
                                             col === 'averageOrderValue' || col === 'purchaseConversionRate' || analyticsData.dimensions.includes(col) || analyticsData.metrics.includes(col)
-                                        ).map(col => (
+                                        )).map(col => (
                                             <th
                                                 key={col}
                                                 onClick={() => {
@@ -1125,7 +1519,7 @@ const GA4Stats = ({ language, isMobile }) => {
                                                     whiteSpace: 'nowrap'
                                                 }}
                                             >
-                                                {getMetricLabel(col)}
+                                                {activeTab === 'traffic' ? getTrafficColumnLabel(col) : getMetricLabel(col)}
                                                 {sortConfig.key === col && (
                                                     <span style={{ marginLeft: '4px' }}>
                                                         {sortConfig.direction === 'asc' ? '▲' : '▼'}
@@ -1135,6 +1529,7 @@ const GA4Stats = ({ language, isMobile }) => {
                                         ))}
                                     </tr>
                                 </thead>
+
                                 <tbody>
                                     {[...analyticsData.rows]
                                         .map(row => {
@@ -1145,8 +1540,10 @@ const GA4Stats = ({ language, isMobile }) => {
                                                 ...row,
                                                 // Calculate averageOrderValue for each row
                                                 averageOrderValue: purchases > 0 ? revenue / purchases : 0,
-                                                // Calculate purchaseConversionRate for each row
-                                                purchaseConversionRate: users > 0 ? (purchases / users) * 100 : 0
+                                                // Calculate purchaseConversionRate for each row (overview tab)
+                                                purchaseConversionRate: users > 0 ? (purchases / users) * 100 : 0,
+                                                // Calculate conversionRate for traffic tab
+                                                conversionRate: users > 0 ? (purchases / users) * 100 : 0
                                             };
                                         })
                                         .sort((a, b) => {
@@ -1172,30 +1569,36 @@ const GA4Stats = ({ language, isMobile }) => {
                                                 borderBottom: '1px solid var(--glass-border)',
                                                 background: index % 2 === 0 ? 'transparent' : 'rgba(255,255,255,0.02)'
                                             }}>
-                                                {OVERVIEW_COLUMN_ORDER.filter(col =>
+                                                {(activeTab === 'traffic' ? getTrafficColumnOrder() : OVERVIEW_COLUMN_ORDER.filter(col =>
                                                     col === 'averageOrderValue' || col === 'purchaseConversionRate' || analyticsData.dimensions.includes(col) || analyticsData.metrics.includes(col)
-                                                ).map(col => (
+                                                )).map(col => (
                                                     <td key={col} style={{
                                                         padding: '12px 8px',
                                                         color: 'var(--text-primary)'
                                                     }}>
-                                                        {col === 'date'
-                                                            ? row[col] // Keep date as-is without formatting
-                                                            : col === 'purchaseRevenue' || col === 'averageOrderValue'
-                                                                ? formatNumber(parseFloat(row[col]) || 0, 'currency')
-                                                                : col === 'purchaseConversionRate'
-                                                                    ? `${(parseFloat(row[col]) || 0).toFixed(2)}%`
-                                                                    : col === 'bounceRate'
-                                                                        ? formatNumber(parseFloat(row[col]) || 0, 'percentage')
-                                                                        : col === 'averageSessionDuration'
-                                                                            ? formatNumber(parseFloat(row[col]) || 0, 'duration')
-                                                                            : formatNumber(parseFloat(row[col]) || 0, 'number')
+                                                        {/* Dimension columns (first column) */}
+                                                        {TRAFFIC_DIMENSIONS.some(d => d.key === col)
+                                                            ? (row[col] || row.dimension || '-')
+                                                            : col === 'date'
+                                                                ? row[col]
+                                                                : col === 'purchaseRevenue' || col === 'averageOrderValue'
+                                                                    ? formatNumber(parseFloat(row[col]) || 0, 'currency')
+                                                                    : col === 'purchaseConversionRate' || col === 'conversionRate'
+                                                                        ? `${(parseFloat(row[col]) || 0).toFixed(2)}%`
+                                                                        : col === 'engagementRate'
+                                                                            ? `${((parseFloat(row[col]) || 0) * 100).toFixed(1)}%`
+                                                                            : col === 'bounceRate'
+                                                                                ? formatNumber(parseFloat(row[col]) || 0, 'percentage')
+                                                                                : col === 'averageSessionDuration'
+                                                                                    ? formatNumber(parseFloat(row[col]) || 0, 'duration')
+                                                                                    : formatNumber(parseFloat(row[col]) || 0, 'number')
                                                         }
                                                     </td>
                                                 ))}
                                             </tr>
                                         ))}
                                 </tbody>
+
                             </table>
                         </div>
                         {analyticsData.rows.length > 20 && (
