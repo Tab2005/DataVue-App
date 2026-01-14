@@ -1,7 +1,7 @@
 # 用戶自定義來源分組 - 實作計劃
 
 > 建立時間：2026-01-14
-> 狀態：進行中
+> 狀態：✅ **已完成**
 
 ## 一、功能概述
 
@@ -26,7 +26,7 @@
 
 ## 二、資料儲存方案
 
-### 方案 A：LocalStorage（先實作）✅
+### 方案 A：LocalStorage ✅ 已實作
 - **儲存 Key**：`source_groups_{propertyId}`（依 GA4 Property 區分）
 - **優點**：無需後端、立即可用、依網站區分
 - **缺點**：換瀏覽器/裝置會遺失
@@ -37,37 +37,43 @@
 
 ---
 
-## 三、實作計劃 - 方案 A
+## 三、實作檔案
 
-### 3.1 新增檔案
+### 新增檔案
 
-#### [NEW] `frontend/src/utils/sourceGroups.js`
-- 預設分組常數
+#### ✅ `frontend/src/utils/sourceGroups.js`
+- 預設分組常數 (Facebook, Google, Instagram, LINE, Threads, Bing, Yahoo, AI)
 - `getAllSourceGroups(propertyId)` - 取得所有分組
-- `addCustomGroup(propertyId, group)` - 新增分組
-- `updateCustomGroup(propertyId, key, group)` - 更新分組
+- `addCustomGroup(propertyId, name, nameEn, patterns)` - 新增分組
+- `updateCustomGroup(propertyId, key, name, nameEn, patterns)` - 更新分組
 - `deleteCustomGroup(propertyId, key)` - 刪除分組
+- `isDefaultGroup(key)` - 判斷是否為預設分組
 
-#### [NEW] `frontend/src/components/SourceGroupModal.jsx`
+#### ✅ `frontend/src/components/SourceGroupModal.jsx`
 - 新增/編輯分組的彈出視窗
-- 欄位：分組名稱、匹配模式
+- 欄位：分組名稱（中/英）、匹配模式
+- 預設分組不可編輯/刪除
 
-### 3.2 修改檔案
+### 修改檔案
 
-#### [MODIFY] `frontend/src/components/GA4Stats.jsx`
-- 移除 `SOURCE_GROUPS` 常數
+#### ✅ `frontend/src/components/GA4Stats.jsx`
+- 移除 `SOURCE_GROUPS` 常數，改用 `sourceGroups.js`
 - 使用 `getAllSourceGroups(selectedProperty)` 取得分組
-- 加入新增/編輯/刪除分組 UI
+- 加入「+ 新增分組」按鈕
+- 加入 ✏️ 編輯按鈕（選擇分組後顯示）
+- 支援 `group_` 和 `custom_` 兩種前綴的篩選邏輯
 
 ---
 
-## 四、實作順序
+## 四、實作進度
 
-- [ ] 建立 `sourceGroups.js` 工具函數
-- [ ] 建立 `SourceGroupModal.jsx` 彈窗組件
-- [ ] 修改 `GA4Stats.jsx` 使用新的分組系統
-- [ ] 加入新增/編輯/刪除分組功能
-- [ ] 本地測試
+- [x] 建立 `sourceGroups.js` 工具函數
+- [x] 建立 `SourceGroupModal.jsx` 彈窗組件
+- [x] 修改 `GA4Stats.jsx` 使用新的分組系統
+- [x] 加入新增分組功能
+- [x] 加入編輯/刪除分組功能
+- [x] 依 GA4 Property 儲存分組
+- [x] 本地測試驗證
 
 ---
 
