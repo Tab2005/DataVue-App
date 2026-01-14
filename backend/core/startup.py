@@ -129,6 +129,10 @@ def patch_database_schema(engine):
                 ("gemini_api_key", "VARCHAR"),
                 ("ai_provider", "VARCHAR DEFAULT 'zeabur'"),
                 ("ai_model", "VARCHAR DEFAULT 'gemini-2.5-flash'"),
+                # GA4 Integration
+                ("ga4_access_token", "TEXT"),
+                ("ga4_refresh_token", "TEXT"),
+                ("ga4_expires_at", "TIMESTAMP"),
             ]
             
             for col_name, col_type in user_patches:
