@@ -962,256 +962,266 @@ const GA4Stats = ({ language, isMobile }) => {
                 )}
             </div>
 
-            {/* Tab Navigation */}
-            <div style={{
-                display: 'flex',
-                borderBottom: '1px solid var(--glass-border)',
-                marginBottom: '24px',
-                overflowX: 'auto'
+            {/* Content Area - Glass Panel Wrapper (aligned with GSC) */}
+            <div className="glass-panel" style={{
+                padding: isMobile ? '16px' : '24px',
+                borderRadius: '16px',
+                background: 'rgba(255, 255, 255, 0.03)',
+                border: '1px solid var(--glass-border)',
+                backdropFilter: 'blur(10px)'
             }}>
-                {TABS.map(tab => (
-                    <button
-                        key={tab.key}
-                        onClick={() => setActiveTab(tab.key)}
-                        style={{
-                            padding: '12px 16px',
-                            border: 'none',
-                            background: activeTab === tab.key ? 'var(--accent-primary)' : 'transparent',
-                            color: activeTab === tab.key ? 'white' : 'var(--text-secondary)',
-                            borderRadius: '8px 8px 0 0',
-                            fontSize: '14px',
-                            fontWeight: '500',
-                            cursor: 'pointer',
-                            whiteSpace: 'nowrap',
-                            marginRight: '4px'
-                        }}
-                    >
-                        {language === 'zh' ? tab.label_zh : tab.label_en}
-                    </button>
-                ))}
-            </div>
-
-            {/* Loading State */}
-            {loading && (
-                <div style={{ textAlign: 'center', padding: '40px', color: 'var(--text-secondary)' }}>
-                    {t('載入中...', 'Loading...')}
-                </div>
-            )}
-
-            {/* Error State */}
-            {error && (
+                {/* Tab Navigation */}
                 <div style={{
-                    padding: '16px',
-                    background: 'rgba(234, 67, 53, 0.1)',
-                    color: '#ea4335',
-                    borderRadius: '8px',
-                    border: '1px solid rgba(234, 67, 53, 0.2)',
-                    marginBottom: '24px'
+                    display: 'flex',
+                    borderBottom: '1px solid var(--glass-border)',
+                    marginBottom: '24px',
+                    overflowX: 'auto'
                 }}>
-                    ⚠️ {error}
-                </div>
-            )}
 
-            {/* KPI Cards - 3x3 Grid Layout */}
-            {!loading && !error && kpiData.length > 0 && (
-                <div style={{
-                    display: 'grid',
-                    gridTemplateColumns: isMobile ? 'repeat(3, 1fr)' : 'repeat(3, 1fr)',
-                    gap: isMobile ? '8px' : '16px',
-                    marginBottom: '24px'
-                }}>
-                    {kpiData.map((kpi, index) => (
-                        <div
-                            key={index}
+                    {TABS.map(tab => (
+                        <button
+                            key={tab.key}
+                            onClick={() => setActiveTab(tab.key)}
                             style={{
-                                padding: isMobile ? '12px' : '20px',
-                                background: 'rgba(255, 255, 255, 0.03)',
-                                border: '1px solid var(--glass-border)',
-                                borderRadius: '12px',
-                                display: 'flex',
-                                flexDirection: isMobile ? 'column' : 'row',
-                                alignItems: isMobile ? 'center' : 'flex-start',
-                                gap: isMobile ? '8px' : '16px',
-                                textAlign: isMobile ? 'center' : 'left'
+                                padding: '12px 16px',
+                                border: 'none',
+                                background: activeTab === tab.key ? 'var(--accent-primary)' : 'transparent',
+                                color: activeTab === tab.key ? 'white' : 'var(--text-secondary)',
+                                borderRadius: '8px 8px 0 0',
+                                fontSize: '14px',
+                                fontWeight: '500',
+                                cursor: 'pointer',
+                                whiteSpace: 'nowrap',
+                                marginRight: '4px'
                             }}
                         >
-                            <div style={{ fontSize: isMobile ? '24px' : '28px', opacity: 0.9 }}>{kpi.icon}</div>
-                            <div style={{ flex: 1, width: '100%' }}>
-                                <div style={{ fontSize: isMobile ? '11px' : '13px', color: 'var(--text-secondary)', marginBottom: isMobile ? '4px' : '6px' }}>
-                                    {kpi.label}
-                                </div>
-                                <div style={{ fontSize: isMobile ? '18px' : '26px', fontWeight: '700', color: 'var(--text-primary)' }}>
-                                    {kpi.value}
-                                </div>
-                                <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginTop: '6px' }}>
-                                    {kpi.change && (
-                                        <span style={{
-                                            fontSize: '12px',
-                                            padding: '2px 8px',
-                                            borderRadius: '12px',
-                                            background: kpi.change.isPositive ? 'rgba(52, 168, 83, 0.15)' : 'rgba(234, 67, 53, 0.15)',
-                                            color: kpi.change.isPositive ? '#34a853' : '#ea4335',
-                                            fontWeight: 600
-                                        }}>
-                                            {kpi.change.formatted}
-                                        </span>
-                                    )}
-                                    {compareMode !== 'none' && kpi.previousValue && (
-                                        <span style={{
-                                            fontSize: '11px',
-                                            color: 'var(--text-secondary)',
-                                            opacity: 0.7
-                                        }}>
-                                            {t('vs', 'vs')} {kpi.previousValue}
-                                        </span>
-                                    )}
-                                </div>
-                            </div>
-                        </div>
+                            {language === 'zh' ? tab.label_zh : tab.label_en}
+                        </button>
                     ))}
                 </div>
-            )}
 
-            {/* Data Table Placeholder */}
-            {!loading && !error && analyticsData && (
-                <div style={{
-                    background: 'var(--bg-secondary)',
-                    border: '1px solid var(--glass-border)',
-                    borderRadius: '12px',
-                    padding: '20px'
-                }}>
-                    <h3 style={{ margin: '0 0 16px 0', color: 'var(--text-primary)' }}>
-                        {t('詳細數據', 'Detailed Data')}
-                    </h3>
-                    <div style={{
-                        overflowX: 'auto',
-                        maxHeight: '400px',
-                        overflowY: 'auto'
-                    }}>
-                        <table style={{
-                            width: '100%',
-                            borderCollapse: 'collapse',
-                            fontSize: '14px'
-                        }}>
-                            <thead>
-                                <tr style={{ borderBottom: '1px solid var(--glass-border)' }}>
-                                    {OVERVIEW_COLUMN_ORDER.filter(col =>
-                                        col === 'averageOrderValue' || col === 'purchaseConversionRate' || analyticsData.dimensions.includes(col) || analyticsData.metrics.includes(col)
-                                    ).map(col => (
-                                        <th
-                                            key={col}
-                                            onClick={() => {
-                                                setSortConfig(prev => ({
-                                                    key: col,
-                                                    direction: prev.key === col && prev.direction === 'asc' ? 'desc' : 'asc'
-                                                }));
-                                            }}
-                                            style={{
-                                                padding: '12px 8px',
-                                                textAlign: 'left',
-                                                color: 'var(--text-secondary)',
-                                                fontWeight: '500',
-                                                cursor: 'pointer',
-                                                userSelect: 'none',
-                                                whiteSpace: 'nowrap'
-                                            }}
-                                        >
-                                            {getMetricLabel(col)}
-                                            {sortConfig.key === col && (
-                                                <span style={{ marginLeft: '4px' }}>
-                                                    {sortConfig.direction === 'asc' ? '▲' : '▼'}
-                                                </span>
-                                            )}
-                                        </th>
-                                    ))}
-                                </tr>
-                            </thead>
-                            <tbody>
-                                {[...analyticsData.rows]
-                                    .map(row => {
-                                        const purchases = parseFloat(row.ecommercePurchases) || 0;
-                                        const revenue = parseFloat(row.purchaseRevenue) || 0;
-                                        const users = parseFloat(row.totalUsers) || 0;
-                                        return {
-                                            ...row,
-                                            // Calculate averageOrderValue for each row
-                                            averageOrderValue: purchases > 0 ? revenue / purchases : 0,
-                                            // Calculate purchaseConversionRate for each row
-                                            purchaseConversionRate: users > 0 ? (purchases / users) * 100 : 0
-                                        };
-                                    })
-                                    .sort((a, b) => {
-                                        const aVal = a[sortConfig.key];
-                                        const bVal = b[sortConfig.key];
-                                        const aNum = parseFloat(aVal);
-                                        const bNum = parseFloat(bVal);
-
-                                        // Check if both are valid numbers
-                                        if (!isNaN(aNum) && !isNaN(bNum)) {
-                                            return sortConfig.direction === 'asc' ? aNum - bNum : bNum - aNum;
-                                        }
-                                        // String comparison
-                                        const aStr = String(aVal || '');
-                                        const bStr = String(bVal || '');
-                                        return sortConfig.direction === 'asc'
-                                            ? aStr.localeCompare(bStr)
-                                            : bStr.localeCompare(aStr);
-                                    })
-                                    .slice(0, 20)
-                                    .map((row, index) => (
-                                        <tr key={index} style={{
-                                            borderBottom: '1px solid var(--glass-border)',
-                                            background: index % 2 === 0 ? 'transparent' : 'rgba(255,255,255,0.02)'
-                                        }}>
-                                            {OVERVIEW_COLUMN_ORDER.filter(col =>
-                                                col === 'averageOrderValue' || col === 'purchaseConversionRate' || analyticsData.dimensions.includes(col) || analyticsData.metrics.includes(col)
-                                            ).map(col => (
-                                                <td key={col} style={{
-                                                    padding: '12px 8px',
-                                                    color: 'var(--text-primary)'
-                                                }}>
-                                                    {col === 'date'
-                                                        ? row[col] // Keep date as-is without formatting
-                                                        : col === 'purchaseRevenue' || col === 'averageOrderValue'
-                                                            ? formatNumber(parseFloat(row[col]) || 0, 'currency')
-                                                            : col === 'purchaseConversionRate'
-                                                                ? `${(parseFloat(row[col]) || 0).toFixed(2)}%`
-                                                                : col === 'bounceRate'
-                                                                    ? formatNumber(parseFloat(row[col]) || 0, 'percentage')
-                                                                    : col === 'averageSessionDuration'
-                                                                        ? formatNumber(parseFloat(row[col]) || 0, 'duration')
-                                                                        : formatNumber(parseFloat(row[col]) || 0, 'number')
-                                                    }
-                                                </td>
-                                            ))}
-                                        </tr>
-                                    ))}
-                            </tbody>
-                        </table>
+                {/* Loading State */}
+                {loading && (
+                    <div style={{ textAlign: 'center', padding: '40px', color: 'var(--text-secondary)' }}>
+                        {t('載入中...', 'Loading...')}
                     </div>
-                    {analyticsData.rows.length > 20 && (
-                        <div style={{
-                            textAlign: 'center',
-                            padding: '12px',
-                            color: 'var(--text-secondary)',
-                            fontSize: '14px'
-                        }}>
-                            {t(`顯示前 20 筆，共 ${analyticsData.rows.length} 筆`, `Showing first 20 rows of ${analyticsData.rows.length} total`)}
-                        </div>
-                    )}
-                </div>
-            )}
+                )}
 
-            {/* No Data State */}
-            {!loading && !error && (!analyticsData || !analyticsData.rows || analyticsData.rows.length === 0) && selectedProperty && (
-                <div style={{
-                    textAlign: 'center',
-                    padding: '40px',
-                    color: 'var(--text-secondary)'
-                }}>
-                    {t('此日期範圍內沒有數據', 'No data available for this date range')}
-                </div>
-            )}
+                {/* Error State */}
+                {error && (
+                    <div style={{
+                        padding: '16px',
+                        background: 'rgba(234, 67, 53, 0.1)',
+                        color: '#ea4335',
+                        borderRadius: '8px',
+                        border: '1px solid rgba(234, 67, 53, 0.2)',
+                        marginBottom: '24px'
+                    }}>
+                        ⚠️ {error}
+                    </div>
+                )}
+
+                {/* KPI Cards - 3x3 Grid Layout */}
+                {!loading && !error && kpiData.length > 0 && (
+                    <div style={{
+                        display: 'grid',
+                        gridTemplateColumns: isMobile ? 'repeat(3, 1fr)' : 'repeat(3, 1fr)',
+                        gap: isMobile ? '8px' : '16px',
+                        marginBottom: '24px'
+                    }}>
+                        {kpiData.map((kpi, index) => (
+                            <div
+                                key={index}
+                                style={{
+                                    padding: isMobile ? '12px' : '20px',
+                                    background: 'rgba(255, 255, 255, 0.03)',
+                                    border: '1px solid var(--glass-border)',
+                                    borderRadius: '12px',
+                                    display: 'flex',
+                                    flexDirection: isMobile ? 'column' : 'row',
+                                    alignItems: isMobile ? 'center' : 'flex-start',
+                                    gap: isMobile ? '8px' : '16px',
+                                    textAlign: isMobile ? 'center' : 'left'
+                                }}
+                            >
+                                <div style={{ fontSize: isMobile ? '24px' : '28px', opacity: 0.9 }}>{kpi.icon}</div>
+                                <div style={{ flex: 1, width: '100%' }}>
+                                    <div style={{ fontSize: isMobile ? '11px' : '13px', color: 'var(--text-secondary)', marginBottom: isMobile ? '4px' : '6px' }}>
+                                        {kpi.label}
+                                    </div>
+                                    <div style={{ fontSize: isMobile ? '18px' : '26px', fontWeight: '700', color: 'var(--text-primary)' }}>
+                                        {kpi.value}
+                                    </div>
+                                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginTop: '6px' }}>
+                                        {kpi.change && (
+                                            <span style={{
+                                                fontSize: '12px',
+                                                padding: '2px 8px',
+                                                borderRadius: '12px',
+                                                background: kpi.change.isPositive ? 'rgba(52, 168, 83, 0.15)' : 'rgba(234, 67, 53, 0.15)',
+                                                color: kpi.change.isPositive ? '#34a853' : '#ea4335',
+                                                fontWeight: 600
+                                            }}>
+                                                {kpi.change.formatted}
+                                            </span>
+                                        )}
+                                        {compareMode !== 'none' && kpi.previousValue && (
+                                            <span style={{
+                                                fontSize: '11px',
+                                                color: 'var(--text-secondary)',
+                                                opacity: 0.7
+                                            }}>
+                                                {t('vs', 'vs')} {kpi.previousValue}
+                                            </span>
+                                        )}
+                                    </div>
+                                </div>
+                            </div>
+                        ))}
+                    </div>
+                )}
+
+                {/* Data Table Placeholder */}
+                {!loading && !error && analyticsData && (
+                    <div style={{
+                        background: 'var(--bg-secondary)',
+                        border: '1px solid var(--glass-border)',
+                        borderRadius: '12px',
+                        padding: '20px'
+                    }}>
+                        <h3 style={{ margin: '0 0 16px 0', color: 'var(--text-primary)' }}>
+                            {t('詳細數據', 'Detailed Data')}
+                        </h3>
+                        <div style={{
+                            overflowX: 'auto',
+                            maxHeight: '400px',
+                            overflowY: 'auto'
+                        }}>
+                            <table style={{
+                                width: '100%',
+                                borderCollapse: 'collapse',
+                                fontSize: '14px'
+                            }}>
+                                <thead>
+                                    <tr style={{ borderBottom: '1px solid var(--glass-border)' }}>
+                                        {OVERVIEW_COLUMN_ORDER.filter(col =>
+                                            col === 'averageOrderValue' || col === 'purchaseConversionRate' || analyticsData.dimensions.includes(col) || analyticsData.metrics.includes(col)
+                                        ).map(col => (
+                                            <th
+                                                key={col}
+                                                onClick={() => {
+                                                    setSortConfig(prev => ({
+                                                        key: col,
+                                                        direction: prev.key === col && prev.direction === 'asc' ? 'desc' : 'asc'
+                                                    }));
+                                                }}
+                                                style={{
+                                                    padding: '12px 8px',
+                                                    textAlign: 'left',
+                                                    color: 'var(--text-secondary)',
+                                                    fontWeight: '500',
+                                                    cursor: 'pointer',
+                                                    userSelect: 'none',
+                                                    whiteSpace: 'nowrap'
+                                                }}
+                                            >
+                                                {getMetricLabel(col)}
+                                                {sortConfig.key === col && (
+                                                    <span style={{ marginLeft: '4px' }}>
+                                                        {sortConfig.direction === 'asc' ? '▲' : '▼'}
+                                                    </span>
+                                                )}
+                                            </th>
+                                        ))}
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    {[...analyticsData.rows]
+                                        .map(row => {
+                                            const purchases = parseFloat(row.ecommercePurchases) || 0;
+                                            const revenue = parseFloat(row.purchaseRevenue) || 0;
+                                            const users = parseFloat(row.totalUsers) || 0;
+                                            return {
+                                                ...row,
+                                                // Calculate averageOrderValue for each row
+                                                averageOrderValue: purchases > 0 ? revenue / purchases : 0,
+                                                // Calculate purchaseConversionRate for each row
+                                                purchaseConversionRate: users > 0 ? (purchases / users) * 100 : 0
+                                            };
+                                        })
+                                        .sort((a, b) => {
+                                            const aVal = a[sortConfig.key];
+                                            const bVal = b[sortConfig.key];
+                                            const aNum = parseFloat(aVal);
+                                            const bNum = parseFloat(bVal);
+
+                                            // Check if both are valid numbers
+                                            if (!isNaN(aNum) && !isNaN(bNum)) {
+                                                return sortConfig.direction === 'asc' ? aNum - bNum : bNum - aNum;
+                                            }
+                                            // String comparison
+                                            const aStr = String(aVal || '');
+                                            const bStr = String(bVal || '');
+                                            return sortConfig.direction === 'asc'
+                                                ? aStr.localeCompare(bStr)
+                                                : bStr.localeCompare(aStr);
+                                        })
+                                        .slice(0, 20)
+                                        .map((row, index) => (
+                                            <tr key={index} style={{
+                                                borderBottom: '1px solid var(--glass-border)',
+                                                background: index % 2 === 0 ? 'transparent' : 'rgba(255,255,255,0.02)'
+                                            }}>
+                                                {OVERVIEW_COLUMN_ORDER.filter(col =>
+                                                    col === 'averageOrderValue' || col === 'purchaseConversionRate' || analyticsData.dimensions.includes(col) || analyticsData.metrics.includes(col)
+                                                ).map(col => (
+                                                    <td key={col} style={{
+                                                        padding: '12px 8px',
+                                                        color: 'var(--text-primary)'
+                                                    }}>
+                                                        {col === 'date'
+                                                            ? row[col] // Keep date as-is without formatting
+                                                            : col === 'purchaseRevenue' || col === 'averageOrderValue'
+                                                                ? formatNumber(parseFloat(row[col]) || 0, 'currency')
+                                                                : col === 'purchaseConversionRate'
+                                                                    ? `${(parseFloat(row[col]) || 0).toFixed(2)}%`
+                                                                    : col === 'bounceRate'
+                                                                        ? formatNumber(parseFloat(row[col]) || 0, 'percentage')
+                                                                        : col === 'averageSessionDuration'
+                                                                            ? formatNumber(parseFloat(row[col]) || 0, 'duration')
+                                                                            : formatNumber(parseFloat(row[col]) || 0, 'number')
+                                                        }
+                                                    </td>
+                                                ))}
+                                            </tr>
+                                        ))}
+                                </tbody>
+                            </table>
+                        </div>
+                        {analyticsData.rows.length > 20 && (
+                            <div style={{
+                                textAlign: 'center',
+                                padding: '12px',
+                                color: 'var(--text-secondary)',
+                                fontSize: '14px'
+                            }}>
+                                {t(`顯示前 20 筆，共 ${analyticsData.rows.length} 筆`, `Showing first 20 rows of ${analyticsData.rows.length} total`)}
+                            </div>
+                        )}
+                    </div>
+                )}
+
+                {/* No Data State */}
+                {!loading && !error && (!analyticsData || !analyticsData.rows || analyticsData.rows.length === 0) && selectedProperty && (
+                    <div style={{
+                        textAlign: 'center',
+                        padding: '40px',
+                        color: 'var(--text-secondary)'
+                    }}>
+                        {t('此日期範圍內沒有數據', 'No data available for this date range')}
+                    </div>
+                )}
+            </div>
         </div>
     );
 };

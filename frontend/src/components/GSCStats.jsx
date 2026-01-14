@@ -1,13 +1,20 @@
 
 import React, { useEffect, useState, useMemo } from 'react';
 
-// Date Range Presets Configuration
+// Date Range Presets Configuration (aligned with GA4)
 const DATE_PRESETS = [
-    { key: 'last_7d', label_zh: '過去 7 天', label_en: 'Last 7 Days', days: 7 },
-    { key: 'last_28d', label_zh: '過去 28 天', label_en: 'Last 28 Days', days: 28 },
-    { key: 'last_3m', label_zh: '過去 3 個月', label_en: 'Last 3 Months', days: 90 },
+    { key: 'today', label_zh: '今日', label_en: 'Today', days: 0, isToday: true },
+    { key: 'yesterday', label_zh: '昨天', label_en: 'Yesterday', days: 1, isYesterday: true },
+    { key: 'this_week', label_zh: '本週', label_en: 'This Week', days: null, isThisWeek: true },
+    { key: 'last_week', label_zh: '上週', label_en: 'Last Week', days: null, isLastWeek: true },
+    { key: 'this_month', label_zh: '本月', label_en: 'This Month', days: null, isThisMonth: true },
+    { key: 'last_month', label_zh: '上月', label_en: 'Last Month', days: null, isLastMonth: true },
+    { key: 'last_7d', label_zh: '過去 7 天', label_en: 'Past 7 Days', days: 7 },
+    { key: 'last_14d', label_zh: '過去 14 天', label_en: 'Past 14 Days', days: 14 },
+    { key: 'last_28d', label_zh: '過去 28 天', label_en: 'Past 28 Days', days: 28 },
     { key: 'custom', label_zh: '自訂', label_en: 'Custom', days: null }
 ];
+
 
 // Tab Configuration
 const TABS = [
@@ -129,35 +136,79 @@ const formatDate = (date) => {
     return date.toISOString().split('T')[0];
 };
 
-// Helper function to calculate date range from preset
+// Helper function to calculate date range from preset (aligned with GA4)
 const getDateRangeFromPreset = (presetKey) => {
     const today = new Date();
     const preset = DATE_PRESETS.find(p => p.key === presetKey);
 
-    if (!preset || preset.days === null) {
+    if (!preset) {
+        // Default fallback
         const start = new Date();
         start.setDate(today.getDate() - 30);
         return { start: formatDate(start), end: formatDate(today) };
     }
 
-    if (preset.key === 'today') {
+    // Today
+    if (preset.isToday) {
         return { start: formatDate(today), end: formatDate(today) };
     }
 
-    if (preset.key === 'yesterday') {
-        const yesterday = new Date();
-        yesterday.setDate(today.getDate() - 1);
+    // Yesterday
+    if (preset.isYesterday) {
+        const yesterday = new Date(today);
+        yesterday.setDate(yesterday.getDate() - 1);
         return { start: formatDate(yesterday), end: formatDate(yesterday) };
+    }
+
+    // This Week (Monday to today)
+    if (preset.isThisWeek) {
+        const dayOfWeek = today.getDay();
+        const daysToMonday = dayOfWeek === 0 ? 6 : dayOfWeek - 1;
+        const monday = new Date(today);
+        monday.setDate(monday.getDate() - daysToMonday);
+        return { start: formatDate(monday), end: formatDate(today) };
+    }
+
+    // Last Week (Last Monday to Last Sunday)
+    if (preset.isLastWeek) {
+        const dayOfWeek = today.getDay();
+        const daysToLastSunday = dayOfWeek === 0 ? 7 : dayOfWeek;
+        const lastSunday = new Date(today);
+        lastSunday.setDate(lastSunday.getDate() - daysToLastSunday);
+        const lastMonday = new Date(lastSunday);
+        lastMonday.setDate(lastMonday.getDate() - 6);
+        return { start: formatDate(lastMonday), end: formatDate(lastSunday) };
+    }
+
+    // This Month (1st of month to today)
+    if (preset.isThisMonth) {
+        const firstOfMonth = new Date(today.getFullYear(), today.getMonth(), 1);
+        return { start: formatDate(firstOfMonth), end: formatDate(today) };
+    }
+
+    // Last Month (1st to last day of previous month)
+    if (preset.isLastMonth) {
+        const firstOfLastMonth = new Date(today.getFullYear(), today.getMonth() - 1, 1);
+        const lastOfLastMonth = new Date(today.getFullYear(), today.getMonth(), 0);
+        return { start: formatDate(firstOfLastMonth), end: formatDate(lastOfLastMonth) };
+    }
+
+    // Custom or null days - return current range or default
+    if (preset.days === null) {
+        const start = new Date();
+        start.setDate(today.getDate() - 30);
+        return { start: formatDate(start), end: formatDate(today) };
     }
 
     // For "last X days" presets (complete days, not including today)
     // e.g., "Last 7 days" = 7 complete days before today = (today-7) to (today-1)
-    const end = new Date();
+    const end = new Date(today);
     end.setDate(today.getDate() - 1);  // Yesterday
-    const start = new Date();
+    const start = new Date(today);
     start.setDate(today.getDate() - preset.days);  // X days before today
     return { start: formatDate(start), end: formatDate(end) };
 };
+
 
 // Helper: Extract main keyword for grouping (first significant word)
 const extractGroupKey = (query) => {
@@ -1118,71 +1169,246 @@ const GSCStats = ({ language, isMobile = false }) => {
 
     return (
         <div style={containerStyle}>
-            {/* Site Selector */}
-            <div style={headerStyle}>
-                <label style={labelStyle}>{t('選擇資源:', 'Select Property:')}</label>
-                <select
-                    value={selectedSite}
-                    onChange={(e) => setSelectedSite(e.target.value)}
-                    style={selectStyle}
-                >
-                    {sites.map(site => (
-                        <option key={site.siteUrl} value={site.siteUrl}>
-                            {site.siteUrl} ({site.permissionLevel})
-                        </option>
-                    ))}
-                </select>
-            </div>
-
-            {/* Date Range Selector */}
-            <div style={{
-                background: 'var(--bg-secondary)',
-                padding: isMobile ? '12px' : '16px',
-                borderRadius: '12px',
+            {/* Main Settings Panel - Glass Style (aligned with GA4) */}
+            <div className="glass-panel" style={{
+                padding: isMobile ? '16px' : '24px',
+                borderRadius: '16px',
+                marginBottom: '24px',
+                background: 'rgba(255, 255, 255, 0.03)',
                 border: '1px solid var(--glass-border)',
-                display: 'flex',
-                flexDirection: isMobile ? 'column' : 'row',
-                gap: isMobile ? '12px' : '16px',
-                alignItems: isMobile ? 'stretch' : 'center',
-                flexWrap: 'wrap'
+                backdropFilter: 'blur(10px)'
             }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flex: isMobile ? '1' : 'none' }}>
-                    <label style={{ ...labelStyle, whiteSpace: 'nowrap' }}>{t('日期範圍:', 'Date Range:')}</label>
-                    <select
-                        value={datePreset}
-                        onChange={(e) => handlePresetChange(e.target.value)}
-                        style={{ ...selectStyle, flex: isMobile ? 1 : 'none' }}
-                    >
-                        {DATE_PRESETS.map(preset => (
-                            <option key={preset.key} value={preset.key}>
-                                {language === 'zh' ? preset.label_zh : preset.label_en}
-                            </option>
-                        ))}
-                    </select>
+                <h3 style={{
+                    margin: '0 0 20px 0',
+                    fontSize: '0.95rem',
+                    color: 'var(--text-secondary)',
+                    fontWeight: 600,
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '8px'
+                }}>
+                    ⚙️ {t('主要設定', 'Main Settings')}
+                </h3>
+
+                {/* Row 1: Site Selector + Date Range */}
+                <div style={{
+                    display: 'flex',
+                    flexDirection: isMobile ? 'column' : 'row',
+                    gap: '20px',
+                    flexWrap: 'wrap'
+                }}>
+                    {/* Site Selector */}
+                    <div style={{ flex: 1, minWidth: isMobile ? '100%' : '200px' }}>
+                        <label style={{
+                            display: 'block',
+                            marginBottom: '8px',
+                            fontWeight: 600,
+                            color: 'var(--text-secondary)',
+                            fontSize: '0.85rem'
+                        }}>
+                            {t('選擇資源', 'Select Property')}
+                        </label>
+                        <select
+                            value={selectedSite}
+                            onChange={(e) => setSelectedSite(e.target.value)}
+                            style={{
+                                width: '100%',
+                                padding: '10px 12px',
+                                border: '1px solid var(--glass-border)',
+                                borderRadius: '8px',
+                                background: 'rgba(255, 255, 255, 0.05)',
+                                color: 'var(--text-primary)',
+                                fontSize: '14px'
+                            }}
+                        >
+                            {sites.map(site => (
+                                <option key={site.siteUrl} value={site.siteUrl} style={{ color: 'black' }}>
+                                    {site.siteUrl} ({site.permissionLevel})
+                                </option>
+                            ))}
+                        </select>
+                    </div>
+
+                    {/* Date Range Selector */}
+                    <div style={{ flex: 1, minWidth: isMobile ? '100%' : '180px' }}>
+                        <label style={{
+                            display: 'block',
+                            marginBottom: '8px',
+                            fontWeight: 600,
+                            color: 'var(--text-secondary)',
+                            fontSize: '0.85rem'
+                        }}>
+                            {t('日期範圍', 'Date Range')}
+                        </label>
+                        <select
+                            value={datePreset}
+                            onChange={(e) => handlePresetChange(e.target.value)}
+                            style={{
+                                width: '100%',
+                                padding: '10px 12px',
+                                border: '1px solid var(--glass-border)',
+                                borderRadius: '8px',
+                                background: 'rgba(255, 255, 255, 0.05)',
+                                color: 'var(--text-primary)',
+                                fontSize: '14px'
+                            }}
+                        >
+                            {DATE_PRESETS.map(preset => (
+                                <option key={preset.key} value={preset.key} style={{ color: 'black' }}>
+                                    {language === 'zh' ? preset.label_zh : preset.label_en}
+                                </option>
+                            ))}
+                        </select>
+                    </div>
+
+                    {/* Date Range Display */}
+                    <div style={{
+                        display: 'flex',
+                        alignItems: 'flex-end',
+                        minWidth: isMobile ? '100%' : 'auto'
+                    }}>
+                        <div style={{
+                            padding: '10px 16px',
+                            background: 'rgba(66, 133, 244, 0.1)',
+                            borderRadius: '8px',
+                            fontSize: '13px',
+                            color: 'var(--text-secondary)',
+                            whiteSpace: 'nowrap'
+                        }}>
+                            📆 {dateRange.start} ~ {dateRange.end} ({getDaysInRange()} {t('天', 'days')})
+                        </div>
+                    </div>
                 </div>
 
+                {/* Custom Date Picker - Inline when selected */}
                 {showCustomDate && (
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flex: isMobile ? '1' : 'none', flexWrap: 'wrap' }}>
-                        <input
-                            type="date"
-                            value={dateRange.start}
-                            onChange={(e) => handleCustomDateChange('start', e.target.value)}
-                            style={{ ...selectStyle, flex: isMobile ? 1 : 'none', minWidth: '130px' }}
-                        />
-                        <span style={{ color: 'var(--text-secondary)' }}>→</span>
-                        <input
-                            type="date"
-                            value={dateRange.end}
-                            onChange={(e) => handleCustomDateChange('end', e.target.value)}
-                            style={{ ...selectStyle, flex: isMobile ? 1 : 'none', minWidth: '130px' }}
-                        />
+                    <div style={{
+                        marginTop: '20px',
+                        paddingTop: '20px',
+                        borderTop: '1px solid var(--glass-border)'
+                    }}>
+                        <div style={{
+                            display: 'flex',
+                            flexDirection: isMobile ? 'column' : 'row',
+                            gap: '16px',
+                            alignItems: isMobile ? 'stretch' : 'flex-end'
+                        }}>
+                            {/* Start Date */}
+                            <div style={{ flex: 1 }}>
+                                <label style={{
+                                    display: 'block',
+                                    marginBottom: '8px',
+                                    fontWeight: 600,
+                                    color: 'var(--text-secondary)',
+                                    fontSize: '0.85rem'
+                                }}>
+                                    {t('開始日期', 'Start Date')}
+                                </label>
+                                <input
+                                    type="date"
+                                    value={dateRange.start}
+                                    max={dateRange.end}
+                                    onChange={(e) => handleCustomDateChange('start', e.target.value)}
+                                    style={{
+                                        width: '100%',
+                                        padding: '10px 12px',
+                                        border: '1px solid var(--glass-border)',
+                                        borderRadius: '8px',
+                                        background: 'rgba(255, 255, 255, 0.05)',
+                                        color: 'var(--text-primary)',
+                                        fontSize: '14px',
+                                        colorScheme: 'dark'
+                                    }}
+                                />
+                            </div>
+
+                            {/* End Date */}
+                            <div style={{ flex: 1 }}>
+                                <label style={{
+                                    display: 'block',
+                                    marginBottom: '8px',
+                                    fontWeight: 600,
+                                    color: 'var(--text-secondary)',
+                                    fontSize: '0.85rem'
+                                }}>
+                                    {t('結束日期', 'End Date')}
+                                </label>
+                                <input
+                                    type="date"
+                                    value={dateRange.end}
+                                    min={dateRange.start}
+                                    max={new Date().toISOString().split('T')[0]}
+                                    onChange={(e) => handleCustomDateChange('end', e.target.value)}
+                                    style={{
+                                        width: '100%',
+                                        padding: '10px 12px',
+                                        border: '1px solid var(--glass-border)',
+                                        borderRadius: '8px',
+                                        background: 'rgba(255, 255, 255, 0.05)',
+                                        color: 'var(--text-primary)',
+                                        fontSize: '14px',
+                                        colorScheme: 'dark'
+                                    }}
+                                />
+                            </div>
+                        </div>
+
+                        {/* Quick Selection Buttons */}
+                        <div style={{
+                            display: 'flex',
+                            flexWrap: 'wrap',
+                            gap: '8px',
+                            marginTop: '16px',
+                            alignItems: 'center'
+                        }}>
+                            <span style={{
+                                fontSize: '13px',
+                                color: 'var(--text-secondary)',
+                                marginRight: '8px'
+                            }}>
+                                {t('快速選擇：', 'Quick select:')}
+                            </span>
+                            {[
+                                { label: t('今天', 'Today'), key: 'today' },
+                                { label: t('昨天', 'Yesterday'), key: 'yesterday' },
+                                { label: t('本週', 'This Week'), key: 'this_week' },
+                                { label: t('上週', 'Last Week'), key: 'last_week' },
+                                { label: t('本月', 'This Month'), key: 'this_month' },
+                                { label: t('上月', 'Last Month'), key: 'last_month' }
+                            ].map(quick => (
+                                <button
+                                    key={quick.key}
+                                    onClick={() => {
+                                        const range = getDateRangeFromPreset(quick.key);
+                                        setDateRange(range);
+                                    }}
+                                    style={{
+                                        padding: '6px 12px',
+                                        border: '1px solid var(--glass-border)',
+                                        borderRadius: '16px',
+                                        background: 'rgba(255, 255, 255, 0.05)',
+                                        color: 'var(--text-secondary)',
+                                        fontSize: '12px',
+                                        cursor: 'pointer',
+                                        transition: 'all 0.2s'
+                                    }}
+                                    onMouseOver={(e) => {
+                                        e.target.style.background = 'var(--accent-primary)';
+                                        e.target.style.color = 'white';
+                                    }}
+                                    onMouseOut={(e) => {
+                                        e.target.style.background = 'rgba(255, 255, 255, 0.05)';
+                                        e.target.style.color = 'var(--text-secondary)';
+                                    }}
+                                >
+                                    {quick.label}
+                                </button>
+                            ))}
+                        </div>
                     </div>
                 )}
-
-                <div style={{ color: 'var(--text-secondary)', fontSize: isMobile ? '12px' : '13px', marginLeft: isMobile ? 0 : 'auto' }}>
-                    {dateRange.start} ~ {dateRange.end} ({getDaysInRange()} {t('天', 'days')})
-                </div>
             </div>
+
 
             {/* Tab Navigation */}
             <div style={tabContainerStyle}>
