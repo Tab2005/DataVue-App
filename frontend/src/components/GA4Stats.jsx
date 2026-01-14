@@ -1,4 +1,7 @@
 import React, { useEffect, useState, useMemo, useCallback, useRef } from 'react';
+import { getAllSourceGroups, isDefaultGroup } from '../utils/sourceGroups';
+import SourceGroupModal from './SourceGroupModal';
+
 
 // Date Range Presets Configuration (aligned with Analytics page)
 const DATE_PRESETS = [
@@ -51,62 +54,10 @@ const TRAFFIC_COLUMN_HEADERS = {
     conversionRate: { zh: '轉換率', en: 'Conversion Rate' }
 };
 
-// Source Groups Configuration - patterns to match multiple related sources
-const SOURCE_GROUPS = [
-    {
-        key: 'group_facebook',
-        label_zh: '📁 Facebook (集合)',
-        label_en: '📁 Facebook (Group)',
-        patterns: ['facebook', 'fb', 'meta.com']
-    },
-    {
-        key: 'group_google',
-        label_zh: '📁 Google (集合)',
-        label_en: '📁 Google (Group)',
-        patterns: ['google', 'googleapis', 'goo.gl']
-    },
-    {
-        key: 'group_instagram',
-        label_zh: '📁 Instagram (集合)',
-        label_en: '📁 Instagram (Group)',
-        patterns: ['instagram', 'ig', 'l.instagram']
-    },
-    {
-        key: 'group_line',
-        label_zh: '📁 LINE (集合)',
-        label_en: '📁 LINE (Group)',
-        patterns: ['line', 'lin.ee']
-    },
-    {
-        key: 'group_threads',
-        label_zh: '📁 Threads (集合)',
-        label_en: '📁 Threads (Group)',
-        patterns: ['threads', 'l.threads']
-    },
-    {
-        key: 'group_bing',
-        label_zh: '📁 Bing (集合)',
-        label_en: '📁 Bing (Group)',
-        patterns: ['bing', 'cn.bing']
-    },
-    {
-        key: 'group_yahoo',
-        label_zh: '📁 Yahoo (集合)',
-        label_en: '📁 Yahoo (Group)',
-        patterns: ['yahoo']
-    },
-    {
-        key: 'group_ai',
-        label_zh: '🤖 AI 流量 (集合)',
-        label_en: '🤖 AI Traffic (Group)',
-        patterns: ['chatgpt', 'openai', 'gemini', 'claude', 'anthropic', 'copilot', 'perplexity', 'bard', 'bing.com/chat', 'you.com', 'phind', 'poe.com']
-    }
-];
-
-
-
+// NOTE: SOURCE_GROUPS moved to ../utils/sourceGroups.js with custom group support
 
 // Tab Configuration
+
 const TABS = [
     { key: 'overview', label_zh: '📊 總覽', label_en: '📊 Overview', metrics: ['activeUsers', 'totalUsers', 'newUsers', 'screenPageViews', 'ecommercePurchases', 'purchaseRevenue', 'addToCarts'], dimensions: ['date'] },
     { key: 'traffic', label_zh: '🌐 流量來源', label_en: '🌐 Traffic Sources', metrics: TRAFFIC_METRICS, dimensions: ['sessionDefaultChannelGrouping'] },
@@ -151,6 +102,23 @@ const GA4Stats = ({ language, isMobile }) => {
     // Traffic Tab State
     const [trafficDimension, setTrafficDimension] = useState('sessionDefaultChannelGrouping');
     const [sourceFilter, setSourceFilter] = useState('all'); // 'all' or specific source value
+    const [sourceGroups, setSourceGroups] = useState([]);
+    const [showGroupModal, setShowGroupModal] = useState(false);
+    const [editingGroup, setEditingGroup] = useState(null);
+
+    // Load source groups when property changes
+    useEffect(() => {
+        if (selectedProperty) {
+            setSourceGroups(getAllSourceGroups(selectedProperty));
+        }
+    }, [selectedProperty]);
+
+    // Reload source groups (called after add/edit/delete)
+    const reloadSourceGroups = useCallback(() => {
+        if (selectedProperty) {
+            setSourceGroups(getAllSourceGroups(selectedProperty));
+        }
+    }, [selectedProperty]);
 
 
     // Define column order for overview table (including calculated fields)
@@ -572,19 +540,8 @@ const GA4Stats = ({ language, isMobile }) => {
                     });
                 });
             }
-        } else {
-            // 無比較模式時，使用當前期間的前半段作為比較基準
-            // 但這對用戶類指標也不準確，所以只用於顯示變化趨勢
-            const rows = analyticsData.rows;
-            const midPoint = Math.floor(rows.length / 2);
-            const previousPeriodRows = rows.slice(0, midPoint);
-            previousPeriodRows.forEach(row => {
-                analyticsData.metrics.forEach(metric => {
-                    if (!previousTotals[metric]) previousTotals[metric] = 0;
-                    previousTotals[metric] += parseFloat(row[metric]) || 0;
-                });
-            });
         }
+        // When compare mode is 'none', do not calculate any comparison
 
         const kpis = [];
         analyticsData.metrics.forEach(metric => {
@@ -600,7 +557,7 @@ const GA4Stats = ({ language, isMobile }) => {
             kpis.push({
                 label: getMetricLabel(metric),
                 value: formatNumber(current, type),
-                change: change,
+                change: compareMode !== 'none' ? change : null,
                 icon: getMetricIcon(metric),
                 previousValue: compareMode !== 'none' ? formatNumber(previous, type) : null
             });
@@ -620,7 +577,7 @@ const GA4Stats = ({ language, isMobile }) => {
         kpis.push({
             label: getMetricLabel('averageOrderValue'),
             value: formatNumber(currentAOV, 'currency'),
-            change: aovChange,
+            change: compareMode !== 'none' ? aovChange : null,
             icon: getMetricIcon('averageOrderValue'),
             previousValue: compareMode !== 'none' ? formatNumber(previousAOV, 'currency') : null
         });
@@ -637,7 +594,7 @@ const GA4Stats = ({ language, isMobile }) => {
         kpis.push({
             label: getMetricLabel('purchaseConversionRate'),
             value: `${currentConversionRate.toFixed(2)}%`,
-            change: conversionRateChange,
+            change: compareMode !== 'none' ? conversionRateChange : null,
             icon: getMetricIcon('purchaseConversionRate'),
             previousValue: compareMode !== 'none' ? `${previousConversionRate.toFixed(2)}%` : null
         });
@@ -652,9 +609,9 @@ const GA4Stats = ({ language, isMobile }) => {
         // Filter rows by source if a specific source is selected
         let filteredRows = analyticsData.rows;
         if (sourceFilter !== 'all') {
-            if (sourceFilter.startsWith('group_')) {
+            if (sourceFilter.startsWith('group_') || sourceFilter.startsWith('custom_')) {
                 // Group filter - match against patterns
-                const group = SOURCE_GROUPS.find(g => g.key === sourceFilter);
+                const group = sourceGroups.find(g => g.key === sourceFilter);
                 if (group) {
                     filteredRows = analyticsData.rows.filter(row => {
                         const dimValue = (row[trafficDimension] || row.dimension || '').toLowerCase();
@@ -700,8 +657,8 @@ const GA4Stats = ({ language, isMobile }) => {
             // Apply same source filter to compare data
             let filteredCompareRows = compareData.rows;
             if (sourceFilter !== 'all') {
-                if (sourceFilter.startsWith('group_')) {
-                    const group = SOURCE_GROUPS.find(g => g.key === sourceFilter);
+                if (sourceFilter.startsWith('group_') || sourceFilter.startsWith('custom_')) {
+                    const group = sourceGroups.find(g => g.key === sourceFilter);
                     if (group) {
                         filteredCompareRows = compareData.rows.filter(row => {
                             const dimValue = (row[trafficDimension] || row.dimension || '').toLowerCase();
@@ -1333,62 +1290,107 @@ const GA4Stats = ({ language, isMobile }) => {
                         {/* Dynamic Source Filter */}
                         <div style={{ flex: 1 }}>
                             <label style={{
-                                display: 'block',
+                                display: 'flex',
                                 marginBottom: '8px',
                                 fontSize: '13px',
                                 fontWeight: 600,
-                                color: 'var(--text-secondary)'
+                                color: 'var(--text-secondary)',
+                                justifyContent: 'space-between',
+                                alignItems: 'center'
                             }}>
-                                🎯 {t('來源篩選', 'Source Filter')}
+                                <span>🎯 {t('來源篩選', 'Source Filter')}</span>
+                                <button
+                                    onClick={() => {
+                                        setEditingGroup(null);
+                                        setShowGroupModal(true);
+                                    }}
+                                    style={{
+                                        background: 'rgba(99, 102, 241, 0.2)',
+                                        border: '1px solid rgba(99, 102, 241, 0.4)',
+                                        borderRadius: '4px',
+                                        color: '#818cf8',
+                                        fontSize: '11px',
+                                        padding: '2px 8px',
+                                        cursor: 'pointer'
+                                    }}
+                                >
+                                    + {t('新增分組', 'Add Group')}
+                                </button>
                             </label>
-                            <select
-                                value={sourceFilter}
-                                onChange={(e) => setSourceFilter(e.target.value)}
-                                style={{
-                                    width: '100%',
-                                    padding: '10px 12px',
-                                    border: '1px solid var(--glass-border)',
-                                    borderRadius: '8px',
-                                    background: 'rgba(255, 255, 255, 0.05)',
-                                    color: 'var(--text-primary)',
-                                    fontSize: '14px'
-                                }}
-                            >
-                                <option value="all" style={{ color: 'black' }}>
-                                    {t('全部來源', 'All Sources')}
-                                </option>
-
-                                {/* Source Groups - only show groups that have matching data */}
-                                {analyticsData && analyticsData.rows && SOURCE_GROUPS.filter(group => {
-                                    // Only show group if there are matching sources in data
-                                    const sources = analyticsData.rows.map(row =>
-                                        (row[trafficDimension] || row.dimension || '').toLowerCase()
-                                    );
-                                    return group.patterns.some(pattern =>
-                                        sources.some(source => source.includes(pattern.toLowerCase()))
-                                    );
-                                }).map(group => (
-                                    <option key={group.key} value={group.key} style={{ color: 'black', fontWeight: 'bold' }}>
-                                        {language === 'zh' ? group.label_zh : group.label_en}
+                            <div style={{ display: 'flex', gap: '8px' }}>
+                                <select
+                                    value={sourceFilter}
+                                    onChange={(e) => setSourceFilter(e.target.value)}
+                                    style={{
+                                        flex: 1,
+                                        padding: '10px 12px',
+                                        border: '1px solid var(--glass-border)',
+                                        borderRadius: '8px',
+                                        background: 'rgba(255, 255, 255, 0.05)',
+                                        color: 'var(--text-primary)',
+                                        fontSize: '14px'
+                                    }}
+                                >
+                                    <option value="all" style={{ color: 'black' }}>
+                                        {t('全部來源', 'All Sources')}
                                     </option>
-                                ))}
 
-                                {/* Separator */}
-                                <option disabled style={{ color: '#666' }}>──────────────</option>
-
-                                {/* Individual sources */}
-                                {analyticsData && analyticsData.rows &&
-                                    [...new Set(analyticsData.rows.map(row => {
-                                        const dimKey = trafficDimension.replace('session', '').replace('Default', '').toLowerCase();
-                                        return row[trafficDimension] || row[dimKey] || row.dimension;
-                                    }).filter(Boolean))].sort().map(source => (
-                                        <option key={source} value={source} style={{ color: 'black' }}>
-                                            {source}
+                                    {/* Source Groups - only show groups that have matching data */}
+                                    {analyticsData && analyticsData.rows && sourceGroups.filter(group => {
+                                        // Only show group if there are matching sources in data
+                                        const sources = analyticsData.rows.map(row =>
+                                            (row[trafficDimension] || row.dimension || '').toLowerCase()
+                                        );
+                                        return group.patterns.some(pattern =>
+                                            sources.some(source => source.includes(pattern.toLowerCase()))
+                                        );
+                                    }).map(group => (
+                                        <option key={group.key} value={group.key} style={{ color: 'black', fontWeight: 'bold' }}>
+                                            {language === 'zh' ? group.label_zh : group.label_en}
                                         </option>
-                                    ))
-                                }
-                            </select>
+                                    ))}
 
+                                    {/* Separator */}
+                                    <option disabled style={{ color: '#666' }}>──────────────</option>
+
+                                    {/* Individual sources */}
+                                    {analyticsData && analyticsData.rows &&
+                                        [...new Set(analyticsData.rows.map(row => {
+                                            const dimKey = trafficDimension.replace('session', '').replace('Default', '').toLowerCase();
+                                            return row[trafficDimension] || row[dimKey] || row.dimension;
+                                        }).filter(Boolean))].sort().map(source => (
+                                            <option key={source} value={source} style={{ color: 'black' }}>
+                                                {source}
+                                            </option>
+                                        ))
+                                    }
+                                </select>
+
+                                {/* Edit button - only show when a group is selected */}
+                                {(sourceFilter.startsWith('group_') || sourceFilter.startsWith('custom_')) && sourceFilter !== 'all' && (
+                                    <button
+                                        onClick={() => {
+                                            const group = sourceGroups.find(g => g.key === sourceFilter);
+                                            if (group) {
+                                                setEditingGroup(group);
+                                                setShowGroupModal(true);
+                                            }
+                                        }}
+                                        style={{
+                                            padding: '10px 12px',
+                                            border: '1px solid var(--glass-border)',
+                                            borderRadius: '8px',
+                                            background: 'rgba(255, 255, 255, 0.05)',
+                                            color: 'var(--text-secondary)',
+                                            cursor: 'pointer',
+                                            fontSize: '14px'
+                                        }}
+                                        title={t('編輯分組', 'Edit Group')}
+                                    >
+                                        ✏️
+                                    </button>
+                                )}
+                            </div>
                         </div>
                     </div>
                 )}
@@ -1625,8 +1627,22 @@ const GA4Stats = ({ language, isMobile }) => {
                     </div>
                 )}
             </div>
+
+            {/* Source Group Modal */}
+            <SourceGroupModal
+                isOpen={showGroupModal}
+                onClose={() => {
+                    setShowGroupModal(false);
+                    setEditingGroup(null);
+                }}
+                onSave={reloadSourceGroups}
+                propertyId={selectedProperty}
+                editGroup={editingGroup}
+                language={language}
+            />
         </div>
     );
+
 };
 
 export default GA4Stats;
