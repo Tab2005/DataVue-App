@@ -233,23 +233,61 @@ def get_token_status(team_id: Optional[str] = None, user_id: str = Depends(verif
 
 @app.get("/api/health")
 def health_check():
-    """Health check endpoint."""
+    """Health check endpoint with comprehensive diagnostics."""
+    import platform
+    from datetime import datetime
+    
+    # Basic info
     db_info = "Unknown"
+    db_connected = False
+    
     try:
         db_url = os.getenv("DATABASE_URL", "")
         if "postgresql" in db_url.lower():
             db_info = "PostgreSQL"
         else:
             db_info = "SQLite"
-    except:
-        pass
+        
+        # Test database connection
+        from database import SessionLocal
+        from sqlalchemy import text
+        session = SessionLocal()
+        session.execute(text("SELECT 1"))
+        session.close()
+        db_connected = True
+    except Exception as e:
+        db_connected = False
+    
+    # Check critical environment variables
+    env_status = {
+        "GOOGLE_CLIENT_ID": bool(os.getenv("GOOGLE_CLIENT_ID")),
+        "GOOGLE_CLIENT_SECRET": bool(os.getenv("GOOGLE_CLIENT_SECRET")),
+        "DATABASE_URL": bool(os.getenv("DATABASE_URL")),
+    }
+    
+    # Overall status
+    all_env_ok = all(env_status.values())
+    overall_status = "ok" if db_connected else "degraded"
     
     return {
-        "status": "ok",
+        "status": overall_status,
         "version": "2.0.0",
-        "database_type": db_info,
+        "timestamp": datetime.utcnow().isoformat(),
+        "database": {
+            "type": db_info,
+            "connected": db_connected
+        },
+        "environment": {
+            "all_configured": all_env_ok,
+            "details": env_status
+        },
+        "system": {
+            "python_version": platform.python_version(),
+            "platform": platform.system()
+        },
         "message": "Backend is running (Modular Version)"
     }
+
 
 
 # ============================================================
