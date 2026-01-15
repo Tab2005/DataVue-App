@@ -113,11 +113,14 @@ const TRAFFIC_SECONDARY_DIMENSIONS = [
     { key: 'sessionSourceMedium', label_zh: '來源/媒介', label_en: 'Source/Medium' }
 ];
 
-// Ecommerce Tab Metrics (6 metrics)
-// 總人數, 已看過的商品數, 加入購物車的商品數, 已購買的商品數, 商品收益, 轉換率(計算)
+// Ecommerce Tab Metrics (9 metrics)
+// 總人數, 已看過的商品數, 加入購物車的商品數, 加入購物車率(計算), 已購買的商品數, 購買者總人數, 商品收益, 結帳轉換率(計算), 轉換率(計算)
 const ECOMMERCE_METRICS = [
-    'totalUsers', 'itemsViewed', 'itemsAddedToCart', 'itemsPurchased', 'itemRevenue'
-    // conversionRate is calculated as: itemsPurchased / itemsViewed * 100
+    'totalUsers', 'itemsViewed', 'itemsAddedToCart', 'itemsPurchased', 'totalPurchasers', 'itemRevenue'
+    // Calculated metrics:
+    // addToCartRate: itemsAddedToCart / itemsViewed * 100
+    // checkoutConversionRate: itemsPurchased / itemsAddedToCart * 100
+    // conversionRate: itemsPurchased / itemsViewed * 100
 ];
 
 // Ecommerce metrics column headers (for table display)
@@ -125,15 +128,25 @@ const ECOMMERCE_COLUMN_HEADERS = {
     totalUsers: { zh: '總人數', en: 'Total Users' },
     itemsViewed: { zh: '已看過的商品數', en: 'Items Viewed' },
     itemsAddedToCart: { zh: '加入購物車的商品數', en: 'Added to Cart' },
+    addToCartRate: { zh: '加入購物車率', en: 'Add to Cart Rate' },
     itemsPurchased: { zh: '已購買的商品數', en: 'Items Purchased' },
+    totalPurchasers: { zh: '購買者總人數', en: 'Purchasers' },
     itemRevenue: { zh: '商品收益', en: 'Item Revenue' },
+    checkoutConversionRate: { zh: '結帳轉換率', en: 'Checkout Conv. Rate' },
     conversionRate: { zh: '轉換率', en: 'Conversion Rate' }
 };
 
 // Tab Configuration
 
+// Overview Tab Column Order (for table display)
+// 日期, 活躍使用者, 總人數, 新使用者人數, 瀏覽, 加入購物車, 購買, 總購買收益, 客單價, 轉換率
+const OVERVIEW_COLUMN_ORDER = [
+    'date', 'activeUsers', 'totalUsers', 'newUsers', 'screenPageViews',
+    'addToCarts', 'ecommercePurchases', 'purchaseRevenue', 'averageOrderValue', 'purchaseConversionRate'
+];
+
 const TABS = [
-    { key: 'overview', label_zh: '📊 總覽', label_en: '📊 Overview', metrics: ['activeUsers', 'totalUsers', 'newUsers', 'screenPageViews', 'ecommercePurchases', 'purchaseRevenue', 'addToCarts'], dimensions: ['date'] },
+    { key: 'overview', label_zh: '📊 總覽', label_en: '📊 Overview', metrics: ['activeUsers', 'totalUsers', 'newUsers', 'screenPageViews', 'addToCarts', 'ecommercePurchases', 'purchaseRevenue'], dimensions: ['date'] },
     { key: 'traffic', label_zh: '🌐 流量來源', label_en: '🌐 Traffic Sources', metrics: TRAFFIC_METRICS, dimensions: ['sessionDefaultChannelGrouping'] },
     { key: 'behavior', label_zh: '👥 用戶行為', label_en: '👥 User Behavior', metrics: BEHAVIOR_METRICS, dimensions: ['deviceCategory'] },
     { key: 'ecommerce', label_zh: '🛒 電子商務', label_en: '🛒 Ecommerce', metrics: ECOMMERCE_METRICS, dimensions: ['itemName'] },
@@ -262,8 +275,8 @@ const GA4Stats = ({ language, isMobile }) => {
         if (ecommerceSecondaryDimension !== 'none') {
             columns.push(ecommerceSecondaryDimension);
         }
-        // Add metrics
-        columns.push('totalUsers', 'itemsViewed', 'itemsAddedToCart', 'itemsPurchased', 'itemRevenue', 'conversionRate');
+        // Add all 9 metrics in order
+        columns.push('totalUsers', 'itemsViewed', 'itemsAddedToCart', 'addToCartRate', 'itemsPurchased', 'totalPurchasers', 'itemRevenue', 'checkoutConversionRate', 'conversionRate');
         return columns;
     };
 
@@ -1077,12 +1090,18 @@ const GA4Stats = ({ language, isMobile }) => {
             });
         });
 
-        // Calculate conversion rate
+        // Calculate all 3 computed rates
+        const addToCartRate = totals['itemsViewed'] > 0
+            ? (totals['itemsAddedToCart'] / totals['itemsViewed']) * 100 : 0;
+        const checkoutConversionRate = totals['itemsAddedToCart'] > 0
+            ? (totals['itemsPurchased'] / totals['itemsAddedToCart']) * 100 : 0;
         const conversionRate = totals['itemsViewed'] > 0
             ? (totals['itemsPurchased'] / totals['itemsViewed']) * 100 : 0;
 
         // Calculate compare period totals if compare mode is active
         let prevTotals = {};
+        let prevAddToCartRate = 0;
+        let prevCheckoutConversionRate = 0;
         let prevConversionRate = 0;
 
         if (compareMode !== 'none' && compareData && compareData.rows) {
@@ -1124,6 +1143,10 @@ const GA4Stats = ({ language, isMobile }) => {
                 });
             });
 
+            prevAddToCartRate = prevTotals['itemsViewed'] > 0
+                ? (prevTotals['itemsAddedToCart'] / prevTotals['itemsViewed']) * 100 : 0;
+            prevCheckoutConversionRate = prevTotals['itemsAddedToCart'] > 0
+                ? (prevTotals['itemsPurchased'] / prevTotals['itemsAddedToCart']) * 100 : 0;
             prevConversionRate = prevTotals['itemsViewed'] > 0
                 ? (prevTotals['itemsPurchased'] / prevTotals['itemsViewed']) * 100 : 0;
         }
@@ -1153,13 +1176,16 @@ const GA4Stats = ({ language, isMobile }) => {
             };
         };
 
-        // Build KPI array with all 6 metrics including compare data
+        // Build KPI array with all 9 metrics including compare data
         const kpis = [
             buildKPI(ECOMMERCE_COLUMN_HEADERS.totalUsers[language === 'zh' ? 'zh' : 'en'], totals['totalUsers'], prevTotals['totalUsers'] || 0, 'number', '👥'),
             buildKPI(ECOMMERCE_COLUMN_HEADERS.itemsViewed[language === 'zh' ? 'zh' : 'en'], totals['itemsViewed'], prevTotals['itemsViewed'] || 0, 'number', '👁️'),
             buildKPI(ECOMMERCE_COLUMN_HEADERS.itemsAddedToCart[language === 'zh' ? 'zh' : 'en'], totals['itemsAddedToCart'], prevTotals['itemsAddedToCart'] || 0, 'number', '🛒'),
-            buildKPI(ECOMMERCE_COLUMN_HEADERS.itemsPurchased[language === 'zh' ? 'zh' : 'en'], totals['itemsPurchased'], prevTotals['itemsPurchased'] || 0, 'number', '💰'),
+            buildKPI(ECOMMERCE_COLUMN_HEADERS.addToCartRate[language === 'zh' ? 'zh' : 'en'], addToCartRate, prevAddToCartRate, 'percentRaw', '📊'),
+            buildKPI(ECOMMERCE_COLUMN_HEADERS.itemsPurchased[language === 'zh' ? 'zh' : 'en'], totals['itemsPurchased'], prevTotals['itemsPurchased'] || 0, 'number', '🛍️'),
+            buildKPI(ECOMMERCE_COLUMN_HEADERS.totalPurchasers[language === 'zh' ? 'zh' : 'en'], totals['totalPurchasers'], prevTotals['totalPurchasers'] || 0, 'number', '👤'),
             buildKPI(ECOMMERCE_COLUMN_HEADERS.itemRevenue[language === 'zh' ? 'zh' : 'en'], totals['itemRevenue'], prevTotals['itemRevenue'] || 0, 'currency', '💵'),
+            buildKPI(ECOMMERCE_COLUMN_HEADERS.checkoutConversionRate[language === 'zh' ? 'zh' : 'en'], checkoutConversionRate, prevCheckoutConversionRate, 'percentRaw', '✅'),
             buildKPI(ECOMMERCE_COLUMN_HEADERS.conversionRate[language === 'zh' ? 'zh' : 'en'], conversionRate, prevConversionRate, 'percentRaw', '🎯')
         ];
 
@@ -1208,7 +1234,7 @@ const GA4Stats = ({ language, isMobile }) => {
             purchaseRevenue: '💰',
             addToCarts: '🛍️',
             averageOrderValue: '💵',
-            purchaseConversionRate: '📊'
+            purchaseConversionRate: '🎯'
         };
         return icons[metric] || '📊';
     };
@@ -2330,6 +2356,7 @@ const GA4Stats = ({ language, isMobile }) => {
                                             const users = parseFloat(row.totalUsers) || 0;
                                             const itemsViewed = parseFloat(row.itemsViewed) || 0;
                                             const itemsPurchased = parseFloat(row.itemsPurchased) || 0;
+                                            const itemsAddedToCart = parseFloat(row.itemsAddedToCart) || 0;
                                             return {
                                                 ...row,
                                                 // Calculate averageOrderValue for each row
@@ -2339,7 +2366,10 @@ const GA4Stats = ({ language, isMobile }) => {
                                                 // Calculate conversionRate for traffic/behavior tab
                                                 conversionRate: activeTab === 'ecommerce'
                                                     ? (itemsViewed > 0 ? (itemsPurchased / itemsViewed) * 100 : 0)
-                                                    : (users > 0 ? (purchases / users) * 100 : 0)
+                                                    : (users > 0 ? (purchases / users) * 100 : 0),
+                                                // Ecommerce calculated metrics
+                                                addToCartRate: itemsViewed > 0 ? (itemsAddedToCart / itemsViewed) * 100 : 0,
+                                                checkoutConversionRate: itemsAddedToCart > 0 ? (itemsPurchased / itemsAddedToCart) * 100 : 0
                                             };
                                         })
                                         .sort((a, b) => {
@@ -2385,7 +2415,7 @@ const GA4Stats = ({ language, isMobile }) => {
                                                                             ? row[col]
                                                                             : col === 'purchaseRevenue' || col === 'averageOrderValue' || col === 'itemRevenue'
                                                                                 ? formatNumber(parseFloat(row[col]) || 0, 'currency')
-                                                                                : col === 'purchaseConversionRate' || col === 'conversionRate'
+                                                                                : col === 'purchaseConversionRate' || col === 'conversionRate' || col === 'addToCartRate' || col === 'checkoutConversionRate'
                                                                                     ? `${(parseFloat(row[col]) || 0).toFixed(2)}%`
                                                                                     : col === 'engagementRate'
                                                                                         ? `${((parseFloat(row[col]) || 0) * 100).toFixed(1)}%`
