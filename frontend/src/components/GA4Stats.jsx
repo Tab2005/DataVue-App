@@ -174,6 +174,10 @@ const GA4Stats = ({ language, isMobile }) => {
     });
     const [sortConfig, setSortConfig] = useState({ key: 'date', direction: 'desc' });
 
+    // Table Pagination State
+    const [currentPage, setCurrentPage] = useState(1);
+    const [itemsPerPage, setItemsPerPage] = useState(20);
+
     // Traffic Tab State
     const [trafficDimension, setTrafficDimension] = useState('sessionDefaultChannelGrouping');
     const [sourceFilter, setSourceFilter] = useState('all'); // 'all' or specific source value
@@ -1251,6 +1255,11 @@ const GA4Stats = ({ language, isMobile }) => {
     useEffect(() => {
         setEcommerceSecondaryFilter('all');
     }, [ecommerceSecondaryDimension]);
+
+    // Reset pagination when tab, filters, or data changes
+    useEffect(() => {
+        setCurrentPage(1);
+    }, [activeTab, trafficDimension, sourceFilter, behaviorDimension, behaviorFilter, ecommerceDimension, ecommerceSecondaryDimension, ecommerceFilter, ecommerceSecondaryFilter, analyticsData]);
 
 
     // Use tab-specific KPIs
@@ -2350,7 +2359,7 @@ const GA4Stats = ({ language, isMobile }) => {
                                                 ? aStr.localeCompare(bStr)
                                                 : bStr.localeCompare(aStr);
                                         })
-                                        .slice(0, 20)
+                                        .slice((currentPage - 1) * itemsPerPage, currentPage * itemsPerPage)
                                         .map((row, index) => (
                                             <tr key={index} style={{
                                                 borderBottom: '1px solid var(--glass-border)',
@@ -2394,16 +2403,153 @@ const GA4Stats = ({ language, isMobile }) => {
 
                             </table>
                         </div>
-                        {analyticsData.rows.length > 20 && (
-                            <div style={{
-                                textAlign: 'center',
-                                padding: '12px',
-                                color: 'var(--text-secondary)',
-                                fontSize: '14px'
-                            }}>
-                                {t(`顯示前 20 筆，共 ${analyticsData.rows.length} 筆`, `Showing first 20 rows of ${analyticsData.rows.length} total`)}
-                            </div>
-                        )}
+
+                        {/* Pagination Controls */}
+                        {analyticsData.rows.length > 0 && (() => {
+                            const totalRows = analyticsData.rows.length;
+                            const totalPages = Math.ceil(totalRows / itemsPerPage);
+                            const startRow = (currentPage - 1) * itemsPerPage + 1;
+                            const endRow = Math.min(currentPage * itemsPerPage, totalRows);
+
+                            return (
+                                <div style={{
+                                    display: 'flex',
+                                    flexDirection: isMobile ? 'column' : 'row',
+                                    justifyContent: 'space-between',
+                                    alignItems: isMobile ? 'stretch' : 'center',
+                                    gap: '12px',
+                                    padding: '16px 0',
+                                    borderTop: '1px solid var(--glass-border)',
+                                    marginTop: '8px'
+                                }}>
+                                    {/* Left: Page info */}
+                                    <div style={{
+                                        color: 'var(--text-secondary)',
+                                        fontSize: '13px',
+                                        textAlign: isMobile ? 'center' : 'left'
+                                    }}>
+                                        {t(`顯示第 ${startRow}-${endRow} 筆，共 ${totalRows} 筆`,
+                                            `Showing ${startRow}-${endRow} of ${totalRows}`)}
+                                    </div>
+
+                                    {/* Center/Right: Pagination controls */}
+                                    <div style={{
+                                        display: 'flex',
+                                        alignItems: 'center',
+                                        gap: '8px',
+                                        justifyContent: isMobile ? 'center' : 'flex-end',
+                                        flexWrap: 'wrap'
+                                    }}>
+                                        {/* Items per page selector */}
+                                        <select
+                                            value={itemsPerPage}
+                                            onChange={(e) => {
+                                                setItemsPerPage(Number(e.target.value));
+                                                setCurrentPage(1);
+                                            }}
+                                            style={{
+                                                padding: '6px 10px',
+                                                border: '1px solid var(--glass-border)',
+                                                borderRadius: '6px',
+                                                background: 'rgba(255,255,255,0.05)',
+                                                color: 'var(--text-primary)',
+                                                fontSize: '13px',
+                                                cursor: 'pointer'
+                                            }}
+                                        >
+                                            <option value={20} style={{ color: 'black' }}>20 / {t('頁', 'page')}</option>
+                                            <option value={50} style={{ color: 'black' }}>50 / {t('頁', 'page')}</option>
+                                            <option value={100} style={{ color: 'black' }}>100 / {t('頁', 'page')}</option>
+                                        </select>
+
+                                        {/* Page navigation */}
+                                        <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+                                            {/* First page */}
+                                            <button
+                                                onClick={() => setCurrentPage(1)}
+                                                disabled={currentPage === 1}
+                                                style={{
+                                                    padding: '6px 10px',
+                                                    border: '1px solid var(--glass-border)',
+                                                    borderRadius: '6px',
+                                                    background: currentPage === 1 ? 'transparent' : 'rgba(255,255,255,0.05)',
+                                                    color: currentPage === 1 ? 'var(--text-secondary)' : 'var(--text-primary)',
+                                                    cursor: currentPage === 1 ? 'not-allowed' : 'pointer',
+                                                    opacity: currentPage === 1 ? 0.5 : 1,
+                                                    fontSize: '13px'
+                                                }}
+                                            >
+                                                ⏮
+                                            </button>
+
+                                            {/* Previous page */}
+                                            <button
+                                                onClick={() => setCurrentPage(p => Math.max(1, p - 1))}
+                                                disabled={currentPage === 1}
+                                                style={{
+                                                    padding: '6px 12px',
+                                                    border: '1px solid var(--glass-border)',
+                                                    borderRadius: '6px',
+                                                    background: currentPage === 1 ? 'transparent' : 'rgba(255,255,255,0.05)',
+                                                    color: currentPage === 1 ? 'var(--text-secondary)' : 'var(--text-primary)',
+                                                    cursor: currentPage === 1 ? 'not-allowed' : 'pointer',
+                                                    opacity: currentPage === 1 ? 0.5 : 1,
+                                                    fontSize: '13px'
+                                                }}
+                                            >
+                                                ◀
+                                            </button>
+
+                                            {/* Page indicator */}
+                                            <span style={{
+                                                padding: '6px 12px',
+                                                color: 'var(--text-primary)',
+                                                fontSize: '13px',
+                                                fontWeight: 600
+                                            }}>
+                                                {currentPage} / {totalPages}
+                                            </span>
+
+                                            {/* Next page */}
+                                            <button
+                                                onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))}
+                                                disabled={currentPage === totalPages}
+                                                style={{
+                                                    padding: '6px 12px',
+                                                    border: '1px solid var(--glass-border)',
+                                                    borderRadius: '6px',
+                                                    background: currentPage === totalPages ? 'transparent' : 'rgba(255,255,255,0.05)',
+                                                    color: currentPage === totalPages ? 'var(--text-secondary)' : 'var(--text-primary)',
+                                                    cursor: currentPage === totalPages ? 'not-allowed' : 'pointer',
+                                                    opacity: currentPage === totalPages ? 0.5 : 1,
+                                                    fontSize: '13px'
+                                                }}
+                                            >
+                                                ▶
+                                            </button>
+
+                                            {/* Last page */}
+                                            <button
+                                                onClick={() => setCurrentPage(totalPages)}
+                                                disabled={currentPage === totalPages}
+                                                style={{
+                                                    padding: '6px 10px',
+                                                    border: '1px solid var(--glass-border)',
+                                                    borderRadius: '6px',
+                                                    background: currentPage === totalPages ? 'transparent' : 'rgba(255,255,255,0.05)',
+                                                    color: currentPage === totalPages ? 'var(--text-secondary)' : 'var(--text-primary)',
+                                                    cursor: currentPage === totalPages ? 'not-allowed' : 'pointer',
+                                                    opacity: currentPage === totalPages ? 0.5 : 1,
+                                                    fontSize: '13px'
+                                                }}
+                                            >
+                                                ⏭
+                                            </button>
+                                        </div>
+                                    </div>
+                                </div>
+                            );
+                        })()}
                     </div>
                 )}
 
