@@ -1,6 +1,8 @@
 import React, { useEffect, useState, useMemo, useCallback, useRef } from 'react';
 import { getAllSourceGroups, isDefaultGroup } from '../utils/sourceGroups';
+import { getAllContentGroups, saveCustomContentGroup, deleteCustomContentGroup, isDefaultContentGroup, filterByContentGroup } from '../utils/contentGroups';
 import SourceGroupModal from './SourceGroupModal';
+import ContentGroupModal from './ContentGroupModal';
 
 
 // Date Range Presets Configuration (aligned with Analytics page)
@@ -136,6 +138,32 @@ const ECOMMERCE_COLUMN_HEADERS = {
     conversionRate: { zh: '轉換率', en: 'Conversion Rate' }
 };
 
+// Content Analysis Dimensions Configuration
+const CONTENT_DIMENSIONS = [
+    { key: 'pageTitle', label_zh: '網頁標題', label_en: 'Page Title' },
+    { key: 'pagePath', label_zh: '網頁路徑', label_en: 'Page Path' },
+    { key: 'pageLocation', label_zh: '網頁 URL', label_en: 'Page URL' }
+];
+
+// Content Analysis Metrics (6 metrics)
+// 總人數, 活躍使用者, 瀏覽, 工作階段, 平均停留時間, 跳出率
+const CONTENT_METRICS = [
+    'totalUsers', 'activeUsers', 'screenPageViews',
+    'sessions', 'averageSessionDuration', 'bounceRate'
+];
+
+// Content Analysis column headers
+const CONTENT_COLUMN_HEADERS = {
+    totalUsers: { zh: '總人數', en: 'Total Users' },
+    activeUsers: { zh: '活躍使用者', en: 'Active Users' },
+    screenPageViews: { zh: '瀏覽', en: 'Page Views' },
+    sessions: { zh: '工作階段', en: 'Sessions' },
+    averageSessionDuration: { zh: '平均停留時間', en: 'Avg Duration' },
+    bounceRate: { zh: '跳出率', en: 'Bounce Rate' }
+};
+
+// NOTE: Content Type Groups are now managed dynamically via contentGroups.js
+
 // Tab Configuration
 
 // Overview Tab Column Order (for table display)
@@ -150,7 +178,7 @@ const TABS = [
     { key: 'traffic', label_zh: '🌐 流量來源', label_en: '🌐 Traffic Sources', metrics: TRAFFIC_METRICS, dimensions: ['sessionDefaultChannelGrouping'] },
     { key: 'behavior', label_zh: '👥 用戶行為', label_en: '👥 User Behavior', metrics: BEHAVIOR_METRICS, dimensions: ['deviceCategory'] },
     { key: 'ecommerce', label_zh: '🛒 電子商務', label_en: '🛒 Ecommerce', metrics: ECOMMERCE_METRICS, dimensions: ['itemName'] },
-    { key: 'content', label_zh: '📄 內容分析', label_en: '📄 Content Analysis', metrics: ['screenPageViews', 'sessions'], dimensions: ['pagePath'] }
+    { key: 'content', label_zh: '📄 內容分析', label_en: '📄 Content Analysis', metrics: CONTENT_METRICS, dimensions: ['pageTitle'] }
 ];
 
 
@@ -212,6 +240,20 @@ const GA4Stats = ({ language, isMobile }) => {
         }
     }, [selectedProperty]);
 
+    // Load content groups when property changes
+    useEffect(() => {
+        if (selectedProperty) {
+            setContentGroups(getAllContentGroups(selectedProperty));
+        }
+    }, [selectedProperty]);
+
+    // Reload content groups (called after add/edit/delete)
+    const reloadContentGroups = useCallback(() => {
+        if (selectedProperty) {
+            setContentGroups(getAllContentGroups(selectedProperty));
+        }
+    }, [selectedProperty]);
+
 
     // Behavior Tab State
     const [behaviorDimension, setBehaviorDimension] = useState('deviceCategory');
@@ -222,6 +264,13 @@ const GA4Stats = ({ language, isMobile }) => {
     const [ecommerceSecondaryDimension, setEcommerceSecondaryDimension] = useState('none');
     const [ecommerceFilter, setEcommerceFilter] = useState('all');
     const [ecommerceSecondaryFilter, setEcommerceSecondaryFilter] = useState('all');
+
+    // Content Tab State
+    const [contentDimension, setContentDimension] = useState('pageTitle');
+    const [contentTypeFilter, setContentTypeFilter] = useState('all');
+    const [contentGroups, setContentGroups] = useState([]);
+    const [showContentGroupModal, setShowContentGroupModal] = useState(false);
+    const [editingContentGroup, setEditingContentGroup] = useState(null);
 
     // Define column order for overview table (including calculated fields)
     const OVERVIEW_COLUMN_ORDER = ['date', 'activeUsers', 'totalUsers', 'newUsers', 'screenPageViews', 'ecommercePurchases', 'purchaseRevenue', 'addToCarts', 'averageOrderValue', 'purchaseConversionRate'];
@@ -295,6 +344,26 @@ const GA4Stats = ({ language, isMobile }) => {
         // Check if it's a metric column
         if (ECOMMERCE_COLUMN_HEADERS[col]) {
             return language === 'zh' ? ECOMMERCE_COLUMN_HEADERS[col].zh : ECOMMERCE_COLUMN_HEADERS[col].en;
+        }
+        return col;
+    };
+
+    // Define column order for content table
+    const getContentColumnOrder = () => [
+        contentDimension, // Dynamic first column based on selected dimension
+        'totalUsers', 'activeUsers', 'screenPageViews', 'sessions', 'averageSessionDuration', 'bounceRate'
+    ];
+
+    // Get dynamic column label for content tab
+    const getContentColumnLabel = (col) => {
+        // Check if it's the dimension column
+        const dimConfig = CONTENT_DIMENSIONS.find(d => d.key === col);
+        if (dimConfig) {
+            return language === 'zh' ? dimConfig.label_zh : dimConfig.label_en;
+        }
+        // Check if it's a metric column
+        if (CONTENT_COLUMN_HEADERS[col]) {
+            return language === 'zh' ? CONTENT_COLUMN_HEADERS[col].zh : CONTENT_COLUMN_HEADERS[col].en;
         }
         return col;
     };
@@ -385,7 +454,7 @@ const GA4Stats = ({ language, isMobile }) => {
             const apiUrl = import.meta.env.VITE_API_URL || 'http://localhost:8000';
             const tabConfig = TABS.find(tab => tab.key === activeTab);
 
-            // For traffic/behavior/ecommerce tabs, use dynamic dimension; otherwise use tab config
+            // For traffic/behavior/ecommerce/content tabs, use dynamic dimension; otherwise use tab config
             let activeDimension;
             if (activeTab === 'traffic') {
                 activeDimension = trafficDimension;
@@ -396,6 +465,8 @@ const GA4Stats = ({ language, isMobile }) => {
                 activeDimension = ecommerceSecondaryDimension !== 'none'
                     ? `${ecommerceDimension},${ecommerceSecondaryDimension}`
                     : ecommerceDimension;
+            } else if (activeTab === 'content') {
+                activeDimension = contentDimension;
             } else {
                 activeDimension = tabConfig.dimensions[0];
             }
@@ -451,7 +522,7 @@ const GA4Stats = ({ language, isMobile }) => {
         } finally {
             setLoading(false);
         }
-    }, [selectedProperty, activeTab, dateRange.startDate, dateRange.endDate, trafficDimension, behaviorDimension, ecommerceDimension, ecommerceSecondaryDimension, getCacheKey, getCachedData, setCachedData]);
+    }, [selectedProperty, activeTab, dateRange.startDate, dateRange.endDate, trafficDimension, behaviorDimension, ecommerceDimension, ecommerceSecondaryDimension, contentDimension, getCacheKey, getCachedData, setCachedData]);
 
     // Fetch comparison data (also with summary for KPI)
     const fetchCompareData = useCallback(async (compareDateRange) => {
@@ -461,7 +532,7 @@ const GA4Stats = ({ language, isMobile }) => {
             return;
         }
 
-        // Include dimension in cache key for traffic, behavior, and ecommerce tabs
+        // Include dimension in cache key for traffic, behavior, ecommerce, and content tabs
         let dimensionKey;
         if (activeTab === 'traffic') {
             dimensionKey = trafficDimension;
@@ -469,6 +540,8 @@ const GA4Stats = ({ language, isMobile }) => {
             dimensionKey = behaviorDimension;
         } else if (activeTab === 'ecommerce') {
             dimensionKey = `${ecommerceDimension}|${ecommerceSecondaryDimension}`;
+        } else if (activeTab === 'content') {
+            dimensionKey = contentDimension;
         } else {
             dimensionKey = 'default';
         }
@@ -489,7 +562,7 @@ const GA4Stats = ({ language, isMobile }) => {
             const apiUrl = import.meta.env.VITE_API_URL || 'http://localhost:8000';
             const tabConfig = TABS.find(tab => tab.key === activeTab);
 
-            // For traffic/behavior tabs, use dynamic dimension; otherwise use tab config
+            // For traffic/behavior/ecommerce/content tabs, use dynamic dimension; otherwise use tab config
             let activeDimension;
             if (activeTab === 'traffic') {
                 activeDimension = trafficDimension;
@@ -500,6 +573,8 @@ const GA4Stats = ({ language, isMobile }) => {
                 activeDimension = ecommerceSecondaryDimension !== 'none'
                     ? `${ecommerceDimension},${ecommerceSecondaryDimension}`
                     : ecommerceDimension;
+            } else if (activeTab === 'content') {
+                activeDimension = contentDimension;
             } else {
                 activeDimension = tabConfig.dimensions[0];
             }
@@ -544,7 +619,7 @@ const GA4Stats = ({ language, isMobile }) => {
         } catch (err) {
             console.error('Error fetching compare data:', err);
         }
-    }, [selectedProperty, activeTab, trafficDimension, behaviorDimension, ecommerceDimension, ecommerceSecondaryDimension, getCacheKey, getCachedData, setCachedData]);
+    }, [selectedProperty, activeTab, trafficDimension, behaviorDimension, ecommerceDimension, ecommerceSecondaryDimension, contentDimension, getCacheKey, getCachedData, setCachedData]);
 
     // Handle date preset change (aligned with Analytics page logic)
     const handleDatePresetChange = (preset) => {
@@ -1192,6 +1267,101 @@ const GA4Stats = ({ language, isMobile }) => {
         return kpis;
     };
 
+    // Get Content Analysis Tab KPI data with content type filter
+    const getContentKPIData = () => {
+        if (!analyticsData || !analyticsData.rows) return [];
+
+        // Filter rows by content group if a specific group is selected
+        let filteredRows = analyticsData.rows;
+        if (contentTypeFilter !== 'all') {
+            const group = contentGroups.find(g => g.key === contentTypeFilter);
+            if (group) {
+                filteredRows = filterByContentGroup(filteredRows, group, contentDimension);
+            }
+        }
+
+        // Calculate totals from filtered rows
+        const totals = {};
+        CONTENT_METRICS.forEach(metric => {
+            totals[metric] = 0;
+        });
+
+        filteredRows.forEach(row => {
+            CONTENT_METRICS.forEach(metric => {
+                totals[metric] += parseFloat(row[metric]) || 0;
+            });
+        });
+
+        // Average for rate metrics
+        const rowCount = filteredRows.length || 1;
+        totals['averageSessionDuration'] = totals['averageSessionDuration'] / rowCount;
+        totals['bounceRate'] = totals['bounceRate'] / rowCount;
+
+        // Calculate compare period totals if compare mode is active
+        let prevTotals = {};
+
+        if (compareMode !== 'none' && compareData && compareData.rows) {
+            // Apply same filters to compare data
+            let filteredCompareRows = compareData.rows;
+            if (contentTypeFilter !== 'all') {
+                const group = contentGroups.find(g => g.key === contentTypeFilter);
+                if (group) {
+                    filteredCompareRows = filterByContentGroup(filteredCompareRows, group, contentDimension);
+                }
+            }
+
+            CONTENT_METRICS.forEach(metric => {
+                prevTotals[metric] = 0;
+            });
+            filteredCompareRows.forEach(row => {
+                CONTENT_METRICS.forEach(metric => {
+                    prevTotals[metric] += parseFloat(row[metric]) || 0;
+                });
+            });
+
+            const prevRowCount = filteredCompareRows.length || 1;
+            prevTotals['averageSessionDuration'] = prevTotals['averageSessionDuration'] / prevRowCount;
+            prevTotals['bounceRate'] = prevTotals['bounceRate'] / prevRowCount;
+        }
+
+        // Helper to build KPI with compare data
+        const buildKPI = (label, currentVal, prevVal, type, icon) => {
+            const change = compareMode !== 'none' ? calculateChange(currentVal, prevVal) : null;
+            let formattedValue, formattedPrev;
+
+            if (type === 'percentage') {
+                formattedValue = `${(currentVal * 100).toFixed(1)}%`;
+                formattedPrev = `${(prevVal * 100).toFixed(1)}%`;
+            } else if (type === 'duration') {
+                formattedValue = formatNumber(currentVal, 'duration');
+                formattedPrev = formatNumber(prevVal, 'duration');
+            } else {
+                formattedValue = formatNumber(currentVal, 'number');
+                formattedPrev = formatNumber(prevVal, 'number');
+            }
+
+            return {
+                label,
+                value: formattedValue,
+                icon,
+                change,
+                previousValue: compareMode !== 'none' ? formattedPrev : null
+            };
+        };
+
+        // Build KPI array with all 6 metrics including compare data
+        const kpis = [
+            buildKPI(CONTENT_COLUMN_HEADERS.totalUsers[language === 'zh' ? 'zh' : 'en'], totals['totalUsers'], prevTotals['totalUsers'] || 0, 'number', '👥'),
+            buildKPI(CONTENT_COLUMN_HEADERS.activeUsers[language === 'zh' ? 'zh' : 'en'], totals['activeUsers'], prevTotals['activeUsers'] || 0, 'number', '👤'),
+            buildKPI(CONTENT_COLUMN_HEADERS.screenPageViews[language === 'zh' ? 'zh' : 'en'], totals['screenPageViews'], prevTotals['screenPageViews'] || 0, 'number', '👁️'),
+            buildKPI(CONTENT_COLUMN_HEADERS.sessions[language === 'zh' ? 'zh' : 'en'], totals['sessions'], prevTotals['sessions'] || 0, 'number', '🔄'),
+            buildKPI(CONTENT_COLUMN_HEADERS.averageSessionDuration[language === 'zh' ? 'zh' : 'en'], totals['averageSessionDuration'], prevTotals['averageSessionDuration'] || 0, 'duration', '⏱️'),
+            buildKPI(CONTENT_COLUMN_HEADERS.bounceRate[language === 'zh' ? 'zh' : 'en'], totals['bounceRate'], prevTotals['bounceRate'] || 0, 'percentage', '📈')
+        ];
+
+        return kpis;
+    };
+
 
     // Get metric display labels
     const getMetricLabel = (metric) => {
@@ -1285,7 +1455,12 @@ const GA4Stats = ({ language, isMobile }) => {
     // Reset pagination when tab, filters, or data changes
     useEffect(() => {
         setCurrentPage(1);
-    }, [activeTab, trafficDimension, sourceFilter, behaviorDimension, behaviorFilter, ecommerceDimension, ecommerceSecondaryDimension, ecommerceFilter, ecommerceSecondaryFilter, analyticsData]);
+    }, [activeTab, trafficDimension, sourceFilter, behaviorDimension, behaviorFilter, ecommerceDimension, ecommerceSecondaryDimension, ecommerceFilter, ecommerceSecondaryFilter, contentDimension, contentTypeFilter, analyticsData]);
+
+    // Reset content filter when dimension changes
+    useEffect(() => {
+        setContentTypeFilter('all');
+    }, [contentDimension]);
 
 
     // Use tab-specific KPIs
@@ -1296,9 +1471,11 @@ const GA4Stats = ({ language, isMobile }) => {
             return getBehaviorKPIData();
         } else if (activeTab === 'ecommerce') {
             return getEcommerceKPIData();
+        } else if (activeTab === 'content') {
+            return getContentKPIData();
         }
         return getKPIData();
-    }, [analyticsData, summaryData, compareData, compareSummaryData, compareMode, activeTab, sourceFilter, trafficDimension, behaviorFilter, behaviorDimension, ecommerceFilter, ecommerceDimension, ecommerceSecondaryFilter, ecommerceSecondaryDimension]);
+    }, [analyticsData, summaryData, compareData, compareSummaryData, compareMode, activeTab, sourceFilter, trafficDimension, behaviorFilter, behaviorDimension, ecommerceFilter, ecommerceDimension, ecommerceSecondaryFilter, ecommerceSecondaryDimension, contentDimension, contentTypeFilter, contentGroups]);
 
 
     return (
@@ -2199,6 +2376,148 @@ const GA4Stats = ({ language, isMobile }) => {
                     </div>
                 )}
 
+                {/* Content Tab Controls */}
+                {activeTab === 'content' && (
+                    <div style={{
+                        display: 'flex',
+                        flexDirection: 'column',
+                        gap: '16px',
+                        marginBottom: '20px',
+                        padding: '16px',
+                        background: 'rgba(255, 255, 255, 0.02)',
+                        borderRadius: '12px',
+                        border: '1px solid var(--glass-border)'
+                    }}>
+                        <div style={{
+                            display: 'flex',
+                            flexDirection: isMobile ? 'column' : 'row',
+                            gap: '16px'
+                        }}>
+                            {/* Content Dimension Selector */}
+                            <div style={{ flex: 1 }}>
+                                <label style={{
+                                    display: 'block',
+                                    marginBottom: '8px',
+                                    fontSize: '13px',
+                                    fontWeight: 600,
+                                    color: 'var(--text-secondary)'
+                                }}>
+                                    📄 {t('內容維度', 'Content Dimension')}
+                                </label>
+                                <select
+                                    value={contentDimension}
+                                    onChange={(e) => setContentDimension(e.target.value)}
+                                    style={{
+                                        width: '100%',
+                                        padding: '10px 12px',
+                                        border: '1px solid var(--glass-border)',
+                                        borderRadius: '8px',
+                                        background: 'rgba(255, 255, 255, 0.05)',
+                                        color: 'var(--text-primary)',
+                                        fontSize: '14px'
+                                    }}
+                                >
+                                    {CONTENT_DIMENSIONS.map(dim => (
+                                        <option key={dim.key} value={dim.key} style={{ color: 'black' }}>
+                                            {language === 'zh' ? dim.label_zh : dim.label_en}
+                                        </option>
+                                    ))}
+                                </select>
+                            </div>
+
+                            {/* Content Type Filter */}
+                            <div style={{ flex: 1 }}>
+                                <label style={{
+                                    display: 'block',
+                                    marginBottom: '8px',
+                                    fontSize: '13px',
+                                    fontWeight: 600,
+                                    color: 'var(--text-secondary)'
+                                }}>
+                                    🏷️ {t('內容類型', 'Content Type')}
+                                </label>
+                                <div style={{ display: 'flex', gap: '8px' }}>
+                                    <select
+                                        value={contentTypeFilter}
+                                        onChange={(e) => {
+                                            if (e.target.value === 'add_new') {
+                                                setEditingContentGroup(null);
+                                                setShowContentGroupModal(true);
+                                            } else {
+                                                setContentTypeFilter(e.target.value);
+                                            }
+                                        }}
+                                        style={{
+                                            flex: 1,
+                                            padding: '10px 12px',
+                                            border: '1px solid var(--glass-border)',
+                                            borderRadius: '8px',
+                                            background: 'rgba(255, 255, 255, 0.05)',
+                                            color: 'var(--text-primary)',
+                                            fontSize: '14px'
+                                        }}
+                                    >
+                                        <option value="all" style={{ color: 'black' }}>
+                                            {t('全部頁面', 'All Pages')}
+                                        </option>
+
+                                        {/* Default Groups */}
+                                        {contentGroups.filter(g => g.isDefault).length > 0 && (
+                                            <option disabled style={{ color: '#666' }}>── {t('預設分組', 'Default Groups')} ──</option>
+                                        )}
+                                        {contentGroups.filter(g => g.isDefault).map(group => (
+                                            <option key={group.key} value={group.key} style={{ color: 'black' }}>
+                                                {language === 'zh' ? group.label_zh : group.label_en}
+                                            </option>
+                                        ))}
+
+                                        {/* Custom Groups */}
+                                        {contentGroups.filter(g => !g.isDefault).length > 0 && (
+                                            <option disabled style={{ color: '#666' }}>── {t('自訂分組', 'Custom Groups')} ──</option>
+                                        )}
+                                        {contentGroups.filter(g => !g.isDefault).map(group => (
+                                            <option key={group.key} value={group.key} style={{ color: 'black' }}>
+                                                {language === 'zh' ? group.label_zh : group.label_en}
+                                            </option>
+                                        ))}
+
+                                        {/* Add new option */}
+                                        <option disabled style={{ color: '#666' }}>──────────────</option>
+                                        <option value="add_new" style={{ color: 'black' }}>
+                                            ➕ {t('新增分組...', 'Add Group...')}
+                                        </option>
+                                    </select>
+
+                                    {/* Edit button - show when a group is selected */}
+                                    {contentTypeFilter !== 'all' && contentTypeFilter !== 'add_new' && (
+                                        <button
+                                            onClick={() => {
+                                                const group = contentGroups.find(g => g.key === contentTypeFilter);
+                                                if (group) {
+                                                    setEditingContentGroup(group);
+                                                    setShowContentGroupModal(true);
+                                                }
+                                            }}
+                                            style={{
+                                                padding: '10px 12px',
+                                                border: '1px solid var(--glass-border)',
+                                                borderRadius: '8px',
+                                                background: 'rgba(255, 255, 255, 0.05)',
+                                                color: 'var(--text-secondary)',
+                                                cursor: 'pointer',
+                                                fontSize: '14px'
+                                            }}
+                                            title={t('編輯分組', 'Edit Group')}
+                                        >
+                                            ✏️
+                                        </button>
+                                    )}
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                )}
+
 
                 {/* Loading State */}
                 {loading && (
@@ -2310,41 +2629,45 @@ const GA4Stats = ({ language, isMobile }) => {
                                                 ? getBehaviorColumnOrder()
                                                 : activeTab === 'ecommerce'
                                                     ? getEcommerceColumnOrder()
-                                                    : OVERVIEW_COLUMN_ORDER.filter(col =>
-                                                        col === 'averageOrderValue' || col === 'purchaseConversionRate' || analyticsData.dimensions.includes(col) || analyticsData.metrics.includes(col)
-                                                    )).map(col => (
-                                                        <th
-                                                            key={col}
-                                                            onClick={() => {
-                                                                setSortConfig(prev => ({
-                                                                    key: col,
-                                                                    direction: prev.key === col && prev.direction === 'asc' ? 'desc' : 'asc'
-                                                                }));
-                                                            }}
-                                                            style={{
-                                                                padding: '12px 8px',
-                                                                textAlign: 'left',
-                                                                color: 'var(--text-secondary)',
-                                                                fontWeight: '500',
-                                                                cursor: 'pointer',
-                                                                userSelect: 'none',
-                                                                whiteSpace: 'nowrap'
-                                                            }}
-                                                        >
-                                                            {activeTab === 'traffic'
-                                                                ? getTrafficColumnLabel(col)
-                                                                : activeTab === 'behavior'
-                                                                    ? getBehaviorColumnLabel(col)
-                                                                    : activeTab === 'ecommerce'
-                                                                        ? getEcommerceColumnLabel(col)
-                                                                        : getMetricLabel(col)}
-                                                            {sortConfig.key === col && (
-                                                                <span style={{ marginLeft: '4px' }}>
-                                                                    {sortConfig.direction === 'asc' ? '▲' : '▼'}
-                                                                </span>
-                                                            )}
-                                                        </th>
-                                                    ))}
+                                                    : activeTab === 'content'
+                                                        ? getContentColumnOrder()
+                                                        : OVERVIEW_COLUMN_ORDER.filter(col =>
+                                                            col === 'averageOrderValue' || col === 'purchaseConversionRate' || analyticsData.dimensions.includes(col) || analyticsData.metrics.includes(col)
+                                                        )).map(col => (
+                                                            <th
+                                                                key={col}
+                                                                onClick={() => {
+                                                                    setSortConfig(prev => ({
+                                                                        key: col,
+                                                                        direction: prev.key === col && prev.direction === 'asc' ? 'desc' : 'asc'
+                                                                    }));
+                                                                }}
+                                                                style={{
+                                                                    padding: '12px 8px',
+                                                                    textAlign: 'left',
+                                                                    color: 'var(--text-secondary)',
+                                                                    fontWeight: '500',
+                                                                    cursor: 'pointer',
+                                                                    userSelect: 'none',
+                                                                    whiteSpace: 'nowrap'
+                                                                }}
+                                                            >
+                                                                {activeTab === 'traffic'
+                                                                    ? getTrafficColumnLabel(col)
+                                                                    : activeTab === 'behavior'
+                                                                        ? getBehaviorColumnLabel(col)
+                                                                        : activeTab === 'ecommerce'
+                                                                            ? getEcommerceColumnLabel(col)
+                                                                            : activeTab === 'content'
+                                                                                ? getContentColumnLabel(col)
+                                                                                : getMetricLabel(col)}
+                                                                {sortConfig.key === col && (
+                                                                    <span style={{ marginLeft: '4px' }}>
+                                                                        {sortConfig.direction === 'asc' ? '▲' : '▼'}
+                                                                    </span>
+                                                                )}
+                                                            </th>
+                                                        ))}
                                     </tr>
                                 </thead>
 
@@ -2401,32 +2724,34 @@ const GA4Stats = ({ language, isMobile }) => {
                                                         ? getBehaviorColumnOrder()
                                                         : activeTab === 'ecommerce'
                                                             ? getEcommerceColumnOrder()
-                                                            : OVERVIEW_COLUMN_ORDER.filter(col =>
-                                                                col === 'averageOrderValue' || col === 'purchaseConversionRate' || analyticsData.dimensions.includes(col) || analyticsData.metrics.includes(col)
-                                                            )).map(col => (
-                                                                <td key={col} style={{
-                                                                    padding: '12px 8px',
-                                                                    color: 'var(--text-primary)'
-                                                                }}>
-                                                                    {/* Dimension columns (first column) */}
-                                                                    {TRAFFIC_DIMENSIONS.some(d => d.key === col) || BEHAVIOR_DIMENSIONS.some(d => d.key === col) || ECOMMERCE_DIMENSIONS.some(d => d.key === col) || TRAFFIC_SECONDARY_DIMENSIONS.some(d => d.key === col)
-                                                                        ? (row[col] || row.dimension || '-')
-                                                                        : col === 'date'
-                                                                            ? row[col]
-                                                                            : col === 'purchaseRevenue' || col === 'averageOrderValue' || col === 'itemRevenue'
-                                                                                ? formatNumber(parseFloat(row[col]) || 0, 'currency')
-                                                                                : col === 'purchaseConversionRate' || col === 'conversionRate' || col === 'addToCartRate' || col === 'checkoutConversionRate'
-                                                                                    ? `${(parseFloat(row[col]) || 0).toFixed(2)}%`
-                                                                                    : col === 'engagementRate'
-                                                                                        ? `${((parseFloat(row[col]) || 0) * 100).toFixed(1)}%`
-                                                                                        : col === 'bounceRate'
-                                                                                            ? formatNumber(parseFloat(row[col]) || 0, 'percentage')
-                                                                                            : col === 'averageSessionDuration'
-                                                                                                ? formatNumber(parseFloat(row[col]) || 0, 'duration')
-                                                                                                : formatNumber(parseFloat(row[col]) || 0, 'number')
-                                                                    }
-                                                                </td>
-                                                            ))}
+                                                            : activeTab === 'content'
+                                                                ? getContentColumnOrder()
+                                                                : OVERVIEW_COLUMN_ORDER.filter(col =>
+                                                                    col === 'averageOrderValue' || col === 'purchaseConversionRate' || analyticsData.dimensions.includes(col) || analyticsData.metrics.includes(col)
+                                                                )).map(col => (
+                                                                    <td key={col} style={{
+                                                                        padding: '12px 8px',
+                                                                        color: 'var(--text-primary)'
+                                                                    }}>
+                                                                        {/* Dimension columns (first column) */}
+                                                                        {TRAFFIC_DIMENSIONS.some(d => d.key === col) || BEHAVIOR_DIMENSIONS.some(d => d.key === col) || ECOMMERCE_DIMENSIONS.some(d => d.key === col) || TRAFFIC_SECONDARY_DIMENSIONS.some(d => d.key === col) || CONTENT_DIMENSIONS.some(d => d.key === col)
+                                                                            ? (row[col] || row.dimension || '-')
+                                                                            : col === 'date'
+                                                                                ? row[col]
+                                                                                : col === 'purchaseRevenue' || col === 'averageOrderValue' || col === 'itemRevenue'
+                                                                                    ? formatNumber(parseFloat(row[col]) || 0, 'currency')
+                                                                                    : col === 'purchaseConversionRate' || col === 'conversionRate' || col === 'addToCartRate' || col === 'checkoutConversionRate'
+                                                                                        ? `${(parseFloat(row[col]) || 0).toFixed(2)}%`
+                                                                                        : col === 'engagementRate'
+                                                                                            ? `${((parseFloat(row[col]) || 0) * 100).toFixed(1)}%`
+                                                                                            : col === 'bounceRate'
+                                                                                                ? formatNumber(parseFloat(row[col]) || 0, 'percentage')
+                                                                                                : col === 'averageSessionDuration'
+                                                                                                    ? formatNumber(parseFloat(row[col]) || 0, 'duration')
+                                                                                                    : formatNumber(parseFloat(row[col]) || 0, 'number')
+                                                                        }
+                                                                    </td>
+                                                                ))}
                                             </tr>
                                         ))}
                                 </tbody>
@@ -2606,6 +2931,28 @@ const GA4Stats = ({ language, isMobile }) => {
                 propertyId={selectedProperty}
                 editGroup={editingGroup}
                 language={language}
+            />
+
+            {/* Content Group Modal */}
+            <ContentGroupModal
+                isOpen={showContentGroupModal}
+                onClose={() => {
+                    setShowContentGroupModal(false);
+                    setEditingContentGroup(null);
+                }}
+                onSave={(group) => {
+                    saveCustomContentGroup(selectedProperty, group);
+                    reloadContentGroups();
+                }}
+                onDelete={(groupKey) => {
+                    deleteCustomContentGroup(selectedProperty, groupKey);
+                    setContentTypeFilter('all');
+                    reloadContentGroups();
+                }}
+                group={editingContentGroup}
+                language={language}
+                previewData={analyticsData?.rows || []}
+                dimension={contentDimension}
             />
         </div>
     );
