@@ -14,18 +14,44 @@ $ErrorActionPreference = "Stop"
 $ScriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
 $ProjectRoot = $ScriptDir
 
+# Fix Unicode output in Windows Console
+$env:PYTHONIOENCODING = "utf-8"
+
 # ============================================================
 # 1. 環境檢查 - Environment Check
 # ============================================================
 
 Write-Host "[1/5] 環境檢查 (Environment Check)..." -ForegroundColor Yellow
 
-# Check Python
+$pythonExe = "python"
+
+# Check Python and detect path if necessary
 try {
-    $pythonVersion = python --version 2>&1
+    $pyVer = python --version 2>&1
+    if (-not $pyVer -or "$pyVer" -notmatch "Python") { throw "Invalid or empty version" }
+} catch {
+    # Fallback to known common paths
+    $candidates = @(
+        "$env:LOCALAPPDATA\Programs\Python\Python311\python.exe",
+        "$env:LOCALAPPDATA\Programs\Python\Python310\python.exe",
+        "C:\Python311\python.exe",
+        "C:\Python310\python.exe"
+    )
+    foreach ($c in $candidates) {
+        if (Test-Path $c) {
+            $pythonExe = $c
+            Write-Host "  ⚠ Default 'python' command failed. Using explicit path: $pythonExe" -ForegroundColor Yellow
+            break
+        }
+    }
+}
+
+try {
+    $pythonVersion = & $pythonExe --version 2>&1
+    if (-not $pythonVersion) { throw "Still invalid" }
     Write-Host "  ✓ Python: $pythonVersion" -ForegroundColor Green
 } catch {
-    Write-Host "  ✗ Python 未安裝或不在 PATH 中" -ForegroundColor Red
+    Write-Host "  ✗ Python 未安裝或是 Windows Store Stub (請手動安裝 Python)" -ForegroundColor Red
     exit 1
 }
 
@@ -95,10 +121,10 @@ Write-Host "[4/5] 啟動後端服務 (Starting Backend)..." -ForegroundColor Yel
 
 $backendPath = Join-Path $ProjectRoot "backend"
 $backendJob = Start-Job -ScriptBlock {
-    param($path)
+    param($path, $exe)
     Set-Location $path
-    python -m uvicorn main:app --reload --host 0.0.0.0 --port 8000 2>&1
-} -ArgumentList $backendPath
+    & $exe -m uvicorn main:app --reload --host 0.0.0.0 --port 8000 2>&1
+} -ArgumentList $backendPath, $pythonExe
 
 Write-Host "  → 後端服務啟動中 (Job ID: $($backendJob.Id))..." -ForegroundColor Cyan
 
