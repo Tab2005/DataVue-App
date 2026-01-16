@@ -190,6 +190,7 @@ const GA4Stats = ({ language, isMobile }) => {
 
     // State management
     const [properties, setProperties] = useState([]);
+    const [propertiesLoading, setPropertiesLoading] = useState(false);
     const [selectedProperty, setSelectedProperty] = useState('');
     const [analyticsData, setAnalyticsData] = useState(null);
     const [summaryData, setSummaryData] = useState(null); // 新增：用於 KPI 卡片的去重總數
@@ -393,6 +394,7 @@ const GA4Stats = ({ language, isMobile }) => {
 
     // Fetch GA4 properties
     const fetchProperties = async () => {
+        setPropertiesLoading(true);
         try {
             const apiUrl = import.meta.env.VITE_API_URL || 'http://localhost:8000';
             const response = await fetch(`${apiUrl}/api/ga4/properties`, {
@@ -413,6 +415,8 @@ const GA4Stats = ({ language, isMobile }) => {
         } catch (err) {
             console.error('Error fetching GA4 properties:', err);
             setError('Failed to load properties');
+        } finally {
+            setPropertiesLoading(false);
         }
     };
 
@@ -1519,6 +1523,32 @@ const GA4Stats = ({ language, isMobile }) => {
                         }}>
                             {t('選擇帳號', 'Select Account')}
                         </label>
+                        {propertiesLoading && (
+                            <div style={{
+                                display: 'flex',
+                                alignItems: 'center',
+                                gap: '8px',
+                                marginBottom: '8px',
+                                color: 'var(--text-secondary)',
+                                fontSize: '12px'
+                            }}>
+                                <div style={{
+                                    width: '14px',
+                                    height: '14px',
+                                    border: '2px solid rgba(52, 168, 83, 0.2)',
+                                    borderTop: '2px solid #34a853',
+                                    borderRadius: '50%',
+                                    animation: 'spin 1s linear infinite'
+                                }} />
+                                {t('載入 GA4 帳號列表中...', 'Loading GA4 properties...')}
+                                <style>{`
+                                    @keyframes spin {
+                                        0% { transform: rotate(0deg); }
+                                        100% { transform: rotate(360deg); }
+                                    }
+                                `}</style>
+                            </div>
+                        )}
                         <select
                             value={selectedProperty}
                             onChange={(e) => setSelectedProperty(e.target.value)}
@@ -2521,8 +2551,54 @@ const GA4Stats = ({ language, isMobile }) => {
 
                 {/* Loading State */}
                 {loading && (
-                    <div style={{ textAlign: 'center', padding: '40px', color: 'var(--text-secondary)' }}>
-                        {t('載入中...', 'Loading...')}
+                    <div style={{
+                        display: 'flex',
+                        flexDirection: 'column',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        padding: '60px 20px',
+                        background: 'rgba(255, 255, 255, 0.02)',
+                        borderRadius: '16px',
+                        border: '1px solid var(--glass-border)',
+                        margin: '20px 0'
+                    }}>
+                        {/* Spinner Animation */}
+                        <div style={{
+                            width: '48px',
+                            height: '48px',
+                            border: '4px solid rgba(52, 168, 83, 0.2)',
+                            borderTop: '4px solid #34a853',
+                            borderRadius: '50%',
+                            animation: 'spin 1s linear infinite',
+                            marginBottom: '20px'
+                        }} />
+
+                        {/* Main Message */}
+                        <div style={{
+                            fontSize: '16px',
+                            fontWeight: 600,
+                            color: 'var(--text-primary)',
+                            marginBottom: '8px'
+                        }}>
+                            {t('正在載入 GA4 數據', 'Loading GA4 data')}
+                        </div>
+
+                        {/* Sub Message */}
+                        <div style={{
+                            fontSize: '14px',
+                            color: 'var(--text-secondary)',
+                            textAlign: 'center'
+                        }}>
+                            {t('請稍候...', 'Please wait...')}
+                        </div>
+
+                        {/* CSS Animation Keyframes */}
+                        <style>{`
+                            @keyframes spin {
+                                0% { transform: rotate(0deg); }
+                                100% { transform: rotate(360deg); }
+                            }
+                        `}</style>
                     </div>
                 )}
 

@@ -61,10 +61,54 @@ const GA4Analytics = () => {
 
     if (checking) {
         return (
-            <div style={{ display: 'flex', height: '100%', alignItems: 'center', justifyContent: 'center' }}>
-                <div style={{ color: 'var(--text-secondary)' }}>
-                    {language === 'zh' ? '正在檢查 Google Analytics 4 連線...' : 'Checking Google Analytics 4 connection...'}
+            <div style={{
+                display: 'flex',
+                flexDirection: 'column',
+                alignItems: 'center',
+                justifyContent: 'center',
+                padding: '60px 20px',
+                background: 'rgba(255, 255, 255, 0.02)',
+                borderRadius: '16px',
+                border: '1px solid var(--glass-border)',
+                margin: '20px'
+            }}>
+                {/* Spinner Animation */}
+                <div style={{
+                    width: '48px',
+                    height: '48px',
+                    border: '4px solid rgba(52, 168, 83, 0.2)',
+                    borderTop: '4px solid #34a853',
+                    borderRadius: '50%',
+                    animation: 'spin 1s linear infinite',
+                    marginBottom: '20px'
+                }} />
+
+                {/* Main Message */}
+                <div style={{
+                    fontSize: '16px',
+                    fontWeight: 600,
+                    color: 'var(--text-primary)',
+                    marginBottom: '8px'
+                }}>
+                    {language === 'zh' ? '正在檢查 Google Analytics 4 連線' : 'Checking Google Analytics 4 connection'}
                 </div>
+
+                {/* Sub Message */}
+                <div style={{
+                    fontSize: '14px',
+                    color: 'var(--text-secondary)',
+                    textAlign: 'center'
+                }}>
+                    {language === 'zh' ? '請稍候...' : 'Please wait...'}
+                </div>
+
+                {/* CSS Animation Keyframes */}
+                <style>{`
+                    @keyframes spin {
+                        0% { transform: rotate(0deg); }
+                        100% { transform: rotate(360deg); }
+                    }
+                `}</style>
             </div>
         );
     }
