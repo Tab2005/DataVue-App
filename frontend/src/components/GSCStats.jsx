@@ -139,9 +139,12 @@ const DEVICE_NAMES = {
     TABLET: { zh: '📟 平板', en: '📟 Tablet', color: '#F59E0B' }
 };
 
-// Helper function to format date to YYYY-MM-DD
+// Helper function to format date to YYYY-MM-DD (local time)
 const formatDate = (date) => {
-    return date.toISOString().split('T')[0];
+    const y = date.getFullYear();
+    const m = String(date.getMonth() + 1).padStart(2, '0');
+    const d = String(date.getDate()).padStart(2, '0');
+    return `${y}-${m}-${d}`;
 };
 
 // Helper function to calculate date range from preset (aligned with GA4)
@@ -188,10 +191,11 @@ const getDateRangeFromPreset = (presetKey) => {
         return { start: formatDate(lastMonday), end: formatDate(lastSunday) };
     }
 
-    // This Month (1st of month to today)
+    // This Month (1st to last day of current month)
     if (preset.isThisMonth) {
         const firstOfMonth = new Date(today.getFullYear(), today.getMonth(), 1);
-        return { start: formatDate(firstOfMonth), end: formatDate(today) };
+        const lastOfMonth = new Date(today.getFullYear(), today.getMonth() + 1, 0);
+        return { start: formatDate(firstOfMonth), end: formatDate(lastOfMonth) };
     }
 
     // Last Month (1st to last day of previous month)
@@ -1542,7 +1546,7 @@ const GSCStats = ({ language, isMobile = false }) => {
                                     type="date"
                                     value={dateRange.end}
                                     min={dateRange.start}
-                                    max={new Date().toISOString().split('T')[0]}
+                                    max={formatDate(new Date())}
                                     onChange={(e) => handleCustomDateChange('end', e.target.value)}
                                     style={{
                                         width: '100%',

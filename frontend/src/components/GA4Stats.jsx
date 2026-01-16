@@ -188,6 +188,13 @@ const CACHE_TTL = 5 * 60 * 1000;
 const GA4Stats = ({ language, isMobile }) => {
     const t = (zh, en) => language === 'zh' ? zh : en;
 
+    const formatLocalDate = (date) => {
+        const y = date.getFullYear();
+        const m = String(date.getMonth() + 1).padStart(2, '0');
+        const d = String(date.getDate()).padStart(2, '0');
+        return `${y}-${m}-${d}`;
+    };
+
     // State management
     const [properties, setProperties] = useState([]);
     const [propertiesLoading, setPropertiesLoading] = useState(false);
@@ -209,8 +216,8 @@ const GA4Stats = ({ language, isMobile }) => {
         const startDate = new Date(yesterday);
         startDate.setDate(startDate.getDate() - 27); // 28 days total (including yesterday)
         return {
-            startDate: startDate.toISOString().split('T')[0],
-            endDate: yesterday.toISOString().split('T')[0],
+            startDate: formatLocalDate(startDate),
+            endDate: formatLocalDate(yesterday),
             preset: 'last_28d'
         };
     });
@@ -654,8 +661,9 @@ const GA4Stats = ({ language, isMobile }) => {
             startDate = new Date(lastWeekEnd);
             startDate.setDate(startDate.getDate() - 6);
         } else if (presetConfig.isThisMonth) {
-            // 本月：從本月1日到今天
-            endDate = new Date(today);
+            // 本月：從本月1日到本月最後一天（GA4 不接受未來日期，需封頂到今天）
+            const endOfMonth = new Date(today.getFullYear(), today.getMonth() + 1, 0);
+            endDate = endOfMonth > today ? new Date(today) : endOfMonth;
             startDate = new Date(today.getFullYear(), today.getMonth(), 1);
         } else if (presetConfig.isLastMonth) {
             // 上月：從上月1日到上月最後一天
@@ -678,8 +686,8 @@ const GA4Stats = ({ language, isMobile }) => {
 
         if (startDate && endDate) {
             setDateRange({
-                startDate: startDate.toISOString().split('T')[0],
-                endDate: endDate.toISOString().split('T')[0],
+                startDate: formatLocalDate(startDate),
+                endDate: formatLocalDate(endDate),
                 preset
             });
             setShowCustomDatePicker(false);
@@ -708,8 +716,8 @@ const GA4Stats = ({ language, isMobile }) => {
             const compareEnd = new Date(start.getTime() - 24 * 60 * 60 * 1000);
             const compareStart = new Date(compareEnd.getTime() - daysDiff * 24 * 60 * 60 * 1000);
             return {
-                startDate: compareStart.toISOString().split('T')[0],
-                endDate: compareEnd.toISOString().split('T')[0]
+                startDate: formatLocalDate(compareStart),
+                endDate: formatLocalDate(compareEnd)
             };
         } else if (compareMode === 'previous_year') {
             const compareStart = new Date(start);
@@ -717,8 +725,8 @@ const GA4Stats = ({ language, isMobile }) => {
             const compareEnd = new Date(end);
             compareEnd.setFullYear(compareEnd.getFullYear() - 1);
             return {
-                startDate: compareStart.toISOString().split('T')[0],
-                endDate: compareEnd.toISOString().split('T')[0]
+                startDate: formatLocalDate(compareStart),
+                endDate: formatLocalDate(compareEnd)
             };
         }
         return null;
@@ -1718,7 +1726,7 @@ const GA4Stats = ({ language, isMobile }) => {
                                     type="date"
                                     value={dateRange.endDate}
                                     min={dateRange.startDate}
-                                    max={new Date().toISOString().split('T')[0]}
+                                    max={formatLocalDate(new Date())}
                                     onChange={(e) => handleCustomDateChange('endDate', e.target.value)}
                                     style={{
                                         width: '100%',
@@ -1790,8 +1798,9 @@ const GA4Stats = ({ language, isMobile }) => {
                                                 start.setDate(start.getDate() - 6);
                                                 break;
                                             case 'thisMonth':
-                                                // 本月：從本月1日到今天
-                                                end = new Date(today);
+                                                // 本月：從本月1日到本月最後一天（GA4 不接受未來日期，需封頂到今天）
+                                                const monthEnd = new Date(today.getFullYear(), today.getMonth() + 1, 0);
+                                                end = monthEnd > today ? new Date(today) : monthEnd;
                                                 start = new Date(today.getFullYear(), today.getMonth(), 1);
                                                 break;
                                             case 'lastMonth':
@@ -1804,8 +1813,8 @@ const GA4Stats = ({ language, isMobile }) => {
                                         }
 
                                         setDateRange({
-                                            startDate: start.toISOString().split('T')[0],
-                                            endDate: end.toISOString().split('T')[0],
+                                            startDate: formatLocalDate(start),
+                                            endDate: formatLocalDate(end),
                                             preset: 'custom'
                                         });
                                     }}
