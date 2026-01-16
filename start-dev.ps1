@@ -12,19 +12,44 @@ Write-Host "   DataVue App - Development Startup" -ForegroundColor Cyan
 Write-Host "========================================" -ForegroundColor Cyan
 Write-Host ""
 
+# Fix Unicode output in Windows Console
+$env:PYTHONIOENCODING = "utf-8"
+
 # ============================================================
 # 1. Environment Check
 # ============================================================
 
 Write-Host "[1/5] Environment Check..." -ForegroundColor Yellow
 
-# Check Python
+$pythonExe = "python"
+
+# Check Python and detect path if necessary
 try {
-    $pythonVersion = python --version 2>&1
-    Write-Host "  [OK] Python: $pythonVersion" -ForegroundColor Green
+    $pyVer = python --version 2>&1
+    if (-not $pyVer -or "$pyVer" -notmatch "Python") { throw "Invalid or empty version" }
+} catch {
+    # Fallback to known common paths
+    $candidates = @(
+        "$env:LOCALAPPDATA\Programs\Python\Python311\python.exe",
+        "$env:LOCALAPPDATA\Programs\Python\Python310\python.exe",
+        "C:\Python311\python.exe",
+        "C:\Python310\python.exe"
+    )
+    foreach ($c in $candidates) {
+        if (Test-Path $c) {
+            $pythonExe = $c
+            Write-Host "  ⚠ Default 'python' command failed. Using explicit path: $pythonExe" -ForegroundColor Yellow
+            break
+        }
+    }
 }
-catch {
-    Write-Host "  [ERROR] Python not installed or not in PATH" -ForegroundColor Red
+
+try {
+    $pythonVersion = & $pythonExe --version 2>&1
+    if (-not $pythonVersion) { throw "Still invalid" }
+    Write-Host "  ✓ Python: $pythonVersion" -ForegroundColor Green
+} catch {
+    Write-Host "  ✗ Python 未安裝或是 Windows Store Stub (請手動安裝 Python)" -ForegroundColor Red
     exit 1
 }
 
@@ -87,10 +112,10 @@ Write-Host "[4/5] Starting Backend..." -ForegroundColor Yellow
 
 $backendPath = Join-Path $ProjectRoot "backend"
 $backendJob = Start-Job -ScriptBlock {
-    param($path)
+    param($path, $exe)
     Set-Location $path
-    python -m uvicorn main:app --reload --host 0.0.0.0 --port 8000 2>&1
-} -ArgumentList $backendPath
+    & $exe -m uvicorn main:app --reload --host 0.0.0.0 --port 8000 2>&1
+} -ArgumentList $backendPath, $pythonExe
 
 Write-Host "  Backend Job ID: $($backendJob.Id)" -ForegroundColor Cyan
 
