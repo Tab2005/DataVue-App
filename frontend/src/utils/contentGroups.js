@@ -5,7 +5,8 @@
 
 // Rule types for content filtering
 export const CONTENT_RULE_TYPES = [
-    { key: 'contains', label_zh: '包含關鍵字', label_en: 'Contains' },
+    { key: 'contains', label_zh: '包含關鍵字', label_en: 'Contains Keyword' },
+    { key: 'pathContains', label_zh: '路徑包含', label_en: 'Path Contains' },
     { key: 'startsWith', label_zh: '路徑開頭', label_en: 'Starts With' },
     { key: 'endsWith', label_zh: '路徑結尾', label_en: 'Ends With' },
     { key: 'equals', label_zh: '完全符合', label_en: 'Equals' }
@@ -160,6 +161,7 @@ function matchesRule(value, rule) {
 
     switch (rule.type) {
         case 'contains':
+        case 'pathContains':
             return lowerValue.includes(lowerPattern);
         case 'startsWith':
             return lowerValue.startsWith(lowerPattern);

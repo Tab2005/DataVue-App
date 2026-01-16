@@ -1260,8 +1260,54 @@ const GSCStats = ({ language, isMobile = false }) => {
     };
 
     if (loading) return (
-        <div style={{ padding: '20px', color: 'var(--text-secondary)' }}>
-            {t('載入網站列表...', 'Loading sites...')}
+        <div style={{
+            display: 'flex',
+            flexDirection: 'column',
+            alignItems: 'center',
+            justifyContent: 'center',
+            padding: '60px 20px',
+            background: 'rgba(255, 255, 255, 0.02)',
+            borderRadius: '16px',
+            border: '1px solid var(--glass-border)',
+            margin: '20px'
+        }}>
+            {/* Spinner Animation */}
+            <div style={{
+                width: '48px',
+                height: '48px',
+                border: '4px solid rgba(52, 168, 83, 0.2)',
+                borderTop: '4px solid #34a853',
+                borderRadius: '50%',
+                animation: 'spin 1s linear infinite',
+                marginBottom: '20px'
+            }} />
+
+            {/* Main Message */}
+            <div style={{
+                fontSize: '16px',
+                fontWeight: 600,
+                color: 'var(--text-primary)',
+                marginBottom: '8px'
+            }}>
+                {t('正在載入 Search Console 網站列表', 'Loading Search Console sites')}
+            </div>
+
+            {/* Sub Message */}
+            <div style={{
+                fontSize: '14px',
+                color: 'var(--text-secondary)',
+                textAlign: 'center'
+            }}>
+                {t('請稍候...', 'Please wait...')}
+            </div>
+
+            {/* CSS Animation Keyframes */}
+            <style>{`
+                @keyframes spin {
+                    0% { transform: rotate(0deg); }
+                    100% { transform: rotate(360deg); }
+                }
+            `}</style>
         </div>
     );
 
@@ -1583,8 +1629,54 @@ const GSCStats = ({ language, isMobile = false }) => {
             </div>
 
             {(analyticsLoading || (activeTab === 'trend' && trendLoading)) ? (
-                <div style={{ color: 'var(--text-secondary)' }}>
-                    {t('載入數據中...', 'Loading analytics...')}
+                <div style={{
+                    display: 'flex',
+                    flexDirection: 'column',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    padding: '60px 20px',
+                    background: 'rgba(255, 255, 255, 0.02)',
+                    borderRadius: '16px',
+                    border: '1px solid var(--glass-border)',
+                    marginTop: '24px'
+                }}>
+                    {/* Spinner Animation */}
+                    <div style={{
+                        width: '48px',
+                        height: '48px',
+                        border: '4px solid rgba(52, 168, 83, 0.2)',
+                        borderTop: '4px solid #34a853',
+                        borderRadius: '50%',
+                        animation: 'spin 1s linear infinite',
+                        marginBottom: '20px'
+                    }} />
+
+                    {/* Main Message */}
+                    <div style={{
+                        fontSize: '16px',
+                        fontWeight: 600,
+                        color: 'var(--text-primary)',
+                        marginBottom: '8px'
+                    }}>
+                        {t('正在從 Search Console 抓取數據', 'Fetching data from Search Console')}
+                    </div>
+
+                    {/* Sub Message */}
+                    <div style={{
+                        fontSize: '14px',
+                        color: 'var(--text-secondary)',
+                        textAlign: 'center'
+                    }}>
+                        {t('請稍候，這可能需要幾秒鐘...', 'Please wait, this may take a few seconds...')}
+                    </div>
+
+                    {/* CSS Animation Keyframes */}
+                    <style>{`
+                        @keyframes spin {
+                            0% { transform: rotate(0deg); }
+                            100% { transform: rotate(360deg); }
+                        }
+                    `}</style>
                 </div>
             ) : (
                 <>

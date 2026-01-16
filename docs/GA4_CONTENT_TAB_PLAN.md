@@ -126,9 +126,9 @@ export function filterByContentGroup(rows, group, dimension) {...}
 ## 實作進度
 
 - [x] 基礎內容分析功能
-- [ ] 建立 contentGroups.js 工具函數
-- [ ] 建立 ContentGroupModal.jsx 組件
-- [ ] 更新 GA4Stats.jsx 整合分組管理
+- [x] 建立 contentGroups.js 工具函數
+- [x] 建立 ContentGroupModal.jsx 組件
+- [x] 更新 GA4Stats.jsx 整合分組管理
 - [ ] 本地測試驗證
 
 ---
