@@ -7,6 +7,8 @@ from googleapiclient.discovery import build
 from sqlalchemy.orm import Session
 from database import User
 from auth import TokenManager
+from cache import generate_cache_key, get_cached, set_cached, analytics_cache
+
 
 class GSCService:
     """
@@ -195,9 +197,24 @@ class GSCService:
     def get_analytics(user: User, site_url: str, start_date: str, end_date: str, dimensions=['date'], db: Session = None):
         """
         Fetches search analytics data (clicks, impressions, ctr, position).
-        Automatically paginates through all results in batches of 1000 rows.
-        Maximum supported: 25,000 rows (GSC API limit).
+        Paginates through all available data from the GSC API and uses a cache.
         """
+        # 1. Generate Cache Key
+        cache_key = generate_cache_key(
+            "gsc_analytics",
+            user.id,
+            site_url,
+            start_date,
+            end_date,
+            json.dumps(dimensions, sort_keys=True)
+        )
+
+        # 2. Check Cache
+        cached_data = get_cached(analytics_cache, cache_key)
+        if cached_data is not None:
+            print(f"[GSC] Returning {len(cached_data)} rows from cache.")
+            return cached_data, None
+
         creds = GSCService.get_credentials(user, db)
         if not creds:
             return None, "No GSC credentials found"
@@ -207,10 +224,9 @@ class GSCService:
             
             all_rows = []
             start_row = 0
-            batch_size = 1000
-            max_rows = 25000  # GSC API maximum
+            batch_size = 25000  # Use GSC API maximum for efficiency
             
-            while start_row < max_rows:
+            while True:
                 request = {
                     'startDate': start_date,
                     'endDate': end_date,
@@ -223,19 +239,23 @@ class GSCService:
                 rows = response.get('rows', [])
                 
                 if not rows:
-                    # No more data available
+                    # No more data available, break the loop
                     break
                     
                 all_rows.extend(rows)
                 
+                # If the number of rows returned is less than the batch size,
+                # it means we have reached the last page.
                 if len(rows) < batch_size:
-                    # Less than batch_size means we've reached the end
                     break
                     
                 start_row += batch_size
                 print(f"[GSC Pagination] Loaded {len(all_rows)} rows so far...")
             
-            print(f"[GSC Pagination] Total rows fetched: {len(all_rows)}")
+            # 3. Set Cache
+            print(f"[GSC Pagination] Total rows fetched: {len(all_rows)}. Caching result.")
+            set_cached(analytics_cache, cache_key, all_rows)
+            
             return all_rows, None
         except Exception as e:
             return None, str(e)

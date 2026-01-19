@@ -1,5 +1,5 @@
 # ============================================================
-# DataVue App - Development Environment Startup Script
+# DataVue App - Development Environment Startup Script (Simplified)
 # ============================================================
 
 $ErrorActionPreference = "Stop"
@@ -16,10 +16,10 @@ Write-Host ""
 $env:PYTHONIOENCODING = "utf-8"
 
 # ============================================================
-# 1. Environment Check
+# 1. Environment Check and Python Executable Detection
 # ============================================================
 
-Write-Host "[1/5] Environment Check..." -ForegroundColor Yellow
+Write-Host "[1/2] Environment Check..." -ForegroundColor Yellow
 
 $pythonExe = "python"
 
@@ -30,8 +30,10 @@ try {
 } catch {
     # Fallback to known common paths
     $candidates = @(
+        "$env:LOCALAPPDATA\Programs\Python\Python313\python.exe", # Python 3.13 is current
         "$env:LOCALAPPDATA\Programs\Python\Python311\python.exe",
         "$env:LOCALAPPDATA\Programs\Python\Python310\python.exe",
+        "C:\Python313\python.exe",
         "C:\Python311\python.exe",
         "C:\Python310\python.exe"
     )
@@ -53,175 +55,63 @@ try {
     exit 1
 }
 
+# Ensure Python executable for backend is fully qualified path
+$backendPythonExe = Join-Path $ProjectRoot "backend\venv\Scripts\python.exe"
+if (-not (Test-Path $backendPythonExe)) {
+    Write-Host "  ✗ Backend virtual environment Python executable not found at $backendPythonExe" -ForegroundColor Red
+    Write-Host "    Please ensure 'python -m venv venv' has been run in the 'backend' directory." -ForegroundColor Red
+    exit 1
+}
+Write-Host "  ✓ Backend venv Python: $backendPythonExe" -ForegroundColor Green
+
+
 # Check Node.js
 try {
     $nodeVersion = node --version 2>&1
-    Write-Host "  [OK] Node.js: $nodeVersion" -ForegroundColor Green
+    Write-Host "  ✓ Node.js: $nodeVersion" -ForegroundColor Green
 }
 catch {
-    Write-Host "  [ERROR] Node.js not installed or not in PATH" -ForegroundColor Red
+    Write-Host "  ✗ Node.js not installed or not in PATH" -ForegroundColor Red
     exit 1
 }
 
 # Check npm
 try {
     $npmVersion = npm --version 2>&1
-    Write-Host "  [OK] npm: $npmVersion" -ForegroundColor Green
+    Write-Host "  ✓ npm: $npmVersion" -ForegroundColor Green
 }
 catch {
-    Write-Host "  [ERROR] npm not installed" -ForegroundColor Red
+    Write-Host "  ✗ npm not installed" -ForegroundColor Red
     exit 1
 }
 
-# ============================================================
-# 2. Backend .env Check
-# ============================================================
-
-Write-Host ""
-Write-Host "[2/5] Backend Config Check..." -ForegroundColor Yellow
-
-$backendEnvPath = Join-Path $ProjectRoot "backend\.env"
-if (Test-Path $backendEnvPath) {
-    Write-Host "  [OK] backend/.env exists" -ForegroundColor Green
-}
-else {
-    Write-Host "  [WARN] backend/.env not found, using defaults" -ForegroundColor Yellow
-}
 
 # ============================================================
-# 3. Frontend .env Check
+# 2. Start Backend and Frontend
 # ============================================================
 
 Write-Host ""
-Write-Host "[3/5] Frontend Config Check..." -ForegroundColor Yellow
+Write-Host "[2/2] Starting Backend and Frontend..." -ForegroundColor Yellow
 
-$frontendEnvPath = Join-Path $ProjectRoot "frontend\.env"
-if (Test-Path $frontendEnvPath) {
-    Write-Host "  [OK] frontend/.env exists" -ForegroundColor Green
-}
-else {
-    Write-Host "  [WARN] frontend/.env not found, using defaults" -ForegroundColor Yellow
-}
+# Start Backend (Uvicorn)
+Write-Host "  Starting Backend with Uvicorn (reload enabled)..." -ForegroundColor Cyan
+Start-Process -FilePath $backendPythonExe -ArgumentList "-m uvicorn main:app --reload --host 0.0.0.0 --port 8000" -WorkingDirectory (Join-Path $ProjectRoot "backend") -NoNewWindow
 
-# ============================================================
-# 4. Start Backend
-# ============================================================
-
-Write-Host ""
-Write-Host "[4/5] Starting Backend..." -ForegroundColor Yellow
-
-$backendPath = Join-Path $ProjectRoot "backend"
-$backendJob = Start-Job -ScriptBlock {
-    param($path, $exe)
-    Set-Location $path
-    & $exe -m uvicorn main:app --reload --host 0.0.0.0 --port 8000 2>&1
-} -ArgumentList $backendPath, $pythonExe
-
-Write-Host "  Backend Job ID: $($backendJob.Id)" -ForegroundColor Cyan
-
-# Wait for backend health
-Write-Host "  Waiting for backend health check..." -ForegroundColor Cyan
-$maxRetries = 30
-$retryCount = 0
-$backendHealthy = $false
-
-while ($retryCount -lt $maxRetries -and -not $backendHealthy) {
-    Start-Sleep -Seconds 2
-    $retryCount++
-    
-    try {
-        $response = Invoke-RestMethod -Uri "http://localhost:8000/api/health" -Method Get -TimeoutSec 2 -ErrorAction Stop
-        if ($response.status -eq "ok") {
-            $backendHealthy = $true
-            Write-Host "  [OK] Backend healthy (version: $($response.version))" -ForegroundColor Green
-        }
-    }
-    catch {
-        Write-Host "  Retry $retryCount/$maxRetries..." -ForegroundColor Gray
-    }
-}
-
-if (-not $backendHealthy) {
-    Write-Host "  [ERROR] Backend health check failed" -ForegroundColor Red
-    Write-Host ""
-    Write-Host "Backend logs:" -ForegroundColor Yellow
-    Receive-Job -Job $backendJob -Keep | Select-Object -Last 30
-    exit 1
-}
-
-# ============================================================
-# 5. Start Frontend
-# ============================================================
-
-Write-Host ""
-Write-Host "[5/5] Starting Frontend..." -ForegroundColor Yellow
-
-$frontendPath = Join-Path $ProjectRoot "frontend"
-$frontendJob = Start-Job -ScriptBlock {
-    param($path)
-    Set-Location $path
-    npm run dev 2>&1
-} -ArgumentList $frontendPath
-
-Write-Host "  Frontend Job ID: $($frontendJob.Id)" -ForegroundColor Cyan
-
-# Wait for frontend
-Start-Sleep -Seconds 5
-$frontendRetry = 0
-$frontendHealthy = $false
-
-while ($frontendRetry -lt 15 -and -not $frontendHealthy) {
-    Start-Sleep -Seconds 1
-    $frontendRetry++
-    
-    try {
-        $null = Invoke-WebRequest -Uri "http://localhost:5173" -Method Head -TimeoutSec 2 -ErrorAction Stop
-        $frontendHealthy = $true
-        Write-Host "  [OK] Frontend ready" -ForegroundColor Green
-    }
-    catch {
-        Write-Host "  Waiting for frontend... ($frontendRetry/15)" -ForegroundColor Gray
-    }
-}
-
-if (-not $frontendHealthy) {
-    Write-Host "  [WARN] Frontend may still be starting" -ForegroundColor Yellow
-}
-
-# ============================================================
-# Complete
-# ============================================================
+# Start Frontend (Vite)
+Write-Host "  Starting Frontend with Vite..." -ForegroundColor Cyan
+Start-Process -FilePath "npm" -ArgumentList "run dev" -WorkingDirectory (Join-Path $ProjectRoot "frontend") -NoNewWindow
 
 Write-Host ""
 Write-Host "========================================" -ForegroundColor Green
-Write-Host "   Development Environment Ready!" -ForegroundColor Green
+Write-Host "   Development Environment Started!" -ForegroundColor Green
 Write-Host "========================================" -ForegroundColor Green
 Write-Host ""
-Write-Host "Service URLs:" -ForegroundColor Cyan
+Write-Host "Service URLs (may take a moment to become active):" -ForegroundColor Cyan
 Write-Host "  Frontend: http://localhost:5173" -ForegroundColor White
 Write-Host "  Backend:  http://localhost:8000" -ForegroundColor White
 Write-Host "  API Docs: http://localhost:8000/docs" -ForegroundColor White
-Write-Host "  Health:   http://localhost:8000/api/health" -ForegroundColor White
 Write-Host ""
-Write-Host "Press Ctrl+C to stop all services" -ForegroundColor Yellow
+Write-Host "NOTE: This script does not wait for processes to exit." -ForegroundColor Yellow
+Write-Host "      You will need to manually stop the processes (Ctrl+C usually works for the main window," -ForegroundColor Yellow
+Write-Host "      or Task Manager for background processes if -NoNewWindow prevents Ctrl+C)." -ForegroundColor Yellow
 Write-Host ""
-
-# Keep script running
-try {
-    while ($true) {
-        if ($backendJob.State -eq "Failed" -or $frontendJob.State -eq "Failed") {
-            Write-Host "[ERROR] A service has failed" -ForegroundColor Red
-            break
-        }
-        Start-Sleep -Seconds 5
-    }
-}
-finally {
-    Write-Host ""
-    Write-Host "Stopping services..." -ForegroundColor Yellow
-    Stop-Job -Job $backendJob -ErrorAction SilentlyContinue
-    Stop-Job -Job $frontendJob -ErrorAction SilentlyContinue
-    Remove-Job -Job $backendJob -Force -ErrorAction SilentlyContinue
-    Remove-Job -Job $frontendJob -Force -ErrorAction SilentlyContinue
-    Write-Host "[OK] Services stopped" -ForegroundColor Green
-}

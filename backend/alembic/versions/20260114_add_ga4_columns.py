@@ -13,7 +13,7 @@ import sqlalchemy as sa
 
 # revision identifiers, used by Alembic.
 revision = '20260114_add_ga4_columns'
-down_revision = '20260106_add_permissions_tables'
+down_revision = '20260106'
 branch_labels = None
 depends_on = None
 
