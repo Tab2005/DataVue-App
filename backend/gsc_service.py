@@ -8,6 +8,7 @@ from sqlalchemy.orm import Session
 from database import User
 from auth import TokenManager
 from cache import generate_cache_key, get_cached, set_cached, analytics_cache
+from redis_cache import get_cached_redis, set_cached_redis
 
 
 class GSCService:
@@ -209,7 +210,16 @@ class GSCService:
             json.dumps(dimensions, sort_keys=True)
         )
 
-        # 2. Check Cache
+        # 2. Check Cache (Redis -> In-memory fallback)
+        use_redis = bool(os.getenv("REDIS_URL"))
+        redis_ttl = int(os.getenv("GSC_REDIS_TTL_SECONDS", "900"))
+
+        if use_redis:
+            cached_data = get_cached_redis(cache_key)
+            if cached_data is not None:
+                print(f"[GSC REDIS HIT] Returning {len(cached_data)} rows.")
+                return cached_data, None
+
         cached_data = get_cached(analytics_cache, cache_key)
         if cached_data is not None:
             print(f"[GSC] Returning {len(cached_data)} rows from cache.")
@@ -254,7 +264,15 @@ class GSCService:
             
             # 3. Set Cache
             print(f"[GSC Pagination] Total rows fetched: {len(all_rows)}. Caching result.")
-            set_cached(analytics_cache, cache_key, all_rows)
+
+            redis_set = False
+            if use_redis:
+                redis_set = set_cached_redis(cache_key, all_rows, redis_ttl)
+                if redis_set:
+                    print(f"[GSC REDIS SET] Cached {len(all_rows)} rows (ttl={redis_ttl}s).")
+
+            if not use_redis or not redis_set:
+                set_cached(analytics_cache, cache_key, all_rows)
             
             return all_rows, None
         except Exception as e:

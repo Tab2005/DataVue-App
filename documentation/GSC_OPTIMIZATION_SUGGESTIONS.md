@@ -102,3 +102,116 @@ batch_size = 25000  # 原本的值是 1000
 2.  **提高批次大小**：將 `batch_size` 調整為 `25000`，減少 API 請求次數。
 
 長期來看，再結合**快取機制**，可以建構一個更高效、更具擴展性的 GSC 資料服務。
+
+---
+
+## Redis 快取方案（本地開發 vs 佈署）
+
+### 目前快取機制的限制
+
+現有的快取為記憶體內的 `TTLCache`，只存在單一後端進程：
+
+- **不共享**：多實例部署時，快取無法跨容器共用。
+- **不持久**：服務重啟即清空。
+- **時間敏感**：TTL 到期就會重新打 GSC API。
+
+這會導致佈署到網路端時，即使資料相同，仍可能頻繁 cache miss，前端卡在「正在從 Search Console 抓取數據」。
+
+### Redis 對本地與網路的影響
+
+| 環境 | 影響 | 結論 |
+|---|---|---|
+| 本地端 | 可選擇不啟用 Redis，使用原本記憶體快取 | 不影響開發流程 |
+| 佈署端 | Redis 讓快取可跨實例共享並持久 | 顯著降低 API 延遲 |
+
+**重點**：Redis 主要解決佈署端「多實例 / 重啟 / cache miss」問題，對本地端影響小，可用環境變數切換。
+
+### 建議做法（不改動前端）
+
+1. **後端快取抽象化**：
+    - 若 `REDIS_URL` 存在 → 使用 Redis
+    - 若不存在 → 回退至原本的 `TTLCache`
+
+2. **設定 REDIS_URL（佈署端）**：
+    - 在 Zeabur 建立 Redis 服務後，取得連線字串
+    - 將連線字串設定到後端服務的環境變數 `REDIS_URL`
+    - 常見格式：
+      - `redis://:<password>@<host>:<port>/0`
+      - 若有內網連線，優先使用內網位址
+
+3. **設定 REDIS_URL（本地端）**：
+    - 本地端可不設定 `REDIS_URL`（回退 TTLCache）
+    - 若需測試 Redis：在 `backend/.env` 加入 `REDIS_URL`
+
+4. **快取鍵一致化**：
+    - `gsc_analytics:{user_id}:{site_url}:{start_date}:{end_date}:{dimensions}`
+
+5. **TTL 策略**：
+    - 網路端建議 10–30 分鐘（視資料更新需求）
+    - 本地端可維持 2 分鐘
+
+### Redis vs DB 快取取捨
+
+- **Redis（推薦）**：共享、快、支援 TTL、對佈署端效果最顯著。
+- **DB 快取（備案）**：可持久，但效能較慢，DB 壓力高，TTL 管理麻煩。
+
+### 何時採用 Redis
+
+- 佈署端為多實例（或可能 auto-scaling）
+- 目前前端卡在載入動畫，且後端每次都打 GSC API
+- 希望快取能跨重啟持久存在
+
+若你確認採用 Redis，可先只針對 GSC 快取替換，風險最小、效果最大。
+
+---
+
+## 只替換 GSC 快取到 Redis：實作計劃（待確認）
+
+> 目標：只將 GSC `get_analytics` 的快取從記憶體 TTLCache 改為 Redis，其他模組維持不變。
+
+### A. 需求確認
+
+- Zeabur 已建立 Redis 服務
+- 後端可取得 `REDIS_URL`
+- GSC 快取需可共享（跨實例 / 重啟仍可命中）
+
+### B. 實作步驟
+
+1. **新增 Redis 依賴**
+    - 後端新增 `redis` 或 `redis[async]` 套件
+
+2. **建立 Redis 快取介面（僅 GSC 使用）**
+    - 新增 Redis cache helper（例如 `backend/redis_cache.py`）
+    - 功能：`get_cached` / `set_cached` / `invalidate`（只針對 GSC）
+
+3. **GSC 快取接入點**
+    - 修改 `backend/gsc_service.py` 的 `get_analytics`
+    - 讀取順序：Redis → 若無，使用 GSC API → 回寫 Redis
+
+4. **環境變數切換策略**
+    - 若 `REDIS_URL` 不存在 → 回退到 TTLCache
+    - 本地端可不啟用 Redis
+
+5. **TTL 策略**
+    - 佈署端：10–30 分鐘
+    - 本地端：維持 120 秒
+
+6. **記錄與監控（可選）**
+    - 增加 log：`[GSC REDIS HIT]` / `[GSC REDIS MISS]`
+    - 方便比對佈署前後命中率
+
+### C. 驗證步驟
+
+1. 佈署後第一次請求（MISS）
+2. 相同參數第二次請求（HIT）
+3. 切換分頁後再次返回（應為 HIT）
+
+### D. 回復方案
+
+- 移除 `REDIS_URL` 即回退到 TTLCache
+- 或直接切回舊版 `gsc_service.py`
+
+### E. 影響範圍
+
+- 僅 GSC 模組快取行為改變
+- 其他模組（FB/GA4）不受影響
