@@ -206,6 +206,11 @@ const GA4Stats = ({ language, isMobile }) => {
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState(null);
     const [activeTab, setActiveTab] = useState('overview');
+
+    // Server-side pagination for GA4 table data
+    const [ga4Offset, setGa4Offset] = useState(0);
+    const [ga4HasMore, setGa4HasMore] = useState(true);
+    const [ga4LoadingMore, setGa4LoadingMore] = useState(false);
     const [showCustomDatePicker, setShowCustomDatePicker] = useState(false);
     const [compareMode, setCompareMode] = useState('none');
     // 日期計算：「過去 N 天」不包含今天（業界標準，因為今天數據不完整）
@@ -226,6 +231,10 @@ const GA4Stats = ({ language, isMobile }) => {
     // Table Pagination State
     const [currentPage, setCurrentPage] = useState(1);
     const [itemsPerPage, setItemsPerPage] = useState(20);
+
+    const ga4PageSize = useMemo(() => {
+        return Math.max(itemsPerPage * 10, 1000);
+    }, [itemsPerPage]);
 
     // Traffic Tab State
     const [trafficDimension, setTrafficDimension] = useState('sessionDefaultChannelGrouping');
@@ -429,8 +438,14 @@ const GA4Stats = ({ language, isMobile }) => {
 
     // Fetch analytics data with caching
     // 同時獲取兩組數據：帶 dimension（表格）和不帶 dimension（KPI 總數去重）
-    const fetchAnalytics = useCallback(async (forceRefresh = false) => {
+    const fetchAnalytics = useCallback(async (forceRefresh = false, options = {}) => {
+        const { append = false, offset = 0 } = options;
         if (!selectedProperty) return;
+
+        if (forceRefresh) {
+            setGa4Offset(0);
+            setGa4HasMore(true);
+        }
 
         // Include dimension in cache key for traffic, behavior, and ecommerce tabs
         let dimensionKey;
@@ -440,25 +455,60 @@ const GA4Stats = ({ language, isMobile }) => {
             dimensionKey = behaviorDimension;
         } else if (activeTab === 'ecommerce') {
             dimensionKey = `${ecommerceDimension}|${ecommerceSecondaryDimension}`;
+        } else if (activeTab === 'content') {
+            dimensionKey = contentDimension;
         } else {
             dimensionKey = 'default';
         }
-        const cacheKey = getCacheKey(selectedProperty, activeTab + '|' + dimensionKey, dateRange.startDate, dateRange.endDate);
-        const summaryCacheKey = `${cacheKey}|summary`;
+
+        const baseKey = getCacheKey(selectedProperty, activeTab + '|' + dimensionKey, dateRange.startDate, dateRange.endDate);
+        const pageKey = `${baseKey}|page|${offset}|${ga4PageSize}`;
+        const combinedKey = `${baseKey}|combined`;
+        const summaryCacheKey = `${baseKey}|summary`;
 
         // Check cache first (unless force refresh)
         if (!forceRefresh) {
-            const cachedData = getCachedData(cacheKey);
-            const cachedSummary = getCachedData(summaryCacheKey);
-            if (cachedData && cachedSummary) {
-                console.log('📦 Using cached data for:', cacheKey);
-                setAnalyticsData(cachedData);
-                setSummaryData(cachedSummary);
-                return;
+            if (!append) {
+                const cachedCombined = getCachedData(combinedKey);
+                const cachedSummary = getCachedData(summaryCacheKey);
+                if (cachedCombined && cachedSummary) {
+                    console.log('📦 Using cached data for:', combinedKey);
+                    setAnalyticsData(cachedCombined);
+                    setSummaryData(cachedSummary);
+                    if (cachedCombined.total_row_count) {
+                        setGa4HasMore(cachedCombined.rows.length < cachedCombined.total_row_count);
+                    }
+                    return;
+                }
+            } else {
+                const cachedPage = getCachedData(pageKey);
+                if (cachedPage) {
+                    setAnalyticsData(prev => {
+                        const prevRows = prev?.rows || [];
+                        const mergedRows = [...prevRows, ...(cachedPage.rows || [])];
+                        const totalRowCount = cachedPage.total_row_count || prev?.total_row_count || mergedRows.length;
+                        const mergedData = {
+                            ...cachedPage,
+                            rows: mergedRows,
+                            row_count: mergedRows.length,
+                            total_row_count: totalRowCount
+                        };
+                        setCachedData(combinedKey, mergedData);
+                        return mergedData;
+                    });
+                    if (cachedPage.total_row_count) {
+                        setGa4HasMore((analyticsData?.rows?.length || 0) + cachedPage.rows.length < cachedPage.total_row_count);
+                    }
+                    return;
+                }
             }
         }
 
-        setLoading(true);
+        if (append) {
+            setGa4LoadingMore(true);
+        } else {
+            setLoading(true);
+        }
         setError(null);
 
         try {
@@ -488,9 +538,10 @@ const GA4Stats = ({ language, isMobile }) => {
                 start_date: dateRange.startDate,
                 end_date: dateRange.endDate,
                 metrics: tabConfig.metrics.join(','),
-                dimensions: activeDimension
+                dimensions: activeDimension,
+                limit: String(ga4PageSize),
+                offset: String(offset)
             });
-
 
             // 2. 不帶 dimension 的請求（用於 KPI 卡片顯示去重總數）
             const summaryParams = new URLSearchParams({
@@ -518,22 +569,61 @@ const GA4Stats = ({ language, isMobile }) => {
             const data = await response.json();
             const summary = summaryResponse.ok ? await summaryResponse.json() : null;
 
+            const totalRowCount = data.total_row_count ?? data.row_count ?? (data.rows ? data.rows.length : 0);
+            const incomingRows = data.rows || [];
+            const mergedRows = append && analyticsData?.rows
+                ? [...analyticsData.rows, ...incomingRows]
+                : incomingRows;
+
+            const combinedData = {
+                ...data,
+                rows: mergedRows,
+                row_count: mergedRows.length,
+                total_row_count: totalRowCount,
+                limit: ga4PageSize,
+                offset
+            };
+
             // Store in cache
-            setCachedData(cacheKey, data);
+            setCachedData(pageKey, data);
+            setCachedData(combinedKey, combinedData);
             if (summary) {
                 setCachedData(summaryCacheKey, summary);
             }
-            console.log('💾 Cached data for:', cacheKey);
+            console.log('💾 Cached data for:', combinedKey);
 
-            setAnalyticsData(data);
+            setAnalyticsData(combinedData);
             setSummaryData(summary);
+            setCurrentPage(1);
+
+            if (totalRowCount) {
+                setGa4HasMore(mergedRows.length < totalRowCount);
+            } else if (ga4PageSize && incomingRows.length < ga4PageSize) {
+                setGa4HasMore(false);
+            }
+
+            if (append) {
+                setGa4Offset(offset);
+            } else {
+                setGa4Offset(0);
+            }
         } catch (err) {
             console.error('Error fetching GA4 analytics:', err);
             setError('Failed to load analytics data');
         } finally {
-            setLoading(false);
+            if (append) {
+                setGa4LoadingMore(false);
+            } else {
+                setLoading(false);
+            }
         }
-    }, [selectedProperty, activeTab, dateRange.startDate, dateRange.endDate, trafficDimension, behaviorDimension, ecommerceDimension, ecommerceSecondaryDimension, contentDimension, getCacheKey, getCachedData, setCachedData]);
+    }, [selectedProperty, activeTab, dateRange.startDate, dateRange.endDate, trafficDimension, behaviorDimension, ecommerceDimension, ecommerceSecondaryDimension, contentDimension, ga4PageSize, analyticsData, getCacheKey, getCachedData, setCachedData]);
+
+    const loadMoreGa4Data = () => {
+        if (ga4LoadingMore || !ga4HasMore) return;
+        const nextOffset = ga4Offset + ga4PageSize;
+        fetchAnalytics(false, { append: true, offset: nextOffset });
+    };
 
     // Fetch comparison data (also with summary for KPI)
     const fetchCompareData = useCallback(async (compareDateRange) => {
@@ -1425,6 +1515,13 @@ const GA4Stats = ({ language, isMobile }) => {
     useEffect(() => {
         fetchProperties();
     }, []);
+
+    useEffect(() => {
+        setGa4Offset(0);
+        setGa4HasMore(true);
+        setGa4LoadingMore(false);
+        setCurrentPage(1);
+    }, [selectedProperty, activeTab, dateRange.startDate, dateRange.endDate, trafficDimension, behaviorDimension, ecommerceDimension, ecommerceSecondaryDimension, contentDimension]);
 
     useEffect(() => {
         if (selectedProperty && !showCustomDatePicker) {
@@ -2843,6 +2940,47 @@ const GA4Stats = ({ language, isMobile }) => {
 
                             </table>
                         </div>
+
+                        {/* Server-side Load More */}
+                        {!loading && !error && analyticsData && ga4HasMore && (
+                            <div style={{
+                                display: 'flex',
+                                flexDirection: isMobile ? 'column' : 'row',
+                                justifyContent: 'space-between',
+                                alignItems: isMobile ? 'stretch' : 'center',
+                                gap: '12px',
+                                padding: '16px 0',
+                                borderTop: '1px solid var(--glass-border)',
+                                marginTop: '8px'
+                            }}>
+                                <div style={{
+                                    color: 'var(--text-secondary)',
+                                    fontSize: '13px',
+                                    textAlign: isMobile ? 'center' : 'left'
+                                }}>
+                                    {t(`已載入 ${analyticsData.rows.length} / ${analyticsData.total_row_count || analyticsData.rows.length} 筆`,
+                                        `Loaded ${analyticsData.rows.length} / ${analyticsData.total_row_count || analyticsData.rows.length}`)}
+                                </div>
+                                <button
+                                    onClick={loadMoreGa4Data}
+                                    disabled={ga4LoadingMore}
+                                    style={{
+                                        padding: '8px 20px',
+                                        background: 'var(--accent-primary)',
+                                        border: 'none',
+                                        borderRadius: '8px',
+                                        color: 'white',
+                                        fontSize: '13px',
+                                        fontWeight: '500',
+                                        cursor: ga4LoadingMore ? 'wait' : 'pointer',
+                                        opacity: ga4LoadingMore ? 0.7 : 1,
+                                        transition: 'all 0.2s'
+                                    }}
+                                >
+                                    {ga4LoadingMore ? t('載入中...', 'Loading...') : `⬇️ ${t('載入更多資料', 'Load More Data')}`}
+                                </button>
+                            </div>
+                        )}
 
                         {/* Pagination Controls */}
                         {analyticsData.rows.length > 0 && (() => {

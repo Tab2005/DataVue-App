@@ -89,6 +89,8 @@ def get_ga4_analytics(
     end_date: str = Query(..., description="結束日期 (YYYY-MM-DD)"),
     metrics: Optional[str] = Query("activeUsers,totalUsers,newUsers,sessions,screenPageViews", description="指標列表，用逗號分隔"),
     dimensions: Optional[str] = Query("date", description="維度列表，用逗號分隔"),
+    limit: Optional[int] = Query(None, ge=1, le=100000, description="每頁筆數"),
+    offset: Optional[int] = Query(0, ge=0, description="位移"),
     user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
     _: bool = Depends(ga4_module_check)
@@ -115,6 +117,8 @@ def get_ga4_analytics(
             end_date=end_date,
             metrics=metrics_list,
             dimensions=dimensions_list,
+            limit=limit,
+            offset=offset,
             db=db
         )
 

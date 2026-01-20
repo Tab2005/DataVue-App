@@ -25,6 +25,8 @@ from google.analytics.data_v1beta.types import (
 )
 from sqlalchemy.orm import Session
 from database import User
+from cache import generate_cache_key, get_cached, set_cached, analytics_cache
+from redis_cache import get_cached_redis, set_cached_redis
 
 
 class GA4Service:
@@ -282,6 +284,8 @@ class GA4Service:
         end_date: str,
         metrics: Optional[List[str]] = None,
         dimensions: Optional[List[str]] = None,
+        limit: Optional[int] = None,
+        offset: int = 0,
         db: Session = None
     ) -> Tuple[Optional[Dict[str, Any]], Optional[str]]:
         """
@@ -330,15 +334,128 @@ class GA4Service:
             # Use Analytics Data API
             data_client = BetaAnalyticsDataClient(credentials=creds)
 
-            # Build the request - 根據是否有 dimension 來決定請求格式
-            if use_dimensions:
-                request = RunReportRequest(
-                    property=f"properties/{property_id}",
-                    date_ranges=[DateRange(start_date=start_date, end_date=end_date)],
-                    dimensions=[Dimension(name=dim) for dim in dimensions],
-                    metrics=[Metric(name=met) for met in metrics],
+            # Cache keys
+            base_cache_key = generate_cache_key(
+                "ga4_analytics",
+                property_id,
+                start_date,
+                end_date,
+                json.dumps(metrics, sort_keys=True),
+                json.dumps(dimensions, sort_keys=True)
+            )
+
+            page_cache_key = None
+            effective_limit = None
+            if (limit is not None and limit > 0) or (offset and offset > 0):
+                effective_limit = limit if limit is not None else 1000
+                page_cache_key = generate_cache_key(
+                    "ga4_analytics_page",
+                    property_id,
+                    start_date,
+                    end_date,
+                    json.dumps(metrics, sort_keys=True),
+                    json.dumps(dimensions, sort_keys=True),
+                    str(offset or 0),
+                    str(effective_limit) if effective_limit is not None else ""
                 )
+
+            use_redis = bool(os.getenv("REDIS_URL"))
+            redis_ttl = int(os.getenv("GA4_REDIS_TTL_SECONDS", "900"))
+
+            def _convert_rows(rows):
+                converted = []
+                for row in rows:
+                    row_data = {}
+
+                    # Add dimension values
+                    for i, dimension in enumerate(dimensions):
+                        row_data[dimension] = row.dimension_values[i].value
+
+                    # Add metric values
+                    for i, metric in enumerate(metrics):
+                        value = row.metric_values[i].value
+                        # Convert string values to appropriate types
+                        if metric in ["activeUsers", "totalUsers", "newUsers", "sessions", "screenPageViews", "engagedSessions", "addToCarts", "ecommercePurchases", "itemsViewed", "itemsAddedToCart", "itemsPurchased", "totalPurchasers"]:
+                            row_data[metric] = int(value)
+                        elif metric in ["averageSessionDuration", "bounceRate", "engagementRate", "purchaseRevenue", "itemRevenue"]:
+                            row_data[metric] = float(value)
+                        else:
+                            row_data[metric] = value
+
+                    converted.append(row_data)
+                return converted
+
+            def _build_result(rows, total_row_count=None, limit_value=None, offset_value=0):
+                return {
+                    "property_id": property_id,
+                    "date_range": {
+                        "start_date": start_date,
+                        "end_date": end_date
+                    },
+                    "dimensions": dimensions,
+                    "metrics": metrics,
+                    "row_count": len(rows),
+                    "total_row_count": total_row_count if total_row_count is not None else len(rows),
+                    "limit": limit_value,
+                    "offset": offset_value,
+                    "rows": rows
+                }
+
+            def _slice_cached(cached_result):
+                all_rows = cached_result.get("rows", [])
+                start = offset or 0
+                slice_limit = limit if limit is not None else effective_limit
+                end = start + slice_limit if slice_limit else None
+                sliced = all_rows[start:end]
+                total_row_count = cached_result.get("total_row_count", len(all_rows))
+                result = {
+                    **cached_result,
+                    "rows": sliced,
+                    "row_count": len(sliced),
+                    "total_row_count": total_row_count,
+                    "limit": slice_limit,
+                    "offset": start
+                }
+                return result
+
+            # Check cache
+            if use_redis:
+                if use_dimensions and (limit is not None or (offset and offset > 0)):
+                    cached_full = get_cached_redis(base_cache_key)
+                    if cached_full is not None:
+                        print(f"[GA4 REDIS HIT] Returning {len(cached_full.get('rows', []))} rows (full cached).")
+                        return _slice_cached(cached_full), None
+
+                    if page_cache_key:
+                        cached_page = get_cached_redis(page_cache_key)
+                        if cached_page is not None:
+                            print(f"[GA4 REDIS HIT] Returning {len(cached_page.get('rows', []))} rows (page cached).")
+                            return cached_page, None
+                else:
+                    cached_data = get_cached_redis(base_cache_key)
+                    if cached_data is not None:
+                        print(f"[GA4 REDIS HIT] Returning {len(cached_data.get('rows', []))} rows.")
+                        return cached_data, None
+
+            if use_dimensions and (limit is not None or (offset and offset > 0)):
+                cached_full = get_cached(analytics_cache, base_cache_key)
+                if cached_full is not None:
+                    print(f"[GA4] Returning {len(cached_full.get('rows', []))} rows from cache (full).")
+                    return _slice_cached(cached_full), None
+
+                if page_cache_key:
+                    cached_page = get_cached(analytics_cache, page_cache_key)
+                    if cached_page is not None:
+                        print(f"[GA4] Returning {len(cached_page.get('rows', []))} rows from cache (page).")
+                        return cached_page, None
             else:
+                cached_data = get_cached(analytics_cache, base_cache_key)
+                if cached_data is not None:
+                    print(f"[GA4] Returning {len(cached_data.get('rows', []))} rows from cache.")
+                    return cached_data, None
+
+            # Build and execute the request(s)
+            if not use_dimensions:
                 # 不帶 dimension 的請求，會返回整個期間的去重總數
                 request = RunReportRequest(
                     property=f"properties/{property_id}",
@@ -346,47 +463,78 @@ class GA4Service:
                     metrics=[Metric(name=met) for met in metrics],
                 )
                 dimensions = []  # 確保後續處理正確
+                response = data_client.run_report(request)
+                rows = _convert_rows(response.rows)
+                total_row_count = getattr(response, "row_count", None)
+                result = _build_result(rows, total_row_count, None, 0)
 
-            # Execute the report
-            response = data_client.run_report(request)
+            elif limit is not None or (offset and offset > 0):
+                request_limit = effective_limit if effective_limit is not None else limit
+                request = RunReportRequest(
+                    property=f"properties/{property_id}",
+                    date_ranges=[DateRange(start_date=start_date, end_date=end_date)],
+                    dimensions=[Dimension(name=dim) for dim in dimensions],
+                    metrics=[Metric(name=met) for met in metrics],
+                    limit=request_limit,
+                    offset=offset
+                )
+                response = data_client.run_report(request)
+                rows = _convert_rows(response.rows)
+                total_row_count = getattr(response, "row_count", None)
+                result = _build_result(rows, total_row_count, request_limit, offset)
+            else:
+                all_rows = []
+                page_offset = 0
+                page_limit = 100000
+                total_row_count = None
 
-            # Format the response
-            result = {
-                "property_id": property_id,
-                "date_range": {
-                    "start_date": start_date,
-                    "end_date": end_date
-                },
-                "dimensions": dimensions,
-                "metrics": metrics,
-                "row_count": len(response.rows),
-                "rows": []
-            }
+                while True:
+                    request = RunReportRequest(
+                        property=f"properties/{property_id}",
+                        date_ranges=[DateRange(start_date=start_date, end_date=end_date)],
+                        dimensions=[Dimension(name=dim) for dim in dimensions],
+                        metrics=[Metric(name=met) for met in metrics],
+                        limit=page_limit,
+                        offset=page_offset
+                    )
 
-            # Process each row
-            for row in response.rows:
-                row_data = {}
+                    response = data_client.run_report(request)
+                    if total_row_count is None:
+                        total_row_count = getattr(response, "row_count", None)
 
-                # Add dimension values
-                for i, dimension in enumerate(dimensions):
-                    row_data[dimension] = row.dimension_values[i].value
+                    current_rows = _convert_rows(response.rows)
+                    if not current_rows:
+                        break
 
-                # Add metric values
-                for i, metric in enumerate(metrics):
-                    value = row.metric_values[i].value
-                    # Convert string values to appropriate types
-                    if metric in ["activeUsers", "totalUsers", "newUsers", "sessions", "screenPageViews"]:
-                        row_data[metric] = int(value)
-                    elif metric in ["averageSessionDuration"]:
-                        row_data[metric] = float(value)
-                    elif metric in ["bounceRate"]:
-                        row_data[metric] = float(value)
-                    else:
-                        row_data[metric] = value
+                    all_rows.extend(current_rows)
 
-                result["rows"].append(row_data)
+                    if len(response.rows) < page_limit:
+                        break
 
-            print(f"[GA4] Analytics data retrieved: {len(result['rows'])} rows")
+                    page_offset += page_limit
+
+                result = _build_result(all_rows, total_row_count, None, 0)
+
+            # Cache result
+            redis_set = False
+            if use_redis:
+                if use_dimensions and (limit is not None or (offset and offset > 0)):
+                    if page_cache_key:
+                        redis_set = set_cached_redis(page_cache_key, result, redis_ttl)
+                else:
+                    redis_set = set_cached_redis(base_cache_key, result, redis_ttl)
+
+                if redis_set:
+                    print(f"[GA4 REDIS SET] Cached {result.get('row_count', 0)} rows (ttl={redis_ttl}s).")
+
+            if not use_redis or not redis_set:
+                if use_dimensions and (limit is not None or (offset and offset > 0)):
+                    if page_cache_key:
+                        set_cached(analytics_cache, page_cache_key, result)
+                else:
+                    set_cached(analytics_cache, base_cache_key, result)
+
+            print(f"[GA4] Analytics data retrieved: {len(result.get('rows', []))} rows")
             return result, None
 
         except Exception as e:
