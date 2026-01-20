@@ -348,6 +348,11 @@ const GSCStats = ({ language, isMobile = false }) => {
     const [analytics, setAnalytics] = useState([]);
     const [analyticsLoading, setAnalyticsLoading] = useState(false);
 
+    // 新增：數據緩存狀態 - { cacheKey: data }
+    const [analyticsCache, setAnalyticsCache] = useState({});
+    // 新增：已載入的分頁追蹤 (預設載入 daily 分頁)
+    const [loadedDimensions, setLoadedDimensions] = useState(new Set(['date']));
+
     // Tab State
     const [activeTab, setActiveTab] = useState('daily');
 
@@ -493,6 +498,15 @@ const GSCStats = ({ language, isMobile = false }) => {
         setDisplayLimit(100);
     }, [selectedSite, dateRange, activeTab, rowLimit]);
 
+    // 當網站或日期範圍改變時，清除緩存並重置載入狀態
+    useEffect(() => {
+        if (selectedSite && dateRange.start && dateRange.end) {
+            setAnalyticsCache({});
+            setLoadedDimensions(new Set());
+            setAnalytics([]);
+        }
+    }, [selectedSite, dateRange.start, dateRange.end]);
+
     useEffect(() => {
         if (selectedSite && dateRange.start && dateRange.end) {
             const currentTab = TABS.find(tab => tab.key === activeTab);
@@ -502,7 +516,16 @@ const GSCStats = ({ language, isMobile = false }) => {
                 // For trend tab, fetch both current and previous period
                 fetchTrendData(selectedSite, dateRange.start, dateRange.end);
             } else {
-                fetchAnalytics(selectedSite, dateRange.start, dateRange.end, dimension);
+                // 檢查是否已載入此dimension的數據
+                if (!loadedDimensions.has(dimension)) {
+                    fetchAnalytics(selectedSite, dateRange.start, dateRange.end, dimension);
+                } else {
+                    // 如果已載入，從緩存中恢復數據
+                    const cacheKey = `${selectedSite}-${dateRange.start}-${dateRange.end}-${dimension}`;
+                    if (analyticsCache[cacheKey]) {
+                        setAnalytics(analyticsCache[cacheKey]);
+                    }
+                }
 
                 // Fetch page+query data for page tab (to show keywords per page)
                 if (activeTab === 'page') {
@@ -510,7 +533,7 @@ const GSCStats = ({ language, isMobile = false }) => {
                 }
             }
         }
-    }, [selectedSite, dateRange, activeTab]);
+    }, [selectedSite, dateRange, activeTab, loadedDimensions, analyticsCache]);
 
     // Fetch page titles when page data is available
     useEffect(() => {
@@ -528,6 +551,17 @@ const GSCStats = ({ language, isMobile = false }) => {
     }, [activeTab, analytics, trendData]);
 
     const fetchAnalytics = async (siteUrl, startDate, endDate, dimension = 'date') => {
+        // 建立緩存鍵
+        const cacheKey = `${siteUrl}-${startDate}-${endDate}-${dimension}`;
+
+        // 檢查緩存中是否已有數據
+        if (analyticsCache[cacheKey]) {
+            console.log(`Using cached data for ${dimension}`);
+            setAnalytics(analyticsCache[cacheKey]);
+            return;
+        }
+
+        console.log(`Fetching fresh data for ${dimension}`);
         setAnalyticsLoading(true);
         try {
             const resp = await fetch(`${API_URL}/api/gsc/analytics?site_url=${encodeURIComponent(siteUrl)}&start_date=${startDate}&end_date=${endDate}&dimensions=${dimension}`, {
@@ -535,7 +569,13 @@ const GSCStats = ({ language, isMobile = false }) => {
             });
             const data = await resp.json();
             if (!resp.ok) throw new Error(data.detail);
+
+            // 保存到緩存並更新當前數據
+            setAnalyticsCache(prev => ({ ...prev, [cacheKey]: data }));
             setAnalytics(data);
+
+            // 標記此dimension已載入
+            setLoadedDimensions(prev => new Set([...prev, dimension]));
         } catch (err) {
             console.error(err);
         } finally {
@@ -722,6 +762,17 @@ const GSCStats = ({ language, isMobile = false }) => {
 
     // Fetch trend data (compare current period with previous period)
     const fetchTrendData = async (siteUrl, startDate, endDate) => {
+        // 建立 trend 專用的緩存鍵
+        const cacheKey = `trend-${siteUrl}-${startDate}-${endDate}`;
+
+        // 檢查緩存
+        if (analyticsCache[cacheKey]) {
+            console.log('Using cached trend data');
+            setTrendData(analyticsCache[cacheKey]);
+            return;
+        }
+
+        console.log('Fetching fresh trend data');
         setTrendLoading(true);
         try {
             // Calculate previous period dates
@@ -786,6 +837,8 @@ const GSCStats = ({ language, isMobile = false }) => {
                 };
             });
 
+            // 保存到緩存並更新數據
+            setAnalyticsCache(prev => ({ ...prev, [cacheKey]: trendResults }));
             setTrendData(trendResults);
         } catch (err) {
             console.error('Failed to fetch trend data:', err);
