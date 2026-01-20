@@ -348,6 +348,11 @@ const GSCStats = ({ language, isMobile = false }) => {
     const [analytics, setAnalytics] = useState([]);
     const [analyticsLoading, setAnalyticsLoading] = useState(false);
 
+    // Query pagination state (server-side load more)
+    const [queryOffset, setQueryOffset] = useState(0);
+    const [queryHasMore, setQueryHasMore] = useState(true);
+    const [queryLoadingMore, setQueryLoadingMore] = useState(false);
+
     // 新增：數據緩存狀態 - { cacheKey: data }
     const [analyticsCache, setAnalyticsCache] = useState({});
     // 新增：已載入的分頁追蹤 (預設載入 daily 分頁)
@@ -372,6 +377,11 @@ const GSCStats = ({ language, isMobile = false }) => {
     const [sortConfig, setSortConfig] = useState({ key: 'clicks', direction: 'desc' });
     const [rowLimit, setRowLimit] = useState(50);
     const [displayLimit, setDisplayLimit] = useState(100); // Progressive rendering: start with 100 rows
+
+    const queryPageSize = useMemo(() => {
+        if (rowLimit === 99999) return 5000;
+        return Math.max(rowLimit * 5, 2000);
+    }, [rowLimit]);
 
     // Grouping state (for keyword tab)
     const [groupingEnabled, setGroupingEnabled] = useState(false);
@@ -498,6 +508,15 @@ const GSCStats = ({ language, isMobile = false }) => {
         setDisplayLimit(100);
     }, [selectedSite, dateRange, activeTab, rowLimit]);
 
+    // Reset query pagination when context changes
+    useEffect(() => {
+        if (activeTab === 'query') {
+            setQueryOffset(0);
+            setQueryHasMore(true);
+            setQueryLoadingMore(false);
+        }
+    }, [selectedSite, dateRange.start, dateRange.end, activeTab, rowLimit]);
+
     // 當網站或日期範圍改變時，清除緩存並重置載入狀態
     useEffect(() => {
         if (selectedSite && dateRange.start && dateRange.end) {
@@ -550,36 +569,86 @@ const GSCStats = ({ language, isMobile = false }) => {
         }
     }, [activeTab, analytics, trendData]);
 
-    const fetchAnalytics = async (siteUrl, startDate, endDate, dimension = 'date') => {
+    const fetchAnalytics = async (siteUrl, startDate, endDate, dimension = 'date', options = {}) => {
+        const { append = false, offset = 0 } = options;
+
         // 建立緩存鍵
-        const cacheKey = `${siteUrl}-${startDate}-${endDate}-${dimension}`;
+        const baseKey = `${siteUrl}-${startDate}-${endDate}-${dimension}`;
+        const limit = dimension === 'query' ? queryPageSize : null;
+        const cacheKey = dimension === 'query' ? `${baseKey}-${offset}-${limit}` : baseKey;
+        const combinedKey = dimension === 'query' ? `${baseKey}-combined` : baseKey;
 
         // 檢查緩存中是否已有數據
-        if (analyticsCache[cacheKey]) {
+        if (dimension === 'query') {
+            if (!append && analyticsCache[combinedKey]) {
+                console.log(`Using cached combined data for ${dimension}`);
+                setAnalytics(analyticsCache[combinedKey]);
+                return;
+            }
+            if (append && analyticsCache[cacheKey]) {
+                console.log(`Using cached page data for ${dimension}`);
+                setAnalytics(prev => {
+                    const merged = [...prev, ...analyticsCache[cacheKey]];
+                    setAnalyticsCache(prevCache => ({ ...prevCache, [combinedKey]: merged }));
+                    return merged;
+                });
+                return;
+            }
+        } else if (analyticsCache[cacheKey]) {
             console.log(`Using cached data for ${dimension}`);
             setAnalytics(analyticsCache[cacheKey]);
             return;
         }
 
         console.log(`Fetching fresh data for ${dimension}`);
-        setAnalyticsLoading(true);
+        if (dimension === 'query' && append) {
+            setQueryLoadingMore(true);
+        } else {
+            setAnalyticsLoading(true);
+        }
+
         try {
-            const resp = await fetch(`${API_URL}/api/gsc/analytics?site_url=${encodeURIComponent(siteUrl)}&start_date=${startDate}&end_date=${endDate}&dimensions=${dimension}`, {
+            const limitParam = limit ? `&limit=${limit}` : '';
+            const offsetParam = dimension === 'query' && offset ? `&offset=${offset}` : '';
+            const resp = await fetch(`${API_URL}/api/gsc/analytics?site_url=${encodeURIComponent(siteUrl)}&start_date=${startDate}&end_date=${endDate}&dimensions=${dimension}${limitParam}${offsetParam}`, {
                 headers: { 'Authorization': `Bearer ${localStorage.getItem('google_token')}` }
             });
             const data = await resp.json();
             if (!resp.ok) throw new Error(data.detail);
 
-            // 保存到緩存並更新當前數據
-            setAnalyticsCache(prev => ({ ...prev, [cacheKey]: data }));
-            setAnalytics(data);
+            if (dimension === 'query') {
+                setAnalyticsCache(prev => ({ ...prev, [cacheKey]: data }));
+                setAnalytics(prev => {
+                    const merged = append ? [...prev, ...data] : data;
+                    setAnalyticsCache(prevCache => ({ ...prevCache, [combinedKey]: merged }));
+                    return merged;
+                });
+
+                if (append) {
+                    setQueryOffset(offset);
+                } else {
+                    setQueryOffset(0);
+                }
+
+                if (limit && data.length < limit) {
+                    setQueryHasMore(false);
+                }
+            } else {
+                // 保存到緩存並更新當前數據
+                setAnalyticsCache(prev => ({ ...prev, [cacheKey]: data }));
+                setAnalytics(data);
+            }
 
             // 標記此dimension已載入
             setLoadedDimensions(prev => new Set([...prev, dimension]));
         } catch (err) {
             console.error(err);
         } finally {
-            setAnalyticsLoading(false);
+            if (dimension === 'query' && append) {
+                setQueryLoadingMore(false);
+            } else {
+                setAnalyticsLoading(false);
+            }
         }
     };
 
@@ -619,6 +688,14 @@ const GSCStats = ({ language, isMobile = false }) => {
         } catch (err) {
             console.error('Failed to fetch page keywords:', err);
         }
+    };
+
+    const loadMoreQueryData = () => {
+        if (activeTab !== 'query' || queryLoadingMore || !queryHasMore) return;
+        if (!selectedSite || !dateRange.start || !dateRange.end) return;
+
+        const nextOffset = queryOffset + queryPageSize;
+        fetchAnalytics(selectedSite, dateRange.start, dateRange.end, 'query', { append: true, offset: nextOffset });
     };
 
     // Fetch real page titles from backend (with database caching)
@@ -2963,6 +3040,42 @@ const GSCStats = ({ language, isMobile = false }) => {
                                     </tbody>
                                 </table>
                             </div>
+
+                            {/* Load More from server (query tab, full dataset) */}
+                            {activeTab === 'query' && rowLimit === 99999 && queryHasMore && (
+                                <div style={{
+                                    padding: '16px',
+                                    borderTop: '1px solid var(--glass-border)',
+                                    display: 'flex',
+                                    justifyContent: 'center',
+                                    alignItems: 'center',
+                                    gap: '12px'
+                                }}>
+                                    <span style={{ color: 'var(--text-secondary)', fontSize: '13px' }}>
+                                        {t(`已載入 ${analytics.length} 筆`, `Loaded ${analytics.length} rows`)}
+                                    </span>
+                                    <button
+                                        onClick={loadMoreQueryData}
+                                        disabled={queryLoadingMore}
+                                        style={{
+                                            padding: '8px 20px',
+                                            background: 'var(--accent-primary)',
+                                            border: 'none',
+                                            borderRadius: '8px',
+                                            color: 'white',
+                                            fontSize: '13px',
+                                            fontWeight: '500',
+                                            cursor: queryLoadingMore ? 'wait' : 'pointer',
+                                            opacity: queryLoadingMore ? 0.7 : 1,
+                                            transition: 'all 0.2s'
+                                        }}
+                                    >
+                                        {queryLoadingMore
+                                            ? t('載入中...', 'Loading...')
+                                            : `⬇️ ${t('載入更多資料', 'Load More Data')}`} 
+                                    </button>
+                                </div>
+                            )}
 
                             {/* Load More Button for progressive rendering */}
                             {!showGroupedView && sortedDataHasMore && (
