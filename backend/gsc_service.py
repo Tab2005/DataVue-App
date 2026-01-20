@@ -233,6 +233,7 @@ class GSCService:
                 if cached_data is not None:
                     print(f"[GSC REDIS HIT] Returning {len(cached_data)} rows.")
                     return cached_data, None
+                print("[GSC REDIS MISS] Cache not found.")
             else:
                 cached_full = get_cached_redis(base_cache_key)
                 if cached_full is not None:
@@ -240,11 +241,15 @@ class GSCService:
                     print(f"[GSC REDIS HIT] Returning {len(sliced)} rows (paged).")
                     return sliced, None
 
+                print("[GSC REDIS MISS] Full cache not found.")
+
                 if page_cache_key:
                     cached_page = get_cached_redis(page_cache_key)
                     if cached_page is not None:
                         print(f"[GSC REDIS HIT] Returning {len(cached_page)} rows (page cache).")
                         return cached_page, None
+
+                    print("[GSC REDIS MISS] Page cache not found.")
 
         if limit is None and (offset is None or offset == 0):
             cached_data = get_cached(analytics_cache, base_cache_key)

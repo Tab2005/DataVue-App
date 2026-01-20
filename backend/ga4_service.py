@@ -426,16 +426,22 @@ class GA4Service:
                         print(f"[GA4 REDIS HIT] Returning {len(cached_full.get('rows', []))} rows (full cached).")
                         return _slice_cached(cached_full), None
 
+                    print("[GA4 REDIS MISS] Full cache not found.")
+
                     if page_cache_key:
                         cached_page = get_cached_redis(page_cache_key)
                         if cached_page is not None:
                             print(f"[GA4 REDIS HIT] Returning {len(cached_page.get('rows', []))} rows (page cached).")
                             return cached_page, None
+
+                        print("[GA4 REDIS MISS] Page cache not found.")
                 else:
                     cached_data = get_cached_redis(base_cache_key)
                     if cached_data is not None:
                         print(f"[GA4 REDIS HIT] Returning {len(cached_data.get('rows', []))} rows.")
                         return cached_data, None
+
+                    print("[GA4 REDIS MISS] Cache not found.")
 
             if use_dimensions and (limit is not None or (offset and offset > 0)):
                 cached_full = get_cached(analytics_cache, base_cache_key)
