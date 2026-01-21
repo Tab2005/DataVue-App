@@ -669,7 +669,7 @@ const GSCStats = ({ language, isMobile = false }) => {
     };
 
     // Page keywords pagination config
-    const pageKeywordsPageSize = 5000;  // Load 5000 page+query combinations per request
+    const pageKeywordsPageSize = 2000;  // Load 2000 page+query combinations per request (reduced for faster initial load)
 
     // Fetch page+query dimension data to get keywords for each page (with pagination and load time tracking)
     const fetchPageKeywords = async (siteUrl, startDate, endDate, options = {}) => {
