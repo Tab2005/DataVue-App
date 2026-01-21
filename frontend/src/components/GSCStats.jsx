@@ -391,6 +391,13 @@ const GSCStats = ({ language, isMobile = false }) => {
     const [pageKeywords, setPageKeywords] = useState({});
     const [expandedPages, setExpandedPages] = useState(new Set());
 
+    // Page keywords pagination and load time state
+    const [pageKeywordsOffset, setPageKeywordsOffset] = useState(0);
+    const [pageKeywordsHasMore, setPageKeywordsHasMore] = useState(true);
+    const [pageKeywordsLoading, setPageKeywordsLoading] = useState(false);
+    const [pageKeywordsLoadTime, setPageKeywordsLoadTime] = useState(null);  // Load time in ms
+    const [pageKeywordsTotalCount, setPageKeywordsTotalCount] = useState(0);  // Total keyword combinations loaded
+
     // Trend tab state
     const [trendSubTab, setTrendSubTab] = useState('top');
     const [trendData, setTrendData] = useState([]);
@@ -515,6 +522,12 @@ const GSCStats = ({ language, isMobile = false }) => {
             setQueryHasMore(true);
             setQueryLoadingMore(false);
         }
+        // Reset page keywords pagination when context changes
+        if (activeTab === 'page') {
+            setPageKeywordsOffset(0);
+            setPageKeywordsHasMore(true);
+            setPageKeywordsLoadTime(null);
+        }
     }, [selectedSite, dateRange.start, dateRange.end, activeTab, rowLimit]);
 
     // 當網站或日期範圍改變時，清除緩存並重置載入狀態
@@ -523,6 +536,9 @@ const GSCStats = ({ language, isMobile = false }) => {
             setAnalyticsCache({});
             setLoadedDimensions(new Set());
             setAnalytics([]);
+            // Also reset page keywords cache
+            setPageKeywords({});
+            setPageKeywordsTotalCount(0);
         }
     }, [selectedSite, dateRange.start, dateRange.end]);
 
@@ -652,25 +668,51 @@ const GSCStats = ({ language, isMobile = false }) => {
         }
     };
 
-    // Fetch page+query dimension data to get keywords for each page
-    const fetchPageKeywords = async (siteUrl, startDate, endDate) => {
+    // Page keywords pagination config
+    const pageKeywordsPageSize = 5000;  // Load 5000 page+query combinations per request
+
+    // Fetch page+query dimension data to get keywords for each page (with pagination and load time tracking)
+    const fetchPageKeywords = async (siteUrl, startDate, endDate, options = {}) => {
+        const { append = false, offset = 0 } = options;
+        const startTime = performance.now();
+
+        if (!append) {
+            setPageKeywordsLoading(true);
+        }
+
         try {
-            const resp = await fetch(`${API_URL}/api/gsc/analytics?site_url=${encodeURIComponent(siteUrl)}&start_date=${startDate}&end_date=${endDate}&dimensions=page,query`, {
+            const limitParam = `&limit=${pageKeywordsPageSize}`;
+            const offsetParam = offset > 0 ? `&offset=${offset}` : '';
+
+            const resp = await fetch(`${API_URL}/api/gsc/analytics?site_url=${encodeURIComponent(siteUrl)}&start_date=${startDate}&end_date=${endDate}&dimensions=page,query${limitParam}${offsetParam}`, {
                 headers: { 'Authorization': `Bearer ${localStorage.getItem('google_token')}` }
             });
             const data = await resp.json();
-            if (!resp.ok) return;
+
+            // Calculate load time
+            const loadTime = Math.round(performance.now() - startTime);
+            setPageKeywordsLoadTime(loadTime);
+
+            if (!resp.ok) {
+                setPageKeywordsLoading(false);
+                return;
+            }
+
+            // Check if there are more pages
+            if (data.length < pageKeywordsPageSize) {
+                setPageKeywordsHasMore(false);
+            }
 
             // Group keywords by page URL
-            const keywordMap = {};
+            const newKeywordMap = {};
             data.forEach(row => {
                 if (row.keys && row.keys.length >= 2) {
                     const pageUrl = row.keys[0];
                     const keyword = row.keys[1];
-                    if (!keywordMap[pageUrl]) {
-                        keywordMap[pageUrl] = [];
+                    if (!newKeywordMap[pageUrl]) {
+                        newKeywordMap[pageUrl] = [];
                     }
-                    keywordMap[pageUrl].push({
+                    newKeywordMap[pageUrl].push({
                         keyword,
                         clicks: row.clicks,
                         impressions: row.impressions
@@ -678,16 +720,48 @@ const GSCStats = ({ language, isMobile = false }) => {
                 }
             });
 
-            // Sort keywords by clicks (keep all keywords, not just top 5)
-            Object.keys(keywordMap).forEach(page => {
-                keywordMap[page].sort((a, b) => b.clicks - a.clicks);
-                // No longer slicing to top 5 - keep all keywords for full analysis
+            // Sort keywords by clicks within each page
+            Object.keys(newKeywordMap).forEach(page => {
+                newKeywordMap[page].sort((a, b) => b.clicks - a.clicks);
             });
 
-            setPageKeywords(keywordMap);
+            // Merge with existing data if appending
+            if (append) {
+                setPageKeywords(prev => {
+                    const merged = { ...prev };
+                    Object.keys(newKeywordMap).forEach(page => {
+                        if (merged[page]) {
+                            // Append and re-sort
+                            merged[page] = [...merged[page], ...newKeywordMap[page]]
+                                .sort((a, b) => b.clicks - a.clicks);
+                        } else {
+                            merged[page] = newKeywordMap[page];
+                        }
+                    });
+                    return merged;
+                });
+                setPageKeywordsTotalCount(prev => prev + data.length);
+            } else {
+                setPageKeywords(newKeywordMap);
+                setPageKeywordsTotalCount(data.length);
+            }
+
+            setPageKeywordsOffset(offset);
+            console.log(`[Page Keywords] Loaded ${data.length} rows in ${loadTime}ms (offset: ${offset})`);
         } catch (err) {
             console.error('Failed to fetch page keywords:', err);
+        } finally {
+            setPageKeywordsLoading(false);
         }
+    };
+
+    // Load more page keywords from server
+    const loadMorePageKeywords = () => {
+        if (pageKeywordsLoading || !pageKeywordsHasMore) return;
+        if (!selectedSite || !dateRange.start || !dateRange.end) return;
+
+        const nextOffset = pageKeywordsOffset + pageKeywordsPageSize;
+        fetchPageKeywords(selectedSite, dateRange.start, dateRange.end, { append: true, offset: nextOffset });
     };
 
     const loadMoreQueryData = () => {
@@ -2241,6 +2315,60 @@ const GSCStats = ({ language, isMobile = false }) => {
                                     {activeTab !== 'daily' && ` (${showGroupedView ? groupedData.length + ' 組' : sortedData.length})`}
                                 </span>
 
+                                {/* Load time display for page tab */}
+                                {activeTab === 'page' && (
+                                    <span style={{
+                                        display: 'inline-flex',
+                                        alignItems: 'center',
+                                        gap: '6px',
+                                        marginLeft: '12px',
+                                        fontSize: '11px',
+                                        color: 'var(--text-tertiary)'
+                                    }}>
+                                        {pageKeywordsLoading ? (
+                                            <span style={{ color: '#3B82F6' }}>
+                                                ⏳ {t('載入中...', 'Loading...')}
+                                            </span>
+                                        ) : pageKeywordsLoadTime !== null ? (
+                                            <>
+                                                <span style={{
+                                                    background: 'rgba(16, 185, 129, 0.15)',
+                                                    color: '#10B981',
+                                                    padding: '2px 8px',
+                                                    borderRadius: '10px',
+                                                    fontWeight: '500'
+                                                }}>
+                                                    ⚡ {pageKeywordsLoadTime}ms
+                                                </span>
+                                                <span>
+                                                    {t(`${pageKeywordsTotalCount.toLocaleString()} 組關鍵字`, `${pageKeywordsTotalCount.toLocaleString()} keyword pairs`)}
+                                                </span>
+                                                {pageKeywordsHasMore && (
+                                                    <button
+                                                        onClick={(e) => {
+                                                            e.stopPropagation();
+                                                            loadMorePageKeywords();
+                                                        }}
+                                                        style={{
+                                                            background: 'rgba(59, 130, 246, 0.15)',
+                                                            border: '1px solid rgba(59, 130, 246, 0.3)',
+                                                            color: '#3B82F6',
+                                                            padding: '2px 8px',
+                                                            borderRadius: '10px',
+                                                            fontSize: '10px',
+                                                            fontWeight: '500',
+                                                            cursor: 'pointer'
+                                                        }}
+                                                        title={t('載入更多關鍵字資料', 'Load more keyword data')}
+                                                    >
+                                                        {t('載入更多', 'Load More')}
+                                                    </button>
+                                                )}
+                                            </>
+                                        ) : null}
+                                    </span>
+                                )}
+
                                 {/* Controls for query/page tabs */}
                                 {activeTab !== 'daily' && (
                                     <div style={{ display: 'flex', gap: '8px', alignItems: 'center', flexWrap: 'wrap' }}>
@@ -3072,7 +3200,7 @@ const GSCStats = ({ language, isMobile = false }) => {
                                     >
                                         {queryLoadingMore
                                             ? t('載入中...', 'Loading...')
-                                            : `⬇️ ${t('載入更多資料', 'Load More Data')}`} 
+                                            : `⬇️ ${t('載入更多資料', 'Load More Data')}`}
                                     </button>
                                 </div>
                             )}
