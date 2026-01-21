@@ -2163,7 +2163,8 @@ const GSCStats = ({ language, isMobile = false }) => {
                                     <tbody>
                                         {(() => {
                                             const totalClicks = analytics.reduce((sum, row) => sum + row.clicks, 0);
-                                            return getSortedFilteredData().map((row, idx) => {
+                                            const { displayData } = getSortedFilteredData();
+                                            return displayData.map((row, idx) => {
                                                 const countryCode = (row.keys?.[0] || '').toLowerCase();
                                                 const countryName = COUNTRY_NAMES[countryCode]?.[language] || countryCode.toUpperCase();
                                                 const sharePercent = totalClicks > 0 ? (row.clicks / totalClicks * 100) : 0;
