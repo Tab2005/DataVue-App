@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { addCustomGroup, updateCustomGroup, deleteCustomGroup, isDefaultGroup } from '../utils/sourceGroups';
+import { addCustomGroup, updateCustomGroup, deleteCustomGroup, isDefaultGroup, resetDefaultGroup } from '../utils/sourceGroups';
 
 /**
  * SourceGroupModal - 新增/編輯來源分組的彈窗組件
@@ -122,7 +122,7 @@ const SourceGroupModal = ({
                     marginBottom: '20px'
                 }}>
                     <h3 style={{ margin: 0, color: 'var(--text-primary, white)', fontSize: '18px' }}>
-                        {isEditing ? (isDefault ? '🔒 ' : '✏️ ') : '⭐ '}
+                        {isEditing ? (isDefault ? '📌 ' : '✏️ ') : '⭐ '}
                         {isEditing
                             ? t('編輯分組', 'Edit Group')
                             : t('新增來源分組', 'Add Source Group')
@@ -143,18 +143,18 @@ const SourceGroupModal = ({
                     </button>
                 </div>
 
-                {/* Read-only notice for default groups */}
+                {/* Notice for default groups (editable but not deletable) */}
                 {isDefault && (
                     <div style={{
                         padding: '12px',
-                        background: 'rgba(255, 193, 7, 0.1)',
-                        border: '1px solid rgba(255, 193, 7, 0.3)',
+                        background: 'rgba(59, 130, 246, 0.1)',
+                        border: '1px solid rgba(59, 130, 246, 0.3)',
                         borderRadius: '8px',
                         marginBottom: '16px',
-                        color: '#ffc107',
+                        color: '#60a5fa',
                         fontSize: '13px'
                     }}>
-                        🔒 {t('預設分組不可編輯或刪除', 'Default groups cannot be modified or deleted')}
+                        📌 {t('預設分組可以編輯，但無法刪除', 'Default groups can be edited but not deleted')}
                     </div>
                 )}
 
@@ -174,14 +174,13 @@ const SourceGroupModal = ({
                             type="text"
                             value={name}
                             onChange={(e) => setName(e.target.value)}
-                            disabled={isDefault}
                             placeholder={t('例如：付費廣告', 'e.g., Paid Ads')}
                             style={{
                                 width: '100%',
                                 padding: '12px',
                                 borderRadius: '8px',
                                 border: '1px solid var(--glass-border, rgba(255,255,255,0.1))',
-                                background: isDefault ? 'rgba(255,255,255,0.02)' : 'rgba(255,255,255,0.05)',
+                                background: 'rgba(255,255,255,0.05)',
                                 color: 'var(--text-primary, white)',
                                 fontSize: '14px',
                                 boxSizing: 'border-box'
@@ -204,14 +203,13 @@ const SourceGroupModal = ({
                             type="text"
                             value={nameEn}
                             onChange={(e) => setNameEn(e.target.value)}
-                            disabled={isDefault}
                             placeholder={t('例如：Paid Ads', 'e.g., Paid Ads')}
                             style={{
                                 width: '100%',
                                 padding: '12px',
                                 borderRadius: '8px',
                                 border: '1px solid var(--glass-border, rgba(255,255,255,0.1))',
-                                background: isDefault ? 'rgba(255,255,255,0.02)' : 'rgba(255,255,255,0.05)',
+                                background: 'rgba(255,255,255,0.05)',
                                 color: 'var(--text-primary, white)',
                                 fontSize: '14px',
                                 boxSizing: 'border-box'
@@ -233,7 +231,6 @@ const SourceGroupModal = ({
                         <textarea
                             value={patterns}
                             onChange={(e) => setPatterns(e.target.value)}
-                            disabled={isDefault}
                             placeholder={t('多個模式以逗號分隔，例如：cpc, paid, ppc, ads', 'Separate with commas, e.g., cpc, paid, ppc, ads')}
                             rows={3}
                             style={{
@@ -241,7 +238,7 @@ const SourceGroupModal = ({
                                 padding: '12px',
                                 borderRadius: '8px',
                                 border: '1px solid var(--glass-border, rgba(255,255,255,0.1))',
-                                background: isDefault ? 'rgba(255,255,255,0.02)' : 'rgba(255,255,255,0.05)',
+                                background: 'rgba(255,255,255,0.05)',
                                 color: 'var(--text-primary, white)',
                                 fontSize: '14px',
                                 resize: 'vertical',
@@ -310,25 +307,24 @@ const SourceGroupModal = ({
                             {t('取消', 'Cancel')}
                         </button>
 
-                        {!isDefault && (
-                            <button
-                                type="submit"
-                                disabled={loading}
-                                style={{
-                                    padding: '10px 24px',
-                                    borderRadius: '8px',
-                                    border: 'none',
-                                    background: 'var(--accent-primary, #6366f1)',
-                                    color: 'white',
-                                    fontSize: '14px',
-                                    fontWeight: '600',
-                                    cursor: loading ? 'not-allowed' : 'pointer',
-                                    opacity: loading ? 0.7 : 1
-                                }}
-                            >
-                                {loading ? '...' : t('儲存', 'Save')}
-                            </button>
-                        )}
+                        {/* Save button (now also for default groups) */}
+                        <button
+                            type="submit"
+                            disabled={loading}
+                            style={{
+                                padding: '10px 24px',
+                                borderRadius: '8px',
+                                border: 'none',
+                                background: 'var(--accent-primary, #6366f1)',
+                                color: 'white',
+                                fontSize: '14px',
+                                fontWeight: '600',
+                                cursor: loading ? 'not-allowed' : 'pointer',
+                                opacity: loading ? 0.7 : 1
+                            }}
+                        >
+                            {loading ? '...' : t('儲存', 'Save')}
+                        </button>
                     </div>
                 </form>
             </div>

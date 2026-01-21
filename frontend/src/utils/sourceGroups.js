@@ -72,6 +72,33 @@ const getStorageKey = (propertyId) => {
 };
 
 /**
+ * 取得已儲存的預設分組覆寫
+ * (用戶可以編輯預設分組，編輯結果會儲存在這裡)
+ */
+const getDefaultGroupOverrides = (propertyId) => {
+    if (!propertyId) return {};
+    try {
+        const stored = localStorage.getItem(`source_groups_defaults_${propertyId}`);
+        return stored ? JSON.parse(stored) : {};
+    } catch (e) {
+        console.error('Error reading default group overrides:', e);
+        return {};
+    }
+};
+
+/**
+ * 儲存預設分組覆寫
+ */
+const saveDefaultGroupOverrides = (propertyId, overrides) => {
+    if (!propertyId) return;
+    try {
+        localStorage.setItem(`source_groups_defaults_${propertyId}`, JSON.stringify(overrides));
+    } catch (e) {
+        console.error('Error saving default group overrides:', e);
+    }
+};
+
+/**
  * 取得用戶自定義分組
  */
 export const getCustomGroups = (propertyId) => {
@@ -101,10 +128,26 @@ const saveCustomGroups = (propertyId, groups) => {
 
 /**
  * 取得所有分組（預設 + 自定義）
+ * 預設分組會套用用戶的覆寫設定
  */
 export const getAllSourceGroups = (propertyId) => {
+    const overrides = getDefaultGroupOverrides(propertyId);
     const customGroups = getCustomGroups(propertyId);
-    return [...DEFAULT_SOURCE_GROUPS, ...customGroups];
+
+    // 合併預設分組與覆寫設定
+    const mergedDefaults = DEFAULT_SOURCE_GROUPS.map(group => {
+        if (overrides[group.key]) {
+            return {
+                ...group,
+                ...overrides[group.key],
+                isDefault: true, // 強制保持 isDefault 標記
+                key: group.key   // 強制保持原始 key
+            };
+        }
+        return group;
+    });
+
+    return [...mergedDefaults, ...customGroups];
 };
 
 /**
@@ -137,18 +180,30 @@ export const addCustomGroup = (propertyId, name, nameEn, patterns) => {
 };
 
 /**
- * 更新自定義分組
+ * 更新分組（支援自定義與預設分組）
+ * 預設分組的編輯會儲存為覆寫
  */
 export const updateCustomGroup = (propertyId, key, name, nameEn, patterns) => {
     if (!propertyId || !key || !name || !patterns) {
         throw new Error('Invalid group data');
     }
 
-    // 不允許更新預設分組
-    if (DEFAULT_SOURCE_GROUPS.some(g => g.key === key)) {
-        throw new Error('Cannot modify default groups');
+    const isDefault = DEFAULT_SOURCE_GROUPS.some(g => g.key === key);
+
+    if (isDefault) {
+        // 預設分組：儲存為覆寫
+        const overrides = getDefaultGroupOverrides(propertyId);
+        overrides[key] = {
+            label_zh: `📁 ${name}`,
+            label_en: `📁 ${nameEn || name} (Group)`,
+            patterns: patterns.map(p => p.trim().toLowerCase()).filter(Boolean),
+            updatedAt: new Date().toISOString()
+        };
+        saveDefaultGroupOverrides(propertyId, overrides);
+        return { ...DEFAULT_SOURCE_GROUPS.find(g => g.key === key), ...overrides[key], isDefault: true };
     }
 
+    // 自定義分組：原有邏輯
     const customGroups = getCustomGroups(propertyId);
     const index = customGroups.findIndex(g => g.key === key);
 
@@ -195,4 +250,20 @@ export const deleteCustomGroup = (propertyId, key) => {
  */
 export const isDefaultGroup = (key) => {
     return DEFAULT_SOURCE_GROUPS.some(g => g.key === key);
+};
+
+/**
+ * 重置預設分組到原始狀態（移除用戶覆寫）
+ */
+export const resetDefaultGroup = (propertyId, key) => {
+    if (!propertyId || !key) return false;
+    if (!isDefaultGroup(key)) return false;
+
+    const overrides = getDefaultGroupOverrides(propertyId);
+    if (overrides[key]) {
+        delete overrides[key];
+        saveDefaultGroupOverrides(propertyId, overrides);
+        return true;
+    }
+    return false;
 };
