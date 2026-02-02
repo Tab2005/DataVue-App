@@ -18,7 +18,9 @@ import os
 from dotenv import load_dotenv
 
 # Load environment variables FIRST
-load_dotenv()
+# Load from backend/.env regardless of current working directory
+dotenv_path = os.path.join(os.path.dirname(__file__), '.env')
+load_dotenv(dotenv_path)
 
 # ============================================================
 # Startup Tasks
@@ -38,6 +40,7 @@ except Exception as e:
 
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.middleware.gzip import GZipMiddleware
 from contextlib import asynccontextmanager
 
 
@@ -64,6 +67,9 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+# GZip compression for large JSON responses
+app.add_middleware(GZipMiddleware, minimum_size=1000)
 
 # ============================================================
 # Exception Handlers
@@ -106,17 +112,19 @@ async def general_exception_handler(request: Request, exc: Exception):
 # ============================================================
 
 from routers import users, teams, invites, admin, ai, saved_views, gsc, permissions
-from routers import facebook, debug
+from routers import facebook, debug, ga4
 
 # Core Feature Routers
 app.include_router(users.router, prefix="/api/users", tags=["users"])
 app.include_router(teams.router, prefix="/api/teams", tags=["teams"])
 app.include_router(invites.router, prefix="/api", tags=["invites"])
 app.include_router(admin.router)  # /api/admin
+app.include_router(admin.emergency_router)  # /api/emergency (緊急修復端點)
 app.include_router(ai.router, prefix="/api/ai", tags=["ai"])
 app.include_router(saved_views.router)  # /api/saved-views
 app.include_router(gsc.router)  # /api/gsc
 app.include_router(permissions.router)  # /api/permissions
+app.include_router(ga4.router)  # /api/ga4
 
 # Business Routers
 app.include_router(facebook.router)  # /api/ad-accounts, /api/dashboard-data, /api/analytics
@@ -230,23 +238,61 @@ def get_token_status(team_id: Optional[str] = None, user_id: str = Depends(verif
 
 @app.get("/api/health")
 def health_check():
-    """Health check endpoint."""
+    """Health check endpoint with comprehensive diagnostics."""
+    import platform
+    from datetime import datetime
+    
+    # Basic info
     db_info = "Unknown"
+    db_connected = False
+    
     try:
         db_url = os.getenv("DATABASE_URL", "")
         if "postgresql" in db_url.lower():
             db_info = "PostgreSQL"
         else:
             db_info = "SQLite"
-    except:
-        pass
+        
+        # Test database connection
+        from database import SessionLocal
+        from sqlalchemy import text
+        session = SessionLocal()
+        session.execute(text("SELECT 1"))
+        session.close()
+        db_connected = True
+    except Exception as e:
+        db_connected = False
+    
+    # Check critical environment variables
+    env_status = {
+        "GOOGLE_CLIENT_ID": bool(os.getenv("GOOGLE_CLIENT_ID")),
+        "GOOGLE_CLIENT_SECRET": bool(os.getenv("GOOGLE_CLIENT_SECRET")),
+        "DATABASE_URL": bool(os.getenv("DATABASE_URL")),
+    }
+    
+    # Overall status
+    all_env_ok = all(env_status.values())
+    overall_status = "ok" if db_connected else "degraded"
     
     return {
-        "status": "ok",
+        "status": overall_status,
         "version": "2.0.0",
-        "database_type": db_info,
+        "timestamp": datetime.utcnow().isoformat(),
+        "database": {
+            "type": db_info,
+            "connected": db_connected
+        },
+        "environment": {
+            "all_configured": all_env_ok,
+            "details": env_status
+        },
+        "system": {
+            "python_version": platform.python_version(),
+            "platform": platform.system()
+        },
         "message": "Backend is running (Modular Version)"
     }
+
 
 
 # ============================================================
@@ -256,4 +302,4 @@ def health_check():
 if __name__ == "__main__":
     import uvicorn
     print("🚀 STARTING UVICORN SERVER...", file=sys.stderr)
-    uvicorn.run("main:app", host="0.0.0.0", port=8000, reload=True)
+    uvicorn.run("main:app", host="0.0.0.0", port=8000, reload=False)

@@ -50,7 +50,7 @@ def list_sites(
     _: bool = Depends(gsc_module_check)
 ):
     try:
-        sites, error = GSCService.list_sites(user)
+        sites, error = GSCService.list_sites(user, db)
         if error:
             raise HTTPException(status_code=400, detail=error)
         
@@ -68,13 +68,15 @@ def get_gsc_analytics(
     start_date: str,
     end_date: str,
     dimensions: Optional[str] = "date",
+    limit: Optional[int] = Query(None, ge=1, le=25000),
+    offset: Optional[int] = Query(0, ge=0),
     user: User = Depends(get_current_user), 
     db: Session = Depends(get_db),
     _: bool = Depends(gsc_module_check)
 ):
     try:
         dim_list = dimensions.split(",")
-        data, error = GSCService.get_analytics(user, site_url, start_date, end_date, dim_list)
+        data, error = GSCService.get_analytics(user, site_url, start_date, end_date, dim_list, limit, offset, db)
         if error:
             raise HTTPException(status_code=400, detail=error)
         
@@ -242,7 +244,10 @@ async def get_page_intents(
                 request.site_url,
                 request.start_date,
                 request.end_date,
-                dimensions=['page', 'query']
+                dimensions=['page', 'query'],
+                limit=None,
+                offset=0,
+                db=db
             )
             
             if error:

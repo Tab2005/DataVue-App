@@ -164,7 +164,7 @@ export function calculateDateRange(preset) {
             return { since: format(startOfWeek(lastWeek, { weekStartsOn: 1 }), 'yyyy-MM-dd'), until: format(endOfWeek(lastWeek, { weekStartsOn: 1 }), 'yyyy-MM-dd') };
         }
         case 'this_month':
-            return { since: format(startOfMonth(today), 'yyyy-MM-dd'), until: format(today, 'yyyy-MM-dd') };
+            return { since: format(startOfMonth(today), 'yyyy-MM-dd'), until: format(endOfMonth(today), 'yyyy-MM-dd') };
         case 'last_month': {
             const lastMonth = subMonths(today, 1);
             return { since: format(startOfMonth(lastMonth), 'yyyy-MM-dd'), until: format(endOfMonth(lastMonth), 'yyyy-MM-dd') };

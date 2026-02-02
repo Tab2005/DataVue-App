@@ -5,30 +5,79 @@ import os
 import uuid
 import enum
 
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+
+
+def _to_sqlite_url(abs_path: str) -> str:
+    # SQLAlchemy/SQLite URL prefers forward slashes, including on Windows.
+    return "sqlite:///" + abs_path.replace("\\", "/")
+
+
+def _normalize_sqlite_url(url: str) -> str:
+    """Normalize sqlite URL to always resolve relative paths from backend dir.
+
+    Supports legacy urls like:
+    - sqlite:///./backend/facebook_dashboard.db (repo-root relative)
+    - sqlite:///./facebook_dashboard.db (backend-relative preferred)
+    """
+    if not url:
+        return url
+
+    # Already absolute (e.g. sqlite:///C:/path/file.db or sqlite:////var/...)
+    if url.startswith("sqlite:////"):
+        return url
+    if url.startswith("sqlite:///C:/") or url.startswith("sqlite:///c:/"):
+        return url
+
+    prefix = "sqlite:///./"
+    if url.startswith(prefix):
+        rel = url[len(prefix):]
+        # Tolerate legacy ./backend/ prefix to avoid backend/backend/*
+        rel_norm = rel.replace("\\", "/")
+        if rel_norm.startswith("backend/"):
+            rel_norm = rel_norm[len("backend/"):]
+        abs_path = os.path.join(BASE_DIR, rel_norm)
+        return _to_sqlite_url(os.path.abspath(abs_path))
+
+    return url
+
 # Default to SQLite for local development
-SQLITE_DATABASE_URL = "sqlite:///./facebook_dashboard.db"
+SQLITE_DATABASE_URL = _normalize_sqlite_url("sqlite:///./facebook_dashboard.db")
 
 # Check if DATABASE_URL env var is set (e.g., by Zeabur/Render)
 DATABASE_URL = os.getenv("DATABASE_URL")
+print(f"DEBUG: DATABASE_URL from env: {DATABASE_URL}", flush=True)
 
-if DATABASE_URL:
+if DATABASE_URL and DATABASE_URL.startswith("postgresql://"):
     # PostgreSQL Configuration
     # Use psycopg2 (Standard Driver)
-    print(f"DEBUG: Found DATABASE_URL, configuring PostgreSQL...", flush=True)
+    print(f"DEBUG: Found PostgreSQL DATABASE_URL, configuring PostgreSQL...", flush=True)
     try:
-        if DATABASE_URL.startswith("postgres://"):
-            DATABASE_URL = DATABASE_URL.replace("postgres://", "postgresql://", 1)
-        
         engine = create_engine(DATABASE_URL)
         # Test connection immediately
         with engine.connect() as connection:
             print(f"✅ Database connected successfully: PostgreSQL.", flush=True)
     except Exception as e:
         print(f"❌ DATABASE CONNECTION FAILED: {e}", flush=True)
-        # Fallback to avoid crash on import, but requests will fail later
-        engine = None
-else:
+        # Fallback to SQLite
+        print(f"DEBUG: Falling back to SQLite...", flush=True)
+        DATABASE_URL = None
+        engine = create_engine(
+            SQLITE_DATABASE_URL, connect_args={"check_same_thread": False}
+        )
+        print(f"Database connected: SQLite (Local Mode).")
+elif DATABASE_URL and DATABASE_URL.startswith("sqlite://"):
     # SQLite Configuration (Local)
+    print(f"DEBUG: Found SQLite DATABASE_URL, configuring SQLite...", flush=True)
+    DATABASE_URL = _normalize_sqlite_url(DATABASE_URL)
+    print(f"DEBUG: SQLite DATABASE_URL normalized to: {DATABASE_URL}", flush=True)
+    engine = create_engine(
+        DATABASE_URL, connect_args={"check_same_thread": False}
+    )
+    print(f"✅ Database connected: SQLite (Local Mode).")
+else:
+    # Default to SQLite Configuration (Local)
+    print(f"DEBUG: No DATABASE_URL or unsupported format, using default SQLite...", flush=True)
     engine = create_engine(
         SQLITE_DATABASE_URL, connect_args={"check_same_thread": False}
     )
@@ -72,6 +121,11 @@ class User(Base):
     gsc_access_token = Column(String, nullable=True)
     gsc_refresh_token = Column(String, nullable=True)
     gsc_expires_at = Column(DateTime, nullable=True)
+    
+    # Google Analytics 4 (GA4) Integration
+    ga4_access_token = Column(String, nullable=True)
+    ga4_refresh_token = Column(String, nullable=True)
+    ga4_expires_at = Column(DateTime, nullable=True)
     
     # AI Integration (Encrypted API Keys)
     zeabur_api_key = Column(String, nullable=True)  # Encrypted Zeabur AI Hub API Key

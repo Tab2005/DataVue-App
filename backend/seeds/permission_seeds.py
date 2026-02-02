@@ -3,7 +3,7 @@
 MODULES = [
     {"key": "fb_ads", "name": "FB Ads 廣告管理", "icon": "📊", "sort_order": 1},
     {"key": "gsc", "name": "Google Search Console", "icon": "🔍", "sort_order": 2},
-    {"key": "ga4", "name": "Google Analytics 4", "icon": "📈", "sort_order": 3, "enabled": False},
+    {"key": "ga4", "name": "Google Analytics 4", "icon": "📈", "sort_order": 3, "enabled": True},
 ]
 
 PERMISSIONS = {

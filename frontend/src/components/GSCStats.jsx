@@ -1,15 +1,30 @@
 
 import React, { useEffect, useState, useMemo } from 'react';
 
-// Date Range Presets Configuration
+// Date Range Presets Configuration (aligned with GA4)
 const DATE_PRESETS = [
-    { key: 'last_7d', label_zh: '過去 7 天', label_en: 'Last 7 Days', days: 7 },
-    { key: 'last_28d', label_zh: '過去 28 天', label_en: 'Last 28 Days', days: 28 },
-    { key: 'last_3m', label_zh: '過去 3 個月', label_en: 'Last 3 Months', days: 90 },
+    { key: 'today', label_zh: '今日', label_en: 'Today', days: 0, isToday: true },
+    { key: 'yesterday', label_zh: '昨天', label_en: 'Yesterday', days: 1, isYesterday: true },
+    { key: 'this_week', label_zh: '本週', label_en: 'This Week', days: null, isThisWeek: true },
+    { key: 'last_week', label_zh: '上週', label_en: 'Last Week', days: null, isLastWeek: true },
+    { key: 'this_month', label_zh: '本月', label_en: 'This Month', days: null, isThisMonth: true },
+    { key: 'last_month', label_zh: '上月', label_en: 'Last Month', days: null, isLastMonth: true },
+    { key: 'last_7d', label_zh: '過去 7 天', label_en: 'Past 7 Days', days: 7 },
+    { key: 'last_14d', label_zh: '過去 14 天', label_en: 'Past 14 Days', days: 14 },
+    { key: 'last_28d', label_zh: '過去 28 天', label_en: 'Past 28 Days', days: 28 },
     { key: 'custom', label_zh: '自訂', label_en: 'Custom', days: null }
 ];
 
+// Compare Mode Options (aligned with GA4)
+const COMPARE_OPTIONS = [
+    { key: 'none', label_zh: '不比較', label_en: 'No Comparison' },
+    { key: 'previous_period', label_zh: '前一時段', label_en: 'Previous Period' },
+    { key: 'previous_year', label_zh: '去年同期', label_en: 'Previous Year' }
+];
+
+
 // Tab Configuration
+
 const TABS = [
     { key: 'daily', label_zh: '📈 每日成效', label_en: '📈 Daily Performance', dimension: 'date' },
     { key: 'query', label_zh: '🔍 關鍵字分析', label_en: '🔍 Keyword Analysis', dimension: 'query' },
@@ -124,40 +139,88 @@ const DEVICE_NAMES = {
     TABLET: { zh: '📟 平板', en: '📟 Tablet', color: '#F59E0B' }
 };
 
-// Helper function to format date to YYYY-MM-DD
+// Helper function to format date to YYYY-MM-DD (local time)
 const formatDate = (date) => {
-    return date.toISOString().split('T')[0];
+    const y = date.getFullYear();
+    const m = String(date.getMonth() + 1).padStart(2, '0');
+    const d = String(date.getDate()).padStart(2, '0');
+    return `${y}-${m}-${d}`;
 };
 
-// Helper function to calculate date range from preset
+// Helper function to calculate date range from preset (aligned with GA4)
 const getDateRangeFromPreset = (presetKey) => {
     const today = new Date();
     const preset = DATE_PRESETS.find(p => p.key === presetKey);
 
-    if (!preset || preset.days === null) {
+    if (!preset) {
+        // Default fallback
         const start = new Date();
         start.setDate(today.getDate() - 30);
         return { start: formatDate(start), end: formatDate(today) };
     }
 
-    if (preset.key === 'today') {
+    // Today
+    if (preset.isToday) {
         return { start: formatDate(today), end: formatDate(today) };
     }
 
-    if (preset.key === 'yesterday') {
-        const yesterday = new Date();
-        yesterday.setDate(today.getDate() - 1);
+    // Yesterday
+    if (preset.isYesterday) {
+        const yesterday = new Date(today);
+        yesterday.setDate(yesterday.getDate() - 1);
         return { start: formatDate(yesterday), end: formatDate(yesterday) };
+    }
+
+    // This Week (Monday to today)
+    if (preset.isThisWeek) {
+        const dayOfWeek = today.getDay();
+        const daysToMonday = dayOfWeek === 0 ? 6 : dayOfWeek - 1;
+        const monday = new Date(today);
+        monday.setDate(monday.getDate() - daysToMonday);
+        return { start: formatDate(monday), end: formatDate(today) };
+    }
+
+    // Last Week (Last Monday to Last Sunday)
+    if (preset.isLastWeek) {
+        const dayOfWeek = today.getDay();
+        const daysToLastSunday = dayOfWeek === 0 ? 7 : dayOfWeek;
+        const lastSunday = new Date(today);
+        lastSunday.setDate(lastSunday.getDate() - daysToLastSunday);
+        const lastMonday = new Date(lastSunday);
+        lastMonday.setDate(lastMonday.getDate() - 6);
+        return { start: formatDate(lastMonday), end: formatDate(lastSunday) };
+    }
+
+    // This Month (1st to last day of current month)
+    if (preset.isThisMonth) {
+        const firstOfMonth = new Date(today.getFullYear(), today.getMonth(), 1);
+        const lastOfMonth = new Date(today.getFullYear(), today.getMonth() + 1, 0);
+        return { start: formatDate(firstOfMonth), end: formatDate(lastOfMonth) };
+    }
+
+    // Last Month (1st to last day of previous month)
+    if (preset.isLastMonth) {
+        const firstOfLastMonth = new Date(today.getFullYear(), today.getMonth() - 1, 1);
+        const lastOfLastMonth = new Date(today.getFullYear(), today.getMonth(), 0);
+        return { start: formatDate(firstOfLastMonth), end: formatDate(lastOfLastMonth) };
+    }
+
+    // Custom or null days - return current range or default
+    if (preset.days === null) {
+        const start = new Date();
+        start.setDate(today.getDate() - 30);
+        return { start: formatDate(start), end: formatDate(today) };
     }
 
     // For "last X days" presets (complete days, not including today)
     // e.g., "Last 7 days" = 7 complete days before today = (today-7) to (today-1)
-    const end = new Date();
+    const end = new Date(today);
     end.setDate(today.getDate() - 1);  // Yesterday
-    const start = new Date();
+    const start = new Date(today);
     start.setDate(today.getDate() - preset.days);  // X days before today
     return { start: formatDate(start), end: formatDate(end) };
 };
+
 
 // Helper: Extract main keyword for grouping (first significant word)
 const extractGroupKey = (query) => {
@@ -285,6 +348,16 @@ const GSCStats = ({ language, isMobile = false }) => {
     const [analytics, setAnalytics] = useState([]);
     const [analyticsLoading, setAnalyticsLoading] = useState(false);
 
+    // Query pagination state (server-side load more)
+    const [queryOffset, setQueryOffset] = useState(0);
+    const [queryHasMore, setQueryHasMore] = useState(true);
+    const [queryLoadingMore, setQueryLoadingMore] = useState(false);
+
+    // 新增：數據緩存狀態 - { cacheKey: data }
+    const [analyticsCache, setAnalyticsCache] = useState({});
+    // 新增：已載入的分頁追蹤 (預設載入 daily 分頁)
+    const [loadedDimensions, setLoadedDimensions] = useState(new Set(['date']));
+
     // Tab State
     const [activeTab, setActiveTab] = useState('daily');
 
@@ -293,11 +366,22 @@ const GSCStats = ({ language, isMobile = false }) => {
     const [dateRange, setDateRange] = useState(getDateRangeFromPreset('last_28d'));
     const [showCustomDate, setShowCustomDate] = useState(false);
 
+    // Compare Mode State
+    const [compareMode, setCompareMode] = useState('none');
+    const [compareData, setCompareData] = useState([]);
+    const [compareLoading, setCompareLoading] = useState(false);
+
+
     // Keyword/Page specific state
     const [searchKeyword, setSearchKeyword] = useState('');
     const [sortConfig, setSortConfig] = useState({ key: 'clicks', direction: 'desc' });
     const [rowLimit, setRowLimit] = useState(50);
     const [displayLimit, setDisplayLimit] = useState(100); // Progressive rendering: start with 100 rows
+
+    const queryPageSize = useMemo(() => {
+        if (rowLimit === 99999) return 5000;
+        return Math.max(rowLimit * 5, 2000);
+    }, [rowLimit]);
 
     // Grouping state (for keyword tab)
     const [groupingEnabled, setGroupingEnabled] = useState(false);
@@ -306,6 +390,13 @@ const GSCStats = ({ language, isMobile = false }) => {
     // Page keywords state (for page tab - shows keywords per page)
     const [pageKeywords, setPageKeywords] = useState({});
     const [expandedPages, setExpandedPages] = useState(new Set());
+
+    // Page keywords pagination and load time state
+    const [pageKeywordsOffset, setPageKeywordsOffset] = useState(0);
+    const [pageKeywordsHasMore, setPageKeywordsHasMore] = useState(true);
+    const [pageKeywordsLoading, setPageKeywordsLoading] = useState(false);
+    const [pageKeywordsLoadTime, setPageKeywordsLoadTime] = useState(null);  // Load time in ms
+    const [pageKeywordsTotalCount, setPageKeywordsTotalCount] = useState(0);  // Total keyword combinations loaded
 
     // Trend tab state
     const [trendSubTab, setTrendSubTab] = useState('top');
@@ -424,6 +515,33 @@ const GSCStats = ({ language, isMobile = false }) => {
         setDisplayLimit(100);
     }, [selectedSite, dateRange, activeTab, rowLimit]);
 
+    // Reset query pagination when context changes
+    useEffect(() => {
+        if (activeTab === 'query') {
+            setQueryOffset(0);
+            setQueryHasMore(true);
+            setQueryLoadingMore(false);
+        }
+        // Reset page keywords pagination when context changes
+        if (activeTab === 'page') {
+            setPageKeywordsOffset(0);
+            setPageKeywordsHasMore(true);
+            setPageKeywordsLoadTime(null);
+        }
+    }, [selectedSite, dateRange.start, dateRange.end, activeTab, rowLimit]);
+
+    // 當網站或日期範圍改變時，清除緩存並重置載入狀態
+    useEffect(() => {
+        if (selectedSite && dateRange.start && dateRange.end) {
+            setAnalyticsCache({});
+            setLoadedDimensions(new Set());
+            setAnalytics([]);
+            // Also reset page keywords cache
+            setPageKeywords({});
+            setPageKeywordsTotalCount(0);
+        }
+    }, [selectedSite, dateRange.start, dateRange.end]);
+
     useEffect(() => {
         if (selectedSite && dateRange.start && dateRange.end) {
             const currentTab = TABS.find(tab => tab.key === activeTab);
@@ -433,7 +551,16 @@ const GSCStats = ({ language, isMobile = false }) => {
                 // For trend tab, fetch both current and previous period
                 fetchTrendData(selectedSite, dateRange.start, dateRange.end);
             } else {
-                fetchAnalytics(selectedSite, dateRange.start, dateRange.end, dimension);
+                // 檢查是否已載入此dimension的數據
+                if (!loadedDimensions.has(dimension)) {
+                    fetchAnalytics(selectedSite, dateRange.start, dateRange.end, dimension);
+                } else {
+                    // 如果已載入，從緩存中恢復數據
+                    const cacheKey = `${selectedSite}-${dateRange.start}-${dateRange.end}-${dimension}`;
+                    if (analyticsCache[cacheKey]) {
+                        setAnalytics(analyticsCache[cacheKey]);
+                    }
+                }
 
                 // Fetch page+query data for page tab (to show keywords per page)
                 if (activeTab === 'page') {
@@ -441,7 +568,7 @@ const GSCStats = ({ language, isMobile = false }) => {
                 }
             }
         }
-    }, [selectedSite, dateRange, activeTab]);
+    }, [selectedSite, dateRange, activeTab, loadedDimensions, analyticsCache]);
 
     // Fetch page titles when page data is available
     useEffect(() => {
@@ -458,41 +585,134 @@ const GSCStats = ({ language, isMobile = false }) => {
         }
     }, [activeTab, analytics, trendData]);
 
-    const fetchAnalytics = async (siteUrl, startDate, endDate, dimension = 'date') => {
-        setAnalyticsLoading(true);
+    const fetchAnalytics = async (siteUrl, startDate, endDate, dimension = 'date', options = {}) => {
+        const { append = false, offset = 0 } = options;
+
+        // 建立緩存鍵
+        const baseKey = `${siteUrl}-${startDate}-${endDate}-${dimension}`;
+        const limit = dimension === 'query' ? queryPageSize : null;
+        const cacheKey = dimension === 'query' ? `${baseKey}-${offset}-${limit}` : baseKey;
+        const combinedKey = dimension === 'query' ? `${baseKey}-combined` : baseKey;
+
+        // 檢查緩存中是否已有數據
+        if (dimension === 'query') {
+            if (!append && analyticsCache[combinedKey]) {
+                console.log(`Using cached combined data for ${dimension}`);
+                setAnalytics(analyticsCache[combinedKey]);
+                return;
+            }
+            if (append && analyticsCache[cacheKey]) {
+                console.log(`Using cached page data for ${dimension}`);
+                setAnalytics(prev => {
+                    const merged = [...prev, ...analyticsCache[cacheKey]];
+                    setAnalyticsCache(prevCache => ({ ...prevCache, [combinedKey]: merged }));
+                    return merged;
+                });
+                return;
+            }
+        } else if (analyticsCache[cacheKey]) {
+            console.log(`Using cached data for ${dimension}`);
+            setAnalytics(analyticsCache[cacheKey]);
+            return;
+        }
+
+        console.log(`Fetching fresh data for ${dimension}`);
+        if (dimension === 'query' && append) {
+            setQueryLoadingMore(true);
+        } else {
+            setAnalyticsLoading(true);
+        }
+
         try {
-            const resp = await fetch(`${API_URL}/api/gsc/analytics?site_url=${encodeURIComponent(siteUrl)}&start_date=${startDate}&end_date=${endDate}&dimensions=${dimension}`, {
+            const limitParam = limit ? `&limit=${limit}` : '';
+            const offsetParam = dimension === 'query' && offset ? `&offset=${offset}` : '';
+            const resp = await fetch(`${API_URL}/api/gsc/analytics?site_url=${encodeURIComponent(siteUrl)}&start_date=${startDate}&end_date=${endDate}&dimensions=${dimension}${limitParam}${offsetParam}`, {
                 headers: { 'Authorization': `Bearer ${localStorage.getItem('google_token')}` }
             });
             const data = await resp.json();
             if (!resp.ok) throw new Error(data.detail);
-            setAnalytics(data);
+
+            if (dimension === 'query') {
+                setAnalyticsCache(prev => ({ ...prev, [cacheKey]: data }));
+                setAnalytics(prev => {
+                    const merged = append ? [...prev, ...data] : data;
+                    setAnalyticsCache(prevCache => ({ ...prevCache, [combinedKey]: merged }));
+                    return merged;
+                });
+
+                if (append) {
+                    setQueryOffset(offset);
+                } else {
+                    setQueryOffset(0);
+                }
+
+                if (limit && data.length < limit) {
+                    setQueryHasMore(false);
+                }
+            } else {
+                // 保存到緩存並更新當前數據
+                setAnalyticsCache(prev => ({ ...prev, [cacheKey]: data }));
+                setAnalytics(data);
+            }
+
+            // 標記此dimension已載入
+            setLoadedDimensions(prev => new Set([...prev, dimension]));
         } catch (err) {
             console.error(err);
         } finally {
-            setAnalyticsLoading(false);
+            if (dimension === 'query' && append) {
+                setQueryLoadingMore(false);
+            } else {
+                setAnalyticsLoading(false);
+            }
         }
     };
 
-    // Fetch page+query dimension data to get keywords for each page
-    const fetchPageKeywords = async (siteUrl, startDate, endDate) => {
+    // Page keywords pagination config
+    const pageKeywordsPageSize = 2000;  // Load 2000 page+query combinations per request (reduced for faster initial load)
+
+    // Fetch page+query dimension data to get keywords for each page (with pagination and load time tracking)
+    const fetchPageKeywords = async (siteUrl, startDate, endDate, options = {}) => {
+        const { append = false, offset = 0 } = options;
+        const startTime = performance.now();
+
+        if (!append) {
+            setPageKeywordsLoading(true);
+        }
+
         try {
-            const resp = await fetch(`${API_URL}/api/gsc/analytics?site_url=${encodeURIComponent(siteUrl)}&start_date=${startDate}&end_date=${endDate}&dimensions=page,query`, {
+            const limitParam = `&limit=${pageKeywordsPageSize}`;
+            const offsetParam = offset > 0 ? `&offset=${offset}` : '';
+
+            const resp = await fetch(`${API_URL}/api/gsc/analytics?site_url=${encodeURIComponent(siteUrl)}&start_date=${startDate}&end_date=${endDate}&dimensions=page,query${limitParam}${offsetParam}`, {
                 headers: { 'Authorization': `Bearer ${localStorage.getItem('google_token')}` }
             });
             const data = await resp.json();
-            if (!resp.ok) return;
+
+            // Calculate load time
+            const loadTime = Math.round(performance.now() - startTime);
+            setPageKeywordsLoadTime(loadTime);
+
+            if (!resp.ok) {
+                setPageKeywordsLoading(false);
+                return;
+            }
+
+            // Check if there are more pages
+            if (data.length < pageKeywordsPageSize) {
+                setPageKeywordsHasMore(false);
+            }
 
             // Group keywords by page URL
-            const keywordMap = {};
+            const newKeywordMap = {};
             data.forEach(row => {
                 if (row.keys && row.keys.length >= 2) {
                     const pageUrl = row.keys[0];
                     const keyword = row.keys[1];
-                    if (!keywordMap[pageUrl]) {
-                        keywordMap[pageUrl] = [];
+                    if (!newKeywordMap[pageUrl]) {
+                        newKeywordMap[pageUrl] = [];
                     }
-                    keywordMap[pageUrl].push({
+                    newKeywordMap[pageUrl].push({
                         keyword,
                         clicks: row.clicks,
                         impressions: row.impressions
@@ -500,16 +720,56 @@ const GSCStats = ({ language, isMobile = false }) => {
                 }
             });
 
-            // Sort keywords by clicks (keep all keywords, not just top 5)
-            Object.keys(keywordMap).forEach(page => {
-                keywordMap[page].sort((a, b) => b.clicks - a.clicks);
-                // No longer slicing to top 5 - keep all keywords for full analysis
+            // Sort keywords by clicks within each page
+            Object.keys(newKeywordMap).forEach(page => {
+                newKeywordMap[page].sort((a, b) => b.clicks - a.clicks);
             });
 
-            setPageKeywords(keywordMap);
+            // Merge with existing data if appending
+            if (append) {
+                setPageKeywords(prev => {
+                    const merged = { ...prev };
+                    Object.keys(newKeywordMap).forEach(page => {
+                        if (merged[page]) {
+                            // Append and re-sort
+                            merged[page] = [...merged[page], ...newKeywordMap[page]]
+                                .sort((a, b) => b.clicks - a.clicks);
+                        } else {
+                            merged[page] = newKeywordMap[page];
+                        }
+                    });
+                    return merged;
+                });
+                setPageKeywordsTotalCount(prev => prev + data.length);
+            } else {
+                setPageKeywords(newKeywordMap);
+                setPageKeywordsTotalCount(data.length);
+            }
+
+            setPageKeywordsOffset(offset);
+            console.log(`[Page Keywords] Loaded ${data.length} rows in ${loadTime}ms (offset: ${offset})`);
         } catch (err) {
             console.error('Failed to fetch page keywords:', err);
+        } finally {
+            setPageKeywordsLoading(false);
         }
+    };
+
+    // Load more page keywords from server
+    const loadMorePageKeywords = () => {
+        if (pageKeywordsLoading || !pageKeywordsHasMore) return;
+        if (!selectedSite || !dateRange.start || !dateRange.end) return;
+
+        const nextOffset = pageKeywordsOffset + pageKeywordsPageSize;
+        fetchPageKeywords(selectedSite, dateRange.start, dateRange.end, { append: true, offset: nextOffset });
+    };
+
+    const loadMoreQueryData = () => {
+        if (activeTab !== 'query' || queryLoadingMore || !queryHasMore) return;
+        if (!selectedSite || !dateRange.start || !dateRange.end) return;
+
+        const nextOffset = queryOffset + queryPageSize;
+        fetchAnalytics(selectedSite, dateRange.start, dateRange.end, 'query', { append: true, offset: nextOffset });
     };
 
     // Fetch real page titles from backend (with database caching)
@@ -653,6 +913,17 @@ const GSCStats = ({ language, isMobile = false }) => {
 
     // Fetch trend data (compare current period with previous period)
     const fetchTrendData = async (siteUrl, startDate, endDate) => {
+        // 建立 trend 專用的緩存鍵
+        const cacheKey = `trend-${siteUrl}-${startDate}-${endDate}`;
+
+        // 檢查緩存
+        if (analyticsCache[cacheKey]) {
+            console.log('Using cached trend data');
+            setTrendData(analyticsCache[cacheKey]);
+            return;
+        }
+
+        console.log('Fetching fresh trend data');
         setTrendLoading(true);
         try {
             // Calculate previous period dates
@@ -717,6 +988,8 @@ const GSCStats = ({ language, isMobile = false }) => {
                 };
             });
 
+            // 保存到緩存並更新數據
+            setAnalyticsCache(prev => ({ ...prev, [cacheKey]: trendResults }));
             setTrendData(trendResults);
         } catch (err) {
             console.error('Failed to fetch trend data:', err);
@@ -745,6 +1018,99 @@ const GSCStats = ({ language, isMobile = false }) => {
         const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24)) + 1;
         return diffDays;
     };
+
+    // Compare Mode Functions
+    const getCompareDateRange = () => {
+        if (compareMode === 'none') return null;
+
+        const start = new Date(dateRange.start);
+        const end = new Date(dateRange.end);
+        const daysDiff = Math.ceil((end - start) / (1000 * 60 * 60 * 24)) + 1;
+
+        if (compareMode === 'previous_period') {
+            // 前一時段：相同天數往前推
+            const prevEnd = new Date(start);
+            prevEnd.setDate(prevEnd.getDate() - 1);
+            const prevStart = new Date(prevEnd);
+            prevStart.setDate(prevStart.getDate() - daysDiff + 1);
+            return { start: formatDate(prevStart), end: formatDate(prevEnd) };
+        } else if (compareMode === 'previous_year') {
+            // 去年同期
+            const prevStart = new Date(start);
+            prevStart.setFullYear(prevStart.getFullYear() - 1);
+            const prevEnd = new Date(end);
+            prevEnd.setFullYear(prevEnd.getFullYear() - 1);
+            return { start: formatDate(prevStart), end: formatDate(prevEnd) };
+        }
+        return null;
+    };
+
+    const fetchCompareData = async (compareDateRange) => {
+        if (!selectedSite || !compareDateRange) return;
+
+        setCompareLoading(true);
+        try {
+            const currentTab = TABS.find(tab => tab.key === activeTab);
+            const dimension = currentTab?.dimension || 'date';
+
+            const resp = await fetch(
+                `${API_URL}/api/gsc/analytics?site_url=${encodeURIComponent(selectedSite)}&start_date=${compareDateRange.start}&end_date=${compareDateRange.end}&dimensions=${dimension}`,
+                { headers: { 'Authorization': `Bearer ${localStorage.getItem('google_token')}` } }
+            );
+            const data = await resp.json();
+            if (resp.ok) {
+                setCompareData(data);
+            }
+        } catch (err) {
+            console.error('Failed to fetch compare data:', err);
+        } finally {
+            setCompareLoading(false);
+        }
+    };
+
+    const calculateChange = (current, previous) => {
+        if (previous === 0) return current > 0 ? 100 : 0;
+        return ((current - previous) / previous * 100);
+    };
+
+    // Compute compare totals from compare data
+    const getCompareTotals = () => {
+        if (!compareData || compareData.length === 0) return null;
+
+        const totals = {
+            clicks: 0,
+            impressions: 0,
+            ctr: 0,
+            position: 0
+        };
+
+        compareData.forEach(row => {
+            totals.clicks += row.clicks || 0;
+            totals.impressions += row.impressions || 0;
+            totals.ctr += row.ctr || 0;
+            totals.position += row.position || 0;
+        });
+
+        // Average CTR and position
+        const count = compareData.length || 1;
+        totals.ctr = totals.ctr / count;
+        totals.position = totals.position / count;
+
+        return totals;
+    };
+
+    // Effect: Fetch compare data when compare mode changes
+    useEffect(() => {
+        if (compareMode !== 'none' && selectedSite && dateRange.start && dateRange.end) {
+            const compareDateRange = getCompareDateRange();
+            if (compareDateRange) {
+                fetchCompareData(compareDateRange);
+            }
+        } else {
+            setCompareData([]);
+        }
+    }, [compareMode, selectedSite, dateRange, activeTab]);
+
 
     const handleSort = (key) => {
         setSortConfig(prev => ({
@@ -1102,8 +1468,54 @@ const GSCStats = ({ language, isMobile = false }) => {
     };
 
     if (loading) return (
-        <div style={{ padding: '20px', color: 'var(--text-secondary)' }}>
-            {t('載入網站列表...', 'Loading sites...')}
+        <div style={{
+            display: 'flex',
+            flexDirection: 'column',
+            alignItems: 'center',
+            justifyContent: 'center',
+            padding: '60px 20px',
+            background: 'rgba(255, 255, 255, 0.02)',
+            borderRadius: '16px',
+            border: '1px solid var(--glass-border)',
+            margin: '20px'
+        }}>
+            {/* Spinner Animation */}
+            <div style={{
+                width: '48px',
+                height: '48px',
+                border: '4px solid rgba(52, 168, 83, 0.2)',
+                borderTop: '4px solid #34a853',
+                borderRadius: '50%',
+                animation: 'spin 1s linear infinite',
+                marginBottom: '20px'
+            }} />
+
+            {/* Main Message */}
+            <div style={{
+                fontSize: '16px',
+                fontWeight: 600,
+                color: 'var(--text-primary)',
+                marginBottom: '8px'
+            }}>
+                {t('正在載入 Search Console 網站列表', 'Loading Search Console sites')}
+            </div>
+
+            {/* Sub Message */}
+            <div style={{
+                fontSize: '14px',
+                color: 'var(--text-secondary)',
+                textAlign: 'center'
+            }}>
+                {t('請稍候...', 'Please wait...')}
+            </div>
+
+            {/* CSS Animation Keyframes */}
+            <style>{`
+                @keyframes spin {
+                    0% { transform: rotate(0deg); }
+                    100% { transform: rotate(360deg); }
+                }
+            `}</style>
         </div>
     );
 
@@ -1118,71 +1530,298 @@ const GSCStats = ({ language, isMobile = false }) => {
 
     return (
         <div style={containerStyle}>
-            {/* Site Selector */}
-            <div style={headerStyle}>
-                <label style={labelStyle}>{t('選擇資源:', 'Select Property:')}</label>
-                <select
-                    value={selectedSite}
-                    onChange={(e) => setSelectedSite(e.target.value)}
-                    style={selectStyle}
-                >
-                    {sites.map(site => (
-                        <option key={site.siteUrl} value={site.siteUrl}>
-                            {site.siteUrl} ({site.permissionLevel})
-                        </option>
-                    ))}
-                </select>
-            </div>
-
-            {/* Date Range Selector */}
-            <div style={{
-                background: 'var(--bg-secondary)',
-                padding: isMobile ? '12px' : '16px',
-                borderRadius: '12px',
+            {/* Main Settings Panel - Glass Style (aligned with GA4) */}
+            <div className="glass-panel" style={{
+                padding: isMobile ? '16px' : '24px',
+                borderRadius: '16px',
+                marginBottom: '24px',
+                background: 'rgba(255, 255, 255, 0.03)',
                 border: '1px solid var(--glass-border)',
-                display: 'flex',
-                flexDirection: isMobile ? 'column' : 'row',
-                gap: isMobile ? '12px' : '16px',
-                alignItems: isMobile ? 'stretch' : 'center',
-                flexWrap: 'wrap'
+                backdropFilter: 'blur(10px)'
             }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flex: isMobile ? '1' : 'none' }}>
-                    <label style={{ ...labelStyle, whiteSpace: 'nowrap' }}>{t('日期範圍:', 'Date Range:')}</label>
-                    <select
-                        value={datePreset}
-                        onChange={(e) => handlePresetChange(e.target.value)}
-                        style={{ ...selectStyle, flex: isMobile ? 1 : 'none' }}
-                    >
-                        {DATE_PRESETS.map(preset => (
-                            <option key={preset.key} value={preset.key}>
-                                {language === 'zh' ? preset.label_zh : preset.label_en}
-                            </option>
-                        ))}
-                    </select>
+                <h3 style={{
+                    margin: '0 0 20px 0',
+                    fontSize: '0.95rem',
+                    color: 'var(--text-secondary)',
+                    fontWeight: 600,
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '8px'
+                }}>
+                    ⚙️ {t('主要設定', 'Main Settings')}
+                </h3>
+
+                {/* Row 1: Site Selector + Date Range */}
+                <div style={{
+                    display: 'flex',
+                    flexDirection: isMobile ? 'column' : 'row',
+                    gap: '20px',
+                    flexWrap: 'wrap'
+                }}>
+                    {/* Site Selector */}
+                    <div style={{ flex: 1, minWidth: isMobile ? '100%' : '200px' }}>
+                        <label style={{
+                            display: 'block',
+                            marginBottom: '8px',
+                            fontWeight: 600,
+                            color: 'var(--text-secondary)',
+                            fontSize: '0.85rem'
+                        }}>
+                            {t('選擇資源', 'Select Property')}
+                        </label>
+                        <select
+                            value={selectedSite}
+                            onChange={(e) => setSelectedSite(e.target.value)}
+                            style={{
+                                width: '100%',
+                                padding: '10px 12px',
+                                border: '1px solid var(--glass-border)',
+                                borderRadius: '8px',
+                                background: 'rgba(255, 255, 255, 0.05)',
+                                color: 'var(--text-primary)',
+                                fontSize: '14px'
+                            }}
+                        >
+                            {sites.map(site => (
+                                <option key={site.siteUrl} value={site.siteUrl} style={{ color: 'black' }}>
+                                    {site.siteUrl} ({site.permissionLevel})
+                                </option>
+                            ))}
+                        </select>
+                    </div>
+
+                    {/* Date Range Selector */}
+                    <div style={{ flex: 1, minWidth: isMobile ? '100%' : '180px' }}>
+                        <label style={{
+                            display: 'block',
+                            marginBottom: '8px',
+                            fontWeight: 600,
+                            color: 'var(--text-secondary)',
+                            fontSize: '0.85rem'
+                        }}>
+                            {t('日期範圍', 'Date Range')}
+                        </label>
+                        <select
+                            value={datePreset}
+                            onChange={(e) => handlePresetChange(e.target.value)}
+                            style={{
+                                width: '100%',
+                                padding: '10px 12px',
+                                border: '1px solid var(--glass-border)',
+                                borderRadius: '8px',
+                                background: 'rgba(255, 255, 255, 0.05)',
+                                color: 'var(--text-primary)',
+                                fontSize: '14px'
+                            }}
+                        >
+                            {DATE_PRESETS.map(preset => (
+                                <option key={preset.key} value={preset.key} style={{ color: 'black' }}>
+                                    {language === 'zh' ? preset.label_zh : preset.label_en}
+                                </option>
+                            ))}
+                        </select>
+                    </div>
+
+                    {/* Compare Mode Selector */}
+                    <div style={{ flex: 1, minWidth: isMobile ? '100%' : '150px' }}>
+                        <label style={{
+                            display: 'block',
+                            marginBottom: '8px',
+                            fontWeight: 600,
+                            color: 'var(--text-secondary)',
+                            fontSize: '0.85rem'
+                        }}>
+                            📊 {t('比較模式', 'Compare Mode')}
+                        </label>
+                        <select
+                            value={compareMode}
+                            onChange={(e) => setCompareMode(e.target.value)}
+                            style={{
+                                width: '100%',
+                                padding: '10px 12px',
+                                border: '1px solid var(--glass-border)',
+                                borderRadius: '8px',
+                                background: 'rgba(255, 255, 255, 0.05)',
+                                color: 'var(--text-primary)',
+                                fontSize: '14px'
+                            }}
+                        >
+                            {COMPARE_OPTIONS.map(opt => (
+                                <option key={opt.key} value={opt.key} style={{ color: 'black' }}>
+                                    {language === 'zh' ? opt.label_zh : opt.label_en}
+                                </option>
+                            ))}
+                        </select>
+                    </div>
                 </div>
 
+                {/* Date Range Info Bar - Always visible (aligned with GA4) */}
+                <div style={{
+                    marginTop: '16px',
+                    padding: '12px 16px',
+                    background: compareMode !== 'none' ? 'rgba(139, 92, 246, 0.1)' : 'rgba(66, 133, 244, 0.1)',
+                    borderRadius: '8px',
+                    border: `1px solid ${compareMode !== 'none' ? 'rgba(139, 92, 246, 0.2)' : 'rgba(66, 133, 244, 0.2)'}`,
+                    fontSize: '13px',
+                    color: 'var(--text-secondary)',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '12px',
+                    flexWrap: 'wrap'
+                }}>
+                    {/* Current Period */}
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                        📆 {t('目前期間', 'Current Period')}:
+                        <strong style={{ color: 'var(--text-primary)' }}>
+                            {dateRange.start} ~ {dateRange.end}
+                        </strong>
+                        <span style={{ opacity: 0.7 }}>
+                            ({getDaysInRange()} {t('天', 'days')})
+                        </span>
+                    </div>
+
+                    {/* Compare Period - Only when enabled */}
+                    {compareMode !== 'none' && getCompareDateRange() && (
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                            <span style={{ color: 'var(--text-secondary)' }}>|</span>
+                            📊 {compareMode === 'previous_period' ? t('前一時段', 'Previous Period') : t('去年同期', 'Previous Year')}:
+                            <strong style={{ color: '#a78bfa' }}>
+                                {getCompareDateRange().start} ~ {getCompareDateRange().end}
+                            </strong>
+                        </div>
+                    )}
+                </div>
+
+
+                {/* Custom Date Picker - Inline when selected */}
                 {showCustomDate && (
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flex: isMobile ? '1' : 'none', flexWrap: 'wrap' }}>
-                        <input
-                            type="date"
-                            value={dateRange.start}
-                            onChange={(e) => handleCustomDateChange('start', e.target.value)}
-                            style={{ ...selectStyle, flex: isMobile ? 1 : 'none', minWidth: '130px' }}
-                        />
-                        <span style={{ color: 'var(--text-secondary)' }}>→</span>
-                        <input
-                            type="date"
-                            value={dateRange.end}
-                            onChange={(e) => handleCustomDateChange('end', e.target.value)}
-                            style={{ ...selectStyle, flex: isMobile ? 1 : 'none', minWidth: '130px' }}
-                        />
+                    <div style={{
+                        marginTop: '20px',
+                        paddingTop: '20px',
+                        borderTop: '1px solid var(--glass-border)'
+                    }}>
+                        <div style={{
+                            display: 'flex',
+                            flexDirection: isMobile ? 'column' : 'row',
+                            gap: '16px',
+                            alignItems: isMobile ? 'stretch' : 'flex-end'
+                        }}>
+                            {/* Start Date */}
+                            <div style={{ flex: 1 }}>
+                                <label style={{
+                                    display: 'block',
+                                    marginBottom: '8px',
+                                    fontWeight: 600,
+                                    color: 'var(--text-secondary)',
+                                    fontSize: '0.85rem'
+                                }}>
+                                    {t('開始日期', 'Start Date')}
+                                </label>
+                                <input
+                                    type="date"
+                                    value={dateRange.start}
+                                    max={dateRange.end}
+                                    onChange={(e) => handleCustomDateChange('start', e.target.value)}
+                                    style={{
+                                        width: '100%',
+                                        padding: '10px 12px',
+                                        border: '1px solid var(--glass-border)',
+                                        borderRadius: '8px',
+                                        background: 'rgba(255, 255, 255, 0.05)',
+                                        color: 'var(--text-primary)',
+                                        fontSize: '14px',
+                                        colorScheme: 'dark'
+                                    }}
+                                />
+                            </div>
+
+                            {/* End Date */}
+                            <div style={{ flex: 1 }}>
+                                <label style={{
+                                    display: 'block',
+                                    marginBottom: '8px',
+                                    fontWeight: 600,
+                                    color: 'var(--text-secondary)',
+                                    fontSize: '0.85rem'
+                                }}>
+                                    {t('結束日期', 'End Date')}
+                                </label>
+                                <input
+                                    type="date"
+                                    value={dateRange.end}
+                                    min={dateRange.start}
+                                    max={formatDate(new Date())}
+                                    onChange={(e) => handleCustomDateChange('end', e.target.value)}
+                                    style={{
+                                        width: '100%',
+                                        padding: '10px 12px',
+                                        border: '1px solid var(--glass-border)',
+                                        borderRadius: '8px',
+                                        background: 'rgba(255, 255, 255, 0.05)',
+                                        color: 'var(--text-primary)',
+                                        fontSize: '14px',
+                                        colorScheme: 'dark'
+                                    }}
+                                />
+                            </div>
+                        </div>
+
+                        {/* Quick Selection Buttons */}
+                        <div style={{
+                            display: 'flex',
+                            flexWrap: 'wrap',
+                            gap: '8px',
+                            marginTop: '16px',
+                            alignItems: 'center'
+                        }}>
+                            <span style={{
+                                fontSize: '13px',
+                                color: 'var(--text-secondary)',
+                                marginRight: '8px'
+                            }}>
+                                {t('快速選擇：', 'Quick select:')}
+                            </span>
+                            {[
+                                { label: t('今天', 'Today'), key: 'today' },
+                                { label: t('昨天', 'Yesterday'), key: 'yesterday' },
+                                { label: t('本週', 'This Week'), key: 'this_week' },
+                                { label: t('上週', 'Last Week'), key: 'last_week' },
+                                { label: t('本月', 'This Month'), key: 'this_month' },
+                                { label: t('上月', 'Last Month'), key: 'last_month' }
+                            ].map(quick => (
+                                <button
+                                    key={quick.key}
+                                    onClick={() => {
+                                        const range = getDateRangeFromPreset(quick.key);
+                                        setDateRange(range);
+                                    }}
+                                    style={{
+                                        padding: '6px 12px',
+                                        border: '1px solid var(--glass-border)',
+                                        borderRadius: '16px',
+                                        background: 'rgba(255, 255, 255, 0.05)',
+                                        color: 'var(--text-secondary)',
+                                        fontSize: '12px',
+                                        cursor: 'pointer',
+                                        transition: 'all 0.2s'
+                                    }}
+                                    onMouseOver={(e) => {
+                                        e.target.style.background = 'var(--accent-primary)';
+                                        e.target.style.color = 'white';
+                                    }}
+                                    onMouseOut={(e) => {
+                                        e.target.style.background = 'rgba(255, 255, 255, 0.05)';
+                                        e.target.style.color = 'var(--text-secondary)';
+                                    }}
+                                >
+                                    {quick.label}
+                                </button>
+                            ))}
+                        </div>
                     </div>
                 )}
-
-                <div style={{ color: 'var(--text-secondary)', fontSize: isMobile ? '12px' : '13px', marginLeft: isMobile ? 0 : 'auto' }}>
-                    {dateRange.start} ~ {dateRange.end} ({getDaysInRange()} {t('天', 'days')})
-                </div>
             </div>
+
 
             {/* Tab Navigation */}
             <div style={tabContainerStyle}>
@@ -1198,49 +1837,153 @@ const GSCStats = ({ language, isMobile = false }) => {
             </div>
 
             {(analyticsLoading || (activeTab === 'trend' && trendLoading)) ? (
-                <div style={{ color: 'var(--text-secondary)' }}>
-                    {t('載入數據中...', 'Loading analytics...')}
+                <div style={{
+                    display: 'flex',
+                    flexDirection: 'column',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    padding: '60px 20px',
+                    background: 'rgba(255, 255, 255, 0.02)',
+                    borderRadius: '16px',
+                    border: '1px solid var(--glass-border)',
+                    marginTop: '24px'
+                }}>
+                    {/* Spinner Animation */}
+                    <div style={{
+                        width: '48px',
+                        height: '48px',
+                        border: '4px solid rgba(52, 168, 83, 0.2)',
+                        borderTop: '4px solid #34a853',
+                        borderRadius: '50%',
+                        animation: 'spin 1s linear infinite',
+                        marginBottom: '20px'
+                    }} />
+
+                    {/* Main Message */}
+                    <div style={{
+                        fontSize: '16px',
+                        fontWeight: 600,
+                        color: 'var(--text-primary)',
+                        marginBottom: '8px'
+                    }}>
+                        {t('正在從 Search Console 抓取數據', 'Fetching data from Search Console')}
+                    </div>
+
+                    {/* Sub Message */}
+                    <div style={{
+                        fontSize: '14px',
+                        color: 'var(--text-secondary)',
+                        textAlign: 'center'
+                    }}>
+                        {t('請稍候，這可能需要幾秒鐘...', 'Please wait, this may take a few seconds...')}
+                    </div>
+
+                    {/* CSS Animation Keyframes */}
+                    <style>{`
+                        @keyframes spin {
+                            0% { transform: rotate(0deg); }
+                            100% { transform: rotate(360deg); }
+                        }
+                    `}</style>
                 </div>
             ) : (
                 <>
                     {/* Summary Cards - hide for trend tab */}
-                    {activeTab !== 'trend' && (
-                        <div style={gridStyle}>
-                            <div style={cardStyle}>
-                                <div style={cardLabelStyle}>{t(`總點擊數 (${getDaysInRange()}天)`, `Total Clicks (${getDaysInRange()}d)`)}</div>
-                                <div style={cardValueStyle}>
-                                    {analytics.reduce((acc, row) => acc + row.clicks, 0).toLocaleString()}
+                    {activeTab !== 'trend' && (() => {
+                        // Calculate current totals
+                        const currentClicks = analytics.reduce((acc, row) => acc + row.clicks, 0);
+                        const currentImpressions = analytics.reduce((acc, row) => acc + row.impressions, 0);
+                        const currentCtr = analytics.reduce((acc, row) => acc + row.ctr, 0) / (analytics.length || 1) * 100;
+                        const currentPosition = analytics.reduce((acc, row) => acc + row.position, 0) / (analytics.length || 1);
+
+                        // Get compare totals
+                        const compareTotals = getCompareTotals();
+
+                        // Calculate changes if compare mode is active
+                        const clicksChange = compareTotals ? calculateChange(currentClicks, compareTotals.clicks) : null;
+                        const impressionsChange = compareTotals ? calculateChange(currentImpressions, compareTotals.impressions) : null;
+                        const ctrChange = compareTotals ? calculateChange(currentCtr, compareTotals.ctr * 100) : null;
+                        const positionChange = compareTotals ? calculateChange(currentPosition, compareTotals.position) : null;
+
+                        // Helper to render change badge with previous value
+                        const renderCompareInfo = (change, previousValue, formatter = (v) => v.toLocaleString(), isPositionMetric = false) => {
+                            if (compareMode === 'none' || change === null) return null;
+                            // For position, lower is better so reverse the color logic
+                            const isPositive = isPositionMetric ? change < 0 : change >= 0;
+                            const displayChange = isPositionMetric ? -change : change;
+                            return (
+                                <div style={{
+                                    display: 'flex',
+                                    alignItems: 'center',
+                                    gap: '8px',
+                                    marginTop: '6px'
+                                }}>
+                                    <span style={{
+                                        fontSize: '12px',
+                                        padding: '2px 8px',
+                                        borderRadius: '12px',
+                                        background: isPositive ? 'rgba(52, 168, 83, 0.15)' : 'rgba(234, 67, 53, 0.15)',
+                                        color: isPositive ? '#34a853' : '#ea4335',
+                                        fontWeight: 600
+                                    }}>
+                                        {isPositive ? '▲' : '▼'} {Math.abs(displayChange).toFixed(1)}%
+                                    </span>
+                                    <span style={{
+                                        fontSize: '11px',
+                                        color: 'var(--text-secondary)',
+                                        opacity: 0.7
+                                    }}>
+                                        vs {formatter(previousValue)}
+                                    </span>
                                 </div>
-                            </div>
-                            <div style={cardStyle}>
-                                <div style={cardLabelStyle}>{t(`總曝光數 (${getDaysInRange()}天)`, `Total Impressions (${getDaysInRange()}d)`)}</div>
-                                <div style={cardValueStyle}>
-                                    {analytics.reduce((acc, row) => acc + row.impressions, 0).toLocaleString()}
-                                </div>
-                            </div>
-                            <div style={cardStyle}>
-                                <div style={cardLabelStyle}>{t('平均點閱率', 'Avg CTR')}</div>
-                                <div style={cardValueStyle}>
-                                    {(analytics.reduce((acc, row) => acc + row.ctr, 0) / (analytics.length || 1) * 100).toFixed(2)}%
-                                </div>
-                            </div>
-                            <div style={cardStyle}>
-                                <div style={cardLabelStyle}>{t('平均排名', 'Avg Position')}</div>
-                                <div style={cardValueStyle}>
-                                    {(analytics.reduce((acc, row) => acc + row.position, 0) / (analytics.length || 1)).toFixed(1)}
-                                </div>
-                            </div>
-                            {/* Indexed Pages Count - only for page tab */}
-                            {activeTab === 'page' && (
-                                <div style={{ ...cardStyle, background: 'linear-gradient(135deg, rgba(139, 92, 246, 0.1), rgba(139, 92, 246, 0.05))' }}>
-                                    <div style={cardLabelStyle}>📄 {t('索引頁面數', 'Indexed Pages')}</div>
-                                    <div style={{ ...cardValueStyle, color: '#8B5CF6' }}>
-                                        {analytics.length.toLocaleString()}
+                            );
+                        };
+
+                        return (
+                            <div style={gridStyle}>
+                                <div style={cardStyle}>
+                                    <div style={cardLabelStyle}>{t(`總點擊數 (${getDaysInRange()}天)`, `Total Clicks (${getDaysInRange()}d)`)}</div>
+                                    <div style={cardValueStyle}>
+                                        {currentClicks.toLocaleString()}
                                     </div>
+                                    {renderCompareInfo(clicksChange, compareTotals?.clicks || 0)}
                                 </div>
-                            )}
-                        </div>
-                    )}
+                                <div style={cardStyle}>
+                                    <div style={cardLabelStyle}>{t(`總曝光數 (${getDaysInRange()}天)`, `Total Impressions (${getDaysInRange()}d)`)}</div>
+                                    <div style={cardValueStyle}>
+                                        {currentImpressions.toLocaleString()}
+                                    </div>
+                                    {renderCompareInfo(impressionsChange, compareTotals?.impressions || 0)}
+                                </div>
+                                <div style={cardStyle}>
+                                    <div style={cardLabelStyle}>{t('平均點閱率', 'Avg CTR')}</div>
+                                    <div style={cardValueStyle}>
+                                        {currentCtr.toFixed(2)}%
+                                    </div>
+                                    {renderCompareInfo(ctrChange, (compareTotals?.ctr || 0) * 100, (v) => `${v.toFixed(2)}%`)}
+                                </div>
+                                <div style={cardStyle}>
+                                    <div style={cardLabelStyle}>{t('平均排名', 'Avg Position')}</div>
+                                    <div style={cardValueStyle}>
+                                        {currentPosition.toFixed(1)}
+                                    </div>
+                                    {renderCompareInfo(positionChange, compareTotals?.position || 0, (v) => v.toFixed(1), true)}
+                                </div>
+                                {/* Indexed Pages Count - only for page tab */}
+                                {activeTab === 'page' && (
+                                    <div style={{ ...cardStyle, background: 'linear-gradient(135deg, rgba(139, 92, 246, 0.1), rgba(139, 92, 246, 0.05))' }}>
+                                        <div style={cardLabelStyle}>📄 {t('索引頁面數', 'Indexed Pages')}</div>
+                                        <div style={{ ...cardValueStyle, color: '#8B5CF6' }}>
+                                            {analytics.length.toLocaleString()}
+                                        </div>
+                                    </div>
+                                )}
+                            </div>
+                        );
+                    })()}
+
+
+
 
                     {/* Trend Tab Content */}
                     {activeTab === 'trend' ? (
@@ -1420,7 +2163,8 @@ const GSCStats = ({ language, isMobile = false }) => {
                                     <tbody>
                                         {(() => {
                                             const totalClicks = analytics.reduce((sum, row) => sum + row.clicks, 0);
-                                            return getSortedFilteredData().map((row, idx) => {
+                                            const { displayData } = getSortedFilteredData();
+                                            return displayData.map((row, idx) => {
                                                 const countryCode = (row.keys?.[0] || '').toLowerCase();
                                                 const countryName = COUNTRY_NAMES[countryCode]?.[language] || countryCode.toUpperCase();
                                                 const sharePercent = totalClicks > 0 ? (row.clicks / totalClicks * 100) : 0;
@@ -1571,6 +2315,60 @@ const GSCStats = ({ language, isMobile = false }) => {
                                     {activeTab === 'page' && t('頁面排行', 'Top Pages')}
                                     {activeTab !== 'daily' && ` (${showGroupedView ? groupedData.length + ' 組' : sortedData.length})`}
                                 </span>
+
+                                {/* Load time display for page tab */}
+                                {activeTab === 'page' && (
+                                    <span style={{
+                                        display: 'inline-flex',
+                                        alignItems: 'center',
+                                        gap: '6px',
+                                        marginLeft: '12px',
+                                        fontSize: '11px',
+                                        color: 'var(--text-tertiary)'
+                                    }}>
+                                        {pageKeywordsLoading ? (
+                                            <span style={{ color: '#3B82F6' }}>
+                                                ⏳ {t('載入中...', 'Loading...')}
+                                            </span>
+                                        ) : pageKeywordsLoadTime !== null ? (
+                                            <>
+                                                <span style={{
+                                                    background: 'rgba(16, 185, 129, 0.15)',
+                                                    color: '#10B981',
+                                                    padding: '2px 8px',
+                                                    borderRadius: '10px',
+                                                    fontWeight: '500'
+                                                }}>
+                                                    ⚡ {pageKeywordsLoadTime}ms
+                                                </span>
+                                                <span>
+                                                    {t(`${pageKeywordsTotalCount.toLocaleString()} 組關鍵字`, `${pageKeywordsTotalCount.toLocaleString()} keyword pairs`)}
+                                                </span>
+                                                {pageKeywordsHasMore && (
+                                                    <button
+                                                        onClick={(e) => {
+                                                            e.stopPropagation();
+                                                            loadMorePageKeywords();
+                                                        }}
+                                                        style={{
+                                                            background: 'rgba(59, 130, 246, 0.15)',
+                                                            border: '1px solid rgba(59, 130, 246, 0.3)',
+                                                            color: '#3B82F6',
+                                                            padding: '2px 8px',
+                                                            borderRadius: '10px',
+                                                            fontSize: '10px',
+                                                            fontWeight: '500',
+                                                            cursor: 'pointer'
+                                                        }}
+                                                        title={t('載入更多關鍵字資料', 'Load more keyword data')}
+                                                    >
+                                                        {t('載入更多', 'Load More')}
+                                                    </button>
+                                                )}
+                                            </>
+                                        ) : null}
+                                    </span>
+                                )}
 
                                 {/* Controls for query/page tabs */}
                                 {activeTab !== 'daily' && (
@@ -2371,6 +3169,42 @@ const GSCStats = ({ language, isMobile = false }) => {
                                     </tbody>
                                 </table>
                             </div>
+
+                            {/* Load More from server (query tab, full dataset) */}
+                            {activeTab === 'query' && rowLimit === 99999 && queryHasMore && (
+                                <div style={{
+                                    padding: '16px',
+                                    borderTop: '1px solid var(--glass-border)',
+                                    display: 'flex',
+                                    justifyContent: 'center',
+                                    alignItems: 'center',
+                                    gap: '12px'
+                                }}>
+                                    <span style={{ color: 'var(--text-secondary)', fontSize: '13px' }}>
+                                        {t(`已載入 ${analytics.length} 筆`, `Loaded ${analytics.length} rows`)}
+                                    </span>
+                                    <button
+                                        onClick={loadMoreQueryData}
+                                        disabled={queryLoadingMore}
+                                        style={{
+                                            padding: '8px 20px',
+                                            background: 'var(--accent-primary)',
+                                            border: 'none',
+                                            borderRadius: '8px',
+                                            color: 'white',
+                                            fontSize: '13px',
+                                            fontWeight: '500',
+                                            cursor: queryLoadingMore ? 'wait' : 'pointer',
+                                            opacity: queryLoadingMore ? 0.7 : 1,
+                                            transition: 'all 0.2s'
+                                        }}
+                                    >
+                                        {queryLoadingMore
+                                            ? t('載入中...', 'Loading...')
+                                            : `⬇️ ${t('載入更多資料', 'Load More Data')}`}
+                                    </button>
+                                </div>
+                            )}
 
                             {/* Load More Button for progressive rendering */}
                             {!showGroupedView && sortedDataHasMore && (

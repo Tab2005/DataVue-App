@@ -2,7 +2,7 @@
 Google Gemini 直連客戶端
 直接使用 Google AI Studio 的 API Key 呼叫 Gemini 模型
 """
-import google.generativeai as genai
+import google.genai as genai
 from typing import Optional, Dict, List
 import os
 

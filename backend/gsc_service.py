@@ -2,18 +2,14 @@ from datetime import datetime, timedelta
 import os
 import sys
 import json
-import asyncio
-import time
 from google.oauth2.credentials import Credentials
 from googleapiclient.discovery import build
 from sqlalchemy.orm import Session
 from database import User
 from auth import TokenManager
+from cache import generate_cache_key, get_cached, set_cached, analytics_cache
+from redis_cache import get_cached_redis, set_cached_redis
 
-# Simple in-memory cache for GSC analytics data
-# Format: { cache_key: { 'data': [...], 'expires_at': timestamp } }
-_gsc_cache = {}
-_CACHE_TTL = 300  # 5 minutes
 
 class GSCService:
     """
@@ -130,26 +126,23 @@ class GSCService:
             return False, str(e)
 
     @staticmethod
-    def get_credentials(user: User):
+    def get_credentials(user: User, db: Session = None):
         """
         Constructs google.oauth2.credentials.Credentials from user's stored tokens.
         Handles token refresh if expired.
+        
+        Args:
+            user: User object
+            db: Database session (optional, for updating refreshed token)
         """
         if not user.gsc_access_token or not user.gsc_refresh_token:
             return None
         
-        # specific to how we stored them (encrypted or raw? Assuming raw for now based on database.py)
-        # Ideally should use TokenManager for encryption, but for MVP let's check database.py approach
-        # The database.py definition: gsc_access_token = Column(String)
-        
-        # Check if we need to decrypt (Assuming standard practice in this codebase is manual encryption if sensitive)
-        # For this step, I'll assume they are stored as raw strings for simplicity, 
-        # OR use TokenManager if it has generic encrypt/decrypt.
-        # Checking auth.py previously, TokenManager handles FB tokens. 
-        # I will implement basic storage first.
-        
         token = user.gsc_access_token
         refresh_token = user.gsc_refresh_token
+        
+        # 取得 expiry 時間（如果有的話）
+        expiry = user.gsc_expires_at if hasattr(user, 'gsc_expires_at') else None
         
         creds = Credentials(
             token=token,
@@ -157,16 +150,40 @@ class GSCService:
             token_uri="https://oauth2.googleapis.com/token",
             client_id=os.getenv("GOOGLE_CLIENT_ID"),
             client_secret=os.getenv("GOOGLE_CLIENT_SECRET"),
-            scopes=GSCService.SCOPES
+            scopes=GSCService.SCOPES,
+            expiry=expiry  # 加入 expiry 讓 expired 檢查正確運作
         )
+        
+        # 檢查是否需要刷新 token
+        needs_refresh = False
+        if expiry:
+            from datetime import datetime
+            if creds.expired or (expiry - datetime.utcnow()).total_seconds() < 300:
+                needs_refresh = True
+        
+        if needs_refresh and db:
+            try:
+                from google.auth.transport.requests import Request as GoogleAuthRequest
+                creds.refresh(GoogleAuthRequest())
+                print("[GSC] Token refreshed successfully")
+                # 回寫新 token 到資料庫
+                from datetime import datetime, timedelta
+                user.gsc_access_token = creds.token
+                user.gsc_expires_at = datetime.utcnow() + timedelta(seconds=3600)
+                db.commit()
+                print("[GSC] New token saved to database")
+            except Exception as e:
+                print(f"[GSC] Token refresh failed: {e}")
+                # 不返回 None，讓 googleapiclient 嘗試自動刷新
+        
         return creds
 
     @staticmethod
-    def list_sites(user: User):
+    def list_sites(user: User, db: Session = None):
         """
         Lists all sites verified in GSC for the user.
         """
-        creds = GSCService.get_credentials(user)
+        creds = GSCService.get_credentials(user, db)
         if not creds:
             return None, "No GSC credentials found"
             
@@ -178,56 +195,105 @@ class GSCService:
             return None, str(e)
 
     @staticmethod
-    def get_analytics(user: User, site_url: str, start_date: str, end_date: str, dimensions=['date']):
+    def get_analytics(user: User, site_url: str, start_date: str, end_date: str, dimensions=['date'], limit: int = None, offset: int = 0, db: Session = None):
         """
         Fetches search analytics data (clicks, impressions, ctr, position).
-        Features:
-        - In-memory caching (5 min TTL)
-        - Parallel batch fetching (3 concurrent requests)
-        - Auto-pagination up to 25,000 rows
+        Paginates through all available data from the GSC API and uses a cache.
         """
-        global _gsc_cache
-        
-        # Generate cache key
-        dim_str = ','.join(sorted(dimensions)) if isinstance(dimensions, list) else dimensions
-        cache_key = f"{site_url}:{start_date}:{end_date}:{dim_str}"
-        
-        # Check cache
-        if cache_key in _gsc_cache:
-            cached = _gsc_cache[cache_key]
-            if time.time() < cached['expires_at']:
-                print(f"[GSC Cache] HIT - returning {len(cached['data'])} cached rows")
-                return cached['data'], None
+        # 1. Generate Cache Key
+        base_cache_key = generate_cache_key(
+            "gsc_analytics",
+            user.id,
+            site_url,
+            start_date,
+            end_date,
+            json.dumps(dimensions, sort_keys=True)
+        )
+
+        page_cache_key = None
+        if (limit is not None and limit > 0) or (offset and offset > 0):
+            page_cache_key = generate_cache_key(
+                "gsc_analytics_page",
+                user.id,
+                site_url,
+                start_date,
+                end_date,
+                json.dumps(dimensions, sort_keys=True),
+                str(offset or 0),
+                str(limit) if limit is not None else ""
+            )
+
+        # 2. Check Cache (Redis -> In-memory fallback)
+        use_redis = bool(os.getenv("REDIS_URL"))
+        redis_ttl = int(os.getenv("GSC_REDIS_TTL_SECONDS", "900"))
+
+        if use_redis:
+            if limit is None and (offset is None or offset == 0):
+                cached_data = get_cached_redis(base_cache_key)
+                if cached_data is not None:
+                    print(f"[GSC REDIS HIT] Returning {len(cached_data)} rows.")
+                    return cached_data, None
+                print("[GSC REDIS MISS] Cache not found.")
             else:
-                # Expired, remove from cache
-                del _gsc_cache[cache_key]
-                print(f"[GSC Cache] EXPIRED - refetching")
-        
-        creds = GSCService.get_credentials(user)
+                cached_full = get_cached_redis(base_cache_key)
+                if cached_full is not None:
+                    sliced = cached_full[offset or 0: (offset or 0) + limit] if limit else cached_full[offset or 0:]
+                    print(f"[GSC REDIS HIT] Returning {len(sliced)} rows (paged).")
+                    return sliced, None
+
+                print("[GSC REDIS MISS] Full cache not found.")
+
+                if page_cache_key:
+                    cached_page = get_cached_redis(page_cache_key)
+                    if cached_page is not None:
+                        print(f"[GSC REDIS HIT] Returning {len(cached_page)} rows (page cache).")
+                        return cached_page, None
+
+                    print("[GSC REDIS MISS] Page cache not found.")
+
+        if limit is None and (offset is None or offset == 0):
+            cached_data = get_cached(analytics_cache, base_cache_key)
+            if cached_data is not None:
+                print(f"[GSC] Returning {len(cached_data)} rows from cache.")
+                return cached_data, None
+        else:
+            cached_full = get_cached(analytics_cache, base_cache_key)
+            if cached_full is not None:
+                sliced = cached_full[offset or 0: (offset or 0) + limit] if limit else cached_full[offset or 0:]
+                print(f"[GSC] Returning {len(sliced)} rows from cache (paged).")
+                return sliced, None
+
+            if page_cache_key:
+                cached_page = get_cached(analytics_cache, page_cache_key)
+                if cached_page is not None:
+                    print(f"[GSC] Returning {len(cached_page)} rows from cache (page cache).")
+                    return cached_page, None
+
+        creds = GSCService.get_credentials(user, db)
         if not creds:
             return None, "No GSC credentials found"
             
         try:
-            from concurrent.futures import ThreadPoolExecutor, as_completed
+            service = build('searchconsole', 'v1', credentials=creds)
             
-            batch_size = 1000
-            max_rows = 25000
-            concurrent_batches = 3  # Reduced from 5 to avoid SSL errors
-            
-            def fetch_batch(creds_dict, start_row):
-                """Fetch a single batch of rows with its own service instance"""
-                try:
-                    # Create independent credentials and service for each thread
-                    thread_creds = Credentials(
-                        token=creds_dict['token'],
-                        refresh_token=creds_dict['refresh_token'],
-                        token_uri=creds_dict['token_uri'],
-                        client_id=creds_dict['client_id'],
-                        client_secret=creds_dict['client_secret'],
-                        scopes=creds_dict['scopes']
-                    )
-                    thread_service = build('searchconsole', 'v1', credentials=thread_creds)
-                    
+            all_rows = []
+
+            if limit is not None or (offset and offset > 0):
+                request = {
+                    'startDate': start_date,
+                    'endDate': end_date,
+                    'dimensions': dimensions,
+                    'rowLimit': limit or 25000,
+                    'startRow': offset or 0
+                }
+
+                response = service.searchanalytics().query(siteUrl=site_url, body=request).execute()
+                all_rows = response.get('rows', [])
+            else:
+                start_row = 0
+                batch_size = 25000  # Use GSC API maximum for efficiency
+
+                while True:
                     request = {
                         'startDate': start_date,
                         'endDate': end_date,
@@ -235,83 +301,46 @@ class GSCService:
                         'rowLimit': batch_size,
                         'startRow': start_row
                     }
-                    response = thread_service.searchanalytics().query(siteUrl=site_url, body=request).execute()
-                    return start_row, response.get('rows', []), None
-                except Exception as e:
-                    return start_row, [], str(e)
-            
-            # Prepare credentials dict for passing to threads
-            creds_dict = {
-                'token': creds.token,
-                'refresh_token': creds.refresh_token,
-                'token_uri': creds.token_uri,
-                'client_id': creds.client_id,
-                'client_secret': creds.client_secret,
-                'scopes': creds.scopes
-            }
-            
-            
-            all_rows = []
-            start_row = 0
-            
-            start_time = time.time()
-            
-            while start_row < max_rows:
-                # Prepare batch of start_rows for parallel fetching
-                batch_starts = []
-                for i in range(concurrent_batches):
-                    batch_start = start_row + (i * batch_size)
-                    if batch_start < max_rows:
-                        batch_starts.append(batch_start)
-                
-                if not batch_starts:
-                    break
-                
-                # Fetch in parallel using ThreadPoolExecutor
-                batch_results = {}
-                should_stop = False
-                
-                with ThreadPoolExecutor(max_workers=concurrent_batches) as executor:
-                    futures = {executor.submit(fetch_batch, creds_dict, bs): bs for bs in batch_starts}
-                    
-                    for future in as_completed(futures):
-                        try:
-                            batch_start, rows, error = future.result()
-                            if error:
-                                print(f"[GSC Parallel] Error at batch {batch_start}: {error}")
-                            batch_results[batch_start] = rows
-                            
-                            if len(rows) < batch_size:
-                                should_stop = True
-                        except Exception as e:
-                            print(f"[GSC Parallel] Exception in future: {e}")
-                
-                # Add results in order
-                for bs in sorted(batch_results.keys()):
-                    rows = batch_results[bs]
-                    if rows:
-                        all_rows.extend(rows)
-                    if not rows or len(rows) < batch_size:
-                        should_stop = True
+
+                    response = service.searchanalytics().query(siteUrl=site_url, body=request).execute()
+                    rows = response.get('rows', [])
+
+                    if not rows:
+                        # No more data available, break the loop
                         break
-                
-                if should_stop:
-                    break
-                    
-                start_row += concurrent_batches * batch_size
-                print(f"[GSC Parallel] Loaded {len(all_rows)} rows so far...")
-            
-            elapsed = time.time() - start_time
-            print(f"[GSC Parallel] Total: {len(all_rows)} rows in {elapsed:.2f}s")
-            
-            # Store in cache
-            _gsc_cache[cache_key] = {
-                'data': all_rows,
-                'expires_at': time.time() + _CACHE_TTL
-            }
-            
+
+                    all_rows.extend(rows)
+
+                    # If the number of rows returned is less than the batch size,
+                    # it means we have reached the last page.
+                    if len(rows) < batch_size:
+                        break
+
+                    start_row += batch_size
+                    print(f"[GSC Pagination] Loaded {len(all_rows)} rows so far...")
+
+            # 3. Set Cache
+            print(f"[GSC Pagination] Total rows fetched: {len(all_rows)}. Caching result.")
+
+            redis_set = False
+            if use_redis:
+                if limit is not None or (offset and offset > 0):
+                    if page_cache_key:
+                        redis_set = set_cached_redis(page_cache_key, all_rows, redis_ttl)
+                else:
+                    redis_set = set_cached_redis(base_cache_key, all_rows, redis_ttl)
+
+                if redis_set:
+                    print(f"[GSC REDIS SET] Cached {len(all_rows)} rows (ttl={redis_ttl}s).")
+
+            if not use_redis or not redis_set:
+                if limit is not None or (offset and offset > 0):
+                    if page_cache_key:
+                        set_cached(analytics_cache, page_cache_key, all_rows)
+                else:
+                    set_cached(analytics_cache, base_cache_key, all_rows)
+
             return all_rows, None
         except Exception as e:
-            import traceback
-            traceback.print_exc()
             return None, str(e)
+

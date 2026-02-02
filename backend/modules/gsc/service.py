@@ -21,3 +21,8 @@ Google Search Console 服務
 from gsc_service import GSCService
 
 __all__ = ["GSCService"]
+
+
+def get_analytics_data(user, site_url, start_date, end_date):
+    data, error = GSCService.get_analytics(user, site_url, start_date, end_date, limit=None, offset=0)
+    return data, error
