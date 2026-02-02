@@ -11,6 +11,7 @@ Core Security Module
 
 import os
 import sys
+from typing import Optional
 from cryptography.fernet import Fernet
 from functools import lru_cache
 
