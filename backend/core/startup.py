@@ -228,6 +228,8 @@ def sync_super_admin():
             session.close()
     except Exception as e:
         logger.warning(f"Super Admin Sync Warning: {e}")
+        import traceback
+        logger.error(traceback.format_exc())
         return False
 
 

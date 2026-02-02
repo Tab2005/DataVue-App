@@ -75,24 +75,24 @@ app = FastAPI(
 raw_origins = os.getenv("ALLOWED_ORIGINS", "http://localhost:5173")
 allowed_origins = [o.strip() for o in raw_origins.split(",") if o.strip()]
 
-# If in production, ensure common patterns are included OR log them
-logger.info(f"CORS Allowed Origins: {allowed_origins}")
+# Regex to support common deployment subdomains (tabisme.com, zeabur.app)
+# This will allow any subdomain of tabisme.com and zeabur.app
+allow_origin_regex = r"https?://.*\.?(tabisme\.com|zeabur\.app|localhost)(:\d+)?$"
+
+logger.info(f"CORS Configured: Allowed Origins={allowed_origins}, Regex={allow_origin_regex}")
 
 app.add_middleware(
     CORSMiddleware,
     allow_origins=allowed_origins,
+    allow_origin_regex=allow_origin_regex,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
-    expose_headers=["*"], # Ensure custom headers are visible if needed
+    expose_headers=["*"],
 )
 
 # GZip compression for large JSON responses
 app.add_middleware(GZipMiddleware, minimum_size=1000)
-
-# ============================================================
-# Exception Handlers
-# ============================================================
 
 # ============================================================
 # Exception Handlers
