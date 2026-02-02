@@ -157,12 +157,7 @@ def get_current_user(
                         db.refresh(user)
                         print(f"✅ [SUPER_ADMIN_SYNC] {email} restored as Super Admin with all modules.", file=sys.stderr)
         
-        # Update last login - DISABLED PERMANENTLY FOR STABILITY (Concurrency Crash prevention)
-        # from datetime import datetime
-        # user.last_login = datetime.now()
-        # db.commit()
-        # db.refresh(user)
-        
+        print(f"DEBUG: Returning user {user.email}, is_super_admin={user.is_super_admin}, role={user.role}", file=sys.stderr)
         return user
     except Exception as e:
         print(f"CRITICAL ERROR in get_current_user: {str(e)}", file=sys.stderr, flush=True)

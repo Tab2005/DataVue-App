@@ -146,9 +146,15 @@ const Layout = () => {
                     });
                     if (response.ok) {
                         const profile = await response.json();
+                        console.log("👤 [LAYOUT_AUTH] Profile fetched successfully:", {
+                            email: profile.email,
+                            is_super_admin: profile.is_super_admin,
+                            role: profile.role
+                        });
                         // Update user with backend data (role, is_super_admin)
                         setUser(prev => ({ ...prev, ...profile }));
                     } else {
+                        console.error("❌ [LAYOUT_AUTH] Fetch Profile Failed:", response.status);
                         setVisibleError(`Fetch Profile Failed: ${response.status}`);
                     }
                 } catch (err) {
@@ -170,6 +176,7 @@ const Layout = () => {
     return (
         <div className="layout-container" style={{ display: 'flex', minHeight: '100vh', background: 'var(--bg-gradient)' }}>
             <Sidebar
+                user={user}
                 language={language}
                 isCollapsed={isSidebarCollapsed}
                 setIsCollapsed={setIsSidebarCollapsed}
@@ -191,6 +198,7 @@ const Layout = () => {
                 maxWidth: isMobile ? '100vw' : 'calc(100vw - ' + (isSidebarCollapsed ? '80px' : '240px') + ')',
                 overflow: 'hidden'
             }}>
+                {console.log("🛠️ [LAYOUT_RENDER] Passing user to Header:", { email: user.email, is_super_admin: user.is_super_admin })}
                 <Header
                     language={language}
                     setLanguage={setLanguage}

@@ -14,39 +14,30 @@ def _to_sqlite_url(abs_path: str) -> str:
 
 
 def _normalize_sqlite_url(url: str) -> str:
-    """Normalize sqlite URL to always resolve relative paths from backend dir.
-
-    Supports legacy urls like:
-    - sqlite:///./backend/facebook_dashboard.db (repo-root relative)
-    - sqlite:///./facebook_dashboard.db (backend-relative preferred)
-    """
-    if not url:
+    """Normalize sqlite URL to always resolve relative paths from backend dir."""
+    if not url or not url.startswith("sqlite:///"):
         return url
 
-    # Already absolute (e.g. sqlite:///C:/path/file.db or sqlite:////var/...)
-    if url.startswith("sqlite:////"):
-        return url
-    if url.startswith("sqlite:///C:/") or url.startswith("sqlite:///c:/"):
+    # Already absolute
+    if ":/" in url[10:] or url.startswith("sqlite:////"):
         return url
 
-    prefix = "sqlite:///./"
-    if url.startswith(prefix):
-        rel = url[len(prefix):]
-        # Tolerate legacy ./backend/ prefix to avoid backend/backend/*
-        rel_norm = rel.replace("\\", "/")
-        if rel_norm.startswith("backend/"):
-            rel_norm = rel_norm[len("backend/"):]
-        abs_path = os.path.join(BASE_DIR, rel_norm)
-        return _to_sqlite_url(os.path.abspath(abs_path))
-
-    return url
+    # Extract relative path
+    rel = url[len("sqlite:///"):].lstrip("./")
+    
+    # Tolerate legacy backend/ prefix
+    rel_norm = rel.replace("\\", "/")
+    if rel_norm.startswith("backend/"):
+        rel_norm = rel_norm[len("backend/"):]
+        
+    abs_path = os.path.join(BASE_DIR, rel_norm)
+    return _to_sqlite_url(os.path.abspath(abs_path))
 
 # Default to SQLite for local development
 SQLITE_DATABASE_URL = _normalize_sqlite_url("sqlite:///./facebook_dashboard.db")
 
 # Check if DATABASE_URL env var is set (e.g., by Zeabur/Render)
 DATABASE_URL = os.getenv("DATABASE_URL")
-print(f"DEBUG: DATABASE_URL from env: {DATABASE_URL}", flush=True)
 
 if DATABASE_URL and DATABASE_URL.startswith("postgresql://"):
     # PostgreSQL Configuration
@@ -68,20 +59,17 @@ if DATABASE_URL and DATABASE_URL.startswith("postgresql://"):
         print(f"Database connected: SQLite (Local Mode).")
 elif DATABASE_URL and DATABASE_URL.startswith("sqlite://"):
     # SQLite Configuration (Local)
-    print(f"DEBUG: Found SQLite DATABASE_URL, configuring SQLite...", flush=True)
     DATABASE_URL = _normalize_sqlite_url(DATABASE_URL)
-    print(f"DEBUG: SQLite DATABASE_URL normalized to: {DATABASE_URL}", flush=True)
     engine = create_engine(
         DATABASE_URL, connect_args={"check_same_thread": False}
     )
-    print(f"✅ Database connected: SQLite (Local Mode).")
+    print(f"✅ Database connected: SQLite.")
 else:
     # Default to SQLite Configuration (Local)
-    print(f"DEBUG: No DATABASE_URL or unsupported format, using default SQLite...", flush=True)
     engine = create_engine(
         SQLITE_DATABASE_URL, connect_args={"check_same_thread": False}
     )
-    print(f"Database connected: SQLite (Local Mode).")
+    print(f"✅ Database connected: SQLite.")
 
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 

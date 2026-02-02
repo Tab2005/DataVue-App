@@ -4,7 +4,7 @@ import { Link, useLocation } from 'react-router-dom';
 import SettingsModal from './SettingsModal';
 import CreateTeamModal from './CreateTeamModal';
 
-const Sidebar = ({ language, isCollapsed, setIsCollapsed, isMobile, selectedTeamId, selectedTeamName, teams = [], setSelectedTeamId, onRefresh }) => {
+const Sidebar = ({ user, language, isCollapsed, setIsCollapsed, isMobile, selectedTeamId, selectedTeamName, teams = [], setSelectedTeamId, onRefresh }) => {
 
     const [isSettingsOpen, setIsSettingsOpen] = useState(false);
     // Track expanded submenus by label key
@@ -40,6 +40,16 @@ const Sidebar = ({ language, isCollapsed, setIsCollapsed, isMobile, selectedTeam
         },
         { icon: <FiShield size={20} />, label: t('API Connection', 'API 連線'), action: () => setIsSettingsOpen(true) },
     ];
+
+    // --- Admin Menu (Optional) ---
+    if (user?.is_super_admin) {
+        menuItems.push({
+            icon: <FiSettings size={20} />,
+            label: t('Admin Panel', '後台管理'),
+            path: '/admin',
+            style: { color: 'var(--accent-secondary)' } // Distinguished color
+        });
+    }
 
 
     // Switcher State
@@ -84,7 +94,7 @@ const Sidebar = ({ language, isCollapsed, setIsCollapsed, isMobile, selectedTeam
                 top: 0,
                 zIndex: 150, // z-index > Header (100)
                 transition: 'all 0.3s ease',
-                overflow: 'visible', // Allow dropdown to overflow if needed, but 'fixed' sidebar might clip. 
+                // Allow dropdown to overflow if needed, but 'fixed' sidebar might clip. 
                 // Actually 'overflow: visible' works for absolute children if parent doesn't clip.
                 // Sidebar has 'overflow: hidden' usually for content. 
                 // Let's change main sidebar overflow to 'visible' ONLY when collapsed? 
@@ -268,11 +278,11 @@ const Sidebar = ({ language, isCollapsed, setIsCollapsed, isMobile, selectedTeam
                             cursor: 'pointer',
                             backgroundColor: isActive && !item.children ? 'rgba(45, 136, 255, 0.1)' : 'transparent',
                             color: isActive ? 'var(--accent-primary)' : 'var(--text-secondary)',
-                            transition: 'all 0.2s ease',
                             textDecoration: 'none',
                             width: '100%',
                             boxSizing: 'border-box',
-                            position: 'relative'
+                            position: 'relative',
+                            ...item.style // Merge custom styles (e.g. colors)
                         };
 
                         const content = (
