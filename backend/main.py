@@ -13,7 +13,14 @@ Facebook Dashboard Web App - Backend Entry Point (Modular Version)
 目標：保持 main.py 在 200 行以內
 """
 
+import sys
+import os
 import logging
+from dotenv import load_dotenv
+
+# Load environment variables FIRST
+dotenv_path = os.path.join(os.path.dirname(__file__), '.env')
+load_dotenv(dotenv_path)
 
 # Configure Logging
 logging.basicConfig(
