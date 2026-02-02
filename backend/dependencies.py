@@ -7,6 +7,13 @@ import os
 import sys
 import traceback
 
+from functools import lru_cache
+import logging
+
+# Configure Logger
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
+
 # Reuse the existing security scheme
 security = HTTPBearer()
 GOOGLE_CLIENT_ID = os.getenv("GOOGLE_CLIENT_ID")
@@ -18,19 +25,29 @@ def get_db():
     finally:
         db.close()
 
+@lru_cache(maxsize=128)
+def _verify_token_cached(token: str):
+    """Internal helper to verify token with caching."""
+    return id_token.verify_oauth2_token(token, google_requests.Request(), GOOGLE_CLIENT_ID, clock_skew_in_seconds=60)
+
 def verify_google_token_basic(credentials: HTTPAuthorizationCredentials = Depends(security)):
     """
     Basic verification that returns the full Google Token Info (ID, Email, Name).
+    Uses LRU cache to reduce latency and redundant API calls.
     """
     token = credentials.credentials
     try:
-        print(f"DEBUG: Verifying Google Token: {token[:10]}...", file=sys.stderr)
-        # P.S. Ideally cache the validation or use a library that handles caching certs
-        id_info = id_token.verify_oauth2_token(token, google_requests.Request(), GOOGLE_CLIENT_ID, clock_skew_in_seconds=60)
-        print(f"DEBUG: Token Verified. User: {id_info.get('email')}", file=sys.stderr)
+        logger.debug(f"Verifying Google Token: {token[:10]}...")
+        
+        # Use cached verification
+        id_info = _verify_token_cached(token)
+        
+        email = id_info.get('email', 'unknown')
+        masked_email = f"{email[:3]}***@{email.split('@')[-1]}" if '@' in email else email
+        logger.info(f"Token Verified. User: {masked_email}")
         return id_info
     except Exception as e:
-        print(f"Token Verification Critical Error: {type(e).__name__}: {e}", file=sys.stderr, flush=True)
+        logger.error(f"Token Verification Critical Error: {type(e).__name__}: {e}")
         # CRITICAL: We must ensure this raises a standard HTTPException that CORS middleware can handle
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
@@ -103,7 +120,8 @@ def get_current_user(
                             )
                             db.add(access)
                 db.commit()
-                print(f"✅ Granted default modules (fb_ads, gsc) to {email}", file=sys.stderr)
+                masked_email = f"{email[:3]}***@{email.split('@')[-1]}" if email and '@' in email else "unknown"
+                print(f"✅ Granted default modules (fb_ads, gsc) to {masked_email}", file=sys.stderr)
             except Exception as mod_err:
                 print(f"⚠️ Failed to grant default modules: {mod_err}", file=sys.stderr)
                 db.rollback()  # Rollback on error to prevent transaction issues
@@ -126,7 +144,8 @@ def get_current_user(
                     # 支援逗號分隔的多個 Email
                     allowed_emails = [e.strip().lower() for e in super_admin_email.split(",")]
                     if email.strip().lower() in allowed_emails:
-                        print(f"🔒 [SUPER_ADMIN_SYNC] Restoring Super Admin status for {email}...", file=sys.stderr)
+                        masked_email = f"{email[:3]}***@{email.split('@')[-1]}" if email and '@' in email else "unknown"
+                        print(f"🔒 [SUPER_ADMIN_SYNC] Restoring Super Admin status for {masked_email}...", file=sys.stderr)
                         user.is_super_admin = True
                         user.role = UserRole.ADMIN
                         

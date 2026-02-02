@@ -15,18 +15,20 @@ from cryptography.fernet import Fernet
 from functools import lru_cache
 
 
+import logging
+
+logger = logging.getLogger(__name__)
+
+
 def get_encryption_key() -> str:
     """
     取得 Fernet 加密金鑰
     
-    優先使用環境變數 ENCRYPTION_KEY，若未設定則產生臨時金鑰（僅供開發使用）
+    必須使用環境變數 ENCRYPTION_KEY。若未設定或格式錯誤，將涉及安全風險並導致資料無法解密。
     """
     key = os.getenv("ENCRYPTION_KEY")
     if not key:
-        # For Dev/Demo Only: Generate a volatile key if missing to prevent crash
-        key = Fernet.generate_key().decode()
-        print(f"⚠ WARNING: ENCRYPTION_KEY not set. Using volatile key: {key[:10]}...", file=sys.stderr)
-        return key
+        return None
     
     # Sanitize: Remove possible quotes and whitespace
     sanitized_key = key.strip().strip("'").strip('"')
@@ -37,17 +39,17 @@ def get_encryption_key() -> str:
         Fernet(sanitized_key)
         return sanitized_key
     except Exception as e:
-        print(f"❌ CRITICAL: Invalid ENCRYPTION_KEY in .env: {e}", file=sys.stderr)
-        print(f"Key length: {len(sanitized_key)}, Content starts with: {sanitized_key[:5]}...", file=sys.stderr)
-        # Fallback to volatile to prevent blocking server start
-        volatile_key = Fernet.generate_key().decode()
-        return volatile_key
+        logger.error(f"CRITICAL: Invalid ENCRYPTION_KEY in .env: {e}")
+        return None
 
 
 @lru_cache()
-def _get_fernet() -> Fernet:
+def _get_fernet() -> Optional[Fernet]:
     """取得 Fernet 實例（快取）"""
-    return Fernet(get_encryption_key())
+    key = get_encryption_key()
+    if not key:
+        return None
+    return Fernet(key)
 
 
 from typing import Optional
@@ -65,10 +67,12 @@ def encrypt_value(message: str) -> Optional[str]:
     if not message:
         return None
     try:
-        f = Fernet(get_encryption_key())
+        f = _get_fernet()
+        if not f:
+            return None
         return f.encrypt(message.encode()).decode()
     except Exception as e:
-        print(f"Encryption error: {e}", file=sys.stderr)
+        logger.error(f"Encryption error: {e}")
         return None
 
 
@@ -85,10 +89,12 @@ def decrypt_value(token: str) -> Optional[str]:
     if not token:
         return None
     try:
-        f = Fernet(get_encryption_key())
+        f = _get_fernet()
+        if not f:
+            return None
         return f.decrypt(token.encode()).decode()
     except Exception as e:
-        print(f"[DEBUG] Decryption failed. Error: {e}", file=sys.stderr)
+        logger.debug(f"Decryption failed: {e}")
         return None
 
 
@@ -99,9 +105,4 @@ def validate_encryption_key() -> bool:
     Returns:
         True 如果金鑰有效
     """
-    try:
-        key = get_encryption_key()
-        Fernet(key)
-        return True
-    except Exception:
-        return False
+    return get_encryption_key() is not None

@@ -33,43 +33,45 @@ def _normalize_sqlite_url(url: str) -> str:
     abs_path = os.path.join(BASE_DIR, rel_norm)
     return _to_sqlite_url(os.path.abspath(abs_path))
 
+import logging
+
+logger = logging.getLogger(__name__)
+
 # Default to SQLite for local development
 SQLITE_DATABASE_URL = _normalize_sqlite_url("sqlite:///./facebook_dashboard.db")
 
 # Check if DATABASE_URL env var is set (e.g., by Zeabur/Render)
 DATABASE_URL = os.getenv("DATABASE_URL")
 
-if DATABASE_URL and DATABASE_URL.startswith("postgresql://"):
-    # PostgreSQL Configuration
-    # Use psycopg2 (Standard Driver)
-    print(f"DEBUG: Found PostgreSQL DATABASE_URL, configuring PostgreSQL...", flush=True)
+def get_engine():
+    """Create and return the database engine."""
+    url = os.getenv("DATABASE_URL")
+    if url and url.startswith("postgresql://"):
+        return create_engine(url)
+    
+    # Fallback to SQLite
+    sqlite_url = os.getenv("SQLITE_DATABASE_URL") or SQLITE_DATABASE_URL
+    return create_engine(sqlite_url, connect_args={"check_same_thread": False})
+
+engine = get_engine()
+
+def check_db_connection():
+    """Verify database connection."""
     try:
-        engine = create_engine(DATABASE_URL)
-        # Test connection immediately
         with engine.connect() as connection:
-            print(f"✅ Database connected successfully: PostgreSQL.", flush=True)
+            connection.execute(text("SELECT 1"))
+            return True
     except Exception as e:
-        print(f"❌ DATABASE CONNECTION FAILED: {e}", flush=True)
-        # Fallback to SQLite
-        print(f"DEBUG: Falling back to SQLite...", flush=True)
-        DATABASE_URL = None
-        engine = create_engine(
-            SQLITE_DATABASE_URL, connect_args={"check_same_thread": False}
-        )
-        print(f"Database connected: SQLite (Local Mode).")
-elif DATABASE_URL and DATABASE_URL.startswith("sqlite://"):
-    # SQLite Configuration (Local)
-    DATABASE_URL = _normalize_sqlite_url(DATABASE_URL)
-    engine = create_engine(
-        DATABASE_URL, connect_args={"check_same_thread": False}
-    )
-    print(f"✅ Database connected: SQLite.")
+        safe_url = str(engine.url).split("@")[-1] if "@" in str(engine.url) else "Database"
+        logger.error(f"Database connection failed: {safe_url}. Error: {e}")
+        return False
+
+# Test connection on import (Log level INFO)
+if check_db_connection():
+    safe_url = str(engine.url).split("@")[-1] if "@" in str(engine.url) else "Database"
+    logger.info(f"Database connected successfully: {safe_url}")
 else:
-    # Default to SQLite Configuration (Local)
-    engine = create_engine(
-        SQLITE_DATABASE_URL, connect_args={"check_same_thread": False}
-    )
-    print(f"✅ Database connected: SQLite.")
+    logger.warning("Database connection failed during initialization. Check logs.")
 
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 
@@ -307,7 +309,15 @@ class UserPermission(Base):
 from sqlalchemy import inspect
 
 def init_db():
-    # Only create tables if using SQLite non-migrations or initial setup
-    # In production, Alembic should handle this.
-    Base.metadata.create_all(bind=engine)
+    """
+    Initialize database schema.
+    In development (DEBUG_MODE=true), we use Base.metadata.create_all() for convenience.
+    In production, we expect Alembic to manage the schema.
+    """
+    DEBUG_MODE = os.getenv("DEBUG_MODE", "false").lower() == "true"
+    if DEBUG_MODE:
+        logger.info("Dev Mode detected: Running Base.metadata.create_all().")
+        Base.metadata.create_all(bind=engine)
+    else:
+        logger.info("Production Mode detected: Skipping metadata.create_all() (Use migrations).")
 

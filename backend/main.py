@@ -13,14 +13,15 @@ Facebook Dashboard Web App - Backend Entry Point (Modular Version)
 目標：保持 main.py 在 200 行以內
 """
 
-import sys
-import os
-from dotenv import load_dotenv
+import logging
 
-# Load environment variables FIRST
-# Load from backend/.env regardless of current working directory
-dotenv_path = os.path.join(os.path.dirname(__file__), '.env')
-load_dotenv(dotenv_path)
+# Configure Logging
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
+    handlers=[logging.StreamHandler(sys.stderr)]
+)
+logger = logging.getLogger(__name__)
 
 # ============================================================
 # Startup Tasks
@@ -30,40 +31,45 @@ from core.startup import run_startup_tasks
 
 # Run all startup tasks (env validation, DB init, migrations, etc.)
 try:
-    run_startup_tasks()
+    if not run_startup_tasks():
+        logger.critical("Startup tasks failed. Application may be unstable.")
 except Exception as e:
-    print(f"❌ Startup failed: {e}", file=sys.stderr)
+    logger.error(f"Startup critical failure: {e}")
 
 # ============================================================
 # Application Setup
 # ============================================================
 
-from fastapi import FastAPI, Request
+from fastapi import FastAPI, Request, HTTPException, Depends
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.middleware.gzip import GZipMiddleware
+from fastapi.responses import JSONResponse
 from contextlib import asynccontextmanager
+import traceback
+from exceptions import AppException
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Application lifespan handler."""
-    print("🚀 Application starting...")
+    logger.info("🚀 DataVue Application starting...")
     yield
-    print("👋 Application shutting down...")
+    logger.info("👋 DataVue Application shutting down...")
 
 
 app = FastAPI(
-    title="Facebook Dashboard API",
+    title="DataVue Analytics API",
     description="Multi-platform analytics dashboard for Facebook Ads, GSC, and more",
-    version="2.0.0",
+    version="2.1.0",
     lifespan=lifespan
 )
 
 # CORS Middleware
+allowed_origins = os.getenv("ALLOWED_ORIGINS", "http://localhost:5173").split(",")
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
-    allow_credentials=False,
+    allow_origins=allowed_origins,
+    allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
@@ -75,17 +81,20 @@ app.add_middleware(GZipMiddleware, minimum_size=1000)
 # Exception Handlers
 # ============================================================
 
-from fastapi import HTTPException
-from fastapi.responses import JSONResponse
-import traceback
-from exceptions import AppException
-
+# ============================================================
+# Exception Handlers
+# ============================================================
 
 @app.exception_handler(AppException)
 async def app_exception_handler(request: Request, exc: AppException):
     return JSONResponse(
         status_code=exc.status_code,
-        content={"error_code": exc.error_code, "detail": exc.detail}
+        content={
+            "error": exc.message,
+            "error_code": exc.error_code,
+            "details": exc.details,
+            "error_type": "app_error"
+        }
     )
 
 
@@ -93,17 +102,25 @@ async def app_exception_handler(request: Request, exc: AppException):
 async def http_exception_handler(request: Request, exc: HTTPException):
     return JSONResponse(
         status_code=exc.status_code,
-        content={"detail": exc.detail}
+        content={
+            "error": str(exc.detail),
+            "error_code": f"HTTP_{exc.status_code}",
+            "error_type": "http_error"
+        }
     )
 
 
 @app.exception_handler(Exception)
 async def general_exception_handler(request: Request, exc: Exception):
-    print(f"Unhandled exception: {exc}", file=sys.stderr)
-    traceback.print_exc(file=sys.stderr)
+    logger.error(f"Unhandled exception: {exc}")
+    logger.error(traceback.format_exc())
     return JSONResponse(
         status_code=500,
-        content={"detail": "Internal server error"}
+        content={
+            "error": "Internal server error",
+            "error_code": "INTERNAL_SERVER_ERROR",
+            "error_type": "unhandled_exception"
+        }
     )
 
 
@@ -112,187 +129,52 @@ async def general_exception_handler(request: Request, exc: Exception):
 # ============================================================
 
 from routers import users, teams, invites, admin, ai, saved_views, gsc, permissions
-from routers import facebook, debug, ga4
+from routers import facebook, debug, ga4, auth
 
-# Core Feature Routers
+# Authentication & Users
+app.include_router(auth.router)
 app.include_router(users.router, prefix="/api/users", tags=["users"])
+app.include_router(permissions.router)
+
+# Collaboration & Structure
 app.include_router(teams.router, prefix="/api/teams", tags=["teams"])
 app.include_router(invites.router, prefix="/api", tags=["invites"])
-app.include_router(admin.router)  # /api/admin
-app.include_router(admin.emergency_router)  # /api/emergency (緊急修復端點)
+
+# Business Routers (Data Sources)
+app.include_router(facebook.router)
+app.include_router(gsc.router)
+app.include_router(ga4.router)
+
+# AI & Features
 app.include_router(ai.router, prefix="/api/ai", tags=["ai"])
-app.include_router(saved_views.router)  # /api/saved-views
-app.include_router(gsc.router)  # /api/gsc
-app.include_router(permissions.router)  # /api/permissions
-app.include_router(ga4.router)  # /api/ga4
+app.include_router(saved_views.router)
 
-# Business Routers
-app.include_router(facebook.router)  # /api/ad-accounts, /api/dashboard-data, /api/analytics
+# Administration
+app.include_router(admin.router)
+app.include_router(admin.emergency_router)
 
-# Debug Router (consider disabling in production)
-app.include_router(debug.router)  # /api/debug/*
-
-# ============================================================
-# Auth Endpoints (required for token management)
-# ============================================================
-
-from pydantic import BaseModel
-from typing import Optional
-from fastapi import Depends, HTTPException
-from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
-from google.oauth2 import id_token
-from google.auth.transport import requests as google_requests
-from datetime import datetime, timezone
-
-GOOGLE_CLIENT_ID = os.getenv("GOOGLE_CLIENT_ID")
-security = HTTPBearer()
-
-def verify_google_token(credentials: HTTPAuthorizationCredentials = Depends(security)):
-    """Verify Google OAuth token and return user's google_id."""
-    token = credentials.credentials
-    try:
-        id_info = id_token.verify_oauth2_token(
-            token, google_requests.Request(), GOOGLE_CLIENT_ID, clock_skew_in_seconds=60
-        )
-        return id_info['sub']
-    except Exception as e:
-        raise HTTPException(status_code=401, detail=f"Token verification failed: {e}")
-
-
-class ExchangeRequest(BaseModel):
-    app_id: str
-    app_secret: str
-    short_token: str
-    team_id: Optional[str] = None
-
-
-@app.post("/api/auth/exchange-token")
-def exchange_token_endpoint(request: ExchangeRequest, user_id: str = Depends(verify_google_token)):
-    """Exchange short-lived token for long-lived token."""
-    from auth import TokenManager
-    
-    success, message = TokenManager.exchange_for_long_lived_token(
-        request.app_id, 
-        request.app_secret, 
-        request.short_token,
-        user_id,
-        team_id=request.team_id
-    )
-    if not success:
-        raise HTTPException(status_code=400, detail=message)
-    return {"message": message}
-
-
-@app.get("/api/auth/token-status")
-def get_token_status(team_id: Optional[str] = None, user_id: str = Depends(verify_google_token)):
-    """Check the expiration status of the user's OR team's Facebook token."""
-    from database import SessionLocal, User, Team
-    
-    session = SessionLocal()
-    try:
-        target = None
-        
-        if team_id:
-            target = session.query(Team).filter(Team.id == team_id).first()
-        else:
-            target = session.query(User).filter(User.google_id == user_id).first()
-        
-        # Check if token exists
-        token_exists = False
-        if target and hasattr(target, 'fb_access_token') and target.fb_access_token:
-            token_exists = len(str(target.fb_access_token)) > 10
-        
-        if not target or not target.token_expires_at:
-            return {
-                "expires_at": None,
-                "days_remaining": None,
-                "is_expired": False,
-                "token_exists": token_exists
-            }
-        
-        now = datetime.now(timezone.utc)
-        expires_at = target.token_expires_at
-        
-        if expires_at.tzinfo is None:
-            expires_at = expires_at.replace(tzinfo=timezone.utc)
-             
-        delta = expires_at - now
-        days_remaining = delta.days
-        
-        return {
-            "expires_at": expires_at.isoformat(),
-            "days_remaining": days_remaining,
-            "is_expired": days_remaining < 0,
-            "token_exists": token_exists
-        }
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Internal Server Error: {e}")
-    finally:
-        session.close()
-
-
+# Debug Router (Controlled by environment)
+DEBUG_MODE = os.getenv("DEBUG_MODE", "false").lower() == "true"
+if DEBUG_MODE:
+    logger.info("🛠️ DEBUG_MODE is enabled. Mounting debug router.")
+    app.include_router(debug.router)
+else:
+    logger.debug("Debug router is disabled (DEBUG_MODE=false).")
 
 # ============================================================
-# Health Check
+# Health Check (Simplified due to startup.py handling core validation)
 # ============================================================
 
-@app.get("/api/health")
+@app.get("/api/health", tags=["system"])
 def health_check():
-    """Health check endpoint with comprehensive diagnostics."""
-    import platform
+    """Health check endpoint."""
     from datetime import datetime
-    
-    # Basic info
-    db_info = "Unknown"
-    db_connected = False
-    
-    try:
-        db_url = os.getenv("DATABASE_URL", "")
-        if "postgresql" in db_url.lower():
-            db_info = "PostgreSQL"
-        else:
-            db_info = "SQLite"
-        
-        # Test database connection
-        from database import SessionLocal
-        from sqlalchemy import text
-        session = SessionLocal()
-        session.execute(text("SELECT 1"))
-        session.close()
-        db_connected = True
-    except Exception as e:
-        db_connected = False
-    
-    # Check critical environment variables
-    env_status = {
-        "GOOGLE_CLIENT_ID": bool(os.getenv("GOOGLE_CLIENT_ID")),
-        "GOOGLE_CLIENT_SECRET": bool(os.getenv("GOOGLE_CLIENT_SECRET")),
-        "DATABASE_URL": bool(os.getenv("DATABASE_URL")),
-    }
-    
-    # Overall status
-    all_env_ok = all(env_status.values())
-    overall_status = "ok" if db_connected else "degraded"
-    
     return {
-        "status": overall_status,
-        "version": "2.0.0",
+        "status": "ok",
+        "version": "2.1.0",
         "timestamp": datetime.utcnow().isoformat(),
-        "database": {
-            "type": db_info,
-            "connected": db_connected
-        },
-        "environment": {
-            "all_configured": all_env_ok,
-            "details": env_status
-        },
-        "system": {
-            "python_version": platform.python_version(),
-            "platform": platform.system()
-        },
-        "message": "Backend is running (Modular Version)"
+        "message": "DataVue Backend is healthy"
     }
-
 
 
 # ============================================================
@@ -301,5 +183,5 @@ def health_check():
 
 if __name__ == "__main__":
     import uvicorn
-    print("🚀 STARTING UVICORN SERVER...", file=sys.stderr)
+    logger.info("🚀 Manually starting Uvicorn server...")
     uvicorn.run("main:app", host="0.0.0.0", port=8000, reload=False)
