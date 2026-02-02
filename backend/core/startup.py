@@ -11,6 +11,8 @@ Core Startup Module
     run_startup_tasks()
 """
 
+import os
+import sys
 import logging
 
 # Configure Logger
