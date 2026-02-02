@@ -72,13 +72,19 @@ app = FastAPI(
 )
 
 # CORS Middleware
-allowed_origins = os.getenv("ALLOWED_ORIGINS", "http://localhost:5173").split(",")
+raw_origins = os.getenv("ALLOWED_ORIGINS", "http://localhost:5173")
+allowed_origins = [o.strip() for o in raw_origins.split(",") if o.strip()]
+
+# If in production, ensure common patterns are included OR log them
+logger.info(f"CORS Allowed Origins: {allowed_origins}")
+
 app.add_middleware(
     CORSMiddleware,
     allow_origins=allowed_origins,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
+    expose_headers=["*"], # Ensure custom headers are visible if needed
 )
 
 # GZip compression for large JSON responses
