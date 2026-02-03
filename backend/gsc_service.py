@@ -195,19 +195,25 @@ class GSCService:
             return None, str(e)
 
     @staticmethod
-    def get_analytics(user: User, site_url: str, start_date: str, end_date: str, dimensions=['date'], limit: int = None, offset: int = 0, db: Session = None):
+    def get_analytics(user: User, site_url: str, start_date: str, end_date: str, dimensions=['date'], limit: int = None, offset: int = 0, db: Session = None, dimension_filters: list = None):
         """
         Fetches search analytics data (clicks, impressions, ctr, position).
         Paginates through all available data from the GSC API and uses a cache.
+        Supports dimension_filters for server-side filtering.
         """
         # 1. Generate Cache Key
+        cache_params = {
+            "dimensions": sorted(dimensions),
+            "filters": dimension_filters
+        }
+        
         base_cache_key = generate_cache_key(
             "gsc_analytics",
             user.id,
             site_url,
             start_date,
             end_date,
-            json.dumps(dimensions, sort_keys=True)
+            json.dumps(cache_params, sort_keys=True)
         )
 
         page_cache_key = None
@@ -218,7 +224,7 @@ class GSCService:
                 site_url,
                 start_date,
                 end_date,
-                json.dumps(dimensions, sort_keys=True),
+                json.dumps(cache_params, sort_keys=True),
                 str(offset or 0),
                 str(limit) if limit is not None else ""
             )
@@ -233,40 +239,30 @@ class GSCService:
                 if cached_data is not None:
                     print(f"[GSC REDIS HIT] Returning {len(cached_data)} rows.")
                     return cached_data, None
-                print("[GSC REDIS MISS] Cache not found.")
             else:
                 cached_full = get_cached_redis(base_cache_key)
                 if cached_full is not None:
                     sliced = cached_full[offset or 0: (offset or 0) + limit] if limit else cached_full[offset or 0:]
-                    print(f"[GSC REDIS HIT] Returning {len(sliced)} rows (paged).")
                     return sliced, None
-
-                print("[GSC REDIS MISS] Full cache not found.")
 
                 if page_cache_key:
                     cached_page = get_cached_redis(page_cache_key)
                     if cached_page is not None:
-                        print(f"[GSC REDIS HIT] Returning {len(cached_page)} rows (page cache).")
                         return cached_page, None
-
-                    print("[GSC REDIS MISS] Page cache not found.")
 
         if limit is None and (offset is None or offset == 0):
             cached_data = get_cached(analytics_cache, base_cache_key)
             if cached_data is not None:
-                print(f"[GSC] Returning {len(cached_data)} rows from cache.")
                 return cached_data, None
         else:
             cached_full = get_cached(analytics_cache, base_cache_key)
             if cached_full is not None:
                 sliced = cached_full[offset or 0: (offset or 0) + limit] if limit else cached_full[offset or 0:]
-                print(f"[GSC] Returning {len(sliced)} rows from cache (paged).")
                 return sliced, None
 
             if page_cache_key:
                 cached_page = get_cached(analytics_cache, page_cache_key)
                 if cached_page is not None:
-                    print(f"[GSC] Returning {len(cached_page)} rows from cache (page cache).")
                     return cached_page, None
 
         creds = GSCService.get_credentials(user, db)
@@ -278,41 +274,39 @@ class GSCService:
             
             all_rows = []
 
-            if limit is not None or (offset and offset > 0):
-                request = {
-                    'startDate': start_date,
-                    'endDate': end_date,
-                    'dimensions': dimensions,
-                    'rowLimit': limit or 25000,
-                    'startRow': offset or 0
-                }
+            # Prepare API request body
+            request_body = {
+                'startDate': start_date,
+                'endDate': end_date,
+                'dimensions': dimensions
+            }
+            
+            if dimension_filters:
+                request_body['dimensionFilterGroups'] = [{
+                    'filters': dimension_filters
+                }]
 
-                response = service.searchanalytics().query(siteUrl=site_url, body=request).execute()
+            if limit is not None or (offset and offset > 0):
+                request_body['rowLimit'] = limit or 25000
+                request_body['startRow'] = offset or 0
+
+                response = service.searchanalytics().query(siteUrl=site_url, body=request_body).execute()
                 all_rows = response.get('rows', [])
             else:
                 start_row = 0
-                batch_size = 25000  # Use GSC API maximum for efficiency
+                batch_size = 25000
 
                 while True:
-                    request = {
-                        'startDate': start_date,
-                        'endDate': end_date,
-                        'dimensions': dimensions,
-                        'rowLimit': batch_size,
-                        'startRow': start_row
-                    }
+                    request_body['rowLimit'] = batch_size
+                    request_body['startRow'] = start_row
 
-                    response = service.searchanalytics().query(siteUrl=site_url, body=request).execute()
+                    response = service.searchanalytics().query(siteUrl=site_url, body=request_body).execute()
                     rows = response.get('rows', [])
 
                     if not rows:
-                        # No more data available, break the loop
                         break
 
                     all_rows.extend(rows)
-
-                    # If the number of rows returned is less than the batch size,
-                    # it means we have reached the last page.
                     if len(rows) < batch_size:
                         break
 
@@ -320,8 +314,6 @@ class GSCService:
                     print(f"[GSC Pagination] Loaded {len(all_rows)} rows so far...")
 
             # 3. Set Cache
-            print(f"[GSC Pagination] Total rows fetched: {len(all_rows)}. Caching result.")
-
             redis_set = False
             if use_redis:
                 if limit is not None or (offset and offset > 0):
@@ -329,9 +321,6 @@ class GSCService:
                         redis_set = set_cached_redis(page_cache_key, all_rows, redis_ttl)
                 else:
                     redis_set = set_cached_redis(base_cache_key, all_rows, redis_ttl)
-
-                if redis_set:
-                    print(f"[GSC REDIS SET] Cached {len(all_rows)} rows (ttl={redis_ttl}s).")
 
             if not use_redis or not redis_set:
                 if limit is not None or (offset and offset > 0):
