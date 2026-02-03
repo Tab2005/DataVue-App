@@ -31,7 +31,8 @@ const TABS = [
     { key: 'page', label_zh: '📄 頁面分析', label_en: '📄 Page Analysis', dimension: 'page' },
     { key: 'trend', label_zh: '📊 頁面趨勢', label_en: '📊 Page Trends', dimension: 'page' },
     { key: 'country', label_zh: '🌍 地區分佈', label_en: '🌍 Country', dimension: 'country' },
-    { key: 'device', label_zh: '📱 裝置分佈', label_en: '📱 Device', dimension: 'device' }
+    { key: 'device', label_zh: '📱 裝置分佈', label_en: '📱 Device', dimension: 'device' },
+    { key: 'gap', label_zh: '🎯 內容缺口', label_en: '🎯 Keyword Gap', dimension: 'page' }
 ];
 
 // Trend Sub-tabs
@@ -422,6 +423,23 @@ const GSCStats = ({ language, isMobile = false }) => {
 
     // Expanded keywords count per page (for "Load More" feature)
     const [expandedKeywordsCount, setExpandedKeywordsCount] = useState({});  // { pageUrl: number }
+
+    // Keyword Gap Analysis State
+    const [gapLoading, setGapLoading] = useState(false);
+    const [gapResults, setGapResults] = useState(null);
+    const [gapError, setGapError] = useState(null);
+    const [gapUrl, setGapUrl] = useState('');
+    const [gapTopN, setGapTopN] = useState(100);
+    const [gapDatePreset, setGapDatePreset] = useState('last_28d');
+    const [gapDateRange, setGapDateRange] = useState(getDateRangeFromPreset('last_28d'));
+
+    // Sync gap date with global date once on initial load or if user hasn't customized it yet
+    useEffect(() => {
+        if (!gapResults) {
+            setGapDateRange(dateRange);
+            setGapDatePreset(datePreset);
+        }
+    }, [selectedSite]);
 
     // Persist keywordIntents to LocalStorage whenever it changes
     useEffect(() => {
@@ -908,6 +926,60 @@ const GSCStats = ({ language, isMobile = false }) => {
             setIntentError(prev => ({ ...prev, [pageUrl]: err.message }));
         } finally {
             setIntentLoading(prev => ({ ...prev, [pageUrl]: false }));
+        }
+    };
+
+    // Fetch Keyword Gap Analysis
+    const fetchKeywordGap = async (targetUrl = null) => {
+        const urlToAnalyze = targetUrl || gapUrl;
+        console.log('[Gap Analysis] Starting...', { urlToAnalyze, selectedSite, gapDateRange });
+
+        if (!urlToAnalyze || !selectedSite) {
+            const msg = language === 'zh' ? '請提供有效的網頁 URL' : 'Please provide a valid page URL';
+            setGapError(msg);
+            alert(msg);
+            return;
+        }
+
+        setGapLoading(true);
+        setGapError(null);
+        setActiveTab('gap');
+        if (targetUrl) setGapUrl(targetUrl);
+
+        try {
+            console.log(`[Gap Analysis] Fetching from ${API_URL}/api/gsc/keyword-gap...`);
+            const resp = await fetch(`${API_URL}/api/gsc/keyword-gap`, {
+                method: 'POST',
+                headers: {
+                    'Authorization': `Bearer ${localStorage.getItem('google_token')}`,
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({
+                    site_url: selectedSite,
+                    page_url: urlToAnalyze,
+                    start_date: gapDateRange.start,
+                    end_date: gapDateRange.end,
+                    top_n: gapTopN
+                })
+            });
+
+            console.log('[Gap Analysis] Response status:', resp.status);
+
+            if (!resp.ok) {
+                const errorData = await resp.json();
+                const errorMsg = errorData.error || errorData.detail || 'Gap analysis failed';
+                console.error('[Gap Analysis] Error response:', errorData);
+                throw new Error(errorMsg);
+            }
+
+            const data = await resp.json();
+            console.log('[Gap Analysis] Success data:', data);
+            setGapResults(data);
+        } catch (err) {
+            console.error('Failed to fetch keyword gap:', err);
+            setGapError(err.message);
+        } finally {
+            setGapLoading(false);
         }
     };
 
@@ -2305,6 +2377,301 @@ const GSCStats = ({ language, isMobile = false }) => {
                                 })()}
                             </div>
                         </div>
+                    ) : activeTab === 'gap' ? (
+                        /* Keyword Gap Analysis Tab */
+                        <div style={{ ...tableContainerStyle, padding: '24px' }}>
+                            <div style={{
+                                marginBottom: '24px',
+                                display: 'flex',
+                                justifyContent: 'space-between',
+                                alignItems: 'flex-start',
+                                flexWrap: 'wrap',
+                                gap: '16px'
+                            }}>
+                                <div>
+                                    <h3 style={{ margin: '0 0 8px 0', fontSize: '1.2rem', color: 'var(--text-primary)' }}>
+                                        🎯 {t('關鍵字內容缺口分析', 'Keyword Content Gap Analysis')}
+                                    </h3>
+                                    <p style={{ margin: 0, fontSize: '0.9rem', color: 'var(--text-secondary)' }}>
+                                        {t('找出該頁面有排名但在內文中未出現的關鍵字，優化內容覆蓋率。', 'Find keywords your page ranks for but are missing from the content.')}
+                                    </p>
+                                </div>
+
+                                <div style={{ display: 'flex', alignItems: 'center', gap: '12px', flexWrap: 'wrap' }}>
+                                    {gapResults && (
+                                        <button
+                                            onClick={() => {
+                                                const csvRows = [];
+                                                // CSV Header
+                                                csvRows.push([
+                                                    t('關鍵字', 'Keyword'),
+                                                    t('狀態', 'Status'),
+                                                    t('點擊', 'Clicks'),
+                                                    t('曝光', 'Impressions'),
+                                                    t('排名', 'Position')
+                                                ].join(','));
+
+                                                // Helper function to escape CSV values
+                                                const escapeCSV = (str) => {
+                                                    if (str === null || str === undefined) return '';
+                                                    let result = str.toString().replace(/"/g, '""');
+                                                    if (result.search(/("|,|\n)/g) >= 0) result = `"${result}"`;
+                                                    return result;
+                                                };
+
+                                                // Add data rows
+                                                gapResults.results.forEach(res => {
+                                                    csvRows.push([
+                                                        escapeCSV(res.query),
+                                                        res.in_content ? t('已涵蓋', 'Covered') : t('缺漏', 'Missing'),
+                                                        res.clicks,
+                                                        res.impressions,
+                                                        res.position.toFixed(1)
+                                                    ].join(','));
+                                                });
+
+                                                // Create and download file
+                                                const csvContent = '\uFEFF' + csvRows.join('\n'); // BOM for Excel UTF-8
+                                                const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+                                                const url = URL.createObjectURL(blob);
+                                                const link = document.createElement('a');
+                                                link.href = url;
+                                                link.download = `keyword_gap_analysis_${gapUrl.split('/').filter(Boolean).pop() || 'report'}_${new Date().toISOString().split('T')[0]}.csv`;
+                                                document.body.appendChild(link);
+                                                link.click();
+                                                document.body.removeChild(link);
+                                                URL.revokeObjectURL(url);
+                                            }}
+                                            style={{
+                                                ...toggleButtonStyle(false),
+                                                padding: '8px 16px',
+                                                height: '42px', // Match date selector height
+                                                display: 'flex',
+                                                alignItems: 'center',
+                                                gap: '6px'
+                                            }}
+                                            title={t('下載缺口分析清單為 CSV', 'Download gap analysis list as CSV')}
+                                        >
+                                            📥 {t('下載清單', 'Download List')}
+                                        </button>
+                                    )}
+
+                                    {/* Local Date Selector for Gap Analysis */}
+                                    <div style={{
+                                        display: 'flex',
+                                        alignItems: 'center',
+                                        gap: '12px',
+                                        background: 'rgba(255, 255, 255, 0.05)',
+                                        padding: '8px 16px',
+                                        borderRadius: '12px',
+                                        border: '1px solid var(--glass-border)'
+                                    }}>
+                                        <span style={{ fontSize: '0.85rem', color: 'var(--text-secondary)', whiteSpace: 'nowrap' }}>
+                                            📅 {t('分析區間', 'Date Range')}:
+                                        </span>
+                                        <select
+                                            value={gapDatePreset}
+                                            onChange={(e) => {
+                                                const preset = e.target.value;
+                                                setGapDatePreset(preset);
+                                                // Only reset range if not custom, or keep current if switching to custom
+                                                if (preset !== 'custom') {
+                                                    setGapDateRange(getDateRangeFromPreset(preset));
+                                                }
+                                            }}
+                                            style={{
+                                                background: 'transparent',
+                                                border: 'none',
+                                                color: 'var(--text-primary)',
+                                                fontSize: '0.85rem',
+                                                cursor: 'pointer',
+                                                outline: 'none'
+                                            }}
+                                        >
+                                            {DATE_PRESETS.map(p => (
+                                                <option key={p.key} value={p.key} style={{ color: 'black' }}>
+                                                    {language === 'zh' ? p.label_zh : p.label_en}
+                                                </option>
+                                            ))}
+                                        </select>
+
+                                        {gapDatePreset === 'custom' ? (
+                                            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                                                <input
+                                                    type="date"
+                                                    value={gapDateRange.start}
+                                                    onChange={(e) => setGapDateRange(prev => ({ ...prev, start: e.target.value }))}
+                                                    style={{
+                                                        background: 'rgba(255, 255, 255, 0.1)',
+                                                        border: '1px solid var(--glass-border)',
+                                                        borderRadius: '6px',
+                                                        color: 'white',
+                                                        fontSize: '0.8rem',
+                                                        padding: '2px 4px',
+                                                        colorScheme: 'dark'
+                                                    }}
+                                                />
+                                                <span style={{ color: 'var(--text-tertiary)' }}>~</span>
+                                                <input
+                                                    type="date"
+                                                    value={gapDateRange.end}
+                                                    onChange={(e) => setGapDateRange(prev => ({ ...prev, end: e.target.value }))}
+                                                    style={{
+                                                        background: 'rgba(255, 255, 255, 0.1)',
+                                                        border: '1px solid var(--glass-border)',
+                                                        borderRadius: '6px',
+                                                        color: 'white',
+                                                        fontSize: '0.8rem',
+                                                        padding: '2px 4px',
+                                                        colorScheme: 'dark'
+                                                    }}
+                                                />
+                                            </div>
+                                        ) : (
+                                            <span style={{ fontSize: '0.85rem', color: 'var(--accent-primary)', fontWeight: '600' }}>
+                                                {gapDateRange.start} ~ {gapDateRange.end}
+                                            </span>
+                                        )}
+                                    </div>
+                                </div>
+                            </div>
+
+                            <div style={{ display: 'flex', gap: '12px', marginBottom: '24px', flexWrap: 'wrap' }}>
+                                <div style={{ flex: 1, minWidth: isMobile ? '100%' : '300px' }}>
+                                    <input
+                                        type="text"
+                                        placeholder={t('輸入網頁 URL...', 'Enter page URL...')}
+                                        value={gapUrl}
+                                        onChange={(e) => setGapUrl(e.target.value)}
+                                        style={{ ...searchInputStyle, width: '100%', boxSizing: 'border-box' }}
+                                    />
+                                </div>
+
+                                <div style={{ minWidth: isMobile ? '100%' : '140px' }}>
+                                    <select
+                                        value={gapTopN}
+                                        onChange={(e) => setGapTopN(parseInt(e.target.value))}
+                                        style={{ ...selectStyle, width: '100%' }}
+                                        title={t('分析該網頁在 GSC 中點擊前 N 名的關鍵字', 'Analyze top N keywords for this page in GSC')}
+                                    >
+                                        <option value={50}>Top 50 Queries</option>
+                                        <option value={100}>Top 100 Queries</option>
+                                        <option value={200}>Top 200 Queries</option>
+                                        <option value={500}>Top 500 Queries</option>
+                                        <option value={0}>{t('全部 (不限數量)', 'All Keywords (No Limit)')}</option>
+                                    </select>
+                                </div>
+
+                                <button
+                                    onClick={() => fetchKeywordGap()}
+                                    disabled={gapLoading}
+                                    style={{
+                                        padding: '10px 24px',
+                                        background: 'var(--accent-primary)',
+                                        border: 'none',
+                                        borderRadius: '8px',
+                                        color: 'white',
+                                        fontWeight: '600',
+                                        cursor: gapLoading ? 'wait' : 'pointer',
+                                        opacity: gapLoading ? 0.7 : 1,
+                                        width: isMobile ? '100%' : 'auto'
+                                    }}
+                                >
+                                    {gapLoading ? t('分析中...', 'Analyzing...') : t('開始分析', 'Analyze Now')}
+                                </button>
+                            </div>
+
+                            {gapError && (
+                                <div style={{
+                                    padding: '16px',
+                                    background: 'rgba(239, 68, 68, 0.1)',
+                                    border: '1px solid rgba(239, 68, 68, 0.3)',
+                                    borderRadius: '8px',
+                                    color: '#EF4444',
+                                    marginBottom: '24px'
+                                }}>
+                                    ⚠️ {gapError}
+                                </div>
+                            )}
+
+                            {gapResults && (
+                                <div>
+                                    <div style={{
+                                        display: 'grid',
+                                        gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))',
+                                        gap: '16px',
+                                        marginBottom: '24px'
+                                    }}>
+                                        <div style={{ ...cardStyle, background: 'rgba(255,255,255,0.02)' }}>
+                                            <div style={cardLabelStyle}>{t('分析關鍵字數', 'Analyzed Keywords')}</div>
+                                            <div style={cardValueStyle}>
+                                                {gapResults.total_analyzed}
+                                                {gapResults.total_found_in_gsc > 0 && (
+                                                    <span style={{ fontSize: '12px', color: 'var(--text-tertiary)', marginLeft: '8px', fontWeight: 'normal' }}>
+                                                        / {gapResults.total_found_in_gsc} total
+                                                    </span>
+                                                )}
+                                            </div>
+                                        </div>
+                                        <div style={{ ...cardStyle, border: '1px solid rgba(16, 185, 129, 0.3)', background: 'rgba(16, 185, 129, 0.05)' }}>
+                                            <div style={cardLabelStyle}>{t('已涵蓋關鍵字', 'Covered Keywords')}</div>
+                                            <div style={{ ...cardValueStyle, color: '#10B981' }}>{gapResults.total_analyzed - gapResults.missing_count}</div>
+                                        </div>
+                                        <div style={{ ...cardStyle, border: '1px solid rgba(239, 68, 68, 0.3)', background: 'rgba(239, 68, 68, 0.05)' }}>
+                                            <div style={cardLabelStyle}>{t('缺漏關鍵字', 'Missing Keywords')}</div>
+                                            <div style={{ ...cardValueStyle, color: '#EF4444' }}>{gapResults.missing_count}</div>
+                                        </div>
+                                        <div style={{ ...cardStyle, border: '1px solid rgba(251, 191, 36, 0.3)', background: 'rgba(251, 191, 36, 0.05)' }}>
+                                            <div style={cardLabelStyle}>{t('關鍵字缺失率', 'Missing Rate')}</div>
+                                            <div style={{ ...cardValueStyle, color: '#FBBF24' }}>
+                                                {gapResults.total_analyzed > 0
+                                                    ? (gapResults.missing_count / gapResults.total_analyzed * 100).toFixed(1)
+                                                    : 0}%
+                                            </div>
+                                        </div>
+                                    </div>
+
+                                    <div style={tableScrollStyle}>
+                                        <table style={tableStyle}>
+                                            <thead>
+                                                <tr style={{ background: 'var(--bg-hover)' }}>
+                                                    <th style={thStyle}>{t('關鍵字', 'Keyword')}</th>
+                                                    <th style={thStyle}>{t('狀態', 'Status')}</th>
+                                                    <th style={thStyle}>{t('點擊', 'Clicks')}</th>
+                                                    <th style={thStyle}>{t('曝光', 'Impr.')}</th>
+                                                    <th style={thStyle}>{t('排名', 'Pos.')}</th>
+                                                </tr>
+                                            </thead>
+                                            <tbody>
+                                                {gapResults.results.map((res, idx) => (
+                                                    <tr key={idx} style={{ transition: 'background 0.2s' }}>
+                                                        <td style={tdStyle}>{res.query}</td>
+                                                        <td style={tdStyle}>
+                                                            <span style={{
+                                                                display: 'inline-flex',
+                                                                alignItems: 'center',
+                                                                gap: '4px',
+                                                                padding: '2px 8px',
+                                                                borderRadius: '12px',
+                                                                fontSize: '11px',
+                                                                fontWeight: '600',
+                                                                background: res.in_content ? 'rgba(16, 185, 129, 0.15)' : 'rgba(239, 68, 68, 0.15)',
+                                                                color: res.in_content ? '#10B981' : '#EF4444'
+                                                            }}>
+                                                                {res.in_content ? '✅ ' + t('已涵蓋', 'In Content') : '❌ ' + t('未出現', 'Missing')}
+                                                            </span>
+                                                        </td>
+                                                        <td style={tdStyle}>{res.clicks.toLocaleString()}</td>
+                                                        <td style={tdStyle}>{res.impressions.toLocaleString()}</td>
+                                                        <td style={tdStyle}>{res.position.toFixed(1)}</td>
+                                                    </tr>
+                                                ))}
+                                            </tbody>
+                                        </table>
+                                    </div>
+                                </div>
+                            )}
+                        </div>
                     ) : (
                         /* Regular Table Section */
                         <div style={tableContainerStyle}>
@@ -2939,39 +3306,64 @@ const GSCStats = ({ language, isMobile = false }) => {
                                                                                         const uncachedCount = allKeywords.length - analyzedCount;
 
                                                                                         return (
-                                                                                            <button
-                                                                                                onClick={(e) => {
-                                                                                                    e.stopPropagation();
-                                                                                                    fetchPageIntent(pageUrl);
-                                                                                                }}
-                                                                                                style={{
-                                                                                                    display: 'inline-flex',
-                                                                                                    alignItems: 'center',
-                                                                                                    gap: '4px',
-                                                                                                    background: 'transparent',
-                                                                                                    border: '1px dashed var(--glass-border)',
-                                                                                                    color: 'var(--text-secondary)',
-                                                                                                    padding: '3px 10px',
-                                                                                                    borderRadius: '12px',
-                                                                                                    fontSize: '11px',
-                                                                                                    cursor: 'pointer',
-                                                                                                    transition: 'all 0.2s'
-                                                                                                }}
-                                                                                                onMouseEnter={(e) => {
-                                                                                                    e.currentTarget.style.borderColor = 'var(--accent-primary)';
-                                                                                                    e.currentTarget.style.color = 'var(--accent-primary)';
-                                                                                                }}
-                                                                                                onMouseLeave={(e) => {
-                                                                                                    e.currentTarget.style.borderColor = 'var(--glass-border)';
-                                                                                                    e.currentTarget.style.color = 'var(--text-secondary)';
-                                                                                                }}
-                                                                                                title={t(`共 ${allKeywords.length} 個關鍵字，${uncachedCount} 個待分析`, `${allKeywords.length} keywords, ${uncachedCount} to analyze`)}
-                                                                                            >
-                                                                                                🤖 {t('分析意圖', 'Analyze Intent')}
-                                                                                                <span style={{ opacity: 0.7 }}>
-                                                                                                    ({allKeywords.length})
-                                                                                                </span>
-                                                                                            </button>
+                                                                                            <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+                                                                                                <button
+                                                                                                    onClick={(e) => {
+                                                                                                        e.stopPropagation();
+                                                                                                        fetchPageIntent(pageUrl);
+                                                                                                    }}
+                                                                                                    style={{
+                                                                                                        display: 'inline-flex',
+                                                                                                        alignItems: 'center',
+                                                                                                        gap: '4px',
+                                                                                                        background: 'transparent',
+                                                                                                        border: '1px dashed var(--glass-border)',
+                                                                                                        color: 'var(--text-secondary)',
+                                                                                                        padding: '3px 10px',
+                                                                                                        borderRadius: '12px',
+                                                                                                        fontSize: '11px',
+                                                                                                        cursor: 'pointer',
+                                                                                                        transition: 'all 0.2s'
+                                                                                                    }}
+                                                                                                    onMouseEnter={(e) => {
+                                                                                                        e.currentTarget.style.borderColor = 'var(--accent-primary)';
+                                                                                                        e.currentTarget.style.color = 'var(--accent-primary)';
+                                                                                                    }}
+                                                                                                    onMouseLeave={(e) => {
+                                                                                                        e.currentTarget.style.borderColor = 'var(--glass-border)';
+                                                                                                        e.currentTarget.style.color = 'var(--text-secondary)';
+                                                                                                    }}
+                                                                                                    title={t(`共 ${allKeywords.length} 個關鍵字，${uncachedCount} 個待分析`, `${allKeywords.length} keywords, ${uncachedCount} to analyze`)}
+                                                                                                >
+                                                                                                    🤖 {t('分析意圖', 'Analyze Intent')}
+                                                                                                    <span style={{ opacity: 0.7 }}>
+                                                                                                        ({allKeywords.length})
+                                                                                                    </span>
+                                                                                                </button>
+
+                                                                                                <button
+                                                                                                    onClick={(e) => {
+                                                                                                        e.stopPropagation();
+                                                                                                        fetchKeywordGap(pageUrl);
+                                                                                                    }}
+                                                                                                    style={{
+                                                                                                        display: 'inline-flex',
+                                                                                                        alignItems: 'center',
+                                                                                                        gap: '4px',
+                                                                                                        background: 'rgba(139, 92, 246, 0.1)',
+                                                                                                        border: '1px solid rgba(139, 92, 246, 0.3)',
+                                                                                                        color: '#8B5CF6',
+                                                                                                        padding: '3px 10px',
+                                                                                                        borderRadius: '12px',
+                                                                                                        fontSize: '11px',
+                                                                                                        cursor: 'pointer',
+                                                                                                        transition: 'all 0.2s'
+                                                                                                    }}
+                                                                                                    title={t('分析內容中缺少的關鍵字', 'Analyze missing keywords in content')}
+                                                                                                >
+                                                                                                    🎯 {t('缺口分析', 'Gap Analysis')}
+                                                                                                </button>
+                                                                                            </div>
                                                                                         );
                                                                                     }
                                                                                 })()}
@@ -3269,7 +3661,8 @@ const GSCStats = ({ language, isMobile = false }) => {
                                 </div>
                             )}
                         </div>
-                    )}
+                    )
+                    }
                 </>
             )}
         </div>
