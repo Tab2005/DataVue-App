@@ -92,7 +92,7 @@ class FacebookService:
         
         try:
             # Current Data
-            cur_res = requests.get(url, headers=headers, params=current_params).json()
+            cur_res = requests.get(url, headers=headers, params=current_params, timeout=30).json()
             if "error" in cur_res:
                 # print(f"FB API Error (Current): {cur_res['error']}")
                 try:
@@ -141,7 +141,7 @@ class FacebookService:
             }
 
             # Previous Data
-            prev_res = requests.get(url, headers=headers, params=prev_params).json()
+            prev_res = requests.get(url, headers=headers, params=prev_params, timeout=30).json()
             prev_data_list = prev_res.get("data", [])
             prev_data = prev_data_list[0] if prev_data_list else {}
 
@@ -156,7 +156,7 @@ class FacebookService:
                 "time_increment": "1", # Daily breakdown
                 "level": "account"
             }
-            trend_res = requests.get(url, headers=headers, params=trend_params).json()
+            trend_res = requests.get(url, headers=headers, params=trend_params, timeout=30).json()
             trend_list = trend_res.get("data", [])
 
             return {
@@ -444,7 +444,7 @@ class FacebookService:
         }
         
         try:
-            res = requests.get(url, headers=headers, params=params).json()
+            res = requests.get(url, headers=headers, params=params, timeout=30).json()
             if "error" in res:
                 print(f"[FB] API Error (Report): {res['error'].get('message', 'Unknown')}", file=sys.stderr)
                 return None
@@ -464,7 +464,7 @@ class FacebookService:
                         "fields": "id,effective_status,creative{thumbnail_url,image_url}",
                         "limit": 1000 
                     }
-                    c_res = requests.get(c_url, headers=headers, params=c_params).json()
+                    c_res = requests.get(c_url, headers=headers, params=c_params, timeout=30).json()
                     c_data = c_res.get("data", [])
                     
                     for ad in c_data:
@@ -661,7 +661,7 @@ class FacebookService:
                 "limit": 100
             }
             try:
-                res = requests.get(url, headers=headers, params=params).json()
+                res = requests.get(url, headers=headers, params=params, timeout=30).json()
                 return res.get("data", [])
             except Exception as e:
                 print(f"[FB] Error in trend fetch", file=sys.stderr)

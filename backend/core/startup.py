@@ -11,12 +11,12 @@ Core Startup Module
     run_startup_tasks()
 """
 
-import sys
 import os
-from dotenv import load_dotenv
+import sys
+import logging
 
-# Load environment variables
-load_dotenv()
+# Configure Logger
+logger = logging.getLogger(__name__)
 
 
 # ============================================================
@@ -42,32 +42,30 @@ def validate_environment():
             missing.append(var)
     
     if missing:
-        print("=" * 60, file=sys.stderr)
-        print("❌ CRITICAL: Missing required environment variables:", file=sys.stderr)
+        logger.error("-" * 60)
+        logger.error("CRITICAL: Missing required environment variables:")
         for var in missing:
-            print(f"   - {var}", file=sys.stderr)
-        print("=" * 60, file=sys.stderr)
-        print("Please set these in your .env file or environment.", file=sys.stderr)
+            logger.error(f"   - {var}")
+        logger.error("-" * 60)
+        logger.error("Please set these in your .env file or environment.")
         # Don't exit to allow graceful degradation
     
     # Warn about optional
     for var in OPTIONAL_ENV_VARS:
         if not os.getenv(var):
-            print(f"⚠️ Optional env var '{var}' not set (using defaults)", file=sys.stderr)
+            logger.warning(f"Optional env var '{var}' not set (using defaults)")
 
 
 def validate_encryption_key():
     """Validate the encryption key is properly configured."""
-    from core.security import get_encryption_key
-    from cryptography.fernet import Fernet
+    from core.security import get_encryption_key, validate_encryption_key as check_key
     
-    try:
-        test_key = get_encryption_key()
-        Fernet(test_key)
-        print(f"✅ Encryption key validated (length={len(test_key)})")
+    if check_key():
+        key = get_encryption_key()
+        logger.info(f"Encryption key validated (length={len(key)})")
         return True
-    except Exception as e:
-        print(f"❌ ENCRYPTION KEY ERROR: {e}", file=sys.stderr)
+    else:
+        logger.error("ENCRYPTION KEY VALIDATION FAILED")
         return False
 
 
@@ -82,13 +80,13 @@ def run_migrations():
         import alembic.config
         import alembic.command
         
-        print("Running Database Migrations...")
+        logger.info("Running Database Migrations...")
         alembic_cfg = alembic.config.Config("alembic.ini")
         alembic.command.upgrade(alembic_cfg, "head")
-        print("✅ Migrations completed")
+        logger.info("Migrations completed successfully")
         return True
     except Exception as e:
-        print(f"⚠️ Alembic Migration Warning: {e}", file=sys.stderr)
+        logger.warning(f"Alembic Migration Warning: {e}")
         return False
 
 
@@ -112,7 +110,7 @@ def patch_database_schema(engine):
             
             for col_name, col_type in team_patches:
                 if col_name not in columns:
-                    print(f"⚠️ Patching teams.{col_name}...")
+                    logger.info(f"Patching teams.{col_name}...")
                     with engine.connect() as conn:
                         conn.execute(text(f"ALTER TABLE teams ADD COLUMN {col_name} {col_type}"))
                         conn.commit()
@@ -137,17 +135,17 @@ def patch_database_schema(engine):
             
             for col_name, col_type in user_patches:
                 if col_name not in columns:
-                    print(f"⚠️ Patching users.{col_name}...")
+                    logger.info(f"Patching users.{col_name}...")
                     try:
                         with engine.connect() as conn:
                             conn.execute(text(f"ALTER TABLE users ADD COLUMN {col_name} {col_type}"))
                             conn.commit()
                     except Exception as e:
-                        print(f"⚠️ Failed to add {col_name}: {e}")
+                        logger.warning(f"Failed to add {col_name}: {e}")
         
         # Create page_titles table if missing
         if not inspector.has_table("page_titles"):
-            print("⚠️ Creating page_titles table...")
+            logger.info("Creating page_titles table...")
             with engine.connect() as conn:
                 conn.execute(text("""
                     CREATE TABLE page_titles (
@@ -158,11 +156,11 @@ def patch_database_schema(engine):
                     )
                 """))
                 conn.commit()
-            print("✅ Table 'page_titles' created")
+            logger.info("Table 'page_titles' created")
         
         # Create saved_views table if missing
         if not inspector.has_table("saved_views"):
-            print("⚠️ Creating saved_views table...")
+            logger.info("Creating saved_views table...")
             with engine.connect() as conn:
                 conn.execute(text("""
                     CREATE TABLE saved_views (
@@ -175,25 +173,25 @@ def patch_database_schema(engine):
                     )
                 """))
                 conn.commit()
-            print("✅ Table 'saved_views' created")
+            logger.info("Table 'saved_views' created")
         
-        print("✅ Schema patching completed")
+        logger.info("Schema patching completed")
         return True
     except Exception as e:
-        print(f"⚠️ Schema Patching Warning: {e}", file=sys.stderr)
+        logger.warning(f"Schema Patching Warning: {e}")
         return False
 
 
 def seed_permissions():
     """Seed default permissions into the database."""
     try:
-        print("Running Permission Seeding...")
+        logger.info("Running Permission Seeding...")
         from scripts.seed_permissions import seed_permissions as do_seed
         do_seed()
-        print("✅ Permissions seeded")
+        logger.info("Permissions seeded")
         return True
     except Exception as e:
-        print(f"⚠️ Permission Seeding Warning: {e}", file=sys.stderr)
+        logger.warning(f"Permission Seeding Warning: {e}")
         return False
 
 
@@ -220,7 +218,7 @@ def sync_super_admin():
                         user.is_super_admin = True
                         user.role = UserRole.ADMIN
                         synced_count += 1
-                        print(f"✅ Synced Super Admin: {email}")
+                        logger.info(f"Synced Super Admin: {email}")
             
             if synced_count > 0:
                 session.commit()
@@ -229,7 +227,9 @@ def sync_super_admin():
         finally:
             session.close()
     except Exception as e:
-        print(f"⚠️ Super Admin Sync Warning: {e}", file=sys.stderr)
+        logger.warning(f"Super Admin Sync Warning: {e}")
+        import traceback
+        logger.error(traceback.format_exc())
         return False
 
 
@@ -244,33 +244,44 @@ def run_startup_tasks():
     Returns:
         bool: True if all critical tasks succeeded
     """
-    print("=" * 50)
-    print("🚀 Running Startup Tasks...")
-    print("=" * 50)
+    logger.info("=" * 50)
+    logger.info("🚀 Running Startup Tasks...")
+    logger.info("=" * 50)
     
     # 1. Validate environment
     validate_environment()
     
     # 2. Validate encryption key
-    validate_encryption_key()
+    if not validate_encryption_key():
+        logger.critical("Encryption key validation failed. Service cannot start.")
+        sys.exit(1)
     
-    # 3. Import database
+    # 3. Import database and check connection
     try:
-        from database import engine, init_db
-        print("✅ Database module imported")
+        from database import engine, init_db, check_db_connection
+        logger.info("Database module imported")
+        
+        if not check_db_connection():
+            DEBUG_MODE = os.getenv("DEBUG_MODE", "false").lower() == "true"
+            if not DEBUG_MODE:
+                logger.critical("Database connection failed in production. Aborting startup.")
+                sys.exit(1)
+            else:
+                logger.warning("Database connection failed. Continuing in local/degraded mode.")
+        else:
+            logger.info("Database connection verified")
     except Exception as e:
-        print(f"❌ Database import failed: {e}", file=sys.stderr)
+        logger.critical(f"Database initialization failed: {e}")
         return False
     
     # 4. Run migrations
     run_migrations()
     
-    # 5. Patch schema
+    # 5. Patch schema (Legacy fallback, should move to Alembic)
     patch_database_schema(engine)
     
-    # 6. Initialize database
+    # 6. Initialize database (dev-mode create_all)
     init_db()
-    print("✅ Database initialized")
     
     # 7. Seed permissions
     seed_permissions()
@@ -278,8 +289,8 @@ def run_startup_tasks():
     # 8. Sync super admin
     sync_super_admin()
     
-    print("=" * 50)
-    print("✅ Startup Tasks Completed")
-    print("=" * 50)
+    logger.info("=" * 50)
+    logger.info("✅ Startup Tasks Completed")
+    logger.info("=" * 50)
     
     return True

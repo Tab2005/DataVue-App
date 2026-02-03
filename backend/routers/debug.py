@@ -14,30 +14,13 @@ import sys
 import os
 
 from database import SessionLocal, User, Team, TeamMember, UserRole, engine
-from dependencies import get_db, get_current_team
+from dependencies import get_db, get_current_team, get_super_admin
 
-# Token verification
-from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
-from google.oauth2 import id_token
-from google.auth.transport import requests as google_requests
-
-security = HTTPBearer()
-GOOGLE_CLIENT_ID = os.getenv("GOOGLE_CLIENT_ID")
-
-
-def verify_google_token(credentials: HTTPAuthorizationCredentials = Depends(security)):
-    """Verify Google OAuth token and return user's google_id."""
-    token = credentials.credentials
-    try:
-        id_info = id_token.verify_oauth2_token(
-            token, google_requests.Request(), GOOGLE_CLIENT_ID, clock_skew_in_seconds=60
-        )
-        return id_info['sub']
-    except Exception as e:
-        raise HTTPException(status_code=401, detail=f"Token verification failed: {e}")
-
-
-router = APIRouter(prefix="/api/debug", tags=["debug"])
+router = APIRouter(
+    prefix="/api/debug", 
+    tags=["debug"],
+    dependencies=[Depends(get_super_admin)]
+)
 
 
 @router.get("/fix-schema")
@@ -71,22 +54,10 @@ def fix_db_schema():
 
 
 @router.get("/permissions")
-def debug_permissions(team_id: str, token: str):
+def debug_permissions(team_id: str, user: User = Depends(get_super_admin)):
     """檢查用戶在團隊中的權限。"""
-    try:
-        id_info = id_token.verify_oauth2_token(
-            token, google_requests.Request(), GOOGLE_CLIENT_ID, clock_skew_in_seconds=60
-        )
-        user_id = id_info['sub']
-    except Exception as e:
-        return {"error": f"Invalid Token: {e}"}
-
     session = SessionLocal()
     try:
-        user = session.query(User).filter(User.google_id == user_id).first()
-        if not user:
-            return {"error": "User not found"}
-        
         member = session.query(TeamMember).filter(
             TeamMember.team_id == team_id,
             TeamMember.user_id == user.id
@@ -100,7 +71,7 @@ def debug_permissions(team_id: str, token: str):
             
         return {
             "user_name": user.name,
-            "google_id": user_id,
+            "google_id": user.google_id,
             "internal_id": user.id,
             "is_super_admin": user.is_super_admin,
             "team_id": team_id,
@@ -112,43 +83,27 @@ def debug_permissions(team_id: str, token: str):
 
 
 @router.get("/super-admin-check")
-def debug_super_admin_check(token: str):
+def debug_super_admin_check(user: User = Depends(get_super_admin)):
     """
     診斷端點：檢查 Super Admin 環境變數和用戶狀態
-    透過瀏覽器直接存取：/api/debug/super-admin-check?token=YOUR_GOOGLE_TOKEN
     """
-    try:
-        id_info = id_token.verify_oauth2_token(
-            token, google_requests.Request(), GOOGLE_CLIENT_ID, clock_skew_in_seconds=60
-        )
-        user_google_id = id_info['sub']
-        user_email = id_info.get('email', '')
-    except Exception as e:
-        return {"error": f"Invalid Token: {e}"}
-
-    session = SessionLocal()
-    try:
-        user = session.query(User).filter(User.google_id == user_google_id).first()
-        
-        super_admin_email_env = os.getenv("SUPER_ADMIN_EMAIL", "NOT_SET")
-        
-        email_match = False
-        if super_admin_email_env and super_admin_email_env != "NOT_SET" and user_email:
-            email_match = super_admin_email_env.strip().lower() == user_email.strip().lower()
-        
-        return {
-            "diagnosis": "Super Admin Check",
-            "user_found": user is not None,
-            "user_email_from_token": user_email,
-            "user_email_in_db": user.email if user else None,
-            "is_super_admin_in_db": user.is_super_admin if user else None,
-            "env_SUPER_ADMIN_EMAIL": super_admin_email_env,
-            "email_comparison": {
-                "match": email_match
-            }
+    super_admin_email_env = os.getenv("SUPER_ADMIN_EMAIL", "NOT_SET")
+    
+    email_match = False
+    if super_admin_email_env and super_admin_email_env != "NOT_SET" and user.email:
+        allowed_emails = [e.strip().lower() for e in super_admin_email_env.split(",")]
+        email_match = user.email.strip().lower() in allowed_emails
+    
+    return {
+        "diagnosis": "Super Admin Check",
+        "user_found": True,
+        "user_email_in_db": user.email,
+        "is_super_admin_in_db": user.is_super_admin,
+        "env_SUPER_ADMIN_EMAIL": super_admin_email_env,
+        "email_comparison": {
+            "match": email_match
         }
-    finally:
-        session.close()
+    }
 
 
 @router.get("/health")
@@ -175,7 +130,7 @@ def debug_health():
 async def test_auction_metrics(
     account_id: str,
     level: str = "all",
-    user_id: str = Depends(verify_google_token),
+    user: User = Depends(get_super_admin),
     team: Team = Depends(get_current_team)
 ):
     """
@@ -212,7 +167,7 @@ async def test_auction_metrics(
 
 @router.get("/check-permissions")
 async def check_token_permissions(
-    user_id: str = Depends(verify_google_token),
+    user: User = Depends(get_super_admin),
     team: Team = Depends(get_current_team)
 ):
     """

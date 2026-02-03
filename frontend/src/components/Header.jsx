@@ -45,6 +45,21 @@ const Header = ({ language, setLanguage, accounts = [], selectedAccountId, setSe
     }
   }, [tokenStatus]);
 
+  useEffect(() => {
+    // Force a global debug variable for the user to check
+    window.USER_DEBUG = user;
+
+    console.log("🔍 [HEADER_DEBUG] User State:", {
+      email: user?.email,
+      is_super_admin: user?.is_super_admin,
+      is_super_admin_type: typeof user?.is_super_admin,
+      has_token: !!localStorage.getItem('google_token')
+    });
+    if (user?.is_super_admin) {
+      console.log("🛡️ [HEADER_AUTH] User IS Super Admin. Rendering Shield...");
+    }
+  }, [user]);
+
   const handleNotificationClick = () => {
     const newState = !showNotifications;
     setShowNotifications(newState);
@@ -197,269 +212,274 @@ const Header = ({ language, setLanguage, accounts = [], selectedAccountId, setSe
         )}
 
         {/* Notification Bell */}
-        <div style={{ position: 'relative' }}>
-          <div
-            onClick={handleNotificationClick}
-            style={{
-              position: 'relative',
-              cursor: 'pointer',
-              color: 'var(--text-secondary)',
-              display: 'flex', // Ensure alignment
-              alignItems: 'center'
-            }}
-          >
-            <FiBell size={20} />
-            {/* Conditional Red Dot */}
-            {hasUnread && (
-              <span style={{
-                position: 'absolute',
-                top: '-2px',
-                right: '-2px',
-                width: '8px',
-                height: '8px',
-                backgroundColor: '#ef4444',
+        <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
+          {/* Admin Fast Access (Golden Shield) */}
+          {user?.is_super_admin && (
+            <button
+              onClick={() => navigate('/admin')}
+              title={language === 'zh' ? '管理後台' : 'Admin Panel'}
+              style={{
+                background: 'rgba(255, 193, 7, 0.4)', // Stronger background
+                border: '2px solid #ffc107',         // Thicker border
+                color: '#fff',                       // White icon for contrast
+                width: '36px',
+                height: '36px',
                 borderRadius: '50%',
-                border: '1px solid var(--bg-secondary)' // Better contrast
-              }}></span>
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                cursor: 'pointer',
+                transition: 'all 0.2s',
+                boxShadow: '0 0 15px rgba(255, 193, 7, 0.5)',
+                marginRight: '8px'
+              }}
+              onMouseEnter={(e) => {
+                e.currentTarget.style.background = 'rgba(255, 193, 7, 0.6)';
+                e.currentTarget.style.transform = 'scale(1.1)';
+              }}
+              onMouseLeave={(e) => {
+                e.currentTarget.style.background = 'rgba(255, 193, 7, 0.4)';
+                e.currentTarget.style.transform = 'scale(1)';
+              }}
+            >
+              <FaShieldAlt size={20} />
+              {console.log("🔥 [HEADER_RENDER] Golden Shield is being rendered RIGHT NOW!")}
+            </button>
+          )}
+
+          <div style={{ position: 'relative' }}>
+            <div
+              onClick={handleNotificationClick}
+              style={{
+                position: 'relative',
+                cursor: 'pointer',
+                color: 'var(--text-secondary)',
+                display: 'flex', // Ensure alignment
+                alignItems: 'center'
+              }}
+            >
+              <FiBell size={20} />
+              {/* Conditional Red Dot */}
+              {hasUnread && (
+                <span style={{
+                  position: 'absolute',
+                  top: '-2px',
+                  right: '-2px',
+                  width: '8px',
+                  height: '8px',
+                  backgroundColor: '#ef4444',
+                  borderRadius: '50%',
+                  border: '1px solid var(--bg-secondary)' // Better contrast
+                }}></span>
+              )}
+            </div>
+
+            {/* Notification Dropdown */}
+            {showNotifications && (
+              <>
+                {/* Backdrop */}
+                <div
+                  style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, zIndex: 998 }}
+                  onClick={() => setShowNotifications(false)}
+                />
+
+                <div className="glass-panel" style={{
+                  position: 'absolute',
+                  top: '40px',
+                  right: '-60px', // Center align roughly with bell or shift left
+                  width: '300px',
+                  background: 'var(--bg-secondary)',
+                  border: '1px solid var(--glass-border)',
+                  borderRadius: '8px',
+                  boxShadow: '0 4px 20px rgba(0,0,0,0.4)',
+                  padding: '0',
+                  zIndex: 999,
+                  overflow: 'hidden'
+                }}>
+                  <div style={{ padding: '12px 16px', borderBottom: '1px solid var(--glass-border)', fontWeight: 'bold' }}>
+                    {language === 'zh' ? '通知' : 'Notifications'}
+                  </div>
+
+                  <div style={{ maxHeight: '300px', overflowY: 'auto' }}>
+                    {/* Token Warning Item */}
+                    {tokenStatus && tokenStatus.days_remaining !== null && tokenStatus.days_remaining <= 3 ? (
+                      <div
+                        onClick={() => {
+                          if (window.confirm(language === 'zh' ? '連結快過期，前往重新登入？' : 'Go to login page to renew?')) {
+                            onLogout && onLogout();
+                          }
+                        }}
+                        style={{
+                          padding: '12px 16px',
+                          borderBottom: '1px solid var(--glass-border)',
+                          cursor: 'pointer',
+                          background: 'rgba(239, 68, 68, 0.05)',
+                          transition: 'background 0.2s',
+                          display: 'flex',
+                          gap: '12px',
+                          alignItems: 'start'
+                        }}
+                        onMouseEnter={(e) => e.currentTarget.style.background = 'rgba(239, 68, 68, 0.1)'}
+                        onMouseLeave={(e) => e.currentTarget.style.background = 'rgba(239, 68, 68, 0.05)'}
+                      >
+                        <div style={{
+                          color: '#ef4444',
+                          marginTop: '2px',
+                          background: 'rgba(239, 68, 68, 0.1)',
+                          padding: '8px',
+                          borderRadius: '50%'
+                        }}>
+                          <FiAlertTriangle size={16} />
+                        </div>
+                        <div>
+                          <div style={{
+                            fontSize: '0.9rem',
+                            fontWeight: '600',
+                            color: 'var(--text-primary)',
+                            marginBottom: '4px'
+                          }}>
+                            {language === 'zh' ? 'Facebook 授權即將過期' : 'Facebook Token Expiring'}
+                          </div>
+                          <div style={{ fontSize: '0.8rem', color: 'var(--text-secondary)', lineHeight: 1.4 }}>
+                            {language === 'zh'
+                              ? `您的授權將於 ${tokenStatus.days_remaining} 天後失效，請點擊此處重新登入更新。`
+                              : `Your access token expires in ${tokenStatus.days_remaining} days. Click to renew.`}
+                          </div>
+                        </div>
+                      </div>
+                    ) : (
+                      <div style={{ padding: '24px', textAlign: 'center', color: 'var(--text-secondary)', fontSize: '0.9rem' }}>
+                        {language === 'zh' ? '目前沒有新通知' : 'No new notifications'}
+                      </div>
+                    )}
+                  </div>
+                </div>
+              </>
             )}
           </div>
 
-          {/* Notification Dropdown */}
-          {showNotifications && (
-            <>
-              {/* Backdrop */}
-              <div
-                style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, zIndex: 998 }}
-                onClick={() => setShowNotifications(false)}
-              />
-
-              <div className="glass-panel" style={{
-                position: 'absolute',
-                top: '40px',
-                right: '-60px', // Center align roughly with bell or shift left
-                width: '300px',
-                background: 'var(--bg-secondary)',
-                border: '1px solid var(--glass-border)',
-                borderRadius: '8px',
-                boxShadow: '0 4px 20px rgba(0,0,0,0.4)',
-                padding: '0',
-                zIndex: 999,
+          {/* User Avatar with Dropdown */}
+          <div style={{ position: 'relative' }}>
+            <div
+              onClick={() => setShowUserMenu(!showUserMenu)}
+              style={{
+                width: '36px',
+                height: '36px',
+                borderRadius: '50%',
+                backgroundColor: 'var(--bg-hover)',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                border: '1px solid var(--accent-primary)',
+                cursor: 'pointer',
                 overflow: 'hidden'
               }}>
-                <div style={{ padding: '12px 16px', borderBottom: '1px solid var(--glass-border)', fontWeight: 'bold' }}>
-                  {language === 'zh' ? '通知' : 'Notifications'}
-                </div>
+              {user && user.avatar ? (
+                <img src={user.avatar} alt="User" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+              ) : (
+                <FiUser />
+              )}
+            </div>
 
-                <div style={{ maxHeight: '300px', overflowY: 'auto' }}>
-                  {/* Token Warning Item */}
-                  {tokenStatus && tokenStatus.days_remaining !== null && tokenStatus.days_remaining <= 3 ? (
-                    <div
+            {/* Dropdown Menu - Portaled to Body to escape Header's stacking context/clip */}
+            {showUserMenu && createPortal(
+              <>
+                {/* Backdrop to close */}
+                <div
+                  style={{ position: 'fixed', inset: 0, zIndex: 2000 }} // High z-index to cover everything
+                  onClick={() => setShowUserMenu(false)}
+                />
+
+                {/* Menu Card */}
+                <div className="glass-panel" style={{
+                  position: 'fixed',
+                  top: '75px', // 70px header + 5px gap
+                  right: isMobile ? '16px' : '32px', // Align with header padding
+                  width: '280px',
+                  background: 'var(--bg-secondary)',
+                  border: '1px solid var(--glass-border)',
+                  borderRadius: '8px',
+                  boxShadow: '0 4px 20px rgba(0,0,0,0.4)',
+                  padding: '0',
+                  zIndex: 2001, // Above backdrop
+                  overflow: 'hidden'
+                }}>
+                  {/* User Info Section */}
+                  <div style={{ padding: '16px', borderBottom: '1px solid var(--glass-border)' }}>
+                    <div style={{ fontWeight: 'bold', color: 'var(--text-primary)', marginBottom: '4px' }}>
+                      {user?.name || 'Admin User'}
+                    </div>
+                    <div style={{ fontSize: '0.85rem', color: 'var(--text-secondary)' }}>
+                      {user?.email || 'admin@example.com'}
+                    </div>
+                  </div>
+
+
+                  <div style={{ display: 'flex', padding: '8px' }}>
+                    {/* Change Password */}
+                    <button style={{
+                      flex: 1,
+                      background: 'transparent',
+                      border: 'none',
+                      color: 'var(--text-secondary)',
+                      padding: '10px',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      gap: '8px',
+                      cursor: 'pointer',
+                      borderRadius: '4px',
+                      transition: 'background 0.2s'
+                    }}
+                      onMouseEnter={(e) => e.currentTarget.style.background = 'rgba(255,255,255,0.05)'}
+                      onMouseLeave={(e) => e.currentTarget.style.background = 'transparent'}
                       onClick={() => {
-                        if (window.confirm(language === 'zh' ? '連結快過期，前往重新登入？' : 'Go to login page to renew?')) {
+                        alert(language === 'zh' ? '修改密碼功能即將推出' : 'Change Password Coming Soon');
+                        setShowUserMenu(false);
+                      }}
+                    >
+                      <FiSettings />
+                      <span style={{ fontSize: '0.9rem' }}>{language === 'zh' ? '修改密碼' : 'Password'}</span>
+                    </button>
+
+                    {/* Vertical Divider */}
+                    <div style={{ width: '1px', background: 'var(--glass-border)', margin: '4px 0' }}></div>
+
+                    {/* Logout */}
+                    <button style={{
+                      flex: 1,
+                      background: 'transparent',
+                      border: 'none',
+                      color: 'var(--text-secondary)',
+                      padding: '10px',
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      gap: '8px',
+                      cursor: 'pointer',
+                      borderRadius: '4px',
+                      transition: 'background 0.2s'
+                    }}
+                      onMouseEnter={(e) => e.currentTarget.style.background = 'rgba(255,255,255,0.05)'}
+                      onMouseLeave={(e) => e.currentTarget.style.background = 'transparent'}
+                      onClick={() => {
+                        if (window.confirm(language === 'zh' ? '確定要登出嗎？' : 'Logout?')) {
+                          setShowUserMenu(false);
                           onLogout && onLogout();
                         }
                       }}
-                      style={{
-                        padding: '12px 16px',
-                        borderBottom: '1px solid var(--glass-border)',
-                        cursor: 'pointer',
-                        background: 'rgba(239, 68, 68, 0.05)',
-                        transition: 'background 0.2s',
-                        display: 'flex',
-                        gap: '12px',
-                        alignItems: 'start'
-                      }}
-                      onMouseEnter={(e) => e.currentTarget.style.background = 'rgba(239, 68, 68, 0.1)'}
-                      onMouseLeave={(e) => e.currentTarget.style.background = 'rgba(239, 68, 68, 0.05)'}
                     >
-                      <div style={{
-                        color: '#ef4444',
-                        marginTop: '2px',
-                        background: 'rgba(239, 68, 68, 0.1)',
-                        padding: '8px',
-                        borderRadius: '50%'
-                      }}>
-                        <FiAlertTriangle size={16} />
-                      </div>
-                      <div>
-                        <div style={{
-                          fontSize: '0.9rem',
-                          fontWeight: '600',
-                          color: 'var(--text-primary)',
-                          marginBottom: '4px'
-                        }}>
-                          {language === 'zh' ? 'Facebook 授權即將過期' : 'Facebook Token Expiring'}
-                        </div>
-                        <div style={{ fontSize: '0.8rem', color: 'var(--text-secondary)', lineHeight: 1.4 }}>
-                          {language === 'zh'
-                            ? `您的授權將於 ${tokenStatus.days_remaining} 天後失效，請點擊此處重新登入更新。`
-                            : `Your access token expires in ${tokenStatus.days_remaining} days. Click to renew.`}
-                        </div>
-                      </div>
-                    </div>
-                  ) : (
-                    <div style={{ padding: '24px', textAlign: 'center', color: 'var(--text-secondary)', fontSize: '0.9rem' }}>
-                      {language === 'zh' ? '目前沒有新通知' : 'No new notifications'}
-                    </div>
-                  )}
-                </div>
-              </div>
-            </>
-          )}
-        </div>
-
-        {/* User Avatar with Dropdown */}
-        <div style={{ position: 'relative' }}>
-          <div
-            onClick={() => setShowUserMenu(!showUserMenu)}
-            style={{
-              width: '36px',
-              height: '36px',
-              borderRadius: '50%',
-              backgroundColor: 'var(--bg-hover)',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              border: '1px solid var(--accent-primary)',
-              cursor: 'pointer',
-              overflow: 'hidden'
-            }}>
-            {user && user.avatar ? (
-              <img src={user.avatar} alt="User" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
-            ) : (
-              <FiUser />
-            )}
-          </div>
-
-          {/* Dropdown Menu - Portaled to Body to escape Header's stacking context/clip */}
-          {showUserMenu && createPortal(
-            <>
-              {/* Backdrop to close */}
-              <div
-                style={{ position: 'fixed', inset: 0, zIndex: 2000 }} // High z-index to cover everything
-                onClick={() => setShowUserMenu(false)}
-              />
-
-              {/* Menu Card */}
-              <div className="glass-panel" style={{
-                position: 'fixed',
-                top: '75px', // 70px header + 5px gap
-                right: isMobile ? '16px' : '32px', // Align with header padding
-                width: '280px',
-                background: 'var(--bg-secondary)',
-                border: '1px solid var(--glass-border)',
-                borderRadius: '8px',
-                boxShadow: '0 4px 20px rgba(0,0,0,0.4)',
-                padding: '0',
-                zIndex: 2001, // Above backdrop
-                overflow: 'hidden'
-              }}>
-                {/* User Info Section */}
-                <div style={{ padding: '16px', borderBottom: '1px solid var(--glass-border)' }}>
-                  <div style={{ fontWeight: 'bold', color: 'var(--text-primary)', marginBottom: '4px' }}>
-                    {user?.name || 'Admin User'}
-                  </div>
-                  <div style={{ fontSize: '0.85rem', color: 'var(--text-secondary)' }}>
-                    {user?.email || 'admin@example.com'}
-                  </div>
-                </div>
-
-                {/* Actions Section */}
-                {user?.is_super_admin && (
-                  <div style={{ padding: '8px', borderBottom: '1px solid var(--glass-border)' }}>
-                    <button
-                      onClick={() => {
-                        navigate('/admin');
-                        setShowUserMenu(false);
-                      }}
-                      style={{
-                        width: '100%',
-                        textAlign: 'left',
-                        background: 'rgba(59, 130, 246, 0.1)',
-                        color: '#60a5fa',
-                        border: 'none',
-                        padding: '10px',
-                        borderRadius: '4px',
-                        cursor: 'pointer',
-                        fontWeight: 'bold',
-                        display: 'flex',
-                        alignItems: 'center',
-                        gap: '8px'
-                      }}
-                    >
-                      <FaShieldAlt />
-                      {language === 'zh' ? '超級管理員後台' : 'Super Admin Dashboard'}
+                      <FiLogOut />
+                      <span style={{ fontSize: '0.9rem' }}>{language === 'zh' ? '登出' : 'Logout'}</span>
                     </button>
                   </div>
-                )}
-
-                <div style={{ display: 'flex', padding: '8px' }}>
-                  {/* Change Password */}
-                  <button style={{
-                    flex: 1,
-                    background: 'transparent',
-                    border: 'none',
-                    color: 'var(--text-secondary)',
-                    padding: '10px',
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                    gap: '8px',
-                    cursor: 'pointer',
-                    borderRadius: '4px',
-                    transition: 'background 0.2s'
-                  }}
-                    onMouseEnter={(e) => e.currentTarget.style.background = 'rgba(255,255,255,0.05)'}
-                    onMouseLeave={(e) => e.currentTarget.style.background = 'transparent'}
-                    onClick={() => {
-                      alert(language === 'zh' ? '修改密碼功能即將推出' : 'Change Password Coming Soon');
-                      setShowUserMenu(false);
-                    }}
-                  >
-                    <FiSettings />
-                    <span style={{ fontSize: '0.9rem' }}>{language === 'zh' ? '修改密碼' : 'Password'}</span>
-                  </button>
-
-                  {/* Vertical Divider */}
-                  <div style={{ width: '1px', background: 'var(--glass-border)', margin: '4px 0' }}></div>
-
-                  {/* Logout */}
-                  <button style={{
-                    flex: 1,
-                    background: 'transparent',
-                    border: 'none',
-                    color: 'var(--text-secondary)',
-                    padding: '10px',
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                    gap: '8px',
-                    cursor: 'pointer',
-                    borderRadius: '4px',
-                    transition: 'background 0.2s'
-                  }}
-                    onMouseEnter={(e) => e.currentTarget.style.background = 'rgba(255,255,255,0.05)'}
-                    onMouseLeave={(e) => e.currentTarget.style.background = 'transparent'}
-                    onClick={() => {
-                      if (window.confirm(language === 'zh' ? '確定要登出嗎？' : 'Logout?')) {
-                        setShowUserMenu(false);
-                        onLogout && onLogout();
-                      }
-                    }}
-                  >
-                    <FiLogOut />
-                    <span style={{ fontSize: '0.9rem' }}>{language === 'zh' ? '登出' : 'Logout'}</span>
-                  </button>
                 </div>
-              </div>
-            </>,
-            document.body
-          )}
+              </>,
+              document.body
+            )}
+          </div>
         </div>
-
       </div>
-
-
     </header>
   );
 };

@@ -65,7 +65,7 @@ class GSCService:
                 data["redirect_uri"] = uri
                 data["client_secret"] = client_secret # Ensure secret is there
                 
-                response = requests.post(token_url, data=data)
+                response = requests.post(token_url, data=data, timeout=30)
                 print(f"DEBUG: Status: {response.status_code}")
                 
                 if response.status_code == 200:
@@ -82,7 +82,7 @@ class GSCService:
                for uri in redirect_uris:
                     print(f"DEBUG: Trying URI='{uri}' NO SECRET")
                     data["redirect_uri"] = uri
-                    response = requests.post(token_url, data=data)
+                    response = requests.post(token_url, data=data, timeout=30)
                     print(f"DEBUG: Status: {response.status_code}")
                     if response.status_code == 200:
                         success = True
