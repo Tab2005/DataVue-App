@@ -787,6 +787,9 @@ const Analytics = () => {
             // App Metrics
             app_installs: sum('app_installs'),
             app_events: sum('app_events'),
+            // Instant Experience (New)
+            instant_experience_open: sum('instant_experience_open'),
+            instant_experience_start: sum('instant_experience_start'),
         };
 
         // Recalculate derived rates
@@ -797,6 +800,11 @@ const Analytics = () => {
         total.cost_per_atc = total.add_to_cart > 0 ? total.spend / total.add_to_cart : 0;
         total.roas = total.spend > 0 ? total.purchase_value / total.spend : 0;
         total.shared_roas = total.spend > 0 ? total.shared_purchase_value / total.spend : 0;
+
+        // Clicks & CTR Recalculations
+        total.unique_ctr = total.reach > 0 ? (total.unique_clicks / total.reach) * 100 : 0;
+        total.outbound_clicks_ctr = total.impressions > 0 ? (total.outbound_clicks / total.impressions) * 100 : 0;
+        total.link_click_ctr = total.impressions > 0 ? (total.link_clicks / total.impressions) * 100 : 0;
 
         // Cost & Spend Derived
         total.cpp = total.reach > 0 ? (total.spend / total.reach) * 1000 : 0;

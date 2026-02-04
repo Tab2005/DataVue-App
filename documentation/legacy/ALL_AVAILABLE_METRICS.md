@@ -61,12 +61,12 @@
 | `clicks` | ✅ | 所有點擊 |
 | `unique_clicks` | ✅ | 不重複點擊 |
 | `inline_link_clicks` | ✅ | 連結點擊 (站內) |
-| `outbound_clicks` | ❌ | 外連點擊 (導外) |
-| `unique_ctr` | ❌ | 不重複點擊率 |
-| `inline_link_click_ctr` | ❌ | 連結點擊率 |
-| `outbound_clicks_ctr` | ❌ | 外連點擊率 |
-| `instant_experience_clicks_to_open` | ❌ | 即時體驗開啟點擊 |
-| `instant_experience_clicks_to_start` | ❌ | 即時體驗開始點擊 |
+| `outbound_clicks` | ✅ | 外連點擊 (導外) |
+| `unique_ctr` | ✅ | 不重複點擊率 |
+| `inline_link_click_ctr` | ✅ | 連結點擊率 |
+| `outbound_clicks_ctr` | ✅ | 外連點擊率 |
+| `instant_experience_clicks_to_open` | ✅ | 即時體驗開啟點擊 |
+| `instant_experience_clicks_to_start` | ✅ | 即時體驗開始點擊 |
 
 ## Conversions & App (15)
 
