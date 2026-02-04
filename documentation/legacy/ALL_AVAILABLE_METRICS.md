@@ -1,187 +1,97 @@
-# Facebook Graph API: All Available Metrics (v24.0)
+# Facebook Ads 數據指標對照表 (v24.0)
 
-**Total Metrics Listed**: 85
-
-## Cost & Spend (13)
-
-| Metric Key | Used in System? | 中文備註 |
-| :--- | :---: | :--- |
-| `spend` | ✅ | 花費金額 |
-| `cpm` | ✅ | 每千次曝光成本 |
-| `cpc` | ✅ | 單次點擊成本 (全部) |
-| `cpp` | ✅ | 每千人觸及成本 |
-| `ctr` | ✅ | 點擊率 (全部) |
-| `cost_per_unique_click` | ✅ | 單次不重複點擊成本 |
-| `cost_per_inline_link_click` | ✅ | 單次連結點擊成本 |
-| `cost_per_outbound_click` | ✅ | 單次外連點擊成本 |
-| `cost_per_action_type` | ❌ | 單次動作成本 (依類型) |
-| `cost_per_ad_click` | ❌ | 單次廣告點擊成本 |
-| `cost_per_conversion` | ✅ | 單次轉換成本 |
-| `cost_per_unique_conversion` | ❌ | 單次不重複轉換成本 |
-| `social_spend` | ❌ | 社交互動花費 (非常用指標不提供新增) |
-
-## Video (12)
-
-| Metric Key | Used in System? | 中文備註 |
-| :--- | :---: | :--- |
-| `video_views` | ✅ | 影片觀看次數 (3秒) |
-| `video_p25_watched_actions` | ❌ | 影片觀看至 25% |
-| `video_p50_watched_actions` | ❌ | 影片觀看至 50% |
-| `video_p75_watched_actions` | ❌ | 影片觀看至 75% |
-| `video_p95_watched_actions` | ❌ | 影片觀看至 95% |
-| `video_p100_watched_actions` | ❌ | 影片觀看至 100% |
-| `video_avg_time_watched_actions` | ❌ | 影片平均觀看時間 |
-| `video_30_sec_watched_actions` | ❌ | 影片觀看 30 秒 |
-| `video_thruplay_watched_actions` | ❌ | ThruPlay (完整觀看或15秒) |
-| `cost_per_thruplay` | ✅ | 單次 ThruPlay 成本 |
-| `cost_per_2_sec_continuous_video_view` | ❌ | 單次 2 秒持續觀看成本 |
-| `cost_per_15s_video_view` | ❌ | 單次 15 秒觀看成本 |
-
-## Engagement (Post/Page) (11)
-
-| Metric Key | Used in System? | 中文備註 |
-| :--- | :---: | :--- |
-| `post_engagement` | ✅ | 貼文互動 |
-| `post_reactions` | ✅ | 貼文心情 |
-| `post_comments` | ✅ | 貼文留言 |
-| `post_shares` | ✅ | 貼文分享 |
-| `page_likes` | ✅ | 粉專按讚 |
-| `page_engagement` | ❌ | 粉專互動 |
-| `checkin` | ❌ | 打卡次數 |
-| `page_mention` | ❌ | 粉專提及 |
-| `photo_view` | ❌ | 照片瀏覽 |
-| `social_impressions` | ❌ | 社交曝光 (有好友互動) |
-| `social_reach` | ❌ | 社交觸及 |
-| `post_saves` | ✅ | 貼文儲存 |
-
-## Clicks & CTR (9)
-
-| Metric Key | Used in System? | 中文備註 |
-| :--- | :---: | :--- |
-| `clicks` | ✅ | 所有點擊 |
-| `unique_clicks` | ✅ | 不重複點擊 |
-| `inline_link_clicks` | ✅ | 連結點擊 (站內) |
-| `outbound_clicks` | ✅ | 外連點擊 (導外) |
-| `unique_ctr` | ✅ | 不重複點擊率 |
-| `inline_link_click_ctr` | ✅ | 連結點擊率 |
-| `outbound_clicks_ctr` | ✅ | 外連點擊率 |
-| `instant_experience_clicks_to_open` | ✅ | 即時體驗開啟點擊 |
-| `instant_experience_clicks_to_start` | ✅ | 即時體驗開始點擊 |
-
-## Conversions & App (15)
-
-| Metric Key | Used in System? | 中文備註 |
-| :--- | :---: | :--- |
-| `purchase` | ✅ | 購買 |
-| `add_to_cart` | ✅ | 加入購物車 |
-| `initiate_checkout` | ✅ | 開始結帳 |
-| `add_payment_info` | ✅ | 新增付款資訊 |
-| `view_content` | ✅ | 查看內容 |
-| `lead` | ✅ | 潛在客戶 (名單) |
-| `onsite_leads` | ✅ | 站上潛在客戶 |
-| `contact` | ❌ | 聯絡 |
-| `search` | ❌ | 搜尋 |
-| `start_trial` | ❌ | 開始試用 |
-| `subscribe` | ❌ | 訂閱 |
-| `mobile_app_install` | ✅ | App 安裝 |
-| `mobile_app_purchase_roas` | ❌ | App 購買 ROAS |
-| `cost_per_mobile_app_install` | ✅ | 單次 App 安裝成本 |
-| `app_use` | ❌ | App 使用 |
-| `app_events` | ✅ | App 事件 |
-| `credit_spent` | ❌ | 應用程式內點數花費 |
-
-## Dimensions (Age, Gender, Location) (10)
-
-| Metric Key | Used in System? | 中文備註 |
-| :--- | :---: | :--- |
-| `date_start` | ✅ | 開始日期 |
-| `date_stop` | ✅ | 結束日期 |
-| `age` | ❌ | 年齡 (維度) |
-| `gender` | ❌ | 性別 (維度) |
-| `country` | ❌ | 國家 (維度) |
-| `region` | ❌ | 地區 (維度) |
-| `dma` | ❌ | DMA 市場 (維度) - **僅限美國** |
-| `impression_device` | ❌ | 曝光裝置 (維度) |
-| `platform_position` | ❌ | 版位 (維度) |
-| `publisher_platform` | ❌ | 發佈平台 (FB/IG/Audience Network) |
-
-## Quality & Diagnostics (6)
-
-| Metric Key | Used in System? | 中文備註 |
-| :--- | :---: | :--- |
-| `quality_ranking` | ✅ | 品質排名 |
-| `engagement_rate_ranking` | ✅ | 互動率排名 |
-| `conversion_rate_ranking` | ✅ | 轉換率排名 |
-| `quality_score` | ❌ | 品質分數 |
-| `estimated_ad_recall_rate` | ❌ | 估計廣告回想率 |
-| `estimated_ad_recallers` | ❌ | 估計廣告回想人數 |
-
-## Messaging (3)
-
-| Metric Key | Used in System? | 中文備註 |
-| :--- | :---: | :--- |
-| `messaging_first_reply` | ✅ | 首次訊息回覆 |
-| `messaging_conversation_started` | ✅ | 開始對話 |
-| `cost_per_message` | ✅ | 每則訊息成本 |
-
-## CPAS (6)
-
-| Metric Key | Used in System? | 中文備註 |
-| :--- | :---: | :--- |
-| `shared_purchases` | ✅ | 共享購買次數 |
-| `shared_purchase_value` | ✅ | 共享購買值 |
-| `shared_roas` | ✅ | 共享 ROAS |
-| `shared_add_to_cart` | ✅ | 共享加購次數 |
-| `shared_atc_value` | ✅ | 共享加購值 |
-| `shared_view_content` | ✅ | 共享瀏覽次數 |
-
-## Settings & ID (9)
-
-| Metric Key | Used in System? | 中文備註 |
-| :--- | :---: | :--- |
-| `account_id` | ✅ | 帳號 ID |
-| `campaign_id` | ✅ | 行銷活動 ID |
-| `adset_id` | ✅ | 廣告組合 ID |
-| `ad_id` | ✅ | 廣告 ID |
-| `objective` | ✅ | 行銷目標 |
-| `buying_type` | ✅ | 購買類型 |
-| `attribution_setting` | ❌ | 歸因設定 |
-| `auction_bid` | ⛔ | 競價金額 (**已棄用** - API 無回傳, 測試於 2024-12-23) |
-| `auction_competitiveness` | ⛔ | 競價競爭力 (**已棄用** - API 無回傳, 測試於 2024-12-23) |
+本文件列出系統支援的所有 Facebook 廣告指標，並區分數據來源與計算邏輯。
 
 ---
 
-## 🧮 Calculated Metrics (後端計算指標)
+## 📋 指標來源定義 (Source Types)
 
-以下指標是由系統根據原生資料**計算**產生的，不是直接從 Facebook API 取得。
+| 來源類型 | 說明 |
+| :--- | :--- |
+| **原生 (Native)** | 直接從 Facebook API 欄位取得的基礎數據 (e.g. `spend`, `impressions`)。 |
+| **動作 (Action)** | 從 Facebook `actions` 或 `action_values` 陣列中解析出來的特定事件 (e.g. `purchases`, `atc`)。 |
+| **計算 (Calculated)** | 由系統後端根據基礎數據二次計算產生 (e.g. `roas`, `cpa`, `ctr`)。 |
 
-計算邏輯位於: `backend/service_modules/metrics.py`
+---
 
-### 成本相關
+## 📊 核心指標清單 (Core Metrics)
 
-| 指標 Key | 中文名稱 | 計算公式 |
-| :--- | :--- | :--- |
-| `cpc` | 單次點擊成本 | `spend / link_clicks` |
-| `cpm` | 千次曝光成本 | `(spend / impressions) * 1000` |
-| `cpa` | 單次購買成本 | `spend / purchases` |
-| `cost_per_atc` | 加購成本 | `spend / add_to_cart` |
+### 1. 成本與點擊 (Cost & Clicks)
 
-### 效率相關
+| 指標 Key | 來源類型 | 中文備註 | 備註 / 邏輯 |
+| :--- | :---: | :--- | :--- |
+| `spend` | 原生 | 花費金額 | 廣告帳號幣別 |
+| `impressions` | 原生 | 曝光次數 | |
+| `reach` | 原生 | 觸及人數 | |
+| `clicks` | 原生 | 所有點擊次數 | 包含讚、留言、分享等所有點擊 |
+| `link_clicks` | 原生 | 連結點擊次數 | 指標代號: `inline_link_clicks` |
+| `unique_clicks` | 原生 | 不重複點擊次數 | |
+| `cpm` | 計算 | 千次曝光成本 | `(spend / impressions) * 1000` |
+| `cpc` | 計算 | 單次點擊成本 | `spend / link_clicks` |
+| `ctr` | 計算 | 連結點擊率 | `(link_clicks / impressions) * 100` |
+| `cpp` | 計算 | 每千人觸及成本 | `(spend / reach) * 1000` |
+| `unique_ctr` | 計算 | 不重複點擊率 | `(unique_clicks / reach) * 100` |
 
-| 指標 Key | 中文名稱 | 計算公式 |
-| :--- | :--- | :--- |
-| `ctr` | 點擊率 | `(link_clicks / impressions) * 100` |
-| `roas` | 廣告投報率 | `purchase_value / spend` |
-| `aov` | 客單價 | `purchase_value / purchases` |
+### 2. 點擊與轉化率 (CTR & Funnel)
 
-### 漏斗轉換率
+| 指標 Key | 來源類型 | 中文備註 | 備註 / 邏輯 |
+| :--- | :---: | :--- | :--- |
+| `inline_link_click_ctr` | 計算 | 連結點擊率 | `(inline_link_clicks / impressions) * 100` |
+| `outbound_clicks` | 原生 | 外連點擊次數 | 導向站外的點擊 |
+| `outbound_clicks_ctr` | 計算 | 外連點擊率 | `(outbound_clicks / impressions) * 100` |
+| `unique_ctr` | 計算 | 不重複點擊率 | `(unique_clicks / reach) * 100` |
+| `cvr` | 計算 | 購買轉換率 | `(purchases / link_clicks) * 100` |
+| `view_to_cart` | 計算 | 瀏覽加購率 | `(add_to_cart / view_content) * 100` |
+| `cart_conversion` | 計算 | 購物車購買率 | `(purchases / add_to_cart) * 100` |
 
-| 指標 Key | 中文名稱 | 計算公式 |
-| :--- | :--- | :--- |
-| `view_to_cart_rate` | 瀏覽加購率 | `(add_to_cart / view_content) * 100` |
-| `cart_to_purchase_rate` | 購物車購買率 | `(purchases / add_to_cart) * 100` |
-| `cart_value_realization_rate` | 購物車價值實現率 | `(purchase_value / atc_value) * 100` |
-| `cvr` | 購買轉換率 | `(purchases / link_clicks) * 100` |
-| `cart_dropoff` | 購物車流失率 | `1 - (purchases / add_to_cart)` |
+### 3. 電商與轉化 (E-commerce)
 
-> **備註**: 上述計算指標在前端 `Analytics.jsx` 的 `calculateSummary()` 函數中也有重複計算，用於 KPI 卡片的即時彙總。
+| 指標 Key | 來源類型 | 中文備註 | 備註 / 邏輯 |
+| :--- | :---: | :--- | :--- |
+| `purchases` | 動作 | 購買次數 | `action_type: purchase` |
+| `purchase_value` | 動作 | 購買轉換價值 | `action_value: purchase` |
+| `roas` | 計算 | 廣告投報率 | `purchase_value / spend` |
+| `cpa` | 計算 | 單次購買成本 | `spend / purchases` |
+| `add_to_cart` | 動作 | 加入購物車次數 | `action_type: add_to_cart` |
+| `atc_value` | 動作 | 加購轉換價值 | `action_value: add_to_cart` |
+| `cost_per_atc` | 計算 | 加入購物車成本 | `spend / add_to_cart` |
+
+### 4. 影音與其他 (Video & Others)
+
+| 指標 Key | 來源類型 | 中文備註 | 備註 / 邏輯 |
+| :--- | :---: | :--- | :--- |
+| `video_views` | 動作 | 影片觀看 (3秒) | `action_type: video_view` |
+| `video_thruplay` | 動作 | ThruPlay | `action_type: video_view` (特定模式解析) |
+| `cost_per_thruplay` | 計算 | 每次 ThruPlay 成本 | `spend / thruplay` |
+| `instant_experience_open` | 原生 | 全螢幕體驗開啟 | `instant_experience_clicks_to_open` |
+| `instant_experience_start` | 原生 | 全螢幕體驗開始 | `instant_experience_clicks_to_start` |
+
+---
+
+## 🧮 標準化計算規則 (Standardized Rules)
+
+為了確保數據在不同視圖下的一致性，系統遵循以下計算規範：
+
+### 1. 彙整重算邏輯 (Sum-of-Sums)
+在 **KPI 儀表板圖卡** 與 **表格總計列** 中，率值或平均值指標**不採用**平均值，而是將該期間的所有分子加總後除以分母加總。
+> **公式**: `Result = Sum(Numerator) / Sum(Denominator)`
+> *   *範例*: CTR = `Sum(連結點擊) / Sum(總曝光)`
+
+### 2. 零分母保護 (Zero-Division Protection)
+所有計算指標在分母為 0 時，結果均會回傳 `0` 而非錯誤或空值。
+> **代碼實作**: `(num / den) if den > 0 else 0.0`
+
+### 3. 多層級過濾保護
+部分指標（如 `quality_ranking`）僅在 `Level=Ad` 時有效。系統後端會根據請求層級自動調整 API Fields，避免 400 錯誤。
+
+### 4. 幣別與百分比格式化
+*   **成本/價值**: 預設顯示 `$0` (Currency)。
+*   **率值**: 預設顯示 `0.00%` (Percent)。
+*   **次數**: 預設顯示 `0` (Number, 含千分位)。
+
+---
+
+## 🛠️ 開發參考
+*   **後端註冊表**: `backend/async_services.py` -> `METRICS_REGISTRY`
+*   **前端註冊表**: `frontend/src/constants/metricsRegistry.js`
+*   **KPI 計算邏輯**: `backend/services/facebook_service.py` -> `_format_kpi`
