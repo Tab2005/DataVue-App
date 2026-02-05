@@ -34,12 +34,17 @@ METRICS_REGISTRY = {
     'unique_clicks': {'source': 'direct', 'fb_field': 'unique_clicks'},
     
     # --- General Cost Metrics ---
-    'cpp': {'source': 'direct', 'fb_field': 'cpp'},
-    'cost_per_unique_click': {'source': 'direct', 'fb_field': 'cost_per_unique_click'},
-    'cost_per_inline_link_click': {'source': 'direct', 'fb_field': 'cost_per_inline_link_click'},
-    'cost_per_outbound_click': {'source': 'direct', 'fb_field': 'cost_per_outbound_click'},
-    'cost_per_conversion': {'source': 'direct', 'fb_field': 'cost_per_conversion'},
+    'cpp': {'source': 'calculated'},
+    'cost_per_unique_click': {'source': 'calculated'},
+    'cost_per_inline_link_click': {'source': 'calculated'},
+    'cost_per_outbound_click': {'source': 'calculated'},
+    'cost_per_conversion': {'source': 'calculated'},
     'outbound_clicks': {'source': 'direct', 'fb_field': 'outbound_clicks'},
+    'unique_ctr': {'source': 'direct', 'fb_field': 'unique_ctr'},
+    'outbound_clicks_ctr': {'source': 'direct', 'fb_field': 'outbound_clicks_ctr'},
+    'inline_link_click_ctr': {'source': 'direct', 'fb_field': 'inline_link_click_ctr'},
+    'instant_experience_open': {'source': 'direct', 'fb_field': 'instant_experience_clicks_to_open'},
+    'instant_experience_start': {'source': 'direct', 'fb_field': 'instant_experience_clicks_to_start'},
 
     # --- E-commerce Metrics ---
     'roas': {'source': 'purchase_roas', 'fb_field': 'purchase_roas'},
@@ -76,7 +81,7 @@ METRICS_REGISTRY = {
     'video_p75_watched': {'source': 'direct', 'fb_field': 'video_p75_watched_actions'},
     'video_p100_watched': {'source': 'direct', 'fb_field': 'video_p100_watched_actions'},
     'video_avg_time_watched': {'source': 'direct', 'fb_field': 'video_avg_time_watched_actions'},
-    'cost_per_thruplay': {'source': 'direct', 'fb_field': 'cost_per_thruplay'},
+    'cost_per_thruplay': {'source': 'calculated'},
     
     # --- Messaging Metrics ---
     'messaging_first_reply': {'source': 'actions', 'action_type': 'onsite_conversion.messaging_first_reply'},
@@ -108,12 +113,13 @@ METRICS_REGISTRY = {
 }
 
 
-def build_fb_fields(custom_fields: str = None) -> str:
+def build_fb_fields(custom_fields: str = None, level: str = "account") -> str:
     """
     Build Facebook API fields string based on requested custom fields.
     
     Args:
         custom_fields: Comma-separated list of metric keys (e.g., "spend,roas,video_p25_watched")
+        level: analytics level (account, campaign, adset, ad)
     
     Returns:
         Comma-separated string of Facebook API fields to request
@@ -149,7 +155,12 @@ def build_fb_fields(custom_fields: str = None) -> str:
         if source == 'direct':
             fb_field = metric.get('fb_field')
             if fb_field:
-                fb_fields.add(fb_field)
+                # Level-specific field protection
+                if fb_field in ["quality_ranking", "engagement_rate_ranking", "conversion_rate_ranking"]:
+                    if level == "ad":
+                        fb_fields.add(fb_field)
+                else:
+                    fb_fields.add(fb_field)
         elif source == 'actions':
             needs_actions = True
         elif source == 'action_values':
@@ -260,7 +271,8 @@ class AsyncFacebookService:
             
         date_preset = "last_7d" if days == 7 else "last_30d"
         fields = (
-            "spend,impressions,reach,cpm,cpc,ctr,inline_link_clicks,clicks,"
+            "spend,impressions,reach,cpm,cpc,ctr,inline_link_clicks,clicks,unique_clicks,unique_ctr,"
+            "inline_link_click_ctr,outbound_clicks,outbound_clicks_ctr,"
             "actions,action_values,purchase_roas"
         )
         
@@ -313,7 +325,8 @@ class AsyncFacebookService:
                 }
                 
                 trend_fields = (
-                    "spend,impressions,inline_link_clicks,ctr,cpc,"
+                    "spend,impressions,inline_link_clicks,ctr,cpc,unique_clicks,unique_ctr,"
+                    "inline_link_click_ctr,outbound_clicks,outbound_clicks_ctr,"
                     "actions,action_values,purchase_roas"
                 )
                 trend_params = {
@@ -388,7 +401,7 @@ class AsyncFacebookService:
                 f.write(f"[{datetime.now()}] Requesting fields: {custom_fields}\n")
         except: pass
 
-        dynamic_fields = build_fb_fields(custom_fields)
+        dynamic_fields = build_fb_fields(custom_fields, level=level)
         
         if dynamic_fields:
             # Use dynamically built fields
@@ -400,13 +413,17 @@ class AsyncFacebookService:
                 "campaign_id,adset_id,ad_id,"
                 "campaign_name,adset_name,ad_name,"
                 "spend,impressions,reach,frequency,cpm,cpc,ctr,inline_link_clicks,clicks,unique_clicks,"
-                "outbound_clicks,"  # Added for Cost per Outbound Click
+                "unique_ctr,inline_link_click_ctr,outbound_clicks,outbound_clicks_ctr,"
+                "instant_experience_clicks_to_open,instant_experience_clicks_to_start,"
                 "actions,action_values,purchase_roas,"
-                "quality_ranking,engagement_rate_ranking,conversion_rate_ranking,"
                 "catalog_segment_value,catalog_segment_actions,"
                 "video_p25_watched_actions,video_p50_watched_actions,video_p75_watched_actions,video_p100_watched_actions,"
-                "video_avg_time_watched_actions,cost_per_thruplay"
+                "video_avg_time_watched_actions"
             )
+
+            # Special fields only for Ad level
+            if level == "ad":
+                api_fields += ",quality_ranking,engagement_rate_ranking,conversion_rate_ranking"
 
         url = f"{AsyncFacebookService.BASE_URL}/{account_id}/insights"
         
@@ -594,24 +611,23 @@ class AsyncFacebookService:
                 flat["app_events"] = acts.get("app_custom_event", 0)
                 flat["cost_per_install"] = flat["spend"] / flat["app_installs"] if flat["app_installs"] > 0 else 0
 
-                # --- NEW COST & SPEND METRICS (Backfill for Table) ---
                 # CPP (Cost per 1000 People Reached)
                 if flat["reach"] > 0:
                     flat["cpp"] = (flat["spend"] / flat["reach"]) * 1000
                 else:
-                    flat["cpp"] = float(row.get("cpp", 0))
+                    flat["cpp"] = 0
 
                 # Cost Per Unique Click
                 if flat["unique_clicks"] > 0:
                     flat["cost_per_unique_click"] = flat["spend"] / flat["unique_clicks"]
                 else:
-                    flat["cost_per_unique_click"] = float(row.get("cost_per_unique_click", 0))
+                    flat["cost_per_unique_click"] = 0
 
                 # Cost Per Inline Link Click
                 if flat["link_clicks"] > 0:
                     flat["cost_per_inline_link_click"] = flat["spend"] / flat["link_clicks"]
                 else:
-                    flat["cost_per_inline_link_click"] = float(row.get("cost_per_inline_link_click", 0))
+                    flat["cost_per_inline_link_click"] = 0
 
                 # Cost Per Outbound Click
                 # 'outbound_clicks' is a direct field from Facebook API (returns as array)
@@ -630,14 +646,25 @@ class AsyncFacebookService:
                 if outbound_clicks > 0:
                     flat["cost_per_outbound_click"] = flat["spend"] / outbound_clicks
                 else:
-                    # Try to get pre-calculated cost_per_outbound_click from API
-                    cpoc_raw = row.get("cost_per_outbound_click")
-                    if isinstance(cpoc_raw, list) and cpoc_raw:
-                        flat["cost_per_outbound_click"] = float(cpoc_raw[0].get("value", 0))
-                    elif cpoc_raw:
-                        flat["cost_per_outbound_click"] = float(cpoc_raw)
-                    else:
-                        flat["cost_per_outbound_click"] = 0
+                    flat["cost_per_outbound_click"] = 0
+
+                # Unique CTR
+                flat["unique_ctr"] = float(row.get("unique_ctr", 0))
+
+                # Inline Link Click CTR
+                flat["inline_link_click_ctr"] = float(row.get("inline_link_click_ctr", 0))
+
+                # Outbound Clicks CTR
+                # Format: list of {value: '...'}
+                ob_ctr = row.get("outbound_clicks_ctr", [])
+                if isinstance(ob_ctr, list) and ob_ctr:
+                    flat["outbound_clicks_ctr"] = float(ob_ctr[0].get("value", 0))
+                else:
+                    flat["outbound_clicks_ctr"] = float(ob_ctr or 0)
+
+                # IE metrics
+                flat["instant_experience_open"] = int(row.get("instant_experience_clicks_to_open", 0))
+                flat["instant_experience_start"] = int(row.get("instant_experience_clicks_to_start", 0))
 
 
 

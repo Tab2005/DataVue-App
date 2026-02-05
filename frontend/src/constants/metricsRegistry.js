@@ -70,32 +70,32 @@ export const METRICS_REGISTRY = {
     cpp: {
         key: 'cpp', label_zh: 'CPP (每千人觸及成本)', label_en: 'CPP',
         category: 'general', format: 'currency', isInverse: true,
-        source: 'direct', fb_field: 'cpp',
+        source: 'calculated',
         is_default: false
     },
     cost_per_unique_click: {
         key: 'cost_per_unique_click', label_zh: '單次不重複點擊成本', label_en: 'Cost per Unique Click',
         category: 'general', format: 'currency', isInverse: true,
-        source: 'direct', fb_field: 'cost_per_unique_click',
+        source: 'calculated',
         is_default: false
     },
     cost_per_inline_link_click: {
         key: 'cost_per_inline_link_click', label_zh: '單次連結點擊成本', label_en: 'Cost per Link Click',
         category: 'general', format: 'currency', isInverse: true,
-        source: 'direct', fb_field: 'cost_per_inline_link_click',
+        source: 'calculated',
         is_default: false
     },
     cost_per_outbound_click: {
         key: 'cost_per_outbound_click', label_zh: '單次外連點擊成本', label_en: 'Cost per Outbound Click',
         category: 'general', format: 'currency', isInverse: true,
-        source: 'direct', fb_field: 'cost_per_outbound_click',
+        source: 'calculated',
         is_default: false
     },
 
     cost_per_conversion: {
         key: 'cost_per_conversion', label_zh: '單次轉換成本', label_en: 'Cost per Conversion',
         category: 'general', format: 'currency', isInverse: true,
-        source: 'direct', fb_field: 'cost_per_conversion',
+        source: 'calculated',
         is_default: false
     },
     ctr: {
@@ -121,6 +121,42 @@ export const METRICS_REGISTRY = {
         category: 'general', format: 'number',
         source: 'direct', fb_field: 'unique_clicks',
         is_default: true
+    },
+    unique_ctr: {
+        key: 'unique_ctr', label_zh: '不重複點擊率', label_en: 'Unique CTR',
+        category: 'general', format: 'percent',
+        source: 'direct', fb_field: 'unique_ctr',
+        is_default: false
+    },
+    outbound_clicks: {
+        key: 'outbound_clicks', label_zh: '外連點擊次數', label_en: 'Outbound Clicks',
+        category: 'general', format: 'number',
+        source: 'direct', fb_field: 'outbound_clicks',
+        is_default: false
+    },
+    outbound_clicks_ctr: {
+        key: 'outbound_clicks_ctr', label_zh: '外連點擊率', label_en: 'Outbound Click CTR',
+        category: 'general', format: 'percent',
+        source: 'direct', fb_field: 'outbound_clicks_ctr',
+        is_default: false
+    },
+    inline_link_click_ctr: {
+        key: 'inline_link_click_ctr', label_zh: '連結點擊率', label_en: 'Link Click CTR',
+        category: 'general', format: 'percent',
+        source: 'direct', fb_field: 'inline_link_click_ctr',
+        is_default: false
+    },
+    instant_experience_open: {
+        key: 'instant_experience_open', label_zh: '全螢幕體驗開啟', label_en: 'IE Open',
+        category: 'engagement', format: 'number',
+        source: 'direct', fb_field: 'instant_experience_clicks_to_open',
+        is_default: false
+    },
+    instant_experience_start: {
+        key: 'instant_experience_start', label_zh: '全螢幕體驗開始觀看', label_en: 'IE Start',
+        category: 'engagement', format: 'number',
+        source: 'direct', fb_field: 'instant_experience_clicks_to_start',
+        is_default: false
     },
 
     // ─────────────────────────────────────────────────────────────────────────
@@ -312,7 +348,7 @@ export const METRICS_REGISTRY = {
     cost_per_thruplay: {
         key: 'cost_per_thruplay', label_zh: '每次 ThruPlay 成本', label_en: 'Cost per ThruPlay',
         category: 'video', format: 'currency_decimal', isInverse: true,
-        source: 'direct', fb_field: 'cost_per_thruplay',
+        source: 'calculated',
         is_default: false
     },
 

@@ -77,7 +77,8 @@ class FacebookService:
         
         # Fields to fetch
         fields = (
-            "spend,impressions,reach,cpm,cpc,ctr,inline_link_clicks,clicks,"
+            "spend,impressions,reach,cpm,cpc,ctr,inline_link_clicks,clicks,unique_clicks,unique_ctr,"
+            "inline_link_click_ctr,outbound_clicks,outbound_clicks_ctr,"
             "actions,action_values,purchase_roas"
         )
         
@@ -373,6 +374,34 @@ class FacebookService:
         prev["cost_per_atc_calc"] = (prev_spend / prev_atc) if prev_atc > 0 else 0.0
         add_metric("Cost Per ATC", "cost_per_atc", source_key="cost_per_atc_calc", is_currency=True, is_inverse=True)
 
+        # 9. New Clicks & CTR Metrics for KPI Cards - Ensure labels match frontend registry keys
+        add_metric("unique_clicks", "unique_clicks")
+        
+        # Unique CTR = unique_clicks / reach * 100
+        cur["unique_ctr_calc"] = calc_derived("unique_clicks", "reach", 100.0)
+        prev["unique_ctr_calc"] = calc_derived_prev("unique_clicks", "reach", 100.0)
+        add_metric("unique_ctr", "unique_ctr", source_key="unique_ctr_calc", is_percent=True)
+        
+        # Outbound Clicks
+        def get_ob_val(row_data):
+            ob = row_data.get("outbound_clicks", [])
+            if isinstance(ob, list) and ob: return float(ob[0].get("value", 0))
+            return float(ob or 0)
+        
+        cur["ob_val"] = get_ob_val(cur)
+        prev["ob_val"] = get_ob_val(prev)
+        add_metric("outbound_clicks", "outbound_clicks", source_key="ob_val")
+        
+        # Outbound CTR = outbound_clicks / impressions * 100
+        cur["ob_ctr_calc"] = (cur["ob_val"] / get_val(cur, "impressions") * 100.0) if get_val(cur, "impressions") > 0 else 0.0
+        prev["ob_ctr_calc"] = (prev["ob_val"] / get_val(prev, "impressions") * 100.0) if get_val(prev, "impressions") > 0 else 0.0
+        add_metric("outbound_clicks_ctr", "outbound_clicks_ctr", source_key="ob_ctr_calc", is_percent=True)
+        
+        # Link Click CTR = inline_link_clicks / impressions * 100
+        cur["link_ctr_calc"] = calc_derived("inline_link_clicks", "impressions", 100.0)
+        prev["link_ctr_calc"] = calc_derived_prev("inline_link_clicks", "impressions", 100.0)
+        add_metric("inline_link_click_ctr", "inline_link_click_ctr", source_key="link_ctr_calc", is_percent=True)
+
         return metrics
 
     @staticmethod
@@ -391,6 +420,9 @@ class FacebookService:
                 "link_clicks": int(item.get("inline_link_clicks", 0)),
                 "ctr": float(item.get("ctr", 0)),
                 "cpc": float(item.get("cpc", 0)),
+                "unique_clicks": int(item.get("unique_clicks", 0)),
+                "unique_ctr": float(item.get("unique_ctr", 0)),
+                "outbound_clicks_ctr": float(item.get("outbound_clicks_ctr", [{}])[0].get("value", 0) if isinstance(item.get("outbound_clicks_ctr"), list) else 0),
             }
             
             # 2. Actions (Purchases, ATC)
@@ -422,13 +454,18 @@ class FacebookService:
         base_fields = (
             "campaign_id,adset_id,ad_id," # ID fields
             "campaign_name,adset_name,ad_name," # Identity fields
-            "spend,impressions,reach,frequency,cpm,cpc,ctr,inline_link_clicks,clicks,unique_clicks,"  # Core metrics (added frequency, unique_clicks)
+            "spend,impressions,reach,frequency,cpm,cpc,ctr,inline_link_clicks,clicks,unique_clicks,unique_ctr,"  # Core metrics
+            "inline_link_click_ctr,outbound_clicks,outbound_clicks_ctr," # Clicks & CTR
+            "instant_experience_clicks_to_open,instant_experience_clicks_to_start," # IE
             "actions,action_values,purchase_roas,"  # Actions and ROAS
-            "quality_ranking,engagement_rate_ranking,conversion_rate_ranking," # Quality Diagnosis
             "catalog_segment_value,catalog_segment_actions," # CPAS Metrics
             "video_p25_watched_actions,video_p50_watched_actions,video_p75_watched_actions,video_p100_watched_actions," # Video metrics
-            "video_avg_time_watched_actions,cost_per_thruplay" # Video derived
+            "video_avg_time_watched_actions" # Video derived
         )
+        
+        # Special fields only for Ad level
+        if level == "ad":
+            base_fields += ",quality_ranking,engagement_rate_ranking,conversion_rate_ranking"
 
         # Removed 'objective,effective_status' from Insights API to prevent errors.
         # We will fetch status separately for Ads.
