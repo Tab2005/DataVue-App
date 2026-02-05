@@ -99,7 +99,7 @@ export const METRICS_REGISTRY = {
         is_default: false
     },
     ctr: {
-        key: 'ctr', label_zh: 'CTR (連結點擊率)', label_en: 'CTR',
+        key: 'ctr', label_zh: 'CTR (全部點擊率)', label_en: 'CTR (All Clicks)',
         category: 'general', format: 'percent',
         source: 'direct', fb_field: 'ctr',
         is_default: true

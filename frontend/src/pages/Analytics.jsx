@@ -29,7 +29,7 @@ const METRIC_GROUPS = [
             { key: 'reach', label_zh: '觸及人數', label_en: 'Reach', format: 'number' },
             { key: 'impressions', label_zh: '曝光次數', label_en: 'Impressions', format: 'number' },
             { key: 'cpc', label_zh: 'CPC (單次點擊成本)', label_en: 'CPC', format: 'currency', isInverse: true },
-            { key: 'ctr', label_zh: 'CTR (連結點擊率)', label_en: 'CTR', format: 'percent' },
+            { key: 'ctr', label_zh: 'CTR (全部點擊率)', label_en: 'CTR (All Clicks)', format: 'percent' },
             { key: 'cpm', label_zh: 'CPM (千次曝光成本)', label_en: 'CPM', format: 'currency', isInverse: true },
             { key: 'link_clicks', label_zh: '連結點擊次數', label_en: 'Link Clicks', format: 'number' },
         ]
@@ -790,21 +790,47 @@ const Analytics = () => {
             // Instant Experience (New)
             instant_experience_open: sum('instant_experience_open'),
             instant_experience_start: sum('instant_experience_start'),
+            // CTR fields (from Facebook API, not calculated)
+            ctr: sum('ctr'),
+            inline_link_click_ctr: sum('inline_link_click_ctr'),
+            unique_ctr: sum('unique_ctr'),
+            outbound_clicks_ctr: sum('outbound_clicks_ctr'),
         };
 
         // Recalculate derived rates
         total.cpc = total.link_clicks > 0 ? total.spend / total.link_clicks : 0;
         total.cpm = total.impressions > 0 ? (total.spend / total.impressions) * 1000 : 0;
-        total.ctr = total.impressions > 0 ? (total.link_clicks / total.impressions) * 100 : 0;
+
+        // Debug CTR calculation
+        console.log('[Analytics Debug] CTR from API:', {
+            ctr: total.ctr,
+            inline_link_click_ctr: total.inline_link_click_ctr,
+            link_clicks: total.link_clicks,
+            impressions: total.impressions,
+            targetData_count: targetData.length,
+            sample_rows: targetData.slice(0, 3).map(r => ({
+                id: r.id,
+                ctr: r.ctr,
+                inline_link_click_ctr: r.inline_link_click_ctr,
+                link_clicks: r.link_clicks,
+                impressions: r.impressions
+            }))
+        });
+
         total.cpa = total.purchases > 0 ? total.spend / total.purchases : 0;
         total.cost_per_atc = total.add_to_cart > 0 ? total.spend / total.add_to_cart : 0;
         total.roas = total.spend > 0 ? total.purchase_value / total.spend : 0;
         total.shared_roas = total.spend > 0 ? total.shared_purchase_value / total.spend : 0;
 
-        // Clicks & CTR Recalculations
-        total.unique_ctr = total.reach > 0 ? (total.unique_clicks / total.reach) * 100 : 0;
-        total.outbound_clicks_ctr = total.impressions > 0 ? (total.outbound_clicks / total.impressions) * 100 : 0;
-        total.link_click_ctr = total.impressions > 0 ? (total.link_clicks / total.impressions) * 100 : 0;
+        // CTR Recalculations (REMOVED - use direct values from API)
+        // If API doesn't provide these values, fallback to calculation
+        if (!total.unique_ctr && total.reach > 0) {
+            total.unique_ctr = (total.unique_clicks / total.reach) * 100;
+        }
+        if (!total.outbound_clicks_ctr && total.impressions > 0) {
+            total.outbound_clicks_ctr = (total.outbound_clicks / total.impressions) * 100;
+        }
+        // Note: ctr and inline_link_click_ctr should come from API, not calculated
 
         // Cost & Spend Derived
         total.cpp = total.reach > 0 ? (total.spend / total.reach) * 1000 : 0;
@@ -1451,6 +1477,17 @@ const Analytics = () => {
                                             {activeGroupMetrics.map(m => {
                                                 const currentVal = currentSummaryData ? (currentSummaryData[m.key] || 0) : 0;
                                                 const prevVal = prevSummaryData ? (prevSummaryData[m.key] || 0) : null;
+
+                                                // Debug: Log each metric's value
+                                                if (m.key === 'ctr') {
+                                                    console.log('[Analytics Debug] Rendering CTR card:', {
+                                                        key: m.key,
+                                                        currentVal,
+                                                        raw_value: currentSummaryData?.[m.key],
+                                                        summaryData_exists: !!currentSummaryData,
+                                                        format: m.format
+                                                    });
+                                                }
 
                                                 // Diff calculation
                                                 let diff = null;

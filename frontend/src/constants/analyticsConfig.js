@@ -53,7 +53,7 @@ export const METRIC_GROUPS = [
             { key: 'reach', label_zh: '觸及人數', label_en: 'Reach', format: 'number' },
             { key: 'impressions', label_zh: '曝光次數', label_en: 'Impressions', format: 'number' },
             { key: 'cpc', label_zh: 'CPC (單次點擊成本)', label_en: 'CPC', format: 'currency', isInverse: true },
-            { key: 'ctr', label_zh: 'CTR (連結點擊率)', label_en: 'CTR', format: 'percent' },
+            { key: 'ctr', label_zh: 'CTR (全部點擊率)', label_en: 'CTR (All Clicks)', format: 'percent' },
             { key: 'cpm', label_zh: 'CPM (千次曝光成本)', label_en: 'CPM', format: 'currency', isInverse: true },
             { key: 'link_clicks', label_zh: '連結點擊次數', label_en: 'Link Clicks', format: 'number' },
         ]
