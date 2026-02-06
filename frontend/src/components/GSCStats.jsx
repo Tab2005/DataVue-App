@@ -365,6 +365,7 @@ const GSCStats = ({ language, isMobile = false }) => {
     // Date Range State
     const [datePreset, setDatePreset] = useState('last_28d');
     const [dateRange, setDateRange] = useState(getDateRangeFromPreset('last_28d'));
+    const [activeDateRange, setActiveDateRange] = useState(getDateRangeFromPreset('last_28d')); // Added: range used for actual fetching
     const [showCustomDate, setShowCustomDate] = useState(false);
 
     // Compare Mode State
@@ -546,11 +547,11 @@ const GSCStats = ({ language, isMobile = false }) => {
             setPageKeywordsHasMore(true);
             setPageKeywordsLoadTime(null);
         }
-    }, [selectedSite, dateRange.start, dateRange.end, activeTab, rowLimit]);
+    }, [selectedSite, activeDateRange.start, activeDateRange.end, activeTab, rowLimit]);
 
     // 當網站或日期範圍改變時，清除緩存並重置載入狀態
     useEffect(() => {
-        if (selectedSite && dateRange.start && dateRange.end) {
+        if (selectedSite && activeDateRange.start && activeDateRange.end) {
             setAnalyticsCache({});
             setLoadedDimensions(new Set());
             setAnalytics([]);
@@ -558,23 +559,23 @@ const GSCStats = ({ language, isMobile = false }) => {
             setPageKeywords({});
             setPageKeywordsTotalCount(0);
         }
-    }, [selectedSite, dateRange.start, dateRange.end]);
+    }, [selectedSite, activeDateRange.start, activeDateRange.end]);
 
     useEffect(() => {
-        if (selectedSite && dateRange.start && dateRange.end) {
+        if (selectedSite && activeDateRange.start && activeDateRange.end) {
             const currentTab = TABS.find(tab => tab.key === activeTab);
             const dimension = currentTab ? currentTab.dimension : 'date';
 
             if (activeTab === 'trend') {
                 // For trend tab, fetch both current and previous period
-                fetchTrendData(selectedSite, dateRange.start, dateRange.end);
+                fetchTrendData(selectedSite, activeDateRange.start, activeDateRange.end);
             } else {
                 // 檢查是否已載入此dimension的數據
                 if (!loadedDimensions.has(dimension)) {
-                    fetchAnalytics(selectedSite, dateRange.start, dateRange.end, dimension);
+                    fetchAnalytics(selectedSite, activeDateRange.start, activeDateRange.end, dimension);
                 } else {
                     // 如果已載入，從緩存中恢復數據
-                    const cacheKey = `${selectedSite}-${dateRange.start}-${dateRange.end}-${dimension}`;
+                    const cacheKey = `${selectedSite}-${activeDateRange.start}-${activeDateRange.end}-${dimension}`;
                     if (analyticsCache[cacheKey]) {
                         setAnalytics(analyticsCache[cacheKey]);
                     }
@@ -582,11 +583,11 @@ const GSCStats = ({ language, isMobile = false }) => {
 
                 // Fetch page+query data for page tab (to show keywords per page)
                 if (activeTab === 'page') {
-                    fetchPageKeywords(selectedSite, dateRange.start, dateRange.end);
+                    fetchPageKeywords(selectedSite, activeDateRange.start, activeDateRange.end);
                 }
             }
         }
-    }, [selectedSite, dateRange, activeTab, loadedDimensions, analyticsCache]);
+    }, [selectedSite, activeDateRange, activeTab, loadedDimensions, analyticsCache]);
 
     // Fetch page titles when page data is available
     useEffect(() => {
@@ -1075,8 +1076,14 @@ const GSCStats = ({ language, isMobile = false }) => {
             setShowCustomDate(true);
         } else {
             setShowCustomDate(false);
-            setDateRange(getDateRangeFromPreset(presetKey));
+            const newRange = getDateRangeFromPreset(presetKey);
+            setDateRange(newRange);
+            setActiveDateRange(newRange); // Immediate fetch for presets
         }
+    };
+
+    const handleRunAnalysis = () => {
+        setActiveDateRange({ ...dateRange });
     };
 
     const handleCustomDateChange = (field, value) => {
@@ -1173,7 +1180,7 @@ const GSCStats = ({ language, isMobile = false }) => {
 
     // Effect: Fetch compare data when compare mode changes
     useEffect(() => {
-        if (compareMode !== 'none' && selectedSite && dateRange.start && dateRange.end) {
+        if (compareMode !== 'none' && selectedSite && activeDateRange.start && activeDateRange.end) {
             const compareDateRange = getCompareDateRange();
             if (compareDateRange) {
                 fetchCompareData(compareDateRange);
@@ -1181,7 +1188,7 @@ const GSCStats = ({ language, isMobile = false }) => {
         } else {
             setCompareData([]);
         }
-    }, [compareMode, selectedSite, dateRange, activeTab]);
+    }, [compareMode, selectedSite, activeDateRange, activeTab]);
 
 
     const handleSort = (key) => {
@@ -1889,6 +1896,43 @@ const GSCStats = ({ language, isMobile = false }) => {
                                     {quick.label}
                                 </button>
                             ))}
+
+                            {/* New Control Buttons */}
+                            <div style={{ display: 'flex', gap: '8px', marginLeft: isMobile ? '0' : 'auto', width: isMobile ? '100%' : 'auto', marginTop: isMobile ? '8px' : '0' }}>
+                                <button
+                                    onClick={handleRunAnalysis}
+                                    style={{
+                                        padding: '6px 16px',
+                                        background: 'var(--accent-primary)',
+                                        color: 'white',
+                                        borderRadius: '8px',
+                                        border: 'none',
+                                        fontSize: '13px',
+                                        fontWeight: '600',
+                                        cursor: 'pointer',
+                                        boxShadow: '0 2px 4px rgba(0,0,0,0.1)',
+                                        display: 'flex',
+                                        alignItems: 'center',
+                                        gap: '4px'
+                                    }}
+                                >
+                                    🚀 {t('開始分析', 'Start Analysis')}
+                                </button>
+                                <button
+                                    onClick={() => setShowCustomDate(false)}
+                                    style={{
+                                        padding: '6px 16px',
+                                        background: 'rgba(255, 255, 255, 0.05)',
+                                        color: 'var(--text-secondary)',
+                                        borderRadius: '8px',
+                                        border: '1px solid var(--glass-border)',
+                                        fontSize: '13px',
+                                        cursor: 'pointer'
+                                    }}
+                                >
+                                    {t('完成並收合', 'Finish & Collapse')}
+                                </button>
+                            </div>
                         </div>
                     </div>
                 )}

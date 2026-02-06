@@ -751,9 +751,8 @@ const GA4Stats = ({ language, isMobile }) => {
             startDate = new Date(lastWeekEnd);
             startDate.setDate(startDate.getDate() - 6);
         } else if (presetConfig.isThisMonth) {
-            // 本月：從本月1日到本月最後一天（GA4 不接受未來日期，需封頂到今天）
-            const endOfMonth = new Date(today.getFullYear(), today.getMonth() + 1, 0);
-            endDate = endOfMonth > today ? new Date(today) : endOfMonth;
+            // 本月：從本月1日到本月最後一天
+            endDate = new Date(today.getFullYear(), today.getMonth() + 1, 0);
             startDate = new Date(today.getFullYear(), today.getMonth(), 1);
         } else if (presetConfig.isLastMonth) {
             // 上月：從上月1日到上月最後一天

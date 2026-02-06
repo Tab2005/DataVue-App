@@ -309,6 +309,13 @@ class GA4Service:
             return None, "No GA4 credentials found"
 
         try:
+            # Ensure end_date does not exceed today (Google Analytics Data API rejects future dates)
+            today_str = datetime.now().strftime("%Y-%m-%d")
+            effective_end_date = min(end_date, today_str) if end_date > today_str else end_date
+            
+            if effective_end_date != end_date:
+                print(f"[GA4] Capping end_date from {end_date} to {effective_end_date} for API request")
+            
             # Default metrics and dimensions if not provided
             if metrics is None:
                 metrics = [
@@ -465,7 +472,7 @@ class GA4Service:
                 # 不帶 dimension 的請求，會返回整個期間的去重總數
                 request = RunReportRequest(
                     property=f"properties/{property_id}",
-                    date_ranges=[DateRange(start_date=start_date, end_date=end_date)],
+                    date_ranges=[DateRange(start_date=start_date, end_date=effective_end_date)],
                     metrics=[Metric(name=met) for met in metrics],
                 )
                 dimensions = []  # 確保後續處理正確
@@ -478,7 +485,7 @@ class GA4Service:
                 request_limit = effective_limit if effective_limit is not None else limit
                 request = RunReportRequest(
                     property=f"properties/{property_id}",
-                    date_ranges=[DateRange(start_date=start_date, end_date=end_date)],
+                    date_ranges=[DateRange(start_date=start_date, end_date=effective_end_date)],
                     dimensions=[Dimension(name=dim) for dim in dimensions],
                     metrics=[Metric(name=met) for met in metrics],
                     limit=request_limit,
@@ -497,7 +504,7 @@ class GA4Service:
                 while True:
                     request = RunReportRequest(
                         property=f"properties/{property_id}",
-                        date_ranges=[DateRange(start_date=start_date, end_date=end_date)],
+                        date_ranges=[DateRange(start_date=start_date, end_date=effective_end_date)],
                         dimensions=[Dimension(name=dim) for dim in dimensions],
                         metrics=[Metric(name=met) for met in metrics],
                         limit=page_limit,
