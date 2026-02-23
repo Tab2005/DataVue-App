@@ -43,12 +43,21 @@ def create_test_tables():
         Base.metadata.create_all(bind=engine)
         yield
         Base.metadata.drop_all(bind=engine)
+        
+    # 確保所有連線已關閉（Windows 檔案鎖定必要）
+    engine.dispose()
 
     # 清除測試資料庫檔案
     import pathlib
+    import time
     db_file = pathlib.Path("test_datavue.db")
     if db_file.exists():
-        db_file.unlink()
+        try:
+            # 稍微等待確保檔案釋放
+            time.sleep(0.1)
+            db_file.unlink()
+        except PermissionError:
+            pass # 如果還是鎖住，交給作業系統或下次測試處理
 
 
 @pytest.fixture
