@@ -15,12 +15,16 @@ Facebook Dashboard Web App - Backend Entry Point (Modular Version)
 
 import sys
 import os
+import time
 import logging
 from dotenv import load_dotenv
 
 # Load environment variables FIRST
 dotenv_path = os.path.join(os.path.dirname(__file__), '.env')
 load_dotenv(dotenv_path)
+
+# 記錄應用程式啟動時間（供 /health 端點計算 uptime）
+START_TIME = time.time()
 
 # Configure Logging
 logging.basicConfig(
@@ -55,6 +59,11 @@ from contextlib import asynccontextmanager
 import traceback
 from exceptions import AppException
 
+# 速率限制
+from slowapi.errors import RateLimitExceeded
+from slowapi.middleware import SlowAPIMiddleware
+from limiter import limiter
+
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -70,6 +79,10 @@ app = FastAPI(
     version="2.1.0",
     lifespan=lifespan
 )
+
+# 掛載速率限制到 app
+app.state.limiter = limiter
+app.add_middleware(SlowAPIMiddleware)
 
 # CORS Middleware
 raw_origins = os.getenv("ALLOWED_ORIGINS", "http://localhost:5173")
@@ -97,6 +110,19 @@ app.add_middleware(GZipMiddleware, minimum_size=1000)
 # ============================================================
 # Exception Handlers
 # ============================================================
+
+@app.exception_handler(RateLimitExceeded)
+async def rate_limit_handler(request: Request, exc: RateLimitExceeded):
+    return JSONResponse(
+        status_code=429,
+        content={
+            "error": "請求過於頻繁",
+            "detail": "已超過速率限制，請稍後再試",
+            "retry_after": getattr(exc, "retry_after", None),
+        },
+        headers={"Retry-After": str(getattr(exc, "retry_after", 60))},
+    )
+
 
 @app.exception_handler(AppException)
 async def app_exception_handler(request: Request, exc: AppException):
@@ -175,17 +201,68 @@ else:
     logger.debug("Debug router is disabled (DEBUG_MODE=false).")
 
 # ============================================================
-# Health Check (Simplified due to startup.py handling core validation)
+# Health Check
 # ============================================================
 
+from datetime import datetime, timezone
+from sqlalchemy import text
+
+@app.get("/health", tags=["system"])
+async def health_check():
+    """
+    完整健康檢查端點（供 Load Balancer、Zeabur、Docker 使用）。
+    
+    Returns:
+        200 OK：應用正常
+        503 Service Unavailable：資料庫異常
+    """
+    from database import SessionLocal
+    health_status = {
+        "status": "healthy",
+        "timestamp": datetime.now(timezone.utc).isoformat(),
+        "uptime_seconds": int(time.time() - START_TIME),
+        "version": "2.1.0",
+        "checks": {}
+    }
+
+    # 資料庫連線檢查
+    db = None
+    try:
+        db = SessionLocal()
+        db.execute(text("SELECT 1"))
+        health_status["checks"]["database"] = "ok"
+    except Exception as e:
+        health_status["status"] = "unhealthy"
+        health_status["checks"]["database"] = f"error: {str(e)}"
+    finally:
+        if db:
+            db.close()
+
+    # Redis 連線檢查（選用服務，不影響整體狀態）
+    try:
+        from redis_cache import get_redis_client
+        redis = get_redis_client()
+        if redis:
+            redis.ping()
+            health_status["checks"]["redis"] = "ok"
+        else:
+            health_status["checks"]["redis"] = "not_configured"
+    except Exception as e:
+        health_status["checks"]["redis"] = f"error: {str(e)}"
+
+    if health_status["status"] == "unhealthy":
+        return JSONResponse(status_code=503, content=health_status)
+
+    return health_status
+
+
 @app.get("/api/health", tags=["system"])
-def health_check():
-    """Health check endpoint."""
-    from datetime import datetime
+def health_check_legacy():
+    """健康檢查端點（舊路徑，向後相容）。"""
     return {
         "status": "ok",
         "version": "2.1.0",
-        "timestamp": datetime.utcnow().isoformat(),
+        "timestamp": datetime.now(timezone.utc).isoformat(),
         "message": "DataVue Backend is healthy"
     }
 

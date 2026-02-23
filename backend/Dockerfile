@@ -1,47 +1,37 @@
-# Use an official Python runtime as a parent image
-FROM python:3.9-slim
+FROM python:3.12-slim
 
-# Set environment variables
+# 設定環境變數
 ENV PYTHONUNBUFFERED=1
 
-# Set the working directory in the container
+# 設定工作目錄
 WORKDIR /app
 
-# Copy the requirements file into the container at /app
-COPY requirements.txt .
-
-# Install system dependencies required for psycopg2
+# 安裝系統依賴（PostgreSQL 客戶端與 curl 供健康檢查使用）
 RUN apt-get update && apt-get install -y \
     libpq-dev \
     gcc \
-    python3-dev \
+    curl \
     && rm -rf /var/lib/apt/lists/*
 
-# Install any needed packages specified in requirements.txt
-RUN pip install --no-cache-dir -r requirements.txt
+# 複製並安裝 Python 依賴
+COPY requirements.txt .
+RUN pip install --no-cache-dir --upgrade pip \
+    && pip install --no-cache-dir -r requirements.txt
 
-# Copy the rest of the application code
+# 複製應用程式碼
 COPY . .
 
-# Expose port 8000
+# 建立非 root 使用者（安全最佳實踐）
+RUN useradd --system --no-create-home appuser \
+    && chown -R appuser:appuser /app
+USER appuser
+
+# 暴露埠號
 EXPOSE 8000
 
-# Run uvicorn server
-# Run uvicorn server using python -m to ensure path resolution
-# Run uvicorn server using shell to trap errors and keep container alive for debugging
-# Run uvicorn server (Shell form is more stable on some platforms)
-# Run uvicorn server (Shell form is more stable on some platforms)
-# We use || sleep 3600 to catch startup errors (Keep-Alive for debugging)
-# Standard Production Command
-# Using python -m uvicorn is generally safer for path resolution
-# Run using direct python script to ensure our print statements fire BEFORE uvicorn starts
-# Also keep the sleep trap to prevent crash loop
-# Debug: Run simple http server to verify networking and logging
-# Production Command with Safety Net
-# Run python directly, but keep the trap just in case it crashes again
-# Debug: Run minimal FastAPI to test framework
-# Production Startup with Crash Reporter
-# This wraps main.py and serves the error log if it crashes
-# Production Startup
-# Use shell execution for better environment variable handling
+# 健康檢查（配合 /health 端點）
+HEALTHCHECK --interval=30s --timeout=10s --start-period=10s --retries=3 \
+    CMD curl -f http://localhost:8000/health || exit 1
+
+# 啟動命令
 CMD ["sh", "-c", "python main.py"]
