@@ -15,7 +15,7 @@ alembic
 pydantic
 httpx
 email-validator
-cachetools
+cachetools>=5.3.0,<6.0.0
 google-api-python-client
 google-analytics-admin
 google-analytics-data

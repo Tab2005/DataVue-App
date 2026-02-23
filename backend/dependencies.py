@@ -7,7 +7,8 @@ import os
 import sys
 import traceback
 
-from functools import lru_cache
+from cachetools import TTLCache, cached
+import threading
 import logging
 
 # Configure Logger
@@ -18,6 +19,11 @@ logger = logging.getLogger(__name__)
 security = HTTPBearer()
 GOOGLE_CLIENT_ID = os.getenv("GOOGLE_CLIENT_ID")
 
+# 初始化 TTL 快取：最多 128 個 Token，每個快取 5 分鐘（300 秒）
+# TTL 設定遠短於 Google Token 的 1 小時有效期，確保撤銷的 Token 在 5 分鐘內失效
+_token_cache: TTLCache = TTLCache(maxsize=128, ttl=300)
+_token_cache_lock = threading.Lock()
+
 def get_db():
     db = SessionLocal()
     try:
@@ -25,9 +31,23 @@ def get_db():
     finally:
         db.close()
 
-@lru_cache(maxsize=128)
-def _verify_token_cached(token: str):
-    """Internal helper to verify token with caching."""
+@cached(cache=_token_cache, lock=_token_cache_lock)
+def _verify_token_cached(token: str) -> dict:
+    """
+    驗證 Google ID Token 並快取結果（TTL: 5 分鐘）。
+
+    使用 TTLCache 替代 lru_cache 以確保撤銷的 Token 在 5 分鐘內失效。
+    多執行緒環境下使用 threading.Lock 保護快取操作。
+
+    Args:
+        token: Google ID Token 字串
+
+    Returns:
+        Google 返回的 id_info 字典
+
+    Raises:
+        ValueError: Token 無效或已過期
+    """
     return id_token.verify_oauth2_token(token, google_requests.Request(), GOOGLE_CLIENT_ID, clock_skew_in_seconds=60)
 
 def verify_google_token_basic(credentials: HTTPAuthorizationCredentials = Depends(security)):
