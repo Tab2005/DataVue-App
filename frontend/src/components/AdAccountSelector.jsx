@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { TeamService } from '../services/teamService';
 import { FiCheckSquare, FiSquare, FiSave, FiAlertCircle } from 'react-icons/fi';
+import { safeParseJson } from '../utils/jsonUtils';
 
 const AdAccountSelector = ({ teamId, initialSelected, language, styles, teamName, onSaveSuccess }) => {
     const [allAccounts, setAllAccounts] = useState([]);
@@ -10,18 +11,13 @@ const AdAccountSelector = ({ teamId, initialSelected, language, styles, teamName
     const [error, setError] = useState(null);
     const [successMsg, setSuccessMsg] = useState(null);
 
-    // Parse initialSelected (JSON string or null)
+    // Parse initialSelected（相容 JSON 字串與原生陣列兩種格式）
     useEffect(() => {
         if (initialSelected) {
-            try {
-                const parsed = JSON.parse(initialSelected);
-                if (Array.isArray(parsed)) {
-                    setSelectedIds(parsed);
-                } else {
-                    setSelectedIds([]);
-                }
-            } catch (e) {
-                console.error("Failed to parse visible_ad_account_ids", e);
+            const parsed = safeParseJson(initialSelected, []);
+            if (Array.isArray(parsed)) {
+                setSelectedIds(parsed);
+            } else {
                 setSelectedIds([]);
             }
         } else {
