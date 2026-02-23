@@ -40,6 +40,7 @@ from database.models.permission import (
     UserModuleAccess,
     UserPermission,
 )
+from database.models.integration import UserIntegration
 
 logger = logging.getLogger(__name__)
 
@@ -54,6 +55,7 @@ __all__ = [
     "SavedView", "PageTitle",
     "Module", "Permission", "Role", "RolePermission",
     "UserModuleAccess", "UserPermission",
+    "UserIntegration",
     # 初始化函式
     "init_db",
 ]

@@ -1,10 +1,20 @@
-# docker-compose.dev.yml
-# 本地開發環境（含 Redis）
-# 使用方式：docker compose -f docker-compose.dev.yml up -d
+﻿# docker-compose.dev.yml
+# 本地開發環境（含 Redis + 可選 PostgreSQL）
+#
+# 使用方式：
+#   僅啟動 Redis（預設，使用 SQLite）：
+#     docker compose -f docker-compose.dev.yml up -d
+#
+#   啟動含 PostgreSQL 的完整環境（建議用於測試生產相容性）：
+#     docker compose -f docker-compose.dev.yml --profile postgres up -d
+#
+#   停止全部服務：
+#     docker compose -f docker-compose.dev.yml down
 
 version: '3.8'
 
 services:
+  #  主要後端服務 
   backend:
     build:
       context: ./backend
@@ -13,6 +23,8 @@ services:
       - "8000:8000"
     environment:
       REDIS_URL: redis://redis:6379/0
+      # 若啟用 postgres profile，可在 .env 中設定：
+      # DATABASE_URL: postgresql://dev:dev@db:5432/datavue_dev
     env_file:
       - ./backend/.env
     depends_on:
@@ -28,6 +40,7 @@ services:
       start_period: 10s
     restart: unless-stopped
 
+  #  Redis 快取（必要服務）
   redis:
     image: redis:7-alpine
     ports:
@@ -42,6 +55,45 @@ services:
       retries: 5
     restart: unless-stopped
 
+  #  PostgreSQL（選配，profile: postgres）
+  # 啟用方式：
+  #   docker compose -f docker-compose.dev.yml --profile postgres up -d
+  # 啟用後，在 backend/.env 中設定：
+  #   DATABASE_URL=postgresql://dev:dev@db:5432/datavue_dev
+  db:
+    image: postgres:16-alpine
+    profiles:
+      - postgres
+    ports:
+      - "5432:5432"
+    environment:
+      POSTGRES_DB: datavue_dev
+      POSTGRES_USER: dev
+      POSTGRES_PASSWORD: dev
+    volumes:
+      - pg_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U dev -d datavue_dev"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+
+  #  pgAdmin（選配，profile: postgres）
+  pgadmin:
+    image: dpage/pgadmin4:latest
+    profiles:
+      - postgres
+    ports:
+      - "5050:80"
+    environment:
+      PGADMIN_DEFAULT_EMAIL: dev@datavue.local
+      PGADMIN_DEFAULT_PASSWORD: dev
+    depends_on:
+      db:
+        condition: service_healthy
+    restart: unless-stopped
+
 volumes:
   redis_data:
-    driver: local
+  pg_data:

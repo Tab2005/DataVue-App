@@ -12,6 +12,7 @@ from database.models.permission import (
     UserModuleAccess,
     UserPermission,
 )
+from database.models.integration import UserIntegration
 
 __all__ = [
     "User", "UserRole", "UserStatus",
@@ -19,4 +20,5 @@ __all__ = [
     "SavedView", "PageTitle",
     "Module", "Permission", "Role", "RolePermission",
     "UserModuleAccess", "UserPermission",
+    "UserIntegration",
 ]
