@@ -2,7 +2,11 @@
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
 from typing import List, Optional
+import logging
+import sys
 from pydantic import BaseModel
+
+logger = logging.getLogger(__name__)
 
 from database import SessionLocal, Module, Permission, Role, User
 from dependencies import get_db, get_current_user
@@ -117,12 +121,11 @@ async def check_my_module(
     db: Session = Depends(get_db)
 ):
     """檢查當前使用者是否可存取指定模組"""
-    import sys
-    print(f"[DEBUG] check_my_module called: user_id={user.id}, is_super_admin={user.is_super_admin}, module_key={module_key}, team_id={team_id}", file=sys.stderr)
+    logger.debug(f"[DEBUG] check_my_module called: user_id={user.id}, is_super_admin={user.is_super_admin}, module_key={module_key}, team_id={team_id}")
     
     # DIRECT Super Admin bypass - highest priority
     if user.is_super_admin:
-        print(f"[DEBUG] Super Admin detected, immediate bypass - returning has_access=True", file=sys.stderr)
+        logger.debug("[DEBUG] Super Admin detected, immediate bypass - returning has_access=True")
         return {
             "has_access": True, 
             "module_key": module_key,
@@ -134,7 +137,7 @@ async def check_my_module(
     service = PermissionService(db)
     has_access = service.check_module_access(user.id, module_key, team_id)
     
-    print(f"[DEBUG] check_my_module result: has_access={has_access}", file=sys.stderr)
+    logger.debug(f"[DEBUG] check_my_module result: has_access={has_access}")
     
     return {
         "has_access": has_access, 

@@ -6,7 +6,10 @@ Separated from business logic for better maintainability and testability.
 """
 import requests
 import sys
-from auth import TokenManager
+import logging
+from modules.auth.service import TokenManager
+
+logger = logging.getLogger(__name__)
 
 
 class FacebookAPIClient:
@@ -60,13 +63,13 @@ class FacebookAPIClient:
         params = {"fields": FacebookAPIClient.ACCOUNT_FIELDS}
         
         try:
-            print(f"[FB API] Fetching Ad Accounts...", file=sys.stderr)
+            logger.info("[FB API] Fetching Ad Accounts...")
             response = requests.get(url, headers=headers, params=params, timeout=FacebookAPIClient.TIMEOUT)
-            print(f"[FB API] Response Status: {response.status_code}", file=sys.stderr)
+            logger.debug(f"[FB API] Response Status: {response.status_code}")
             data = response.json()
             
             if "error" in data:
-                print(f"[FB API] Error: {data['error'].get('message', 'Unknown')}", file=sys.stderr)
+                logger.error(f"[FB API] Error: {data['error'].get('message', 'Unknown')}")
                 return [], data["error"].get("message")
             
             accounts = data.get("data", [])
@@ -74,7 +77,7 @@ class FacebookAPIClient:
             return formatted, None
             
         except Exception as e:
-            print(f"[FB API] Exception in fetch_ad_accounts", file=sys.stderr)
+            logger.error("[FB API] Exception in fetch_ad_accounts", exc_info=True)
             return [], str(e)
     
     @staticmethod
@@ -114,7 +117,7 @@ class FacebookAPIClient:
             response = requests.get(url, headers=headers, params=params, timeout=FacebookAPIClient.TIMEOUT)
             return response.json()
         except Exception as e:
-            print(f"[FB API] Exception in fetch_insights", file=sys.stderr)
+            logger.error("[FB API] Exception in fetch_insights", exc_info=True)
             return {"error": {"message": str(e)}}
     
     @staticmethod
@@ -128,7 +131,7 @@ class FacebookAPIClient:
             data = response.json()
             return data.get("data", [])
         except Exception as e:
-            print(f"[FB API] Exception in fetch_campaigns", file=sys.stderr)
+            logger.error("[FB API] Exception in fetch_campaigns", exc_info=True)
             return []
     
     @staticmethod
@@ -142,7 +145,7 @@ class FacebookAPIClient:
             data = response.json()
             return data.get("data", [])
         except Exception as e:
-            print(f"[FB API] Exception in fetch_adsets", file=sys.stderr)
+            logger.error("[FB API] Exception in fetch_adsets", exc_info=True)
             return []
     
     @staticmethod
@@ -156,5 +159,5 @@ class FacebookAPIClient:
             data = response.json()
             return data.get("data", [])
         except Exception as e:
-            print(f"[FB API] Exception in fetch_ads", file=sys.stderr)
+            logger.error("[FB API] Exception in fetch_ads", exc_info=True)
             return []

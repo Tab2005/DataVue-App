@@ -168,7 +168,7 @@ def get_cached(cache_obj, key: str):
     """向後相容：忽略 cache_obj，使用雙層快取查詢"""
     value = cache_get(key)
     if value is not None:
-        print(f"[CACHE HIT] Key: {key[:16]}...", file=sys.stderr)
+        logger.debug(f"[CACHE HIT] Key: {key[:16]}...")
     return value
 
 
@@ -177,18 +177,18 @@ def set_cached(cache_obj, key: str, value):
     # 根據 cache_obj 的原始 TTL 決定 Redis TTL（若能讀取）
     ttl = getattr(cache_obj, 'ttl', 120) if cache_obj is not None else 120
     cache_set(key, value, ttl=int(ttl))
-    print(f"[CACHE SET] Key: {key[:16]}...", file=sys.stderr)
+    logger.debug(f"[CACHE SET] Key: {key[:16]}...")
 
 
 def invalidate_cache(cache_obj, key: str = None):
     """向後相容：刪除單一鍵或清空"""
     if key:
         cache_delete(key)
-        print(f"[CACHE INVALIDATE] Key: {key[:16]}...", file=sys.stderr)
+        logger.debug(f"[CACHE INVALIDATE] Key: {key[:16]}...")
     else:
         with _l1_lock:
             _l1_cache.clear()
-        print("[CACHE CLEAR] All L1 entries cleared", file=sys.stderr)
+        logger.debug("[CACHE CLEAR] All L1 entries cleared")
 
 
 # ============================

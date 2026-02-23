@@ -5,7 +5,10 @@ from dependencies import get_db, get_current_user, require_module
 from gsc_service import GSCService
 from typing import List, Optional
 from pydantic import BaseModel
+import logging
 import traceback
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/gsc", tags=["gsc"])
 
@@ -118,7 +121,7 @@ async def get_page_titles(
         """Fetch a single page title via HTTP."""
         # Skip invalid URLs
         if not url.startswith(('http://', 'https://')):
-            print(f"Skipping invalid URL (no protocol): {url}")
+            logger.warning(f"Skipping invalid URL (no protocol): {url}")
             return (url, None)
         
         try:
@@ -130,7 +133,7 @@ async def get_page_titles(
                     return (url, title_tag.get_text().strip())
             return (url, None)
         except Exception as e:
-            print(f"Error fetching {url}: {e}")
+            logger.debug(f"Error fetching {url}: {e}")
             return (url, None)
     
     try:
@@ -155,11 +158,11 @@ async def get_page_titles(
                 else:
                     urls_to_fetch.append(url)
             
-            print(f"[PageTitles] Cache hit: {len(result_titles)}, Need fetch: {len(urls_to_fetch)}")
+            logger.debug(f"[PageTitles] Cache hit: {len(result_titles)}, Need fetch: {len(urls_to_fetch)}")
         else:
             # Force refresh - fetch all
             urls_to_fetch = valid_urls
-            print(f"[PageTitles] Force refresh: fetching {len(urls_to_fetch)} URLs")
+            logger.debug(f"[PageTitles] Force refresh: fetching {len(urls_to_fetch)} URLs")
         
         # Fetch uncached URLs
         if urls_to_fetch:
@@ -190,7 +193,7 @@ async def get_page_titles(
                         db.add(new_entry)
             
             db.commit()
-            print(f"[PageTitles] Stored {len([t for _, t in fetched_results if t])} new titles")
+            logger.debug(f"[PageTitles] Stored {len([t for _, t in fetched_results if t])} new titles")
         
         return result_titles
         
@@ -289,7 +292,7 @@ async def get_page_intents(
         provider = request.provider or "zeabur"
         
         # Try to get API key from user's encrypted settings in database first
-        from auth import TokenManager
+        from modules.auth.service import TokenManager
         api_key = TokenManager.get_ai_api_key(user.google_id, provider=provider)
         
         # Fallback to request parameter or environment variable
@@ -424,7 +427,7 @@ async def analyze_keyword_gap(
             }
         ]
         
-        print(f"[Gap Analysis] Fetching GSC data for {request.page_url} ({request.start_date} to {request.end_date})")
+        logger.info(f"[Gap Analysis] Fetching GSC data for {request.page_url} ({request.start_date} to {request.end_date})")
         query_data, error = GSCService.get_analytics(
             user,
             request.site_url,
@@ -438,7 +441,7 @@ async def analyze_keyword_gap(
         )
         
         if error:
-            print(f"[Gap Analysis] GSC Error: {error}")
+            logger.warning(f"[Gap Analysis] GSC Error: {error}")
             raise HTTPException(status_code=400, detail=f"GSC Error: {error}")
             
         # Structure the keywords results
@@ -458,7 +461,7 @@ async def analyze_keyword_gap(
                         "position": row.get('position', 0)
                     })
         
-        print(f"[Gap Analysis] Found {len(page_keywords)} total keywords for page.")
+        logger.debug(f"[Gap Analysis] Found {len(page_keywords)} total keywords for page.")
         
         # Sort and limit
         page_keywords.sort(key=lambda x: x['clicks'], reverse=True)
@@ -502,7 +505,7 @@ async def analyze_keyword_gap(
                 else:
                     raise Exception(f"Failed to fetch page: HTTP {resp.status_code}")
         except Exception as e:
-            print(f"Scraping error for {request.page_url}: {e}")
+            logger.warning(f"Scraping error for {request.page_url}: {e}")
             # We continue even if scraping fails, marking all as "unknown" content status
             return {
                 "page": request.page_url,

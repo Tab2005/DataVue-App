@@ -26,12 +26,9 @@ load_dotenv(dotenv_path)
 # 記錄應用程式啟動時間（供 /health 端點計算 uptime）
 START_TIME = time.time()
 
-# Configure Logging
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
-    handlers=[logging.StreamHandler(sys.stderr)]
-)
+# Configure Logging（統一使用 core/logging.py）
+from core.logging import setup_logging
+setup_logging()
 logger = logging.getLogger(__name__)
 
 # ============================================================
@@ -88,9 +85,12 @@ app.add_middleware(SlowAPIMiddleware)
 raw_origins = os.getenv("ALLOWED_ORIGINS", "http://localhost:5173")
 allowed_origins = [o.strip() for o in raw_origins.split(",") if o.strip()]
 
-# Regex to support common deployment subdomains (tabisme.com, zeabur.app)
-# This will allow any subdomain of tabisme.com and zeabur.app
-allow_origin_regex = r"https?://.*\.?(tabisme\.com|zeabur\.app|localhost)(:\d+)?$"
+# Regex：生產域名僅允許 HTTPS，localhost/127.0.0.1 允許 HTTP 或 HTTPS
+allow_origin_regex = (
+    r"https://.*\.?(tabisme\.com|zeabur\.app)(:\d+)?$"  # 生產：僅 HTTPS
+    r"|https?://localhost(:\d+)?$"                        # 本地開發：允許 HTTP
+    r"|https?://127\.0\.0\.1(:\d+)?$"                    # 本地 IP
+)
 
 logger.info(f"CORS Configured: Allowed Origins={allowed_origins}, Regex={allow_origin_regex}")
 
@@ -169,6 +169,7 @@ async def general_exception_handler(request: Request, exc: Exception):
 
 from routers import users, teams, invites, admin, ai, saved_views, gsc, permissions
 from routers import facebook, debug, ga4, auth
+from routers.metrics import router as metrics_router
 
 # Authentication & Users
 app.include_router(auth.router)
@@ -187,6 +188,9 @@ app.include_router(ga4.router)
 # AI & Features
 app.include_router(ai.router, prefix="/api/ai", tags=["ai"])
 app.include_router(saved_views.router)
+
+# Metrics Registry (4.6)
+app.include_router(metrics_router)
 
 # Administration
 app.include_router(admin.router)

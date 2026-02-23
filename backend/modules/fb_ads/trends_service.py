@@ -6,7 +6,10 @@
 
 import sys
 import asyncio
+import logging
 import httpx
+
+logger = logging.getLogger(__name__)
 
 from cache import get_trend_cache, set_trend_cache
 from modules.fb_ads._base import BASE_URL, TIMEOUT, get_headers
@@ -123,7 +126,7 @@ async def get_analytics_trend(
             response = await client.get(url, headers=headers, params=params)
             return response.json().get("data", [])
         except Exception:
-            print("[FB ASYNC] Error in trend fetch", file=sys.stderr)
+            logger.error("[FB ASYNC] Error in trend fetch", exc_info=True)
             return []
 
     try:
@@ -163,5 +166,5 @@ async def get_analytics_trend(
         return merged
 
     except Exception as e:
-        print("[FB ASYNC] Error in get_analytics_trend", file=sys.stderr)
+        logger.error("[FB ASYNC] Error in get_analytics_trend", exc_info=True)
         return None

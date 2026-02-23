@@ -6,8 +6,11 @@
 
 import sys
 import asyncio
+import logging
 import httpx
 from datetime import datetime, timedelta
+
+logger = logging.getLogger(__name__)
 
 from cache import get_insights_cache, set_insights_cache
 from modules.fb_ads._base import BASE_URL, TIMEOUT, get_headers
@@ -49,7 +52,7 @@ async def get_account_insights(account_id, user_id, days=7, team_id=None, strict
             cur_res = cur_response.json()
 
             if "error" in cur_res:
-                print("[FB ASYNC] API Error in insights", file=sys.stderr)
+                logger.error("[FB ASYNC] API Error in insights")
                 return None
 
             cur_data_list = cur_res.get("data", [])
@@ -122,5 +125,5 @@ async def get_account_insights(account_id, user_id, days=7, team_id=None, strict
         return result
 
     except Exception as e:
-        print("[FB ASYNC] Error fetching insights", file=sys.stderr)
+        logger.error("[FB ASYNC] Error fetching insights", exc_info=True)
         return None

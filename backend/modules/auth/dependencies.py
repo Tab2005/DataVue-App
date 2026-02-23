@@ -18,7 +18,10 @@ from google.oauth2 import id_token
 from google.auth.transport import requests as google_requests
 import os
 import sys
+import logging
 import traceback
+
+logger = logging.getLogger(__name__)
 
 from database import SessionLocal, User, UserRole, UserStatus, Team, TeamMember
 
@@ -56,17 +59,17 @@ def verify_google_token(
     client_id = get_google_client_id()
     
     try:
-        print(f"DEBUG: Verifying Google Token: {token[:10]}...", file=sys.stderr)
+        logger.debug(f"Verifying Google Token: {token[:10]}...")
         id_info = id_token.verify_oauth2_token(
             token, 
             google_requests.Request(), 
             client_id,
             clock_skew_in_seconds=60
         )
-        print(f"DEBUG: Token Verified. User: {id_info.get('email')}", file=sys.stderr)
+        logger.debug(f"Token Verified. User: {id_info.get('email')}")
         return id_info
     except Exception as e:
-        print(f"Token Verification Error: {type(e).__name__}: {e}", file=sys.stderr)
+        logger.warning(f"Token Verification Error: {type(e).__name__}: {e}")
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail=f"Authentication Error: {str(e)}",
@@ -97,7 +100,7 @@ def get_current_user(
         user = db.query(User).filter(User.google_id == google_id).first()
         
         if not user:
-            print(f"DEBUG: User {google_id} not found. Auto-Registering...", file=sys.stderr)
+            logger.info(f"User {google_id} not found. Auto-Registering...")
             
             # 第一位用戶成為 Admin
             user_count = db.query(User).count()
@@ -116,14 +119,14 @@ def get_current_user(
             super_admin_email = os.getenv("SUPER_ADMIN_EMAIL")
             if super_admin_email and email:
                 if super_admin_email.strip().lower() == email.strip().lower():
-                    print(f"🔒 SUPER_ADMIN_EMAIL match! Promoting {email}", file=sys.stderr)
+                    logger.info(f"SUPER_ADMIN_EMAIL match! Promoting {email}")
                     user.is_super_admin = True
                     user.role = UserRole.ADMIN
             
             db.add(user)
             db.commit()
             db.refresh(user)
-            print(f"Auto-Registered: {name} ({email}) as {new_role}", file=sys.stderr)
+            logger.info(f"Auto-Registered: {name} ({email}) as {new_role}")
             
             # 授予預設模組權限
             _grant_default_modules(db, user)
@@ -141,7 +144,7 @@ def get_current_user(
     except HTTPException:
         raise
     except Exception as e:
-        print(f"CRITICAL ERROR in get_current_user: {str(e)}", file=sys.stderr)
+        logger.error(f"CRITICAL ERROR in get_current_user: {str(e)}", exc_info=True)
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=f"Login Failed: {str(e)}"
@@ -169,9 +172,9 @@ def _grant_default_modules(db, user: User):
                     )
                     db.add(access)
         db.commit()
-        print(f"✅ Granted default modules to {user.email}", file=sys.stderr)
+        logger.info(f"Granted default modules to {user.email}")
     except Exception as e:
-        print(f"⚠️ Failed to grant default modules: {e}", file=sys.stderr)
+        logger.warning(f"Failed to grant default modules: {e}")
         db.rollback()
 
 
@@ -184,7 +187,7 @@ def _check_emergency_recovery(db, user: User, email: str):
         if super_admin_email and email:
             allowed_emails = [e.strip().lower() for e in super_admin_email.split(",")]
             if email.strip().lower() in allowed_emails:
-                print(f"🚨 [EMERGENCY] Restoring {email} as Super Admin...", file=sys.stderr)
+                logger.warning(f"[EMERGENCY] Restoring {email} as Super Admin...")
                 user.is_super_admin = True
                 user.role = UserRole.ADMIN
                 db.commit()

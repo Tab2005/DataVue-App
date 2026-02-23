@@ -5,6 +5,9 @@ Facebook 廣告指標註冊表（Python 版 metricsRegistry.js）。
 """
 
 import sys
+import logging
+
+logger = logging.getLogger(__name__)
 
 # ============================================================================
 # METRICS REGISTRY
@@ -132,7 +135,7 @@ def build_fb_fields(custom_fields: str = None, level: str = "account") -> str:
 
     for key in requested_keys:
         if key not in METRICS_REGISTRY:
-            print(f"[WARN] Unknown metric key: {key}", file=sys.stderr)
+            logger.warning(f"[WARN] Unknown metric key: {key}")
             continue
 
         metric = METRICS_REGISTRY[key]
@@ -171,5 +174,5 @@ def build_fb_fields(custom_fields: str = None, level: str = "account") -> str:
         fb_fields.add("catalog_segment_value")
 
     result = ",".join(fb_fields)
-    print(f"[FB DYNAMIC] Built fields: {result}", file=sys.stderr)
+    logger.debug(f"[FB DYNAMIC] Built fields: {result}")
     return result

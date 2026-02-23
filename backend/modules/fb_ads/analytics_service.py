@@ -6,8 +6,11 @@
 
 import sys
 import asyncio
+import logging
 import httpx
 from datetime import datetime
+
+logger = logging.getLogger(__name__)
 
 from cache import get_analytics_cache, set_analytics_cache
 from modules.fb_ads._base import BASE_URL, TIMEOUT, get_headers
@@ -224,7 +227,7 @@ async def get_custom_report(
 
     if dynamic_fields:
         api_fields = dynamic_fields
-        print(f"[FB ASYNC] Using DYNAMIC fields: {api_fields[:100]}...", file=sys.stderr)
+        logger.debug(f"[FB ASYNC] Using DYNAMIC fields: {api_fields[:100]}...")
     else:
         api_fields = (
             "campaign_id,adset_id,ad_id,"
@@ -274,11 +277,11 @@ async def get_custom_report(
             res = insights_response.json()
 
         if "error" in res:
-            print("[FB ASYNC] API Error (Report)", file=sys.stderr)
+            logger.error("[FB ASYNC] API Error (Report)")
             return None
 
         data = res.get("data", [])
-        print(f"[FB ASYNC] Report: Level={level} Rows={len(data)}", file=sys.stderr)
+        logger.info(f"[FB ASYNC] Report: Level={level} Rows={len(data)}")
 
         # 建立廣告素材元資料對應表
         ad_meta_map = {}
@@ -296,5 +299,5 @@ async def get_custom_report(
         return processed_rows
 
     except Exception as e:
-        print("[FB ASYNC] Error fetching custom report", file=sys.stderr)
+        logger.error("[FB ASYNC] Error fetching custom report", exc_info=True)
         return None

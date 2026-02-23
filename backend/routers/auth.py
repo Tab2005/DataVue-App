@@ -6,7 +6,7 @@ import logging
 from sqlalchemy.orm import Session
 from database import User, Team
 from dependencies import get_db
-from auth import TokenManager
+from modules.auth.service import TokenManager
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from core.security import verify_google_token_and_get_sub
 

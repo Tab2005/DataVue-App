@@ -13,6 +13,9 @@ from fastapi import APIRouter, Depends, Query
 from typing import Optional
 import sys
 import json
+import logging
+
+logger = logging.getLogger(__name__)
 
 from database import SessionLocal, User, Team, TeamMember, UserRole
 from dependencies import get_db, get_current_team, require_module
@@ -78,16 +81,16 @@ async def get_ad_accounts(
     
     # Fallback for Owner
     if (not accounts or error) and is_owner:
-        print(f"DEBUG: Primary fetch failed for owner ({error}), retrying...", file=sys.stderr)
+        logger.debug(f"Primary fetch failed for owner ({error}), retrying...")
         accounts, error = await AsyncFacebookService.get_all_ad_accounts(user_id, team_id=team_id)
     
     if error:
-        print(f"❌ Error from FacebookService: {error}", file=sys.stderr)
+        logger.error(f"Error from FacebookService: {error}")
         return []
         
     # Team Ad Account Isolation
     if team and not is_owner:
-        print(f"🔒 Non-Owner Access. Whitelist: {team.visible_ad_account_ids}", file=sys.stderr)
+        logger.info(f"Non-Owner Access. Whitelist: {team.visible_ad_account_ids}")
         if team.visible_ad_account_ids:
             try:
                 whitelist = json.loads(team.visible_ad_account_ids)
@@ -108,7 +111,7 @@ async def get_ad_accounts(
                 else:
                     accounts = []
             except Exception as e:
-                print(f"❌ Whitelist Parse Error: {e}", file=sys.stderr)
+                logger.error(f"Whitelist Parse Error: {e}")
                 accounts = []
         else:
             accounts = []

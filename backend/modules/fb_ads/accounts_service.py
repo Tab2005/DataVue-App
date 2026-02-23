@@ -5,7 +5,10 @@
 """
 
 import sys
+import logging
 import httpx
+
+logger = logging.getLogger(__name__)
 
 from cache import get_account_cache, set_account_cache
 from modules.fb_ads._base import BASE_URL, TIMEOUT, get_headers
@@ -26,7 +29,7 @@ async def get_all_ad_accounts(user_id, team_id=None, strict_token=False):
 
     headers = get_headers(user_id, team_id, allow_fallback=not strict_token)
     if not headers:
-        print("[FB ASYNC] get_all_ad_accounts: No token available", file=sys.stderr)
+        logger.warning("[FB ASYNC] get_all_ad_accounts: No token available")
         return [], "No access token found for this user."
 
     url = f"{BASE_URL}/me/adaccounts"
@@ -36,14 +39,14 @@ async def get_all_ad_accounts(user_id, team_id=None, strict_token=False):
     }
 
     try:
-        print("[FB ASYNC] Fetching Ad Accounts...", file=sys.stderr)
+        logger.info("[FB ASYNC] Fetching Ad Accounts...")
         async with httpx.AsyncClient(timeout=TIMEOUT) as client:
             response = await client.get(url, headers=headers, params=params)
-            print(f"[FB ASYNC] Response Status: {response.status_code}", file=sys.stderr)
+            logger.debug(f"[FB ASYNC] Response Status: {response.status_code}")
             data = response.json()
 
         if "error" in data:
-            print(f"Facebook API Error: {data['error']}", file=sys.stderr)
+            logger.error(f"Facebook API Error: {data['error']}")
             return [], data["error"].get("message")
 
         accounts = data.get("data", [])
@@ -57,5 +60,5 @@ async def get_all_ad_accounts(user_id, team_id=None, strict_token=False):
         return formatted, None
 
     except Exception as e:
-        print("[FB ASYNC] Error in get_all_ad_accounts", file=sys.stderr)
+        logger.error("[FB ASYNC] Error in get_all_ad_accounts", exc_info=True)
         return [], str(e)

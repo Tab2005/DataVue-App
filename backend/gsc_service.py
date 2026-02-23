@@ -6,7 +6,7 @@ from google.oauth2.credentials import Credentials
 from googleapiclient.discovery import build
 from sqlalchemy.orm import Session
 from database import User
-from auth import TokenManager
+from modules.auth.service import TokenManager
 from cache import generate_cache_key, get_cached, set_cached, analytics_cache
 from redis_cache import get_cached_redis, set_cached_redis
 

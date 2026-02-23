@@ -2,7 +2,10 @@
 """FB Ads 服務共用常數與 Token 取得工具"""
 
 import sys
-from auth import TokenManager
+import logging
+from modules.auth.service import TokenManager
+
+logger = logging.getLogger(__name__)
 
 BASE_URL = "https://graph.facebook.com/v24.0"
 TIMEOUT = 30.0

@@ -10,8 +10,11 @@ import httpx
 import json
 import asyncio
 from typing import List, Dict, Any, Optional
-from auth import TokenManager
+from modules.auth.service import TokenManager
 import sys
+import logging
+
+logger = logging.getLogger(__name__)
 
 
 class FacebookBatchService:
@@ -88,7 +91,7 @@ class FacebookBatchService:
         """
         access_token = FacebookBatchService.get_access_token(user_id, team_id)
         if not access_token:
-            print("[BATCH] No access token available", file=sys.stderr)
+            logger.warning("[BATCH] No access token available")
             return [{"code": 401, "body": json.dumps({"error": "No access token"})}
                     for _ in requests]
         
@@ -101,23 +104,23 @@ class FacebookBatchService:
         }
         
         try:
-            print(f"[BATCH] Executing batch of {len(batch_payload)} requests...", file=sys.stderr)
+            logger.info(f"[BATCH] Executing batch of {len(batch_payload)} requests...")
             
             async with httpx.AsyncClient(timeout=FacebookBatchService.TIMEOUT) as client:
                 response = await client.post(url, data=data)
                 
             if response.status_code != 200:
-                print(f"[BATCH] HTTP Error: {response.status_code}", file=sys.stderr)
+                logger.error(f"[BATCH] HTTP Error: {response.status_code}")
                 return [{"code": response.status_code, "body": response.text}
                         for _ in requests]
             
             results = response.json()
-            print(f"[BATCH] Received {len(results)} responses", file=sys.stderr)
+            logger.debug(f"[BATCH] Received {len(results)} responses")
             
             return results
             
         except Exception as e:
-            print(f"[BATCH] Error executing batch request", file=sys.stderr)
+            logger.error("[BATCH] Error executing batch request", exc_info=True)
             return [{"code": 500, "body": json.dumps({"error": str(e)})}
                     for _ in requests]
     
@@ -139,7 +142,7 @@ class FacebookBatchService:
         body = response.get("body", "{}")
         
         if code != 200:
-            print(f"[BATCH] Request failed with code {code}", file=sys.stderr)
+            logger.warning(f"[BATCH] Request failed with code {code}")
             return None
         
         try:

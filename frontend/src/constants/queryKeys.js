@@ -61,4 +61,10 @@ export const queryKeys = {
     teams: () => ['admin', 'teams'],
     stats: () => ['admin', 'stats'],
   },
+
+  // 指標定義
+  metrics: {
+    registry: (category) => ['metrics', 'registry', category ?? null],
+    detail: (key) => ['metrics', 'registry', 'detail', key],
+  },
 };

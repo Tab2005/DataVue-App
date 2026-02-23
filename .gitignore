@@ -24,7 +24,14 @@ backend/.env.*
 *.log
 debug_*.log
 backend/debug_*.log
-
+# 備份與臨時文件
+*.backup
+*.bak
+*.orig
+*_orig.*
+*_backup.*
+*.tmp
+Thumbs.db
 # Backend specific
 backend/tokens.json
 backend/__pycache__/
