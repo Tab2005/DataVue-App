@@ -8,7 +8,10 @@ import sys
 sys.path.append(os.getcwd())
 
 from alembic import context
+# 使用新的 database 套件（原 database.py 已重構為 database/ 套件）
 from database import Base, DATABASE_URL as ENV_DATABASE_URL
+# 確保所有 ORM 模型已載入至 Base.metadata（autogenerate 必要）
+import database.models  # noqa: F401
 
 # this is the Alembic Config object, which provides
 # access to the values within the .ini file in use.
