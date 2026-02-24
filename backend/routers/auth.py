@@ -68,35 +68,47 @@ def get_token_status(
     user_id: str = Depends(_get_google_user_id)
 ):
     """
-    查詢目前使用者的 Facebook Token 狀態。
+    查詢目前使用者或指定團隊的 Facebook Token 狀態。
 
-    改用 integration_service 查詢 user_integrations 表，
-    不再直接讀取 User 表的舊欄位（fb_access_token、token_expires_at）。
-
-    team_id 目前保留參數以維持 API 相容，未來可擴展支援 Team-level integration。
+    查詢優先順序：
+    1. 若提供 team_id → 查詢 Team 表的 fb_access_token / token_expires_at
+    2. 若無 team_id → 先查 UserIntegration 表；若無則 fallback 到 User 表舊欄位
     """
     try:
-        # 查詢 user_integrations 表（不再讀取 User 表舊欄位）
-        integration = get_user_integration(db, user_id, "facebook")
-
         token_exists = False
         expires_at = None
         is_expired = True
         days_remaining = None
 
-        if integration and integration.access_token:
-            token_exists = True
-            expires_at = integration.token_expiry
-            if expires_at:
-                if expires_at.tzinfo is None:
-                    expires_at = expires_at.replace(tzinfo=timezone.utc)
-                now = datetime.now(timezone.utc)
-                delta = expires_at - now
-                days_remaining = delta.days
-                is_expired = days_remaining < 0
+        if team_id:
+            # 查詢團隊 Token（存在 Team 表）
+            team = db.query(Team).filter(Team.id == team_id).first()
+            if team and team.fb_access_token:
+                token_exists = True
+                expires_at = team.token_expires_at
+        else:
+            # 1. 先嘗試新的 UserIntegration 表
+            integration = get_user_integration(db, user_id, "facebook")
+            if integration and integration.access_token:
+                token_exists = True
+                expires_at = integration.token_expiry
             else:
-                # 無過期時間視為有效
-                is_expired = False
+                # 2. Fallback：查詢舊的 User 表欄位
+                user = db.query(User).filter(User.google_id == user_id).first()
+                if user and user.fb_access_token:
+                    token_exists = True
+                    expires_at = user.token_expires_at
+
+        if expires_at:
+            if expires_at.tzinfo is None:
+                expires_at = expires_at.replace(tzinfo=timezone.utc)
+            now = datetime.now(timezone.utc)
+            delta = expires_at - now
+            days_remaining = delta.days
+            is_expired = days_remaining < 0
+        elif token_exists:
+            # Token 存在但無過期時間，視為有效
+            is_expired = False
 
         return {
             "token_exists": token_exists,
