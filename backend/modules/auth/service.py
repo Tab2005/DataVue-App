@@ -54,6 +54,9 @@ class TokenManager:
                         expires_in: int = None):
         """
         儲存用戶的 Facebook Token（加密）
+
+        同時寫入舊版 User 表欄位（向後相容）與新版 UserIntegration 表，
+        確保 /api/auth/token-status 能正確回傳倒數資訊。
         
         Args:
             google_id: 用戶的 Google ID
@@ -62,6 +65,8 @@ class TokenManager:
             app_secret: Facebook App Secret
             expires_in: Token 過期時間（秒）
         """
+        from services.integration_service import upsert_user_integration
+
         session = SessionLocal()
         try:
             user = session.query(User).filter(User.google_id == google_id).first()
@@ -70,8 +75,9 @@ class TokenManager:
                 new_role = UserRole.ADMIN if user_count == 0 else UserRole.VIEWER
                 user = User(google_id=google_id, role=new_role)
                 session.add(user)
-            
-            # 加密敏感資料
+                session.flush()  # 確保 user.id 可用
+
+            # 加密敏感資料寫入舊欄位（向後相容）
             user.fb_access_token = TokenManager._encrypt(long_lived_token)
             
             if app_id:
@@ -79,12 +85,23 @@ class TokenManager:
             if app_secret:
                 user.fb_app_secret = TokenManager._encrypt(app_secret)
             
+            expires_at = None
             if expires_in:
                 expires_at = datetime.now(timezone.utc) + timedelta(seconds=int(expires_in))
                 user.token_expires_at = expires_at
             
             user.last_login = datetime.now()
             session.commit()
+
+            # 同時寫入新版 UserIntegration 表（讓 token-status API 可直接查詢）
+            upsert_user_integration(
+                db=session,
+                user_id=user.id,
+                provider="facebook",
+                access_token=long_lived_token,
+                token_expiry=expires_at,
+                extra_data={"app_id": app_id} if app_id else {},
+            )
         except Exception as e:
             session.rollback()
             raise e

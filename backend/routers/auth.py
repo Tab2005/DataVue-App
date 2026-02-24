@@ -87,15 +87,16 @@ def get_token_status(
                 token_exists = True
                 expires_at = team.token_expires_at
         else:
-            # 1. 先嘗試新的 UserIntegration 表
-            integration = get_user_integration(db, user_id, "facebook")
-            if integration and integration.access_token:
-                token_exists = True
-                expires_at = integration.token_expiry
-            else:
-                # 2. Fallback：查詢舊的 User 表欄位
-                user = db.query(User).filter(User.google_id == user_id).first()
-                if user and user.fb_access_token:
+            # 先從 google_id 解析出 User UUID（UserIntegration 使用 UUID，非 google sub）
+            user = db.query(User).filter(User.google_id == user_id).first()
+            if user:
+                # 1. 優先查詢新版 UserIntegration 表（使用 User UUID）
+                integration = get_user_integration(db, user.id, "facebook")
+                if integration and integration.access_token:
+                    token_exists = True
+                    expires_at = integration.token_expiry
+                # 2. Fallback：查詢舊版 User 表欄位
+                elif user.fb_access_token:
                     token_exists = True
                     expires_at = user.token_expires_at
 
