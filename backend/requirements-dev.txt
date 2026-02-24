@@ -8,6 +8,8 @@
 pytest>=8.3.0,<9.0.0
 pytest-asyncio>=0.24.0,<1.0.0
 pytest-cov>=6.0.0,<7.0.0
+httpx>=0.28.0,<1.0.0          # FastAPI TestClient 的 async 支援
+pytest-mock>=3.14.0,<4.0.0   # Mock 工具
 
 # 程式碼品質
 black>=24.0.0,<25.0.0

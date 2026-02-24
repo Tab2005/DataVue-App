@@ -4,7 +4,10 @@ Zeabur AI Hub 統一客戶端
 """
 from openai import OpenAI
 from typing import Generator, Optional, Dict, Iterator, Union
+import logging
 import os
+
+logger = logging.getLogger(__name__)
 
 
 class ZeaburAIClient:
@@ -121,7 +124,7 @@ class ZeaburAIClient:
             api_key=self.api_key,
             base_url=self.base_url
         )
-        print(f"[INFO] Zeabur AI Client initialized with endpoint: {self.base_url}")
+        logger.info("Zeabur AI Client initialized with endpoint: %s", self.base_url)
 
     def generate_content(
         self,
@@ -170,8 +173,8 @@ class ZeaburAIClient:
             messages.append({"role": "system", "content": system_prompt})
         messages.append({"role": "user", "content": prompt})
 
-        print(f"[INFO] Generating content with {model} (provider: {model_config['provider']})")
-        print(f"[INFO] Temperature: {temperature}, Max tokens: {max_output}")
+        logger.debug("Generating content with %s (provider: %s)", model, model_config['provider'])
+        logger.debug("Temperature: %s, Max tokens: %s", temperature, max_output)
 
         try:
             if stream:
@@ -202,7 +205,7 @@ class ZeaburAIClient:
                 return response.choices[0].message.content
 
         except Exception as e:
-            print(f"[ERROR] AI generation failed: {e}")
+            logger.error("AI generation failed: %s", e, exc_info=True)
             raise
 
     def get_available_models(self) -> Dict[str, Dict]:
@@ -248,7 +251,7 @@ class ZeaburAIClient:
             )
             return True
         except Exception as e:
-            print(f"[ERROR] Connection test failed: {e}")
+            logger.error("Connection test failed: %s", e, exc_info=True)
             return False
 
 

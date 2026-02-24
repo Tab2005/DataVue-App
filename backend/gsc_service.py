@@ -1,7 +1,10 @@
 from datetime import datetime, timedelta
+import logging
 import os
 import sys
 import json
+
+logger = logging.getLogger(__name__)
 from google.oauth2.credentials import Credentials
 from googleapiclient.discovery import build
 from sqlalchemy.orm import Session
@@ -46,8 +49,11 @@ class GSCService:
                 "grant_type": "authorization_code"
             }
             
-            print(f"DEBUG: Attempting manual token exchange with clientId={client_id[:10]}... and SecretPrefix={client_secret[:3] if client_secret else 'NONE'}...")
-            print(f"DEBUG: Auth Code Length: {len(code)}")
+            logger.debug(
+                "Attempting manual token exchange (client_id: %s****, secret_prefix: %s)",
+                client_id[:4], client_secret[:3] if client_secret else 'NONE'
+            )
+            logger.debug("Auth Code received, length=%d", len(code))
 
             # Try multiple redirect_uris to handle different frontend configurations
             redirect_uris = [
@@ -61,37 +67,37 @@ class GSCService:
             
             # 1. Standard attempts with Secret
             for uri in redirect_uris:
-                print(f"DEBUG: Trying URI='{uri}' WITH SECRET")
+                logger.debug("Trying URI='%s' WITH SECRET", uri)
                 data["redirect_uri"] = uri
                 data["client_secret"] = client_secret # Ensure secret is there
                 
                 response = requests.post(token_url, data=data, timeout=30)
-                print(f"DEBUG: Status: {response.status_code}")
+                logger.debug("Status: %s", response.status_code)
                 
                 if response.status_code == 200:
                     success = True
                     break
                 
                 err = response.json().get('error')
-                print(f"DEBUG: Error: {err}")
+                logger.debug("Error: %s", err)
                 
             # 2. If all failed, try WITHOUT Secret (in case it's treated as Public Client)
             if not success:
-               print("DEBUG: Trying attempts WITHOUT SECRET")
+               logger.debug("Trying attempts WITHOUT SECRET")
                del data["client_secret"]
                for uri in redirect_uris:
-                    print(f"DEBUG: Trying URI='{uri}' NO SECRET")
+                    logger.debug("Trying URI='%s' NO SECRET", uri)
                     data["redirect_uri"] = uri
                     response = requests.post(token_url, data=data, timeout=30)
-                    print(f"DEBUG: Status: {response.status_code}")
+                    logger.debug("Status: %s", response.status_code)
                     if response.status_code == 200:
                         success = True
                         break
-                    print(f"DEBUG: Error: {response.json().get('error')}")
+                    logger.debug("Error: %s", response.json().get('error'))
 
             if not success:
                 error_detail = response.json() if response else {"error": "Unknown"}
-                print(f"ERROR BODY: {error_detail}")
+                logger.error("Token exchange failed, error body: %s", error_detail)
                 return False, f"Google Auth Error: {error_detail.get('error')} - {error_detail.get('error_description')}"
                 
             tokens = response.json()
@@ -101,7 +107,7 @@ class GSCService:
                 
             if not success:
                 error_detail = response.json() if response else {"error": "Unknown"}
-                print(f"ERROR BODY: {error_detail}")
+                logger.error("Token exchange failed, error body: %s", error_detail)
                 return False, f"Google Auth Error: {error_detail.get('error')} - {error_detail.get('error_description')}"
                 
             tokens = response.json()
@@ -119,10 +125,7 @@ class GSCService:
             return True, "Successfully connected to Google Search Console"
             
         except Exception as e:
-            import traceback
-            print("=== GSC AUTH ERROR START ===")
-            traceback.print_exc()
-            print("=== GSC AUTH ERROR END ===")
+            logger.exception("GSC authentication error")
             return False, str(e)
 
     @staticmethod
@@ -165,15 +168,15 @@ class GSCService:
             try:
                 from google.auth.transport.requests import Request as GoogleAuthRequest
                 creds.refresh(GoogleAuthRequest())
-                print("[GSC] Token refreshed successfully")
+                logger.info("[GSC] Token refreshed successfully")
                 # 回寫新 token 到資料庫
                 from datetime import datetime, timedelta
                 user.gsc_access_token = creds.token
                 user.gsc_expires_at = datetime.utcnow() + timedelta(seconds=3600)
                 db.commit()
-                print("[GSC] New token saved to database")
+                logger.info("[GSC] New token saved to database")
             except Exception as e:
-                print(f"[GSC] Token refresh failed: {e}")
+                logger.warning("[GSC] Token refresh failed: %s", e)
                 # 不返回 None，讓 googleapiclient 嘗試自動刷新
         
         return creds
@@ -237,7 +240,7 @@ class GSCService:
             if limit is None and (offset is None or offset == 0):
                 cached_data = get_cached_redis(base_cache_key)
                 if cached_data is not None:
-                    print(f"[GSC REDIS HIT] Returning {len(cached_data)} rows.")
+                    logger.debug("[GSC REDIS HIT] Returning %d rows.", len(cached_data))
                     return cached_data, None
             else:
                 cached_full = get_cached_redis(base_cache_key)
@@ -311,7 +314,7 @@ class GSCService:
                         break
 
                     start_row += batch_size
-                    print(f"[GSC Pagination] Loaded {len(all_rows)} rows so far...")
+                    logger.debug("[GSC Pagination] Loaded %d rows so far...", len(all_rows))
 
             # 3. Set Cache
             redis_set = False

@@ -7,6 +7,10 @@ from sqlalchemy.orm import Session
 from database import User, Team
 from dependencies import get_db
 from modules.auth.service import TokenManager
+from services.integration_service import (
+    get_user_integration,
+    get_decrypted_access_token,
+)
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from core.security import verify_google_token_and_get_sub
 
@@ -63,40 +67,43 @@ def get_token_status(
     team_id: Optional[str] = None,
     user_id: str = Depends(_get_google_user_id)
 ):
-    """Check the expiration status of the user's OR team's Facebook token."""
+    """
+    查詢目前使用者的 Facebook Token 狀態。
+
+    改用 integration_service 查詢 user_integrations 表，
+    不再直接讀取 User 表的舊欄位（fb_access_token、token_expires_at）。
+
+    team_id 目前保留參數以維持 API 相容，未來可擴展支援 Team-level integration。
+    """
     try:
-        target = None
-        if team_id:
-            target = db.query(Team).filter(Team.id == team_id).first()
-        else:
-            target = db.query(User).filter(User.google_id == user_id).first()
-        
+        # 查詢 user_integrations 表（不再讀取 User 表舊欄位）
+        integration = get_user_integration(db, user_id, "facebook")
+
         token_exists = False
-        if target and hasattr(target, 'fb_access_token') and target.fb_access_token:
-            token_exists = len(str(target.fb_access_token)) > 10
-        
-        if not target or not target.token_expires_at:
-            return {
-                "expires_at": None,
-                "days_remaining": None,
-                "is_expired": False,
-                "token_exists": token_exists
-            }
-        
-        now = datetime.now(timezone.utc)
-        expires_at = target.token_expires_at
-        
-        if expires_at.tzinfo is None:
-            expires_at = expires_at.replace(tzinfo=timezone.utc)
-             
-        delta = expires_at - now
-        days_remaining = delta.days
-        
+        expires_at = None
+        is_expired = True
+        days_remaining = None
+
+        if integration and integration.access_token:
+            token_exists = True
+            expires_at = integration.token_expiry
+            if expires_at:
+                if expires_at.tzinfo is None:
+                    expires_at = expires_at.replace(tzinfo=timezone.utc)
+                now = datetime.now(timezone.utc)
+                delta = expires_at - now
+                days_remaining = delta.days
+                is_expired = days_remaining < 0
+            else:
+                # 無過期時間視為有效
+                is_expired = False
+
         return {
-            "expires_at": expires_at.isoformat(),
+            "token_exists": token_exists,
+            "expires_at": expires_at.isoformat() if expires_at else None,
             "days_remaining": days_remaining,
-            "is_expired": days_remaining < 0,
-            "token_exists": token_exists
+            "is_expired": is_expired,
+            "provider": "facebook",
         }
     except Exception as e:
         logger.error(f"Token Status Error: {e}")

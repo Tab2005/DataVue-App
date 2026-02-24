@@ -25,8 +25,7 @@ from google.analytics.data_v1beta.types import (
 )
 from sqlalchemy.orm import Session
 from database import User
-from cache import generate_cache_key, get_cached, set_cached, analytics_cache
-from redis_cache import get_cached_redis, set_cached_redis
+from cache import generate_cache_key, cache_get, cache_set, analytics_cache
 
 
 class GA4Service:
@@ -425,46 +424,22 @@ class GA4Service:
                 }
                 return result
 
-            # Check cache
-            if use_redis:
-                if use_dimensions and (limit is not None or (offset and offset > 0)):
-                    cached_full = get_cached_redis(base_cache_key)
-                    if cached_full is not None:
-                        print(f"[GA4 REDIS HIT] Returning {len(cached_full.get('rows', []))} rows (full cached).")
-                        return _slice_cached(cached_full), None
-
-                    print("[GA4 REDIS MISS] Full cache not found.")
-
-                    if page_cache_key:
-                        cached_page = get_cached_redis(page_cache_key)
-                        if cached_page is not None:
-                            print(f"[GA4 REDIS HIT] Returning {len(cached_page.get('rows', []))} rows (page cached).")
-                            return cached_page, None
-
-                        print("[GA4 REDIS MISS] Page cache not found.")
-                else:
-                    cached_data = get_cached_redis(base_cache_key)
-                    if cached_data is not None:
-                        print(f"[GA4 REDIS HIT] Returning {len(cached_data.get('rows', []))} rows.")
-                        return cached_data, None
-
-                    print("[GA4 REDIS MISS] Cache not found.")
-
+            # Check cache（cache_get 自動處理 L1+L2 雙層快取、Redis 不可用時自動降級）
             if use_dimensions and (limit is not None or (offset and offset > 0)):
-                cached_full = get_cached(analytics_cache, base_cache_key)
+                cached_full = cache_get(base_cache_key)
                 if cached_full is not None:
-                    print(f"[GA4] Returning {len(cached_full.get('rows', []))} rows from cache (full).")
+                    print(f"[GA4 CACHE HIT] Returning {len(cached_full.get('rows', []))} rows (full cached).")
                     return _slice_cached(cached_full), None
 
                 if page_cache_key:
-                    cached_page = get_cached(analytics_cache, page_cache_key)
+                    cached_page = cache_get(page_cache_key)
                     if cached_page is not None:
-                        print(f"[GA4] Returning {len(cached_page.get('rows', []))} rows from cache (page).")
+                        print(f"[GA4 CACHE HIT] Returning {len(cached_page.get('rows', []))} rows (page cached).")
                         return cached_page, None
             else:
-                cached_data = get_cached(analytics_cache, base_cache_key)
+                cached_data = cache_get(base_cache_key)
                 if cached_data is not None:
-                    print(f"[GA4] Returning {len(cached_data.get('rows', []))} rows from cache.")
+                    print(f"[GA4 CACHE HIT] Returning {len(cached_data.get('rows', []))} rows.")
                     return cached_data, None
 
             # Build and execute the request(s)
@@ -528,24 +503,14 @@ class GA4Service:
 
                 result = _build_result(all_rows, total_row_count, None, 0)
 
-            # Cache result
-            redis_set = False
-            if use_redis:
-                if use_dimensions and (limit is not None or (offset and offset > 0)):
-                    if page_cache_key:
-                        redis_set = set_cached_redis(page_cache_key, result, redis_ttl)
-                else:
-                    redis_set = set_cached_redis(base_cache_key, result, redis_ttl)
-
-                if redis_set:
-                    print(f"[GA4 REDIS SET] Cached {result.get('row_count', 0)} rows (ttl={redis_ttl}s).")
-
-            if not use_redis or not redis_set:
-                if use_dimensions and (limit is not None or (offset and offset > 0)):
-                    if page_cache_key:
-                        set_cached(analytics_cache, page_cache_key, result)
-                else:
-                    set_cached(analytics_cache, base_cache_key, result)
+            # Cache result（cache_set 自動處理 L1+L2 雙層快取）
+            _cache_ttl = redis_ttl if use_redis else int(analytics_cache.ttl)
+            if use_dimensions and (limit is not None or (offset and offset > 0)):
+                if page_cache_key:
+                    cache_set(page_cache_key, result, _cache_ttl)
+            else:
+                cache_set(base_cache_key, result, _cache_ttl)
+            print(f"[GA4 CACHE SET] Cached {result.get('row_count', 0)} rows (ttl={_cache_ttl}s).")
 
             print(f"[GA4] Analytics data retrieved: {len(result.get('rows', []))} rows")
             return result, None

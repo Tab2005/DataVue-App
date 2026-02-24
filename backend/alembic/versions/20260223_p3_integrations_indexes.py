@@ -12,6 +12,9 @@ Create Date: 2026-02-23
 from alembic import op
 import sqlalchemy as sa
 from datetime import datetime
+import logging
+
+logger = logging.getLogger("alembic.migration")
 
 # revision identifiers
 revision = "20260223_p3_integrations_indexes"
@@ -61,151 +64,47 @@ def upgrade() -> None:
         unique=True,
     )
 
-    # ── 遷移現有 Token 資料（Facebook）────────────────────────────────────
-    # 注意：僅遷移 fb_access_token 不為 NULL 的使用者
-    # refresh_token 與 extra_data（app_id, app_secret）一併遷移
-    op.execute("""
-        INSERT INTO user_integrations
-            (id, user_id, provider, access_token, refresh_token, token_expiry,
-             extra_data, created_at)
-        SELECT
-            lower(hex(randomblob(4))) || '-'
-                || lower(hex(randomblob(2))) || '-'
-                || lower(hex(randomblob(2))) || '-'
-                || lower(hex(randomblob(2))) || '-'
-                || lower(hex(randomblob(6))),
-            id,
-            'facebook',
-            fb_access_token,
-            NULL,
-            token_expires_at,
-            json_object(
-                'app_id',    COALESCE(fb_app_id, ''),
-                'app_secret', COALESCE(fb_app_secret, '')
-            ),
-            CURRENT_TIMESTAMP
-        FROM users
-        WHERE fb_access_token IS NOT NULL
-    """)
-
-    # 遷移 GSC Token
-    op.execute("""
-        INSERT INTO user_integrations
-            (id, user_id, provider, access_token, refresh_token, token_expiry,
-             extra_data, created_at)
-        SELECT
-            lower(hex(randomblob(4))) || '-'
-                || lower(hex(randomblob(2))) || '-'
-                || lower(hex(randomblob(2))) || '-'
-                || lower(hex(randomblob(2))) || '-'
-                || lower(hex(randomblob(6))),
-            id,
-            'gsc',
-            gsc_access_token,
-            gsc_refresh_token,
-            gsc_expires_at,
-            '{}',
-            CURRENT_TIMESTAMP
-        FROM users
-        WHERE gsc_access_token IS NOT NULL
-    """)
-
-    # 遷移 GA4 Token
-    op.execute("""
-        INSERT INTO user_integrations
-            (id, user_id, provider, access_token, refresh_token, token_expiry,
-             extra_data, created_at)
-        SELECT
-            lower(hex(randomblob(4))) || '-'
-                || lower(hex(randomblob(2))) || '-'
-                || lower(hex(randomblob(2))) || '-'
-                || lower(hex(randomblob(2))) || '-'
-                || lower(hex(randomblob(6))),
-            id,
-            'ga4',
-            ga4_access_token,
-            ga4_refresh_token,
-            ga4_expires_at,
-            '{}',
-            CURRENT_TIMESTAMP
-        FROM users
-        WHERE ga4_access_token IS NOT NULL
-    """)
-
-    # 遷移 Zeabur AI Key
-    op.execute("""
-        INSERT INTO user_integrations
-            (id, user_id, provider, access_token, refresh_token, token_expiry,
-             extra_data, created_at)
-        SELECT
-            lower(hex(randomblob(4))) || '-'
-                || lower(hex(randomblob(2))) || '-'
-                || lower(hex(randomblob(2))) || '-'
-                || lower(hex(randomblob(2))) || '-'
-                || lower(hex(randomblob(6))),
-            id,
-            'ai_zeabur',
-            zeabur_api_key,
-            NULL,
-            NULL,
-            json_object(
-                'ai_provider', COALESCE(ai_provider, 'zeabur'),
-                'ai_model', COALESCE(ai_model, 'gemini-2.5-flash')
-            ),
-            CURRENT_TIMESTAMP
-        FROM users
-        WHERE zeabur_api_key IS NOT NULL
-    """)
-
-    # 遷移 Gemini AI Key
-    op.execute("""
-        INSERT INTO user_integrations
-            (id, user_id, provider, access_token, refresh_token, token_expiry,
-             extra_data, created_at)
-        SELECT
-            lower(hex(randomblob(4))) || '-'
-                || lower(hex(randomblob(2))) || '-'
-                || lower(hex(randomblob(2))) || '-'
-                || lower(hex(randomblob(2))) || '-'
-                || lower(hex(randomblob(6))),
-            id,
-            'ai_gemini',
-            gemini_api_key,
-            NULL,
-            NULL,
-            json_object(
-                'ai_model', COALESCE(ai_model, 'gemini-2.5-flash')
-            ),
-            CURRENT_TIMESTAMP
-        FROM users
-        WHERE gemini_api_key IS NOT NULL
-    """)
+    # ── 注意：Token 資料遷移已移至 20260224_fix_integrations_migration_compat.py ──
+    # 原本此處使用 SQLite 專用的 randomblob() / hex() / json_object() 函式，
+    # 在 PostgreSQL 環境執行會失敗。已改由新腳本使用 Python uuid 模組跨方言相容處理。
 
     # ── 5.2：新增高頻查詢複合索引 ────────────────────────────────────────
+    # 注意：此腳本的 down_revision 指向 fe8441e71f69（早於 20260106_add_permissions_tables）。
+    # 在全新 DB 升級時，user_module_access 等表可能尚未建立；
+    # 使用 try/except 保護，確保在 merge 後的補充執行中可正常建立索引。
 
     # user_module_access：常以 (user_id, team_id, module_id) 三欄查詢
-    op.create_index(
-        "ix_user_module_access_composite",
-        "user_module_access",
-        ["user_id", "team_id", "module_id"],
-        unique=False,
-    )
+    try:
+        op.create_index(
+            "ix_user_module_access_composite",
+            "user_module_access",
+            ["user_id", "team_id", "module_id"],
+            unique=False,
+        )
+    except Exception as e:
+        logger.warning("ix_user_module_access_composite 索引建立跳過（表可能尚未存在或索引已存在）：%s", e)
 
     # team_members：依 user_id 反查所有團隊
-    op.create_index(
-        "ix_team_members_user_id",
-        "team_members",
-        ["user_id"],
-        unique=False,
-    )
+    try:
+        op.create_index(
+            "ix_team_members_user_id",
+            "team_members",
+            ["user_id"],
+            unique=False,
+        )
+    except Exception as e:
+        logger.warning("ix_team_members_user_id 索引建立跳過：%s", e)
 
     # saved_views：使用者在特定團隊的所有視圖
-    op.create_index(
-        "ix_saved_views_user_team",
-        "saved_views",
-        ["user_id", "team_id"],
-        unique=False,
-    )
+    try:
+        op.create_index(
+            "ix_saved_views_user_team",
+            "saved_views",
+            ["user_id", "team_id"],
+            unique=False,
+        )
+    except Exception as e:
+        logger.warning("ix_saved_views_user_team 索引建立跳過：%s", e)
 
 
 def downgrade() -> None:

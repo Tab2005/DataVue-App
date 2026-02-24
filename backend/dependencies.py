@@ -1,11 +1,10 @@
 from fastapi import Depends, HTTPException, status, Header
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
-from database import SessionLocal, User, UserRole, UserStatus, Team, TeamMember
+from database import SessionLocal, User, UserRole, UserStatus, Team, TeamMember, get_db
 import os
 import logging
 
-# Configure Logger
-logging.basicConfig(level=logging.INFO)
+# Configure Logger（basicConfig 由 core/logging.py 的 setup_logging() 統一設定，勿在此呼叫）
 logger = logging.getLogger(__name__)
 
 # 統一 Token 驗證（core/security.py）
@@ -14,12 +13,8 @@ from core.security import verify_google_token
 # Reuse the existing security scheme
 security = HTTPBearer()
 
-def get_db():
-    db = SessionLocal()
-    try:
-        yield db
-    finally:
-        db.close()
+# get_db 由 database 套件統一定義，此處重新匯出以維持向後相容
+# from database import get_db  ← 已於頂部匯入
 
 def verify_google_token_basic(credentials: HTTPAuthorizationCredentials = Depends(security)):
     """

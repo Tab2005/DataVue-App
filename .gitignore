@@ -19,6 +19,7 @@ __pycache__/
 .env.*.local
 backend/.env
 backend/.env.*
+!backend/.env.example  # 範例檔案可安全提交
 
 # 日誌檔
 *.log
