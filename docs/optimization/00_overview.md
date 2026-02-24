@@ -65,6 +65,37 @@
 
 ## 完成進度追蹤
 
+<<<<<<< HEAD
+### P0（必須立即完成）
+- [ ] [3.2] 修復 Token 驗證 LRU Cache 安全漏洞
+- [ ] [6.1] 確認/修復 .env 未提交至 Git
+- [ ] [6.2] 確認/修復 SQLite DB 未提交至 Git
+
+### P1（本週完成）
+- [ ] [4.2] 實作 Frontend Token 過期偵測與重新整理
+- [ ] [4.1] 建立統一 API Client
+- [ ] [3.4] 釘定 requirements.txt 所有套件版本
+- [ ] [3.5] 整合 Redis 作為主要快取層
+
+### P2（兩週內完成）
+- [ ] [3.1] 統一 Token 驗證邏輯至 core/security.py
+- [ ] [3.3] 拆分 get_current_user 函式
+- [ ] [6.4] 添加速率限制（slowapi）
+- [ ] [7.1] 升級 Dockerfile Python 至 3.12
+- [ ] [7.3] 添加 /health 端點與 Docker HEALTHCHECK
+
+### P3（長期重構）
+- [ ] [3.6] 拆分 database.py 至 database/ 套件
+- [ ] [3.7] 拆分 async_services.py 至模組
+- [ ] [5.1] 拆分 User 整合 Token 至 UserIntegration 表
+- [ ] [4.3] 引入 TanStack React Query
+- [ ] [7.4] 建立 pytest 測試框架
+
+### P4（可排程）
+- [ ] [4.5] 刪除備份檔案並更新 .gitignore
+- [ ] [3.12] 統一日誌系統（print → logger）
+- [ ] [4.6] 後端提供指標 Registry API 端點
+=======
 > **最後更新**：2026-02-23 | 所有項目已完成 ✅
 
 ### P0（必須立即完成）
@@ -105,3 +136,4 @@
 - [x] [3.8] 移除 auth.py 間接層 — ✅ 2026-02-23（額外完成）
 - [x] [4.6] 後端提供指標 Registry API 端點 — ✅ 2026-02-23
 
+>>>>>>> dev-saas
