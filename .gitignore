@@ -1,20 +1,58 @@
 # General
 .DS_Store
-*.log
 node_modules/
 venv/
 .venv/
+env/
 __pycache__/
+*.py[cod]
+*.pyo
+*.pyc
 .idea/
-.vscode/
+.vscode/settings.json
+*.swp
+*.swo
 
-# Backend specific
+# 敏感設定檔（絕對不能提交）
+.env
+.env.local
+.env.*.local
 backend/.env
+backend/.env.*
+!backend/.env.example  # 範例檔案可安全提交
+
+# 日誌檔
+*.log
+debug_*.log
+backend/debug_*.log
+# 備份與臨時文件
+*.backup
+*.bak
+*.orig
+*_orig.*
+*_backup.*
+*.tmp
+Thumbs.db
+# Backend specific
 backend/tokens.json
 backend/__pycache__/
 backend/venv/
-*.pyc
+
+# 資料庫文件
 *.db
+*.sqlite
+*.sqlite3
+backend/*.db
+
+# 測試與覆蓋率
+.coverage
+htmlcov/
+.pytest_cache/
+*.egg-info/
+
+# 建置產物
+dist/
+build/
 
 # Frontend specific
 frontend/node_modules/

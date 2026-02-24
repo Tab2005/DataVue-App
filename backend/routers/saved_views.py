@@ -5,12 +5,16 @@ Supports both personal views (user_id) and team views (team_id).
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 from typing import List, Optional
+import logging
+import sys
 from sqlalchemy.orm import Session
 from database import SessionLocal, SavedView, User
 import json
 import uuid
 from datetime import datetime
 from dependencies import get_current_user
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/saved-views", tags=["saved_views"])
 
@@ -101,8 +105,7 @@ async def create_saved_view(
     db: Session = Depends(get_db)
 ):
     """Create a new saved view."""
-    import sys
-    print(f"DEBUG: create_saved_view called with data: {data}", file=sys.stderr)
+    logger.debug(f"create_saved_view called: name={data.name}")
     user_id = current_user.id
     new_view = SavedView(
         id=str(uuid.uuid4()),

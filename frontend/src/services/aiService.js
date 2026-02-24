@@ -1,7 +1,11 @@
 /**
  * AI Service
  * Handles interactions with the backend AI endpoints.
+ * 注意：串流端點（analyzeDataStream）因需要直接操作 ReadableStream，維持原生 fetch 實作。
  */
+
+import apiClient from './apiClient';
+import { getAuthToken } from '../utils/auth';
 
 const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000';
 
@@ -10,31 +14,12 @@ export const aiService = {
      * Test connection to AI Service
      */
     testConnection: async (apiKey = null) => {
-        try {
-            const token = localStorage.getItem('google_token');
-            const res = await fetch(`${API_URL}/ai/test-connection`, {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                    'Authorization': `Bearer ${token}`
-                },
-                body: JSON.stringify({ api_key: apiKey })
-            });
-
-            if (!res.ok) {
-                const err = await res.json();
-                throw new Error(err.detail || 'Connection failed');
-            }
-
-            return await res.json();
-        } catch (error) {
-            console.error('AI Test Failed:', error);
-            throw error;
-        }
+        return apiClient.post('/ai/test-connection', { api_key: apiKey });
     },
 
     /**
      * Analyze Data Stream
+     * 使用原生 fetch 以支援 SSE / ReadableStream 串流讀取。
      * @param {Object} data - The data to analyze
      * @param {string} context - Context string
      * @param {string} reportType - "ad_analysis" or "weekly_summary"
@@ -43,7 +28,7 @@ export const aiService = {
      */
     analyzeDataStream: async (data, context, reportType = 'ad_analysis', apiKey = null, onChunk) => {
         try {
-            const token = localStorage.getItem('google_token');
+            const token = getAuthToken();
             const res = await fetch(`${API_URL}/ai/analyze`, {
                 method: 'POST',
                 headers: {

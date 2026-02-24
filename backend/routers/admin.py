@@ -1,10 +1,14 @@
 from fastapi import APIRouter, Depends, HTTPException, status, Header
 from sqlalchemy.orm import Session, joinedload
 from typing import List, Dict, Any, Optional
+import logging
+import sys
+import os
 from database import User, Team, TeamMember, Module, UserModuleAccess, UserRole
 from dependencies import get_super_admin, get_db, get_current_user
 from schemas import UserResponse, TeamResponse
-import os
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(
     prefix="/api/admin",
@@ -73,7 +77,7 @@ def emergency_fix_super_admin(
         raise HTTPException(status_code=500, detail="Server not configured properly (missing ENCRYPTION_KEY)")
     
     if not x_emergency_key or x_emergency_key != expected_key:
-        print(f"[SECURITY] Emergency fix attempt with invalid key", file=sys.stderr)
+        logger.warning("[SECURITY] Emergency fix attempt with invalid key")
         raise HTTPException(status_code=403, detail="Invalid emergency key")
     
     # 取得 SUPER_ADMIN_EMAIL
@@ -142,7 +146,7 @@ def emergency_fix_super_admin(
     
     db.commit()
     
-    print(f"[EMERGENCY] Super admin fix completed: {results}", file=sys.stderr)
+    logger.info(f"[EMERGENCY] Super admin fix completed: {results}")
     
     return {
         "success": True,

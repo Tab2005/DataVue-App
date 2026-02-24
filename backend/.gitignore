@@ -1,5 +1,75 @@
-venv/
+# ===================================
+# DataVue Backend — .gitignore
+# ===================================
+
+# ─── Python 編譯產物 ──────────────
 __pycache__/
-*.pyc
+*.py[cod]
+*.pyo
+*.pyd
+*.so
+*.egg
+*.egg-info/
+dist/
+build/
+wheels/
+
+# ─── 虛擬環境 ────────────────────
+venv/
+.venv/
+env/
+.env_backup/
+
+# ─── 環境變數與設定 ──────────────
 .env
+.env.*
+!.env.example        # 保留範例檔案
 tokens.json
+*.key
+*.pem
+*.p12
+
+# ─── 資料庫 ──────────────────────
+*.db
+*.sqlite
+*.sqlite3
+*.db-shm
+*.db-wal
+
+# ─── 日誌檔案 ────────────────────
+*.log
+debug_*.log
+logs/
+*.out
+
+# ─── 備份與臨時檔案 ──────────────
+*.backup
+*.bak
+*.orig
+*_orig.*
+*_backup.*
+*.tmp
+*.temp
+*~
+
+# ─── 測試與覆蓋率報告 ────────────
+.pytest_cache/
+.coverage
+.coverage.*
+htmlcov/
+coverage.xml
+.tox/
+.nox/
+
+# ─── IDE / 編輯器 ────────────────
+.idea/
+.vscode/
+*.swp
+*.swo
+.DS_Store
+Thumbs.db
+
+# ─── 其他工具產物 ────────────────
+.mypy_cache/
+.ruff_cache/
+.hypothesis/

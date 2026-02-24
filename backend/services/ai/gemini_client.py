@@ -3,8 +3,12 @@ Google Gemini 直連客戶端
 直接使用 Google AI Studio 的 API Key 呼叫 Gemini 模型
 """
 import google.genai as genai
+import logging
+import sys
 from typing import Optional, Dict, List
 import os
+
+logger = logging.getLogger(__name__)
 
 
 class GoogleGeminiClient:
@@ -84,7 +88,7 @@ class GoogleGeminiClient:
         import sys
         model_name = model or self.model_name
         
-        print(f"[GoogleGeminiClient] generate_content called with model={model_name}", file=sys.stderr)
+        logger.debug(f"[GoogleGeminiClient] generate_content called with model={model_name}")
         
         # 構建完整提示詞
         full_prompt = prompt
@@ -102,19 +106,17 @@ class GoogleGeminiClient:
             )
 
             # 生成內容
-            print(f"[GoogleGeminiClient] Calling Gemini API...", file=sys.stderr)
+            logger.debug("[GoogleGeminiClient] Calling Gemini API...")
             response = model_instance.generate_content(
                 full_prompt,
                 generation_config=generation_config
             )
 
-            print(f"[GoogleGeminiClient] Response received, length={len(response.text) if response.text else 0}", file=sys.stderr)
+            logger.debug(f"[GoogleGeminiClient] Response received, length={len(response.text) if response.text else 0}")
             return response.text
             
         except Exception as e:
-            print(f"[GoogleGeminiClient] ERROR: {type(e).__name__}: {str(e)}", file=sys.stderr)
-            import traceback
-            traceback.print_exc(file=sys.stderr)
+            logger.error(f"[GoogleGeminiClient] ERROR: {type(e).__name__}: {str(e)}", exc_info=True)
             raise
 
     def test_connection(self) -> Dict:

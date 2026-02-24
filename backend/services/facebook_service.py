@@ -1,7 +1,10 @@
 import requests
+import logging
 from datetime import datetime, timedelta
-from auth import TokenManager
+from modules.auth.service import TokenManager
 import sys
+
+logger = logging.getLogger(__name__)
 
 class FacebookService:
     BASE_URL = "https://graph.facebook.com/v24.0"
@@ -26,7 +29,7 @@ class FacebookService:
         """
         headers = FacebookService.get_headers(user_id, team_id, allow_fallback=not strict_token)
         if not headers:
-            print("[FB] get_all_ad_accounts: No token available", file=sys.stderr)
+            logger.warning("[FB] get_all_ad_accounts: No token available")
             return [], "No access token found for this user."
 
         url = f"{FacebookService.BASE_URL}/me/adaccounts"
@@ -36,14 +39,14 @@ class FacebookService:
         }
 
         try:
-            print(f"[FB] Fetching Ad Accounts...", file=sys.stderr)
+            logger.info("[FB] Fetching Ad Accounts...")
             response = requests.get(url, headers=headers, params=params, timeout=10)
-            print(f"[FB] Response Status: {response.status_code}", file=sys.stderr)
+            logger.debug(f"[FB] Response Status: {response.status_code}")
             data = response.json()
             # print(f"Facebook API Response Body: {data}", file=sys.stderr) # Debug only
 
             if "error" in data:
-                print(f"[FB] API Error: {data['error'].get('message', 'Unknown error')}", file=sys.stderr)
+                logger.error(f"[FB] API Error: {data['error'].get('message', 'Unknown error')}")
                 return [], data["error"].get("message")
 
             accounts = data.get("data", [])
@@ -483,11 +486,11 @@ class FacebookService:
         try:
             res = requests.get(url, headers=headers, params=params, timeout=30).json()
             if "error" in res:
-                print(f"[FB] API Error (Report): {res['error'].get('message', 'Unknown')}", file=sys.stderr)
+                logger.error(f"[FB] API Error (Report): {res['error'].get('message', 'Unknown')}")
                 return None
                 
             data = res.get("data", [])
-            print(f"[FB] Report: Level={level} Rows={len(data)}", file=sys.stderr)
+            logger.info(f"[FB] Report: Level={level} Rows={len(data)}")
             
             # Process each row
             
@@ -515,7 +518,7 @@ class FacebookService:
                         }
                             
                 except Exception as e:
-                    print(f"[FB] Error fetching ad metadata", file=sys.stderr)
+                    logger.error("[FB] Error fetching ad metadata", exc_info=True)
 
             processed_rows = []
             for row in data:
@@ -666,7 +669,7 @@ class FacebookService:
             return processed_rows
 
         except Exception as e:
-            print(f"[FB] Error fetching custom report", file=sys.stderr)
+            logger.error("[FB] Error fetching custom report", exc_info=True)
             return None
 
     @staticmethod
@@ -701,7 +704,7 @@ class FacebookService:
                 res = requests.get(url, headers=headers, params=params, timeout=30).json()
                 return res.get("data", [])
             except Exception as e:
-                print(f"[FB] Error in trend fetch", file=sys.stderr)
+                logger.error("[FB] Error in trend fetch", exc_info=True)
                 return []
 
         # 1. Fetch Current & Previous

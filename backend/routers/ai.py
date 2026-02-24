@@ -2,10 +2,14 @@ from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 from typing import Dict, Any, Optional, List
+import sys
+import logging
 from ai_service import AIService
 from dependencies import get_current_user
 from database import User
+from modules.auth.service import TokenManager
 
+logger = logging.getLogger(__name__)
 router = APIRouter()
 
 
@@ -118,7 +122,6 @@ async def get_ai_settings(user: User = Depends(get_current_user)):
     Get current user's AI settings.
     Returns provider, model, and whether keys are configured (not the keys themselves).
     """
-    from auth import TokenManager
     
     settings = TokenManager.get_ai_settings(user.google_id)
     if not settings:
@@ -141,13 +144,12 @@ async def save_ai_settings(
     """
     Save user's AI settings (API keys are encrypted before storage).
     """
-    import sys
-    from auth import TokenManager
-    
-    print(f"[AI API] save_ai_settings called for user: {user.email}", file=sys.stderr)
-    print(f"[AI API] Request data: gemini_key_len={len(request.gemini_api_key) if request.gemini_api_key else 0}, "
-          f"zeabur_key_len={len(request.zeabur_api_key) if request.zeabur_api_key else 0}, "
-          f"provider={request.ai_provider}, model={request.ai_model}", file=sys.stderr)
+    logger.info(f"[AI API] save_ai_settings called for user: {user.email}")
+    logger.debug(
+        f"[AI API] Request data: gemini_key_len={len(request.gemini_api_key) if request.gemini_api_key else 0}, "
+        f"zeabur_key_len={len(request.zeabur_api_key) if request.zeabur_api_key else 0}, "
+        f"provider={request.ai_provider}, model={request.ai_model}"
+    )
     
     try:
         TokenManager.save_ai_settings(
@@ -160,16 +162,14 @@ async def save_ai_settings(
         
         # Return updated settings
         settings = TokenManager.get_ai_settings(user.google_id)
-        print(f"[AI API] Settings saved. Result: {settings}", file=sys.stderr)
+        logger.info(f"[AI API] Settings saved.")
         return {
             "success": True,
             "message": "AI settings saved successfully",
             "settings": settings
         }
     except Exception as e:
-        print(f"[AI API] Save error: {type(e).__name__}: {str(e)}", file=sys.stderr)
-        import traceback
-        traceback.print_exc(file=sys.stderr)
+        logger.error(f"[AI API] Save error: {type(e).__name__}: {str(e)}", exc_info=True)
         raise HTTPException(status_code=500, detail=str(e))
 
 
@@ -181,7 +181,6 @@ async def clear_ai_key(
     """
     Clear a specific AI provider's API key.
     """
-    from auth import TokenManager
     
     if provider not in ["zeabur", "gemini"]:
         raise HTTPException(status_code=400, detail="Invalid provider. Use 'zeabur' or 'gemini'.")
@@ -202,30 +201,27 @@ async def test_gemini_connection(user: User = Depends(get_current_user)):
     """
     Test Google Gemini API connection using the user's saved API key.
     """
-    import sys
-    from auth import TokenManager
-    
-    print(f"[AI API] Testing Gemini connection for user: {user.email}", file=sys.stderr)
+    logger.info(f"[AI API] Testing Gemini connection for user: {user.email}")
     
     # Get the user's Gemini API key from encrypted storage
     api_key = TokenManager.get_ai_api_key(user.google_id, provider="gemini")
     
     if not api_key:
-        print(f"[AI API] No Gemini API key found for user: {user.email}", file=sys.stderr)
+        logger.warning(f"[AI API] No Gemini API key found for user: {user.email}")
         return {
             "success": False,
             "message": "No Google Gemini API key configured. Please save your API key first.",
             "provider": "gemini"
         }
     
-    print(f"[AI API] Found Gemini API key (length={len(api_key)})", file=sys.stderr)
+    logger.debug(f"[AI API] Found Gemini API key (length={len(api_key)})")
     
     try:
         from services.ai.gemini_client import GoogleGeminiClient
         client = GoogleGeminiClient(api_key=api_key)
         result = client.test_connection()
         
-        print(f"[AI API] Gemini test result: {result}", file=sys.stderr)
+        logger.info(f"[AI API] Gemini test result: success={result.get('success')}")
         
         return {
             "success": result.get("success", False),
@@ -235,7 +231,7 @@ async def test_gemini_connection(user: User = Depends(get_current_user)):
             "provider": "gemini"
         }
     except Exception as e:
-        print(f"[AI API] Gemini test error: {type(e).__name__}: {str(e)}", file=sys.stderr)
+        logger.error(f"[AI API] Gemini test error: {type(e).__name__}: {str(e)}")
         return {
             "success": False,
             "message": f"Connection failed: {str(e)}",

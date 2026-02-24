@@ -10,8 +10,12 @@
 """
 import json
 import os
+import logging
+import sys
 from typing import Dict, List, Optional
 from .zeabur_client import ZeaburAIClient
+
+logger = logging.getLogger(__name__)
 
 
 class AIIntentClassifier:
@@ -147,7 +151,7 @@ class AIIntentClassifier:
         use_batching = self.provider == "gemini" and len(queries) > BATCH_SIZE
         
         if use_batching:
-            print(f"[AIIntentClassifier] Using batch processing for {len(queries)} keywords (Gemini rate limit)", file=sys.stderr)
+            logger.info(f"[AIIntentClassifier] Using batch processing for {len(queries)} keywords (Gemini rate limit)")
             return self._classify_queries_batched(queries, temperature, BATCH_SIZE, BATCH_DELAY)
         
         # Regular single-request processing
@@ -215,7 +219,7 @@ class AIIntentClassifier:
             batch_num = i // batch_size + 1
             batch = queries[i:i + batch_size]
             
-            print(f"[AIIntentClassifier] Processing batch {batch_num}/{total_batches} ({len(batch)} keywords)", file=sys.stderr)
+            logger.info(f"[AIIntentClassifier] Processing batch {batch_num}/{total_batches} ({len(batch)} keywords)")
             
             # 構建 prompt
             queries_text = "\n".join([f"- {q}" for q in batch])
@@ -237,10 +241,10 @@ class AIIntentClassifier:
                 batch_results = parsed.get("results", [])
                 all_results.extend(batch_results)
                 
-                print(f"[AIIntentClassifier] Batch {batch_num} complete: {len(batch_results)} results", file=sys.stderr)
+                logger.info(f"[AIIntentClassifier] Batch {batch_num} complete: {len(batch_results)} results")
                 
             except Exception as e:
-                print(f"[AIIntentClassifier] Batch {batch_num} error: {str(e)}", file=sys.stderr)
+                logger.error(f"[AIIntentClassifier] Batch {batch_num} error: {str(e)}")
                 # Add placeholder results for failed batch
                 for q in batch:
                     all_results.append({
@@ -253,7 +257,7 @@ class AIIntentClassifier:
             
             # Delay between batches (except for the last batch)
             if i + batch_size < len(queries):
-                print(f"[AIIntentClassifier] Waiting {batch_delay}s for rate limit...", file=sys.stderr)
+                logger.debug(f"[AIIntentClassifier] Waiting {batch_delay}s for rate limit...")
                 time.sleep(batch_delay)
         
         return {

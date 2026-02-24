@@ -174,7 +174,7 @@ async def check_token_permissions(
     檢查目前 Access Token 的權限範圍
     顯示可以存取哪些 Facebook/Instagram API
     """
-    from auth import TokenManager
+    from modules.auth.service import TokenManager
     
     team_id = team.id if team else None
     token = TokenManager.get_user_token(user_id, team_id=team_id)

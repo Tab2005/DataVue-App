@@ -6,9 +6,12 @@ Token Manager Service
 """
 
 import sys
+import logging
 import requests
 from datetime import datetime, timedelta, timezone
 from typing import Optional, Tuple
+
+logger = logging.getLogger(__name__)
 
 # 使用 core 模組的加密功能
 from core.security import encrypt_value, decrypt_value
@@ -159,9 +162,9 @@ class TokenManager:
         try:
             user = session.query(User).filter(User.google_id == google_id).first()
             if not user:
-                print(f"[DEBUG_AUTH] User not found: {google_id}", file=sys.stderr)
+                logger.debug(f"[DEBUG_AUTH] User not found: {google_id}")
             elif not user.fb_access_token:
-                print(f"[DEBUG_AUTH] No token for: {google_id}", file=sys.stderr)
+                logger.debug(f"[DEBUG_AUTH] No token for: {google_id}")
             else:
                 decrypted = TokenManager._decrypt(user.fb_access_token)
                 if decrypted:
@@ -204,7 +207,7 @@ class TokenManager:
             if team.owner_id:
                 owner = session.query(User).filter(User.id == team.owner_id).first()
                 if owner and owner.fb_access_token:
-                    print(f"Using Team Owner's Token for Team: {team.name}")
+                    logger.info(f"Using Team Owner's Token for Team: {team.name}")
                     return TokenManager._decrypt(owner.fb_access_token)
 
             return None

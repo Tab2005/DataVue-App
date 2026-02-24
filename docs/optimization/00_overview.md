@@ -65,6 +65,7 @@
 
 ## 完成進度追蹤
 
+<<<<<<< HEAD
 ### P0（必須立即完成）
 - [ ] [3.2] 修復 Token 驗證 LRU Cache 安全漏洞
 - [ ] [6.1] 確認/修復 .env 未提交至 Git
@@ -94,3 +95,45 @@
 - [ ] [4.5] 刪除備份檔案並更新 .gitignore
 - [ ] [3.12] 統一日誌系統（print → logger）
 - [ ] [4.6] 後端提供指標 Registry API 端點
+=======
+> **最後更新**：2026-02-23 | 所有項目已完成 ✅
+
+### P0（必須立即完成）
+- [x] [3.2] 修復 Token 驗證 LRU Cache 安全漏洞 — ✅ 2026-02-23（`01_P0_security_critical_IMPL.md`）
+- [x] [6.1] 確認/修復 .env 未提交至 Git — ✅ 2026-02-23
+- [x] [6.2] 確認/修復 SQLite DB 未提交至 Git — ✅ 2026-02-23
+
+### P1（本週完成）
+- [x] [4.2] 實作 Frontend Token 過期偵測與重新整理 — ✅ 2026-02-23（`02_P1_implementation_log.md`）
+- [x] [4.1] 建立統一 API Client — ✅ 2026-02-23
+- [x] [3.4] 釘定 requirements.txt 所有套件版本 — ✅ 2026-02-23
+- [x] [3.5] 整合 Redis 作為主要快取層（雙層架構） — ✅ 2026-02-23
+
+### P2（兩週內完成）
+- [x] [3.1] 統一 Token 驗證邏輯至 core/security.py — ✅ 2026-02-23（`03_P2_implementation_report.md`）
+- [x] [3.3] 拆分 get_current_user 函式 — ✅ 2026-02-23
+- [x] [3.11] 統一 Session 使用 Depends(get_db) — ✅ 2026-02-23（額外完成）
+- [x] [6.4] 添加速率限制（slowapi） — ✅ 2026-02-23
+- [x] [7.1] 升級 Dockerfile Python 至 3.12 — ✅ 2026-02-23
+- [x] [7.3] 添加 /health 端點與 Docker HEALTHCHECK — ✅ 2026-02-23
+
+### P3（長期重構）
+- [x] [3.6] 拆分 database.py 至 database/ 套件 — ✅ 2026-02-23（`05_P3_impl_report_3.6_3.7.md`）
+- [x] [3.7] 拆分 async_services.py 至模組 — ✅ 2026-02-23
+- [x] [5.1] 拆分 User 整合 Token 至 UserIntegration 表 — ✅ 2026-02-23（本次實作）
+- [x] [5.2] 資料庫複合索引優化 — ✅ 2026-02-23（本次實作，含 5.1 Alembic 遷移）
+- [x] [5.3] 開發環境 PostgreSQL docker-compose 整合 — ✅ 2026-02-23（本次實作）
+- [x] [4.3] 引入 TanStack React Query — ✅ 2026-02-23（`05_P3_frontend_optimization_impl.md`）
+- [x] [4.4] JSDoc 型別定義 — ✅ 2026-02-23（額外完成）
+- [x] [4.7] React 19 相容性修正 — ✅ 2026-02-23（額外完成）
+- [x] [7.4] 建立 pytest 測試框架 — ✅ 2026-02-23（本次實作）
+
+### P4（可排程）
+- [x] [4.5] 刪除備份檔案並更新 .gitignore — ✅ 2026-02-23（`P4_implementation_record.md`）
+- [x] [3.14] debug_fields.log .gitignore 追蹤清理 — ✅ 2026-02-23（額外完成）
+- [x] [3.12] 統一日誌系統（print → logger） — ✅ 2026-02-23
+- [x] [3.10] CORS 正則修正（HTTP 不允許正式域名） — ✅ 2026-02-23（額外完成）
+- [x] [3.8] 移除 auth.py 間接層 — ✅ 2026-02-23（額外完成）
+- [x] [4.6] 後端提供指標 Registry API 端點 — ✅ 2026-02-23
+
+>>>>>>> dev-saas
