@@ -48,7 +48,13 @@ class ReportUpdate(BaseModel):
     status: Optional[str] = None
 
 # ---- Helpers ----
-def _serialize(report: WeeklyReport) -> dict:
+    def _safe_json_load(data, default):
+        if not data: return default
+        try:
+            return json.loads(data)
+        except:
+            return default
+
     return {
         "id": report.id,
         "name": report.name,
@@ -59,10 +65,10 @@ def _serialize(report: WeeklyReport) -> dict:
         "date_until": report.date_until,
         "date_label": report.date_label,
         "breakdown": report.breakdown,
-        "selected_metrics": json.loads(report.selected_metrics) if report.selected_metrics else [],
-        "report_data": json.loads(report.report_data) if report.report_data else None,
+        "selected_metrics": _safe_json_load(report.selected_metrics, []),
+        "report_data": _safe_json_load(report.report_data, None),
         "ai_summary": report.ai_summary,
-        "sections": json.loads(report.sections) if report.sections else [],
+        "sections": _safe_json_load(report.sections, []),
         "status": report.status,
         "user_id": report.user_id,
         "team_id": report.team_id,
