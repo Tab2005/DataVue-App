@@ -95,8 +95,12 @@ def run_migrations():
 
         logger.info(f"Running Database Migrations using config at {ini_path}...")
         
-        # Create config and ensure script_location is absolute if needed
+        # Create config and ensure script_location is absolute
         alembic_cfg = alembic.config.Config(ini_path)
+        
+        # Explicitly set script_location to avoid relative path issues on Zeabur
+        alembic_dir = os.path.join(base_dir, "alembic")
+        alembic_cfg.set_main_option("script_location", alembic_dir)
         
         # Override sqlalchemy.url from environment if available
         # This is already handled in env.py, but we can also set it here
