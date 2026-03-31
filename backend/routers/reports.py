@@ -48,6 +48,7 @@ class ReportUpdate(BaseModel):
     status: Optional[str] = None
 
 # ---- Helpers ----
+def _serialize(report: WeeklyReport) -> dict:
     def _safe_json_load(data, default):
         if not data: return default
         try:
