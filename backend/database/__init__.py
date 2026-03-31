@@ -41,6 +41,7 @@ from database.models.permission import (
     UserPermission,
 )
 from database.models.integration import UserIntegration
+from database.models.report import WeeklyReport
 
 logger = logging.getLogger(__name__)
 
@@ -56,6 +57,7 @@ __all__ = [
     "Module", "Permission", "Role", "RolePermission",
     "UserModuleAccess", "UserPermission",
     "UserIntegration",
+    "WeeklyReport",
     # 初始化函式
     "init_db",
 ]
