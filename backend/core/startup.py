@@ -74,19 +74,51 @@ def validate_encryption_key():
 # ============================================================
 
 def run_migrations():
-    """Run Alembic database migrations."""
+    """
+    Run Alembic database migrations.
+    Robust version for automated PaaS deployments (Zeabur).
+    """
     try:
         import alembic
         import alembic.config
         import alembic.command
+        import os
+
+        # Get absolute path to alembic.ini relative to this file
+        # This file is in backend/core/startup.py, alembic.ini is in backend/alembic.ini
+        base_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        ini_path = os.path.join(base_dir, "alembic.ini")
+
+        if not os.path.exists(ini_path):
+            logger.warning(f"alembic.ini not found at {ini_path}. Skipping migrations.")
+            return False
+
+        logger.info(f"Running Database Migrations using config at {ini_path}...")
         
-        logger.info("Running Database Migrations...")
-        alembic_cfg = alembic.config.Config("alembic.ini")
+        # Create config and ensure script_location is absolute if needed
+        alembic_cfg = alembic.config.Config(ini_path)
+        
+        # Override sqlalchemy.url from environment if available
+        # This is already handled in env.py, but we can also set it here
+        from database import DATABASE_URL
+        if DATABASE_URL:
+            # Ensure postgresql:// protocol for SQLAlchemy 2.0+
+            url = DATABASE_URL
+            if url.startswith("postgres://"):
+                url = url.replace("postgres://", "postgresql://", 1)
+            alembic_cfg.set_main_option("sqlalchemy.url", url)
+
+        # Run the upgrade
         alembic.command.upgrade(alembic_cfg, "head")
-        logger.info("Migrations completed successfully")
+        logger.info("✅ Database Migrations completed successfully")
         return True
     except Exception as e:
-        logger.warning(f"Alembic Migration Warning: {e}")
+        logger.error("-" * 60)
+        logger.error(f"❌ Alembic Migration CRITICAL ERROR: {e}")
+        import traceback
+        logger.error(traceback.format_exc())
+        logger.error("-" * 60)
+        # We don't exit(1) here to allow the app to try to start in degraded mode
         return False
 
 
