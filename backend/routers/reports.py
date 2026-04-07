@@ -6,7 +6,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 from typing import List, Optional
 import json, uuid, logging
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 from sqlalchemy.orm import Session
 
 from database import SessionLocal, WeeklyReport, User
@@ -86,19 +86,23 @@ async def list_reports(
     db: Session = Depends(get_db)
 ):
     """列出個人 + 團隊週報列表"""
-    reports = []
+    reports_map = {}
     # 個人
     personal = db.query(WeeklyReport)\
         .filter(WeeklyReport.user_id == current_user.id)\
         .order_by(WeeklyReport.created_at.desc()).all()
-    reports.extend([_serialize(r) for r in personal])
+    for r in personal:
+        reports_map[r.id] = _serialize(r)
+        
     # 團隊
     if team_id:
         team_reports = db.query(WeeklyReport)\
             .filter(WeeklyReport.team_id == team_id)\
             .order_by(WeeklyReport.created_at.desc()).all()
-        reports.extend([_serialize(r) for r in team_reports])
-    return reports
+        for r in team_reports:
+            reports_map[r.id] = _serialize(r)
+            
+    return list(reports_map.values())
 
 
 @router.post("", dependencies=[Depends(fb_ads_check)])
@@ -195,37 +199,92 @@ async def generate_report(
     """
     觸發報表資料產生：
     複用現有 analytics_service 抓取 FB 廣告資料，
-    快照儲存至 report_data 欄位，狀態改為 generated。
+    並計算摘要 (Summary)、對比數據與趨勢圖表。
     """
     report = db.query(WeeklyReport).filter(WeeklyReport.id == report_id).first()
     if not report:
         raise HTTPException(status_code=404, detail="Report not found")
 
-    # 呼叫現有 analytics service（直接複用）
-    from modules.fb_ads.analytics_service import get_custom_report
-    
-    # 解析儲存的指標
+    # 1. 解析指標與日期
     try:
         metrics_list = json.loads(report.selected_metrics)
         custom_fields = ",".join(metrics_list) if isinstance(metrics_list, list) else None
     except:
-        custom_fields = None
+        metrics_list = ["spend", "impressions", "ctr", "cpc"]
+        custom_fields = ",".join(metrics_list)
 
-    # 這裡可以直接呼叫，內部會處理 Token
-    data = await get_custom_report(
+    # 推算前一期日期 (Comparison Period)
+    since_dt = datetime.strptime(report.date_since, '%Y-%m-%d')
+    until_dt = datetime.strptime(report.date_until, '%Y-%m-%d')
+    duration = (until_dt - since_dt).days + 1
+    prev_until = (since_dt - timedelta(days=1)).strftime('%Y-%m-%d')
+    prev_since = (since_dt - timedelta(days=duration)).strftime('%Y-%m-%d')
+
+    # 2. 抓取資料
+    from modules.fb_ads.analytics_service import get_custom_report
+    from modules.fb_ads.trends_service import get_analytics_trend
+
+    # 抓取明細 (及時段總計)
+    current_rows = await get_custom_report(
         account_id=report.ad_account_id,
         since=report.date_since,
         until=report.date_until,
-        user_id=current_user.google_id,   # 使用 google_id 查找 FB Token
+        user_id=current_user.google_id,
         level=report.breakdown or "campaign",
         custom_fields=custom_fields
     )
 
-    if data is None:
+    # 抓取趨勢 (含對比)
+    trend_data = await get_analytics_trend(
+        account_id=report.ad_account_id,
+        user_id=current_user.google_id,
+        since=report.date_since,
+        until=report.date_until,
+        prev_since=prev_since,
+        prev_until=prev_until
+    )
+
+    if current_rows is None:
         raise HTTPException(status_code=502, detail="Failed to fetch FB data")
 
-    # 快照儲存
-    report.report_data = json.dumps(data)
+    # 3. 數據彙整 (Aggregation)
+    def _sum_metrics(rows):
+        s = {
+            "spend": 0.0, "impressions": 0, "clicks": 0, "link_clicks": 0, "reach": 0,
+            "purchases": 0, "purchase_value": 0.0, "add_to_cart": 0, "view_content": 0
+        }
+        for row in rows:
+            for k in s.keys():
+                s[k] += float(row.get(k, 0))
+        
+        # 計算比率指標
+        s["ctr"] = (s["link_clicks"] / s["impressions"] * 100) if s["impressions"] > 0 else 0
+        s["cpc"] = s["spend"] / s["clicks"] if s["clicks"] > 0 else 0
+        s["cpm"] = (s["spend"] / s["impressions"] * 1000) if s["impressions"] > 0 else 0
+        s["roas"] = s["purchase_value"] / s["spend"] if s["spend"] > 0 else 0
+        s["cpa"] = s["spend"] / s["purchases"] if s["purchases"] > 0 else 0
+        return s
+
+    summary = _sum_metrics(current_rows)
+    
+    # 從趨勢資料中提取前期總計
+    prev_summary = {}
+    if trend_data:
+        p_rows = []
+        for d in trend_data:
+            # 建立虛擬 row 來複用 _sum_metrics 
+            p_rows.append({k.replace("_prev", ""): v for k, v in d.items() if "_prev" in k})
+        prev_summary = _sum_metrics(p_rows)
+
+    # 4. 結構化存檔
+    structured_data = {
+        "summary": summary,
+        "prev_summary": prev_summary,
+        "trends": trend_data or [],
+        "table_data": current_rows
+    }
+
+    report.report_data = json.dumps(structured_data)
     report.status = "generated"
     report.updated_at = datetime.now(timezone.utc)
     db.commit()

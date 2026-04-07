@@ -20,7 +20,7 @@ const Reports = () => {
         setLoading(true);
         try {
             const res = await reportService.list(selectedTeamId);
-            setReports(res.data || []);
+            setReports(res || []);
             setError(null);
         } catch (err) {
             console.error('Failed to fetch reports:', err);
