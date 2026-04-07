@@ -1,11 +1,11 @@
 // frontend/src/components/Reports/ReportConfig.jsx
 import React, { useState } from 'react';
 import { FiChevronRight, FiChevronLeft, FiSettings, FiCalendar, FiActivity, FiCheckCircle } from 'react-icons/fi';
-import AdAccountSelector from '../AdAccountSelector';
+import ReportAdAccountSelector from './ReportAdAccountSelector';
 import { MetricSelector } from '../Analytics';
 import { format, subDays, startOfWeek, endOfWeek, subMonths, startOfMonth, endOfMonth } from 'date-fns';
 
-const ReportConfig = ({ onSave, onCancel, initialData = {}, language }) => {
+const ReportConfig = ({ onSave, onCancel, initialData = {}, language, teamId }) => {
   const [step, setStep] = useState(1);
   const [formData, setFormData] = useState({
     name: initialData.name || '',
@@ -76,12 +76,14 @@ const ReportConfig = ({ onSave, onCancel, initialData = {}, language }) => {
             </div>
             <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
               <label style={{ color: 'var(--text-secondary)', fontSize: '0.9rem' }}>{t('Ad Account', '廣告帳號')}</label>
-              <AdAccountSelector
+              <ReportAdAccountSelector
+                teamId={teamId}
                 selectedId={formData.ad_account_id}
                 onSelect={(id, name) => {
                   updateField('ad_account_id', id);
                   updateField('ad_account_name', name);
                 }}
+                language={language}
               />
             </div>
           </div>

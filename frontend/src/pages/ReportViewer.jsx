@@ -172,6 +172,7 @@ const ReportViewer = ({ mode = 'view' }) => {
                    onSave={handleCreate}
                    onCancel={() => navigate('/reports')}
                    language={language}
+                   teamId={selectedTeamId}
                 />
             )}
 
