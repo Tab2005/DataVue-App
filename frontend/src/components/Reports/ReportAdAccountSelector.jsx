@@ -12,15 +12,16 @@ const ReportAdAccountSelector = ({ teamId, selectedId, onSelect, language }) => 
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState(null);
     const [searchTerm, setSearchTerm] = useState('');
+    const [isOpen, setIsOpen] = useState(false);
 
     const t = (en, zh) => (language === 'zh' ? zh : en);
 
+    const selectedAccount = accounts.find(a => a.id === selectedId);
+
     useEffect(() => {
         const fetchAccounts = async () => {
-            // Remove 'if (!teamId) return;' to allow fetching for Personal Workspace (null teamId)
             setLoading(true);
             try {
-                // 使用 TeamService.getAllAdAccounts 並帶入當前團隊 ID
                 const data = await TeamService.getAllAdAccounts(teamId);
                 setAccounts(data || []);
             } catch (err) {
@@ -39,76 +40,111 @@ const ReportAdAccountSelector = ({ teamId, selectedId, onSelect, language }) => 
     );
 
     if (loading) return (
-        <div style={{ padding: '24px', textAlign: 'center', color: 'var(--text-secondary)', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px' }}>
+        <div style={{ padding: '12px', color: 'var(--text-secondary)' }}>
             <FiLoader className="spin" /> {t('Loading accounts...', '正在載入帳號...')}
         </div>
     );
 
     if (error) return (
-        <div style={{ padding: '16px', backgroundColor: 'rgba(239, 68, 68, 0.1)', color: '#ef4444', borderRadius: '8px', display: 'flex', alignItems: 'center', gap: '8px' }}>
+        <div style={{ padding: '12px', backgroundColor: 'rgba(239, 68, 68, 0.1)', color: '#ef4444', borderRadius: '8px' }}>
             <FiAlertCircle /> {error}
         </div>
     );
 
     return (
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
-            {/* Search Input */}
-            <div style={{ position: 'relative' }}>
-                <FiSearch style={{ position: 'absolute', left: '12px', top: '50%', transform: 'translateY(-50%)', color: 'var(--text-tertiary)' }} />
-                <input
-                    type="text"
-                    value={searchTerm}
-                    onChange={(e) => setSearchTerm(e.target.value)}
-                    placeholder={t('Search accounts...', '搜尋廣告帳號...')}
-                    style={{
-                        width: '100%',
-                        padding: '10px 10px 10px 38px',
-                        backgroundColor: 'var(--bg-primary)',
-                        border: '1px solid var(--glass-border)',
-                        borderRadius: '10px',
-                        color: 'var(--text-primary)',
-                        fontSize: '0.9rem'
-                    }}
-                />
+        <div style={{ position: 'relative' }}>
+            {/* Custom Dropdown Trigger */}
+            <div 
+                onClick={() => setIsOpen(!isOpen)}
+                style={{
+                    padding: '12px 16px',
+                    backgroundColor: 'var(--bg-primary)',
+                    border: '1px solid var(--glass-border)',
+                    borderRadius: '10px',
+                    color: selectedAccount ? 'var(--text-primary)' : 'var(--text-tertiary)',
+                    cursor: 'pointer',
+                    display: 'flex',
+                    justifyContent: 'space-between',
+                    alignItems: 'center',
+                    transition: 'all 0.2s'
+                }}
+            >
+                <div>
+                    {selectedAccount 
+                        ? `${selectedAccount.name} (${selectedAccount.id})` 
+                        : t('Select an Ad Account...', '請選擇廣告帳號...')}
+                </div>
+                <div style={{ 
+                    transition: 'transform 0.2s', 
+                    transform: isOpen ? 'rotate(180deg)' : 'rotate(0)' 
+                }}>
+                    <FiSearch />
+                </div>
             </div>
 
-            {/* Account List Grid */}
-            <div style={{ 
-                display: 'grid', 
-                gridTemplateColumns: 'repeat(auto-fill, minmax(220px, 1fr))', 
-                gap: '10px', 
-                maxHeight: '320px', 
-                overflowY: 'auto',
-                padding: '4px'
-            }}>
-                {filteredAccounts.map(acc => {
-                    const isSelected = acc.id === selectedId;
-                    return (
-                        <div
-                            key={acc.id}
-                            onClick={() => onSelect(acc.id, acc.name)}
+            {/* Dropdown Menu */}
+            {isOpen && (
+                <div style={{
+                    position: 'absolute',
+                    top: 'calc(100% + 8px)',
+                    left: 0,
+                    right: 0,
+                    backgroundColor: 'var(--bg-secondary)',
+                    border: '1px solid var(--glass-border)',
+                    borderRadius: '12px',
+                    boxShadow: '0 10px 25px rgba(0,0,0,0.5)',
+                    zIndex: 100,
+                    overflow: 'hidden',
+                    animation: 'fadeIn 0.2s ease-out'
+                }}>
+                    {/* Search inside dropdown */}
+                    <div style={{ 
+                        padding: '10px', 
+                        borderBottom: '1px solid var(--glass-border)',
+                        backgroundColor: 'rgba(255,255,255,0.03)'
+                    }}>
+                        <input
+                            autoFocus
+                            type="text"
+                            value={searchTerm}
+                            onChange={(e) => setSearchTerm(e.target.value)}
+                            placeholder={t('Search...', '搜尋...')}
                             style={{
-                                padding: '12px',
-                                borderRadius: '12px',
-                                backgroundColor: isSelected ? 'rgba(45, 136, 255, 0.15)' : 'var(--bg-primary)',
-                                border: isSelected ? '1.5px solid var(--accent-primary)' : '1px solid var(--glass-border)',
-                                cursor: 'pointer',
-                                transition: 'all 0.2s cubic-bezier(0.4, 0, 0.2, 1)',
-                                display: 'flex',
-                                justifyContent: 'space-between',
-                                alignItems: 'center',
-                                position: 'relative',
-                                overflow: 'hidden'
+                                width: '100%',
+                                padding: '8px 12px',
+                                backgroundColor: 'var(--bg-primary)',
+                                border: '1px solid var(--glass-border)',
+                                borderRadius: '8px',
+                                color: 'var(--text-primary)',
+                                fontSize: '0.9rem',
+                                outline: 'none'
                             }}
-                        >
-                            <div style={{ flex: 1, minWidth: 0 }}>
+                        />
+                    </div>
+
+                    {/* Options List */}
+                    <div style={{ maxHeight: '250px', overflowY: 'auto' }}>
+                        {filteredAccounts.map(acc => (
+                            <div
+                                key={acc.id}
+                                onClick={() => {
+                                    onSelect(acc.id, acc.name);
+                                    setIsOpen(false);
+                                }}
+                                style={{
+                                    padding: '12px 16px',
+                                    cursor: 'pointer',
+                                    borderBottom: '1px solid rgba(255,255,255,0.02)',
+                                    backgroundColor: acc.id === selectedId ? 'rgba(45, 136, 255, 0.1)' : 'transparent',
+                                    transition: 'background 0.2s'
+                                }}
+                                onMouseEnter={(e) => e.target.style.backgroundColor = 'rgba(255,255,255,0.05)'}
+                                onMouseLeave={(e) => e.target.style.backgroundColor = acc.id === selectedId ? 'rgba(45, 136, 255, 0.1)' : 'transparent'}
+                            >
                                 <div style={{ 
-                                    fontWeight: '600', 
-                                    fontSize: '0.95rem',
-                                    color: isSelected ? 'var(--text-primary)' : 'var(--text-primary)',
-                                    whiteSpace: 'nowrap',
-                                    overflow: 'hidden',
-                                    textOverflow: 'ellipsis'
+                                    color: acc.id === selectedId ? 'var(--accent-primary)' : 'var(--text-primary)',
+                                    fontWeight: acc.id === selectedId ? 'bold' : 'normal',
+                                    fontSize: '0.9rem'
                                 }}>
                                     {acc.name}
                                 </div>
@@ -116,36 +152,15 @@ const ReportAdAccountSelector = ({ teamId, selectedId, onSelect, language }) => 
                                     ID: {acc.id}
                                 </div>
                             </div>
-                            {isSelected && (
-                                <div style={{ 
-                                    width: '24px', 
-                                    height: '24px', 
-                                    borderRadius: '50%', 
-                                    backgroundColor: 'var(--accent-primary)', 
-                                    display: 'flex', 
-                                    alignItems: 'center', 
-                                    justifyContent: 'center',
-                                    color: 'white',
-                                    flexShrink: 0,
-                                    marginLeft: '8px'
-                                }}>
-                                    <FiCheck size={14} />
-                                </div>
-                            )}
-                        </div>
-                    );
-                })}
-                {filteredAccounts.length === 0 && accounts.length > 0 && (
-                    <div style={{ gridColumn: '1/-1', textAlign: 'center', padding: '20px', color: 'var(--text-tertiary)' }}>
-                        {t('No accounts match your search', '找不到相符的帳號')}
+                        ))}
+                        {filteredAccounts.length === 0 && (
+                            <div style={{ padding: '20px', textAlign: 'center', color: 'var(--text-tertiary)' }}>
+                                {t('No results.', '沒有相符的帳號')}
+                            </div>
+                        )}
                     </div>
-                )}
-                {accounts.length === 0 && (
-                    <div style={{ gridColumn: '1/-1', textAlign: 'center', padding: '20px', color: 'var(--text-tertiary)' }}>
-                        {t('No FB accounts found linked to this team.', '此團隊尚未串接 FB 廣告帳號。')}
-                    </div>
-                )}
-            </div>
+                </div>
+            )}
         </div>
     );
 };
