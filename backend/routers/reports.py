@@ -252,6 +252,7 @@ async def generate_report(
         s = {
             "spend": 0.0, "impressions": 0, "clicks": 0, "link_clicks": 0, "reach": 0,
             "purchases": 0, "purchase_value": 0.0, "add_to_cart": 0, "view_content": 0,
+            "initiate_checkout": 0, "add_payment_info": 0,
             "post_engagement": 0, "post_reactions": 0, "post_comments": 0, "post_shares": 0,
             "video_views": 0, "atc_value": 0.0, "messenger_replies": 0, "leads": 0
         }
@@ -268,6 +269,7 @@ async def generate_report(
         s["roas"] = s["purchase_value"] / s["spend"] if s["spend"] > 0 else 0
         s["cpa"] = s["spend"] / s["purchases"] if s["purchases"] > 0 else 0
         s["cvr"] = (s["purchases"] / s["link_clicks"] * 100) if s["link_clicks"] > 0 else 0
+        s["frequency"] = (s["impressions"] / s["reach"]) if s["reach"] > 0 else 0
         
         # Funnel Metrics
         s["view_to_cart"] = (s["add_to_cart"] / s["view_content"] * 100) if s["view_content"] > 0 else 0
