@@ -19,6 +19,11 @@ const formatValue = (val, format) => {
 
     switch (format) {
         case 'currency':
+            // For amounts >= 10, remove decimals. For smaller ones (like CPC), keep them if they are non-zero.
+            // Matching AnalyticsKPICard threshold logic but in a table context.
+            if (num >= 10 || Number.isInteger(num)) {
+                return `$${num.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}`;
+            }
             return `$${num.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
         case 'percent':
             return `${num.toFixed(2)}%`;
@@ -26,11 +31,8 @@ const formatValue = (val, format) => {
             return num.toFixed(2);
         case 'number':
         default:
-            return num >= 1000000
-                ? `${(num / 1000000).toFixed(1)}M`
-                : num >= 1000
-                    ? `${(num / 1000).toFixed(1)}K`
-                    : num.toLocaleString();
+            // Remove K/M abbreviations as requested, use full numbers with commas
+            return num.toLocaleString();
     }
 };
 
