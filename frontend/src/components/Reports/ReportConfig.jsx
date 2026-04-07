@@ -173,6 +173,14 @@ const ReportConfig = ({ onSave, onCancel, initialData = {}, language, teamId }) 
                       updateField('selected_metrics', [...current, key]);
                     }
                   }}
+                  onToggle={(groupId, key) => { // Redundancy for safety
+                    const current = [...formData.selected_metrics];
+                    if (current.includes(key)) {
+                      updateField('selected_metrics', current.filter(k => k !== key));
+                    } else {
+                      updateField('selected_metrics', [...current, key]);
+                    }
+                  }}
                   language={language}
                   onClose={() => {}} // MetricSelector internally handles modal, but we can pass dummy
                />

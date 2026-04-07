@@ -8,10 +8,19 @@ import { METRIC_GROUPS } from '../../constants/analyticsConfig';
 
 const MetricSelector = memo(function MetricSelector({
     selectedMetrics,
-    onToggleMetric,
+    onToggleMetric, // Make sure it's in the args!
     language = 'zh',
-    onClose
+    onClose,
+    onToggle
 }) {
+    // Debug props in production
+    console.log('[MetricSelector] Props received:', { 
+        hasToggle: typeof onToggleMetric === 'function' || typeof onToggle === 'function',
+        onToggleMetricType: typeof onToggleMetric,
+        onToggleType: typeof onToggle
+    });
+
+    const activeToggle = onToggleMetric || onToggle;
     const styles = {
         overlay: {
             position: 'fixed',
@@ -103,8 +112,12 @@ const MetricSelector = memo(function MetricSelector({
     };
 
     const handleToggle = useCallback((groupId, metricKey) => {
-        onToggleMetric(groupId, metricKey);
-    }, [onToggleMetric]);
+        if (typeof activeToggle === 'function') {
+            activeToggle(groupId, metricKey);
+        } else {
+            console.error('[MetricSelector] No toggle function provided!');
+        }
+    }, [activeToggle]);
 
     return (
         <div style={styles.overlay} onClick={onClose}>
