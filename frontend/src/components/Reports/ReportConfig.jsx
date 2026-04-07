@@ -3,7 +3,7 @@ import React, { useState } from 'react';
 import { FiChevronRight, FiChevronLeft, FiSettings, FiCalendar, FiActivity, FiCheckCircle } from 'react-icons/fi';
 import ReportAdAccountSelector from './ReportAdAccountSelector';
 import { MetricSelector } from '../Analytics';
-import { getMetricConfig } from '../../constants/analyticsConfig';
+import { getMetricConfig, METRIC_GROUPS } from '../../constants/analyticsConfig';
 import { format, subDays, startOfWeek, endOfWeek, subMonths, startOfMonth, endOfMonth } from 'date-fns';
 
 const ReportConfig = ({ onSave, onCancel, initialData = {}, language, teamId }) => {
@@ -158,32 +158,60 @@ const ReportConfig = ({ onSave, onCancel, initialData = {}, language, teamId }) 
             <h2 style={{ fontSize: '1.25rem', color: 'var(--text-primary)', marginBottom: '12px', display: 'flex', alignItems: 'center', gap: '8px' }}>
               <FiActivity color="var(--accent-primary)" /> {t('Step 3: Metric Selection', '步驟 3：指標選擇')}
             </h2>
-            <div style={{ maxHeight: '500px', overflowY: 'auto' }}>
-               <MetricSelector
-                  selectedMetrics={new Set(formData.selected_metrics.map(key => {
-                    // Map simple keys to composite keys (groupId:key)
-                    const config = getMetricConfig(key);
-                    return config ? `${config.groupId}:${config.key}` : `general:${key}`;
-                  }))}
-                  onToggleMetric={(groupId, key) => {
-                    const current = [...formData.selected_metrics];
-                    if (current.includes(key)) {
-                      updateField('selected_metrics', current.filter(k => k !== key));
-                    } else {
-                      updateField('selected_metrics', [...current, key]);
-                    }
-                  }}
-                  onToggle={(groupId, key) => { // Redundancy for safety
-                    const current = [...formData.selected_metrics];
-                    if (current.includes(key)) {
-                      updateField('selected_metrics', current.filter(k => k !== key));
-                    } else {
-                      updateField('selected_metrics', [...current, key]);
-                    }
-                  }}
-                  language={language}
-                  onClose={() => {}} // MetricSelector internally handles modal, but we can pass dummy
-               />
+            <div style={{ 
+              maxHeight: '450px', 
+              overflowY: 'auto', 
+              padding: '16px',
+              backgroundColor: 'rgba(255,255,255,0.02)',
+              borderRadius: '12px',
+              border: '1px solid var(--glass-border)',
+              display: 'grid',
+              gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))',
+              gap: '20px'
+            }}>
+               {METRIC_GROUPS.map((group) => (
+                 <div key={group.id} style={{
+                   backgroundColor: 'rgba(255, 255, 255, 0.03)',
+                   border: `1px solid ${group.color}30`,
+                   borderRadius: '12px',
+                   padding: '16px',
+                 }}>
+                   <div style={{ 
+                     fontSize: '0.9rem', 
+                     fontWeight: '600', 
+                     color: group.color, 
+                     marginBottom: '12px',
+                     display: 'flex',
+                     alignItems: 'center',
+                     gap: '8px'
+                   }}>
+                     <div style={{ width: '8px', height: '8px', borderRadius: '50%', backgroundColor: group.color }} />
+                     {language === 'zh' ? group.label_zh : group.label_en}
+                   </div>
+                   <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                     {group.metrics.map((metric) => (
+                       <label key={metric.key} style={{ display: 'flex', alignItems: 'center', gap: '10px', cursor: 'pointer' }}>
+                         <input
+                           type="checkbox"
+                           checked={formData.selected_metrics.includes(metric.key)}
+                           onChange={() => {
+                             const current = [...formData.selected_metrics];
+                             if (current.includes(metric.key)) {
+                               updateField('selected_metrics', current.filter(k => k !== metric.key));
+                             } else {
+                               updateField('selected_metrics', [...current, metric.key]);
+                             }
+                           }}
+                           style={{ width: '16px', height: '16px', accentColor: group.color, cursor: 'pointer' }}
+                         />
+                         <span style={{ fontSize: '0.85rem', color: 'var(--text-secondary)' }}>
+                           {language === 'zh' ? metric.label_zh : metric.label_en}
+                         </span>
+                       </label>
+                     ))}
+                   </div>
+                 </div>
+               ))}
             </div>
           </div>
         );
