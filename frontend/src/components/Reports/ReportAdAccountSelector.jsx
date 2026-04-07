@@ -59,26 +59,37 @@ const ReportAdAccountSelector = ({ teamId, selectedId, onSelect, language }) => 
                 style={{
                     padding: '12px 16px',
                     backgroundColor: 'var(--bg-primary)',
-                    border: '1px solid var(--glass-border)',
+                    border: isOpen ? '1px solid var(--accent-primary)' : '1px solid var(--glass-border)',
                     borderRadius: '10px',
                     color: selectedAccount ? 'var(--text-primary)' : 'var(--text-tertiary)',
                     cursor: 'pointer',
                     display: 'flex',
                     justifyContent: 'space-between',
                     alignItems: 'center',
-                    transition: 'all 0.2s'
+                    transition: 'all 0.2s',
+                    boxShadow: isOpen ? '0 0 0 2px rgba(45, 136, 255, 0.2)' : 'none'
                 }}
             >
-                <div>
-                    {selectedAccount 
-                        ? `${selectedAccount.name} (${selectedAccount.id})` 
-                        : t('Select an Ad Account...', '請選擇廣告帳號...')}
+                <div style={{ display: 'flex', alignItems: 'center', gap: '10px', overflow: 'hidden' }}>
+                    <div style={{ 
+                        width: '8px', 
+                        height: '8px', 
+                        borderRadius: '50%', 
+                        backgroundColor: selectedAccount ? '#10b981' : 'var(--text-tertiary)',
+                        flexShrink: 0
+                    }} />
+                    <div style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', fontWeight: selectedAccount ? '600' : 'normal' }}>
+                        {selectedAccount 
+                            ? `${selectedAccount.name}` 
+                            : t('Select an Ad Account...', '請選擇廣告帳號...')}
+                    </div>
                 </div>
                 <div style={{ 
                     transition: 'transform 0.2s', 
-                    transform: isOpen ? 'rotate(180deg)' : 'rotate(0)' 
+                    transform: isOpen ? 'rotate(180deg)' : 'rotate(0)',
+                    color: isOpen ? 'var(--accent-primary)' : 'var(--text-tertiary)'
                 }}>
-                    <FiSearch />
+                    <FiChevronDown />
                 </div>
             </div>
 
@@ -92,38 +103,41 @@ const ReportAdAccountSelector = ({ teamId, selectedId, onSelect, language }) => 
                     backgroundColor: 'var(--bg-secondary)',
                     border: '1px solid var(--glass-border)',
                     borderRadius: '12px',
-                    boxShadow: '0 10px 25px rgba(0,0,0,0.5)',
-                    zIndex: 100,
-                    overflow: 'hidden',
-                    animation: 'fadeIn 0.2s ease-out'
+                    boxShadow: '0 20px 40px rgba(0,0,0,0.4)',
+                    zIndex: 1000,
+                    overflow: 'visible',
+                    animation: 'fadeInUp 0.2s ease-out'
                 }}>
                     {/* Search inside dropdown */}
                     <div style={{ 
-                        padding: '10px', 
+                        padding: '12px', 
                         borderBottom: '1px solid var(--glass-border)',
-                        backgroundColor: 'rgba(255,255,255,0.03)'
+                        backgroundColor: 'rgba(255,255,255,0.02)'
                     }}>
-                        <input
-                            autoFocus
-                            type="text"
-                            value={searchTerm}
-                            onChange={(e) => setSearchTerm(e.target.value)}
-                            placeholder={t('Search...', '搜尋...')}
-                            style={{
-                                width: '100%',
-                                padding: '8px 12px',
-                                backgroundColor: 'var(--bg-primary)',
-                                border: '1px solid var(--glass-border)',
-                                borderRadius: '8px',
-                                color: 'var(--text-primary)',
-                                fontSize: '0.9rem',
-                                outline: 'none'
-                            }}
-                        />
+                        <div style={{ position: 'relative' }}>
+                            <FiSearch style={{ position: 'absolute', left: '12px', top: '50%', transform: 'translateY(-50%)', color: 'var(--text-tertiary)' }} />
+                            <input
+                                autoFocus
+                                type="text"
+                                value={searchTerm}
+                                onChange={(e) => setSearchTerm(e.target.value)}
+                                placeholder={t('Search...', '搜尋廣告帳號名稱或 ID...')}
+                                style={{
+                                    width: '100%',
+                                    padding: '10px 10px 10px 38px',
+                                    backgroundColor: 'var(--bg-primary)',
+                                    border: '1px solid var(--glass-border)',
+                                    borderRadius: '8px',
+                                    color: 'var(--text-primary)',
+                                    fontSize: '0.9rem',
+                                    outline: 'none'
+                                }}
+                            />
+                        </div>
                     </div>
 
                     {/* Options List */}
-                    <div style={{ maxHeight: '250px', overflowY: 'auto' }}>
+                    <div style={{ maxHeight: '300px', overflowY: 'auto', padding: '6px' }}>
                         {filteredAccounts.map(acc => (
                             <div
                                 key={acc.id}
@@ -132,34 +146,50 @@ const ReportAdAccountSelector = ({ teamId, selectedId, onSelect, language }) => 
                                     setIsOpen(false);
                                 }}
                                 style={{
-                                    padding: '12px 16px',
+                                    padding: '10px 14px',
                                     cursor: 'pointer',
-                                    borderBottom: '1px solid rgba(255,255,255,0.02)',
-                                    backgroundColor: acc.id === selectedId ? 'rgba(45, 136, 255, 0.1)' : 'transparent',
-                                    transition: 'background 0.2s'
+                                    borderRadius: '8px',
+                                    marginBottom: '2px',
+                                    backgroundColor: acc.id === selectedId ? 'rgba(45, 136, 255, 0.15)' : 'transparent',
+                                    transition: 'all 0.15s'
                                 }}
-                                onMouseEnter={(e) => e.target.style.backgroundColor = 'rgba(255,255,255,0.05)'}
-                                onMouseLeave={(e) => e.target.style.backgroundColor = acc.id === selectedId ? 'rgba(45, 136, 255, 0.1)' : 'transparent'}
+                                onMouseEnter={(e) => {
+                                    if (acc.id !== selectedId) e.currentTarget.style.backgroundColor = 'rgba(255,255,255,0.05)';
+                                }}
+                                onMouseLeave={(e) => {
+                                    if (acc.id !== selectedId) e.currentTarget.style.backgroundColor = 'transparent';
+                                }}
                             >
                                 <div style={{ 
                                     color: acc.id === selectedId ? 'var(--accent-primary)' : 'var(--text-primary)',
-                                    fontWeight: acc.id === selectedId ? 'bold' : 'normal',
-                                    fontSize: '0.9rem'
+                                    fontWeight: acc.id === selectedId ? '600' : '500',
+                                    fontSize: '0.95rem',
+                                    marginBottom: '2px'
                                 }}>
                                     {acc.name}
                                 </div>
-                                <div style={{ fontSize: '0.75rem', color: 'var(--text-tertiary)' }}>
-                                    ID: {acc.id}
+                                <div style={{ fontSize: '0.8rem', color: 'var(--text-tertiary)', display: 'flex', justifyContent: 'space-between' }}>
+                                    <span>ID: {acc.id}</span>
+                                    {acc.id === selectedId && <FiCheckCircle color="var(--accent-primary)" style={{ marginLeft: '4px' }} />}
                                 </div>
                             </div>
                         ))}
                         {filteredAccounts.length === 0 && (
-                            <div style={{ padding: '20px', textAlign: 'center', color: 'var(--text-tertiary)' }}>
-                                {t('No results.', '沒有相符的帳號')}
+                            <div style={{ padding: '30px 20px', textAlign: 'center', color: 'var(--text-tertiary)' }}>
+                                <FiSearch size={24} style={{ marginBottom: '8px', opacity: 0.3 }} />
+                                <div>{t('No results found.', '找不到相符的帳號')}</div>
                             </div>
                         )}
                     </div>
                 </div>
+            )}
+            
+            {/* Click outside to close (Optional but recommended) */}
+            {isOpen && (
+                <div 
+                    style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, zIndex: 999 }} 
+                    onClick={() => setIsOpen(false)}
+                />
             )}
         </div>
     );
