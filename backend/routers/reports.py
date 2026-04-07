@@ -251,18 +251,34 @@ async def generate_report(
     def _sum_metrics(rows):
         s = {
             "spend": 0.0, "impressions": 0, "clicks": 0, "link_clicks": 0, "reach": 0,
-            "purchases": 0, "purchase_value": 0.0, "add_to_cart": 0, "view_content": 0
+            "purchases": 0, "purchase_value": 0.0, "add_to_cart": 0, "view_content": 0,
+            "post_engagement": 0, "post_reactions": 0, "post_comments": 0, "post_shares": 0,
+            "video_views": 0, "atc_value": 0.0, "messenger_replies": 0, "leads": 0
         }
         for row in rows:
             for k in s.keys():
-                s[k] += float(row.get(k, 0))
+                val = row.get(k, 0)
+                if val is not None:
+                    s[k] += float(val)
         
-        # 計算比率指標
+        # 計算比率指標 (Derivatives)
         s["ctr"] = (s["link_clicks"] / s["impressions"] * 100) if s["impressions"] > 0 else 0
         s["cpc"] = s["spend"] / s["clicks"] if s["clicks"] > 0 else 0
         s["cpm"] = (s["spend"] / s["impressions"] * 1000) if s["impressions"] > 0 else 0
         s["roas"] = s["purchase_value"] / s["spend"] if s["spend"] > 0 else 0
         s["cpa"] = s["spend"] / s["purchases"] if s["purchases"] > 0 else 0
+        s["cvr"] = (s["purchases"] / s["link_clicks"] * 100) if s["link_clicks"] > 0 else 0
+        
+        # Funnel Metrics
+        s["view_to_cart"] = (s["add_to_cart"] / s["view_content"] * 100) if s["view_content"] > 0 else 0
+        s["cart_conversion"] = (s["purchases"] / s["add_to_cart"] * 100) if s["add_to_cart"] > 0 else 0
+        s["cart_dropoff"] = (100 - s["cart_conversion"]) if s["add_to_cart"] > 0 else 0
+        s["cart_value_realization"] = (s["purchase_value"] / s["atc_value"] * 100) if s["atc_value"] > 0 else 0
+        
+        # Other
+        s["cost_per_atc"] = s["spend"] / s["add_to_cart"] if s["add_to_cart"] > 0 else 0
+        s["cost_per_lead"] = s["spend"] / s["leads"] if s["leads"] > 0 else 0
+        
         return s
 
     summary = _sum_metrics(current_rows)

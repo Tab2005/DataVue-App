@@ -51,7 +51,7 @@ const ReportTableSection = ({ data, columns, language, breakdown }) => {
                   rowIndex={idx}
                   showCheckbox={false}
                   language={language}
-                  nameKey={breakdown === 'account' ? 'name' : `${breakdown}_name`}
+                  nameKey="name"
                 />
               ))}
             </tbody>
