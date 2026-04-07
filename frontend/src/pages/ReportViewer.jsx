@@ -26,7 +26,7 @@ const ReportViewer = ({ mode = 'view' }) => {
         setLoading(true);
         try {
             const res = await reportService.get(id);
-            setReport(res.data);
+            setReport(res);
             setError(null);
         } catch (err) {
             console.error('Failed to fetch report:', err);
@@ -46,7 +46,7 @@ const ReportViewer = ({ mode = 'view' }) => {
         setIsSaving(true);
         try {
             const res = await reportService.create(formData);
-            const newReport = res.data;
+            const newReport = res;
             // After create, immediately trigger generation
             setIsGenerating(true);
             try {
@@ -70,7 +70,7 @@ const ReportViewer = ({ mode = 'view' }) => {
         setIsGenerating(true);
         try {
             const res = await reportService.generate(report.id);
-            setReport(res.data);
+            setReport(res);
         } catch (err) {
             console.error('Generation failed:', err);
             alert(t('Failed to fetch data from Facebook.', '抓取資料失敗。'));
@@ -83,7 +83,7 @@ const ReportViewer = ({ mode = 'view' }) => {
         if (!report) return;
         try {
             const res = await reportService.update(report.id, payload);
-            setReport(res.data);
+            setReport(res);
         } catch (err) {
             console.error('Update failed:', err);
         }
