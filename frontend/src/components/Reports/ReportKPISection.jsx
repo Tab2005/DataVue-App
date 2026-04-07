@@ -1,5 +1,4 @@
-// frontend/src/components/Reports/ReportKPISection.jsx
-import React from 'react';
+import { getMetricConfig } from '../../constants/analyticsConfig';
 import AnalyticsKPICard from '../Analytics/AnalyticsKPICard';
 
 const ReportKPISection = ({ data, selectedMetrics, language }) => {
@@ -7,9 +6,8 @@ const ReportKPISection = ({ data, selectedMetrics, language }) => {
 
   const t = (en, zh) => (language === 'zh' ? zh : en);
 
-  // Extract metrics from summary based on selectedMetrics
-  // In WeeklyReport, summary is a snapshot of the calculated totals
   const summary = data.summary;
+  const prevSummary = data.prev_summary || {};
 
   return (
     <div style={{ marginBottom: '32px' }}>
@@ -21,15 +19,34 @@ const ReportKPISection = ({ data, selectedMetrics, language }) => {
         gridTemplateColumns: 'repeat(auto-fill, minmax(200px, 1fr))',
         gap: '16px'
       }}>
-        {selectedMetrics.map((key, index) => (
-          <AnalyticsKPICard
-            key={key}
-            metricKey={key}
-            currentValue={summary[key]}
-            previousValue={data.prev_summary ? data.prev_summary[key] : null}
-            language={language}
-          />
-        ))}
+        {selectedMetrics.map((key) => {
+          const config = getMetricConfig(key) || { label_zh: key, label_en: key, format: 'number' };
+          const cur = summary[key] || 0;
+          const prev = prevSummary[key] || 0;
+          
+          // Calculate change percentage
+          let changeStr = '0%';
+          if (prev > 0) {
+            const diff = ((cur - prev) / prev) * 100;
+            changeStr = `${diff > 0 ? '+' : ''}${diff.toFixed(1)}%`;
+          } else if (cur > 0) {
+            changeStr = '+100%';
+          }
+
+          return (
+            <AnalyticsKPICard
+              key={key}
+              label={t(config.label_en, config.label_zh)}
+              value={cur}
+              prevValue={prev}
+              change={changeStr}
+              format={config.format}
+              color={config.groupColor}
+              isInverse={config.isInverse}
+              language={language}
+            />
+          );
+        })}
       </div>
     </div>
   );

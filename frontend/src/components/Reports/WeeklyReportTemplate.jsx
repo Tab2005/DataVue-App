@@ -6,6 +6,7 @@ import ReportTableSection from './ReportTableSection';
 import ReportNoteEditor from './ReportNoteEditor';
 import { FiCpu, FiPrinter, FiRefreshCcw, FiZap } from 'react-icons/fi';
 import ReactMarkdown from 'react-markdown';
+import { getMetricConfig } from '../../constants/analyticsConfig';
 
 const WeeklyReportTemplate = ({ 
   report, 
@@ -43,7 +44,7 @@ const WeeklyReportTemplate = ({
           }}
         >
           {isGenerating ? <FiRefreshCcw className="spin" /> : <FiZap />}
-          {t('Generate Now', '立即產生報表')}
+          {isGenerating ? t('Broadcasting...', '正在抓取中...') : t('Generate Now', '立即產生報表')}
         </button>
       </div>
     );
@@ -78,9 +79,20 @@ const WeeklyReportTemplate = ({
           <button
             onClick={onGenerate}
             disabled={isGenerating}
-            style={{ padding: '10px 20px', borderRadius: '10px', border: '1px solid var(--glass-border)', backgroundColor: 'var(--bg-secondary)', color: 'var(--text-primary)', display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer' }}
+            style={{ 
+               padding: '10px 20px', 
+               borderRadius: '10px', 
+               border: '1px solid var(--glass-border)', 
+               backgroundColor: 'var(--bg-secondary)', 
+               color: 'var(--text-primary)', 
+               display: 'flex', 
+               alignItems: 'center', 
+               gap: '8px', 
+               cursor: isGenerating ? 'not-allowed' : 'pointer',
+               opacity: isGenerating ? 0.7 : 1
+            }}
           >
-            {isGenerating ? <FiRefreshCcw className="spin" /> : <FiRefreshCcw />} {t('Refresh Data', '重新產生資料')}
+            <FiRefreshCcw className={isGenerating ? 'spin' : ''} /> {isGenerating ? t('Refreshing...', '正在刷更新資料...') : t('Refresh Data', '重新產生資料')}
           </button>
         </div>
       </div>
@@ -92,7 +104,20 @@ const WeeklyReportTemplate = ({
       <ReportTrendSection data={reportData} selectedMetrics={selectedMetrics} language={language} />
 
       {/* III. Table Section */}
-      <ReportTableSection data={reportData} columns={selectedMetrics.map(k => ({ key: k, label_zh: k, label_en: k, format: 'number' }))} breakdown={report.breakdown} language={language} />
+      <ReportTableSection 
+        data={reportData} 
+        columns={selectedMetrics.map(k => {
+          const cfg = getMetricConfig(k) || { label_zh: k, label_en: k, format: 'number' };
+          return {
+            key: k,
+            label_zh: cfg.label_zh,
+            label_en: cfg.label_en,
+            format: cfg.format
+          };
+        })} 
+        breakdown={report.breakdown} 
+        language={language} 
+      />
 
       {/* IV. AI Summary Section */}
       <div style={{ marginBottom: '32px' }}>
