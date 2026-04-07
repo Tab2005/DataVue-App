@@ -264,7 +264,15 @@ async def generate_report(
         
         # 計算比率指標 (Derivatives)
         s["ctr"] = (s["link_clicks"] / s["impressions"] * 100) if s["impressions"] > 0 else 0
-        s["cpc"] = s["spend"] / s["clicks"] if s["clicks"] > 0 else 0
+        
+        # 優先使用 clicks (全部點擊) 計算 CPC，若為 0 則改用 link_clicks (連結點擊) 確保不為 0
+        if s["clicks"] > 0:
+            s["cpc"] = s["spend"] / s["clicks"]
+        elif s["link_clicks"] > 0:
+            s["cpc"] = s["spend"] / s["link_clicks"]
+        else:
+            s["cpc"] = 0
+            
         s["cpm"] = (s["spend"] / s["impressions"] * 1000) if s["impressions"] > 0 else 0
         s["roas"] = s["purchase_value"] / s["spend"] if s["spend"] > 0 else 0
         s["cpa"] = s["spend"] / s["purchases"] if s["purchases"] > 0 else 0

@@ -11,7 +11,17 @@ const ReportKPISection = ({ data, selectedMetrics, language }) => {
 
   return (
     <div style={{ marginBottom: '32px' }}>
-      <h2 style={{ fontSize: '1.25rem', color: 'var(--text-primary)', marginBottom: '16px', display: 'flex', alignItems: 'center', gap: '8px' }}>
+      <h2 style={{ 
+        fontSize: '1.2rem', 
+        color: '#fbbf24', 
+        marginBottom: '20px', 
+        display: 'flex', 
+        alignItems: 'center', 
+        gap: '12px',
+        borderLeft: '4px solid #fbbf24',
+        paddingLeft: '12px',
+        fontWeight: 600
+      }}>
         {t('I. Key Performance Indicators', '一、 關鍵指標總覽')}
       </h2>
       <div style={{

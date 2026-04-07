@@ -122,7 +122,7 @@ const ReportViewer = ({ mode = 'view' }) => {
     if (loading) return <PageLoading />;
 
     return (
-        <div style={{ padding: '24px', maxWidth: '1200px', margin: '0 auto' }}>
+        <div style={{ padding: '24px 32px', maxWidth: '1400px', margin: '0 auto' }}>
             {/* Back Button */}
             <button
                 onClick={() => navigate('/reports')}

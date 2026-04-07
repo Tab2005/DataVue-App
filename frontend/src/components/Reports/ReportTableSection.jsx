@@ -19,7 +19,17 @@ const ReportTableSection = ({ data, columns, language, breakdown }) => {
   return (
     <div style={{ marginBottom: '32px' }}>
       <hr style={{ border: 'none', borderTop: '1px solid var(--glass-border)', margin: '32px 0' }} />
-      <h2 style={{ fontSize: '1.25rem', color: 'var(--text-primary)', marginBottom: '16px', display: 'flex', alignItems: 'center', gap: '8px' }}>
+      <h2 style={{ 
+        fontSize: '1.2rem', 
+        color: '#8b5cf6', 
+        marginBottom: '20px', 
+        display: 'flex', 
+        alignItems: 'center', 
+        gap: '12px',
+        borderLeft: '4px solid #8b5cf6',
+        paddingLeft: '12px',
+        fontWeight: 600
+      }}>
         {t('III. Detailed Performance Breakdown', '三、 廣告明細成效圖表')}
       </h2>
       <div style={{

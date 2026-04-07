@@ -123,7 +123,17 @@ const WeeklyReportTemplate = ({
       <div style={{ marginBottom: '32px' }}>
         <hr style={{ border: 'none', borderTop: '1px solid var(--glass-border)', margin: '32px 0' }} />
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
-          <h2 style={{ fontSize: '1.25rem', color: 'var(--text-primary)', margin: 0, display: 'flex', alignItems: 'center', gap: '8px' }}>
+          <h2 style={{ 
+            fontSize: '1.2rem', 
+            color: '#06b6d4', 
+            margin: 0, 
+            display: 'flex', 
+            alignItems: 'center', 
+            gap: '12px',
+            borderLeft: '4px solid #06b6d4',
+            paddingLeft: '12px',
+            fontWeight: 600
+          }}>
             {t('IV. AI Performance Insights', '四、 AI 成效分析摘要')}
           </h2>
           <button
