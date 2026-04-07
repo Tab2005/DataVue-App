@@ -118,7 +118,13 @@ const WeeklyReportTemplate = ({
       </div>
 
       {/* I. KPI Section */}
-      <ReportKPISection data={reportData} selectedMetrics={selectedMetrics} language={language} />
+      <ReportKPISection 
+        data={reportData} 
+        selectedMetrics={selectedMetrics} 
+        language={language} 
+        dateSince={report.date_since}
+        dateUntil={report.date_until}
+      />
 
       {/* II. Trend Section */}
       <ReportTrendSection data={reportData} selectedMetrics={selectedMetrics} language={language} />
