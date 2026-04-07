@@ -1,7 +1,7 @@
 // frontend/src/components/Reports/ReportAdAccountSelector.jsx
 import React, { useState, useEffect } from 'react';
 import { TeamService } from '../../services/teamService';
-import { FiCheck, FiSearch, FiAlertCircle, FiLoader } from 'react-icons/fi';
+import { FiSearch, FiAlertCircle, FiLoader, FiChevronDown, FiCheckCircle } from 'react-icons/fi';
 
 /**
  * 報表專用的廣告帳號選擇器 (單選模式)
