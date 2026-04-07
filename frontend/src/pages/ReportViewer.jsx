@@ -1,7 +1,7 @@
 // frontend/src/pages/ReportViewer.jsx
 import React, { useState, useEffect } from 'react';
 import { useParams, useNavigate, useOutletContext } from 'react-router-dom';
-import { FiChevronLeft, FiAlertCircle, FiSave, FiCheckCircle } from 'react-icons/fi';
+import { FiChevronLeft, FiAlertCircle, FiSave, FiCheckCircle, FiShare2, FiCopy } from 'react-icons/fi';
 import { reportService } from '../services/reportService';
 import { ReportConfig, WeeklyReportTemplate } from '../components/Reports';
 import PageLoading from '../components/PageLoading';
@@ -18,6 +18,7 @@ const ReportViewer = ({ mode = 'view' }) => {
     const [isGenerating, setIsGenerating] = useState(false);
     const [isAnalyzing, setIsAnalyzing] = useState(false);
     const [isSaving, setIsSaving] = useState(false);
+    const [showShareToast, setShowShareToast] = useState(false);
 
     const t = (en, zh) => (language === 'zh' ? zh : en);
 
@@ -119,30 +120,74 @@ const ReportViewer = ({ mode = 'view' }) => {
         }
     };
 
+    const handleCopyShareLink = () => {
+        if (!report || !report.share_token) return;
+        const shareUrl = `${window.location.origin}/reports/share/${report.share_token}`;
+        navigator.clipboard.writeText(shareUrl);
+        setShowShareToast(true);
+        setTimeout(() => setShowShareToast(false), 3000);
+    };
+
     if (loading) return <PageLoading />;
 
     return (
         <div style={{ padding: '24px 32px', maxWidth: '1400px', margin: '0 auto' }}>
             {/* Back Button */}
-            <button
-                onClick={() => navigate('/reports')}
-                style={{
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: '8px',
-                    backgroundColor: 'transparent',
-                    border: 'none',
-                    color: 'var(--text-secondary)',
-                    cursor: 'pointer',
-                    marginBottom: '24px',
-                    fontSize: '1rem',
-                    padding: '8px 0'
-                }}
-                onMouseEnter={(e) => e.target.style.color = 'var(--text-primary)'}
-                onMouseLeave={(e) => e.target.style.color = 'var(--text-secondary)'}
-            >
-                <FiChevronLeft /> {t('Back to List', '返回週報列表')}
-            </button>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '24px' }}>
+                <button
+                    onClick={() => navigate('/reports')}
+                    style={{
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: '8px',
+                        backgroundColor: 'transparent',
+                        border: 'none',
+                        color: 'var(--text-secondary)',
+                        cursor: 'pointer',
+                        fontSize: '1rem',
+                        padding: '8px 0'
+                    }}
+                    onMouseEnter={(e) => e.target.style.color = 'var(--text-primary)'}
+                    onMouseLeave={(e) => e.target.style.color = 'var(--text-secondary)'}
+                >
+                    <FiChevronLeft /> {t('Back to List', '返回週報列表')}
+                </button>
+
+                {mode === 'view' && report && (
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                        {showShareToast && (
+                            <span style={{ 
+                                color: '#10b981', 
+                                fontSize: '0.9rem', 
+                                display: 'flex', 
+                                alignItems: 'center', 
+                                gap: '4px',
+                                animation: 'fadeIn 0.3s ease'
+                            }}>
+                                <FiCheckCircle /> {t('Link Copied!', '分享連結已複製！')}
+                            </span>
+                        )}
+                        <button
+                            onClick={handleCopyShareLink}
+                            style={{
+                                display: 'flex',
+                                alignItems: 'center',
+                                gap: '8px',
+                                padding: '8px 16px',
+                                borderRadius: '8px',
+                                backgroundColor: 'var(--accent-primary)',
+                                color: 'white',
+                                border: 'none',
+                                cursor: 'pointer',
+                                fontWeight: '500',
+                                boxShadow: '0 4px 12px rgba(99, 102, 241, 0.3)'
+                            }}
+                        >
+                            <FiShare2 /> {t('Share Report', '分享報表')}
+                        </button>
+                    </div>
+                )}
+            </div>
 
             {error && (
                 <div style={{

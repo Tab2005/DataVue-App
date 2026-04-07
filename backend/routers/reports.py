@@ -71,6 +71,7 @@ def _serialize(report: WeeklyReport) -> dict:
         "ai_summary": report.ai_summary,
         "sections": _safe_json_load(report.sections, []),
         "status": report.status,
+        "share_token": report.share_token,
         "user_id": report.user_id,
         "team_id": report.team_id,
         "created_at": report.created_at.isoformat() if report.created_at else "",
@@ -78,6 +79,17 @@ def _serialize(report: WeeklyReport) -> dict:
     }
 
 # ---- Endpoints ----
+
+@router.get("/share/{token}")
+async def get_shared_report(token: str, db: Session = Depends(get_db)):
+    """公開分享端點：無需登入即可取得報表資料"""
+    report = db.query(WeeklyReport).filter(WeeklyReport.share_token == token).first()
+    if not report:
+        raise HTTPException(status_code=404, detail="Shared report not found")
+    
+    # 僅回傳唯讀所需欄位，增加安全性
+    data = _serialize(report)
+    return data
 
 @router.get("", dependencies=[Depends(fb_ads_check)])
 async def list_reports(
@@ -124,6 +136,7 @@ async def create_report(
         breakdown=payload.breakdown or "campaign",
         selected_metrics=json.dumps(payload.selected_metrics),
         status="draft",
+        share_token=str(uuid.uuid4()),
         user_id=current_user.id if not payload.team_id else None,
         team_id=payload.team_id,
         created_by=current_user.id,
@@ -146,6 +159,13 @@ async def get_report(
     report = db.query(WeeklyReport).filter(WeeklyReport.id == report_id).first()
     if not report:
         raise HTTPException(status_code=404, detail="Report not found")
+    
+    # 自動補齊遺漏的 share_token (針對舊報表)
+    if not report.share_token:
+        report.share_token = str(uuid.uuid4())
+        db.commit()
+        db.refresh(report)
+
     return _serialize(report)
 
 

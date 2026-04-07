@@ -34,6 +34,7 @@ class WeeklyReport(Base):
 
     # --- 狀態 ---
     status       = Column(String, default="draft")          # draft | generated | archived
+    share_token  = Column(String, unique=True, nullable=True, index=True) # 分享用 Token (UUID)
 
     # --- 擁有者 ---
     user_id      = Column(String, ForeignKey("users.id"), nullable=True, index=True)

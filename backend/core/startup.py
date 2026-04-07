@@ -179,6 +179,16 @@ def patch_database_schema(engine):
                     except Exception as e:
                         logger.warning(f"Failed to add {col_name}: {e}")
         
+        # Patch WeeklyReports table
+        if inspector.has_table("weekly_reports"):
+            columns = [c["name"] for c in inspector.get_columns("weekly_reports")]
+            if "share_token" not in columns:
+                logger.info("Patching weekly_reports.share_token...")
+                with engine.connect() as conn:
+                    conn.execute(text("ALTER TABLE weekly_reports ADD COLUMN share_token VARCHAR"))
+                    conn.execute(text("CREATE UNIQUE INDEX ix_weekly_reports_share_token ON weekly_reports (share_token)"))
+                    conn.commit()
+        
         # Create page_titles table if missing
         if not inspector.has_table("page_titles"):
             logger.info("Creating page_titles table...")

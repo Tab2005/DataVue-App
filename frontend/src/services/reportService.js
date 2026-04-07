@@ -20,4 +20,8 @@ export const reportService = {
 
   /** 觸發資料產生 */
   generate: (id) => apiClient.post(`/api/reports/${id}/generate`),
+
+  /** 取得公開分享報表 */
+  getSharedReport: (token) =>
+    apiClient.get(`/api/reports/share/${token}`, { skipAuth: true }),
 };

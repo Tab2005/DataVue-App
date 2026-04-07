@@ -15,9 +15,11 @@ const WeeklyReportTemplate = ({
   onGenerateAI, 
   isGenerating, 
   isAnalyzing, 
-  language 
+  language,
+  isSharedView = false
 }) => {
   const t = (en, zh) => (language === 'zh' ? zh : en);
+  const onPrint = () => window.print();
 
   if (!report || report.status === 'draft') {
     return (
@@ -69,32 +71,50 @@ const WeeklyReportTemplate = ({
             <span style={{ fontSize: '0.85rem' }}>{report.date_label}</span>
           </div>
         </div>
-        <div style={{ display: 'flex', gap: '12px' }}>
-          <button
-            onClick={() => window.print()}
-            style={{ padding: '10px 20px', borderRadius: '10px', border: '1px solid var(--glass-border)', backgroundColor: 'var(--bg-secondary)', color: 'var(--text-primary)', display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer' }}
-          >
-            <FiPrinter /> {t('Print / PDF', '列印 / 匯出 PDF')}
-          </button>
-          <button
-            onClick={onGenerate}
-            disabled={isGenerating}
-            style={{ 
-               padding: '10px 20px', 
-               borderRadius: '10px', 
-               border: '1px solid var(--glass-border)', 
-               backgroundColor: 'var(--bg-secondary)', 
-               color: 'var(--text-primary)', 
-               display: 'flex', 
-               alignItems: 'center', 
-               gap: '8px', 
-               cursor: isGenerating ? 'not-allowed' : 'pointer',
-               opacity: isGenerating ? 0.7 : 1
-            }}
-          >
-            <FiRefreshCcw className={isGenerating ? 'spin' : ''} /> {isGenerating ? t('Refreshing...', '正在刷更新資料...') : t('Refresh Data', '重新產生資料')}
-          </button>
-        </div>
+        {/* Actions */}
+        {!isSharedView && (
+            <div style={{ display: 'flex', gap: '12px' }}>
+                <button
+                    onClick={onPrint}
+                    className="btn-print"
+                    style={{
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: '8px',
+                        padding: '10px 20px',
+                        borderRadius: '10px',
+                        border: '1px solid var(--glass-border)',
+                        backgroundColor: 'var(--glass-bg)',
+                        color: 'var(--text-primary)',
+                        cursor: 'pointer',
+                        fontWeight: '500',
+                        transition: 'all 0.2s ease'
+                    }}
+                >
+                    <FiPrinter /> {t('Print / Export PDF', '列印 / 匯出 PDF')}
+                </button>
+                <button
+                    onClick={onGenerate}
+                    disabled={isGenerating}
+                    style={{
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: '8px',
+                        padding: '10px 20px',
+                        borderRadius: '10px',
+                        border: 'none',
+                        backgroundColor: 'var(--glass-bg)',
+                        color: 'var(--text-primary)',
+                        cursor: isGenerating ? 'not-allowed' : 'pointer',
+                        fontWeight: '500',
+                        opacity: isGenerating ? 0.7 : 1
+                    }}
+                >
+                    <FiRefreshCcw className={isGenerating ? 'spin' : ''} />
+                    {isGenerating ? t('Generating...', '產生中...') : t('Regenerate Data', '重新產生資料')}
+                </button>
+            </div>
+        )}
       </div>
 
       {/* I. KPI Section */}
@@ -136,25 +156,27 @@ const WeeklyReportTemplate = ({
           }}>
             {t('IV. AI Performance Insights', '四、 AI 成效分析摘要')}
           </h2>
-          <button
-            onClick={onGenerateAI}
-            disabled={isAnalyzing}
-            style={{
-              padding: '8px 16px',
-              backgroundColor: 'var(--bg-hover)',
-              border: '1px solid var(--glass-border)',
-              color: 'var(--text-primary)',
-              borderRadius: '8px',
-              cursor: 'pointer',
-              display: 'flex',
-              alignItems: 'center',
-              gap: '8px',
-              fontSize: '0.85rem'
-            }}
-          >
-            {isAnalyzing ? <FiRefreshCcw className="spin" /> : <FiCpu />}
-            {report.ai_summary ? t('Regenerate AI', '重新分析') : t('Generate AI Insights', '開始 AI 生成')}
-          </button>
+          {!isSharedView && (
+            <button
+                onClick={onGenerateAI}
+                disabled={isAnalyzing}
+                style={{
+                padding: '8px 16px',
+                backgroundColor: 'var(--bg-hover)',
+                border: '1px solid var(--glass-border)',
+                color: 'var(--text-primary)',
+                borderRadius: '8px',
+                cursor: 'pointer',
+                display: 'flex',
+                alignItems: 'center',
+                gap: '8px',
+                fontSize: '0.85rem'
+                }}
+            >
+                {isAnalyzing ? <FiRefreshCcw className="spin" /> : <FiCpu />}
+                {report.ai_summary ? t('Regenerate AI', '重新分析') : t('Generate AI Insights', '開始 AI 生成')}
+            </button>
+          )}
         </div>
         <div style={{
           backgroundColor: 'rgba(59, 130, 246, 0.05)',
@@ -180,6 +202,7 @@ const WeeklyReportTemplate = ({
         sections={report.sections}
         onSave={(newSections) => onUpdate({ sections: newSections })}
         language={language}
+        readOnly={isSharedView}
       />
     </div>
   );
