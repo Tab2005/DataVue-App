@@ -215,7 +215,7 @@ const ReportConfig = ({ onSave, onCancel, initialData = {}, language, teamId }) 
       borderRadius: '16px',
       border: '1px solid var(--glass-border)',
       boxShadow: '0 20px 40px rgba(0,0,0,0.4)',
-      overflow: 'hidden'
+      overflow: 'visible'
     }}>
       {/* ProgressBar */}
       <div style={{ height: '4px', backgroundColor: 'var(--bg-primary)', display: 'flex' }}>
