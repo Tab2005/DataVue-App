@@ -17,7 +17,7 @@ const ReportAdAccountSelector = ({ teamId, selectedId, onSelect, language }) => 
 
     useEffect(() => {
         const fetchAccounts = async () => {
-            if (!teamId) return;
+            // Remove 'if (!teamId) return;' to allow fetching for Personal Workspace (null teamId)
             setLoading(true);
             try {
                 // 使用 TeamService.getAllAdAccounts 並帶入當前團隊 ID
