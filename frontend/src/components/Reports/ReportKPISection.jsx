@@ -35,7 +35,7 @@ const ReportKPISection = ({ data, selectedMetrics, language, dateSince, dateUnti
 
   return (
     <div style={{ marginBottom: '32px' }}>
-      <div style={{ display: 'flex', alignItems: 'flex-end', justifyContent: 'space-between', marginBottom: '20px' }}>
+      <div className="report-kpi-header" style={{ display: 'flex', alignItems: 'flex-end', justifyContent: 'space-between', marginBottom: '20px' }}>
         <h2 style={{ 
             fontSize: '1.2rem', 
             color: '#fbbf24', 
@@ -64,8 +64,8 @@ const ReportKPISection = ({ data, selectedMetrics, language, dateSince, dateUnti
       </div>
       <div style={{
         display: 'grid',
-        gridTemplateColumns: 'repeat(auto-fill, minmax(200px, 1fr))',
-        gap: '16px'
+        gridTemplateColumns: 'repeat(auto-fill, minmax(150px, 1fr))',
+        gap: '12px'
       }}>
         {selectedMetrics.map((key) => {
           const config = getMetricConfig(key) || { label_zh: key, label_en: key, format: 'number' };

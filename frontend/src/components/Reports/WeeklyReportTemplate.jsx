@@ -58,14 +58,14 @@ const WeeklyReportTemplate = ({
   return (
     <div style={{ padding: '0 0 80px 0' }}>
       {/* Header Info */}
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '40px', borderBottom: '1px solid var(--glass-border)', paddingBottom: '24px' }}>
+      <div className="report-header-row" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '40px', borderBottom: '1px solid var(--glass-border)', paddingBottom: '24px' }}>
         <div>
           <div style={{ display: 'flex', alignItems: 'center', gap: '8px', color: 'var(--accent-primary)', fontWeight: 'bold', fontSize: '0.9rem', marginBottom: '4px' }}>
             {report.ad_account_name || report.ad_account_id}
           </div>
-          <h1 style={{ fontSize: '2.4rem', fontWeight: 'bold', color: 'var(--text-primary)', margin: '0 0 8px 0' }}>{report.name}</h1>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '12px', color: 'var(--text-secondary)' }}>
-            <span style={{ backgroundColor: 'var(--bg-secondary)', padding: '4px 10px', borderRadius: '6px', fontSize: '0.85rem' }}>
+          <h1 className="report-title" style={{ fontSize: '2.4rem', fontWeight: 'bold', color: 'var(--text-primary)', margin: '0 0 8px 0' }}>{report.name}</h1>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '12px', color: 'var(--text-secondary)', flexWrap: 'wrap' }}>
+            <span className="report-date-badge" style={{ backgroundColor: 'var(--bg-secondary)', padding: '4px 10px', borderRadius: '6px', fontSize: '0.85rem', display: 'flex', alignItems: 'center', gap: '8px' }}>
               {report.date_since} ~ {report.date_until}
             </span>
             <span style={{ fontSize: '0.85rem' }}>{report.date_label}</span>

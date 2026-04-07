@@ -23,7 +23,7 @@ const ReportTrendSection = ({ data, selectedMetrics, language }) => {
       }}>
         {t('II. Performance Trends', '二、 成效趨勢分析')}
       </h2>
-      <div style={{
+      <div className="report-section-card" style={{
         backgroundColor: 'var(--bg-secondary)',
         border: '1px solid var(--glass-border)',
         borderRadius: '12px',

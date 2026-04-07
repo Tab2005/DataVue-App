@@ -56,21 +56,63 @@ const SharedReport = () => {
     if (!report) return null;
 
     return (
-        <div style={{ 
+        <div className="report-page-wrapper" style={{ 
             minHeight: '100vh', 
             backgroundColor: 'var(--bg-primary)', 
             backgroundImage: 'radial-gradient(circle at 50% 0%, rgba(99, 102, 241, 0.1) 0%, transparent 50%)',
             padding: '40px 20px',
             color: 'var(--text-primary)'
         }}>
+            <style>
+                {`
+                @media (max-width: 768px) {
+                    .report-page-wrapper {
+                        padding: 20px 12px !important;
+                    }
+                    .brand-header {
+                        flex-direction: column !important;
+                        align-items: flex-start !important;
+                        gap: 16px !important;
+                        margin-bottom: 24px !important;
+                    }
+                    .brand-meta {
+                        margin-left: 0 !important;
+                        text-align: left !important;
+                    }
+                    .report-header-row {
+                        flex-direction: column !important;
+                        align-items: flex-start !important;
+                        gap: 20px !important;
+                    }
+                    .report-title {
+                        font-size: 1.8rem !important;
+                    }
+                    .report-date-badge {
+                        width: 100% !important;
+                        justify-content: flex-start !important;
+                        padding: 8px 12px !important;
+                    }
+                    .report-kpi-header {
+                        flex-direction: column !important;
+                        align-items: flex-start !important;
+                        gap: 10px !important;
+                    }
+                    .report-section-card {
+                        padding: 16px !important;
+                    }
+                }
+                `}
+            </style>
             <div style={{ maxWidth: '1400px', margin: '0 auto' }}>
                 {/* Brand Header for Shared View */}
-                <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '40px', paddingBottom: '20px', borderBottom: '1px solid var(--glass-border)' }}>
-                    <div style={{ width: '40px', height: '40px', borderRadius: '10px', backgroundColor: 'var(--accent-primary)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                        <FiZap color="white" size={24} />
+                <div className="brand-header" style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '40px', paddingBottom: '20px', borderBottom: '1px solid var(--glass-border)' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                        <div style={{ width: '40px', height: '40px', borderRadius: '10px', backgroundColor: 'var(--accent-primary)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                            <FiZap color="white" size={24} />
+                        </div>
+                        <span style={{ fontSize: '1.2rem', fontWeight: 'bold', color: 'var(--text-primary)', letterSpacing: '1px' }}>DATAVUE</span>
                     </div>
-                    <span style={{ fontSize: '1.2rem', fontWeight: 'bold', color: 'var(--text-primary)', letterSpacing: '1px' }}>DATAVUE</span>
-                    <span style={{ color: 'var(--text-secondary)', fontSize: '0.9rem', marginLeft: 'auto' }}>
+                    <span className="brand-meta" style={{ color: 'var(--text-secondary)', fontSize: '0.9rem', marginLeft: 'auto' }}>
                         {t('Generated via AI Analytics', '由 AI 數據分析系統生成')}
                     </span>
                 </div>
