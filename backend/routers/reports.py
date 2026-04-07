@@ -202,14 +202,23 @@ async def generate_report(
         raise HTTPException(status_code=404, detail="Report not found")
 
     # 呼叫現有 analytics service（直接複用）
-    from modules.fb_ads.analytics_service import get_analytics_data
+    from modules.fb_ads.analytics_service import get_custom_report
+    
+    # 解析儲存的指標
+    try:
+        metrics_list = json.loads(report.selected_metrics)
+        custom_fields = ",".join(metrics_list) if isinstance(metrics_list, list) else None
+    except:
+        custom_fields = None
+
     # 這裡可以直接呼叫，內部會處理 Token
-    data = await get_analytics_data(
+    data = await get_custom_report(
         account_id=report.ad_account_id,
         since=report.date_since,
         until=report.date_until,
         user_id=current_user.google_id,   # 使用 google_id 查找 FB Token
-        breakdown=report.breakdown or "campaign",
+        level=report.breakdown or "campaign",
+        custom_fields=custom_fields
     )
 
     if data is None:

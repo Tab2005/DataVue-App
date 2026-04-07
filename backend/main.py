@@ -87,7 +87,7 @@ allowed_origins = [o.strip() for o in raw_origins.split(",") if o.strip()]
 
 # Regex：生產域名僅允許 HTTPS，localhost/127.0.0.1 允許 HTTP 或 HTTPS
 allow_origin_regex = (
-    r"https://.*\.?(tabisme\.com|zeabur\.app)(:\d+)?$"  # 生產：僅 HTTPS
+    r"https://.*\.?(tabisme\.com|zeabur\.app|sitetegy\.com)(:\d+)?$"  # 生產：僅 HTTPS
     r"|https?://localhost(:\d+)?$"                        # 本地開發：允許 HTTP
     r"|https?://127\.0\.0\.1(:\d+)?$"                    # 本地 IP
 )
