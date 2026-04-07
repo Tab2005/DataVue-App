@@ -31,9 +31,11 @@ const ReportTrendSection = ({ data, selectedMetrics, language }) => {
       }}>
         <TrendsChart
           data={data.trends}
-          metrics={selectedMetrics.slice(0, 3)} // Limit to 3 metrics for chart clarity in report
+          metrics={selectedMetrics.slice(0, 3)} // Show top 3 metrics trends
+          xAxisKey="date"
           language={language}
-          height={350}
+          height={380}
+          title={t('Metric Trends Analysis', '各項指標趨勢分析')}
         />
       </div>
     </div>
