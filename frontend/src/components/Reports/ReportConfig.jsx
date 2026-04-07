@@ -3,6 +3,7 @@ import React, { useState } from 'react';
 import { FiChevronRight, FiChevronLeft, FiSettings, FiCalendar, FiActivity, FiCheckCircle } from 'react-icons/fi';
 import ReportAdAccountSelector from './ReportAdAccountSelector';
 import { MetricSelector } from '../Analytics';
+import { getMetricConfig } from '../../constants/analyticsConfig';
 import { format, subDays, startOfWeek, endOfWeek, subMonths, startOfMonth, endOfMonth } from 'date-fns';
 
 const ReportConfig = ({ onSave, onCancel, initialData = {}, language, teamId }) => {
@@ -157,10 +158,14 @@ const ReportConfig = ({ onSave, onCancel, initialData = {}, language, teamId }) 
             <h2 style={{ fontSize: '1.25rem', color: 'var(--text-primary)', marginBottom: '12px', display: 'flex', alignItems: 'center', gap: '8px' }}>
               <FiActivity color="var(--accent-primary)" /> {t('Step 3: Metric Selection', '步驟 3：指標選擇')}
             </h2>
-            <div style={{ maxHeight: '400px', overflowY: 'auto', padding: '4px' }}>
+            <div style={{ maxHeight: '500px', overflowY: 'auto' }}>
                <MetricSelector
-                  selectedMetrics={new Set(formData.selected_metrics.map(m => `general:${m}`))} // Hack for existing selector structure
-                  onToggle={(group, key) => {
+                  selectedMetrics={new Set(formData.selected_metrics.map(key => {
+                    // Map simple keys to composite keys (groupId:key)
+                    const config = getMetricConfig(key);
+                    return config ? `${config.groupId}:${config.key}` : `general:${key}`;
+                  }))}
+                  onToggleMetric={(groupId, key) => {
                     const current = [...formData.selected_metrics];
                     if (current.includes(key)) {
                       updateField('selected_metrics', current.filter(k => k !== key));
@@ -169,6 +174,7 @@ const ReportConfig = ({ onSave, onCancel, initialData = {}, language, teamId }) 
                     }
                   }}
                   language={language}
+                  onClose={() => {}} // MetricSelector internally handles modal, but we can pass dummy
                />
             </div>
           </div>
