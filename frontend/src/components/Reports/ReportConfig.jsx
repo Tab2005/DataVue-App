@@ -18,6 +18,7 @@ const ReportConfig = ({ onSave, onCancel, initialData = {}, language, teamId }) 
     date_label: initialData.date_label || '',
     breakdown: initialData.breakdown || 'campaign',
     team_id: initialData.team_id || null,
+    selected_metrics: initialData.selected_metrics || ['spend', 'roas', 'purchases', 'cpc', 'ctr'],
     // Automation fields
     is_automated: initialData.is_automated || false,
     frequency: initialData.frequency || 'weekly',
@@ -139,9 +140,6 @@ const ReportConfig = ({ onSave, onCancel, initialData = {}, language, teamId }) 
       case 2:
         return (
           <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
-            <h2 style={{ fontSize: '1.25rem', color: 'var(--text-primary)', marginBottom: '12px', display: 'flex', alignItems: 'center', gap: '8px' }}>
-              <FiCalendar color="var(--accent-primary)" /> {t('Step 2: Date Range', '步驟 2：日期範圍')}
-            </h2>
             <h2 style={{ fontSize: '1.25rem', color: 'var(--text-primary)', marginBottom: '12px', display: 'flex', alignItems: 'center', gap: '8px' }}>
               <FiCalendar color="var(--accent-primary)" /> {formData.is_automated ? t('Step 2: Schedule Settings', '步驟 2：排程設定') : t('Step 2: Date Range', '步驟 2：日期範圍')}
             </h2>
