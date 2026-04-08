@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { FiTrendingUp, FiMessageSquare, FiCpu, FiZap } from 'react-icons/fi';
 import LineBindingCard from './Settings/LineBindingCard';
 
 const SettingsModal = ({ isOpen, onClose, language, teamId, teamName, onSuccess }) => {
@@ -523,27 +524,60 @@ const SettingsModal = ({ isOpen, onClose, language, teamId, teamName, onSuccess 
                     </div>
                 )}
 
-                {/* Tabs Config */}
-                <div style={{ display: 'flex', gap: '8px', marginBottom: '24px', borderBottom: '1px solid var(--glass-border)' }}>
-                    {Object.keys(t.tabs).map(key => (
-                        <button
-                            key={key}
-                            onClick={() => { setActiveTab(key); setStatus(null); }}
-                            style={{
-                                padding: '12px 24px',
-                                background: 'transparent',
-                                border: 'none',
-                                borderBottom: activeTab === key ? '2px solid var(--accent-primary)' : '2px solid transparent',
-                                color: activeTab === key ? 'var(--accent-primary)' : 'var(--text-secondary)',
-                                fontWeight: activeTab === key ? 'bold' : 'normal',
-                                cursor: 'pointer',
-                                transition: 'all 0.2s',
-                                fontSize: '1rem'
-                            }}
-                        >
-                            {t.tabs[key]}
-                        </button>
-                    ))}
+                {/* Tabs Config - Optimized Layout to prevent wrapping */}
+                <div style={{ 
+                    display: 'flex', 
+                    marginBottom: '24px', 
+                    borderBottom: '1px solid var(--glass-border)',
+                    overflowX: 'auto',
+                    scrollbarWidth: 'none',
+                    msOverflowStyle: 'none',
+                    position: 'relative'
+                }}>
+                    <style>{`
+                        .settings-tab-container::-webkit-scrollbar { display: none; }
+                        .settings-tab-btn {
+                            padding: 12px 14px;
+                            background: transparent;
+                            border: none;
+                            border-bottom: 2px solid transparent;
+                            color: var(--text-secondary);
+                            cursor: pointer;
+                            transition: all 0.2s;
+                            font-size: 0.88rem;
+                            white-space: nowrap;
+                            display: flex;
+                            align-items: center;
+                            gap: 6px;
+                            flex-shrink: 0;
+                        }
+                        .settings-tab-btn.active {
+                            border-bottom: 2px solid var(--accent-primary);
+                            color: var(--accent-primary);
+                            font-weight: 600;
+                            background: rgba(45, 136, 255, 0.05);
+                        }
+                        .settings-tab-btn:hover:not(.active) {
+                            color: var(--text-primary);
+                            background: rgba(255, 255, 255, 0.02);
+                        }
+                    `}</style>
+                    
+                    <div className="settings-tab-container" style={{ display: 'flex', width: '100%', overflowX: 'auto' }}>
+                        {Object.keys(t.tabs).map(key => (
+                            <button
+                                key={key}
+                                className={`settings-tab-btn ${activeTab === key ? 'active' : ''}`}
+                                onClick={() => { setActiveTab(key); setStatus(null); }}
+                            >
+                                {key === 'facebook' && <FiTrendingUp size={14} />}
+                                {key === 'ai' && <FiZap size={14} />}
+                                {key === 'gemini' && <FiCpu size={14} />}
+                                {key === 'line' && <FiMessageSquare size={14} />}
+                                {t.tabs[key]}
+                            </button>
+                        ))}
+                    </div>
                 </div>
 
                 {/* Content Area */}

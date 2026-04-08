@@ -14,9 +14,10 @@ const LineBindingCard = ({ language }) => {
     const fetchStatus = async () => {
         try {
             const res = await lineService.getStatus();
-            setStatus(res);
+            setStatus(res || { is_linked: false });
         } catch (err) {
             console.error('Failed to fetch LINE status:', err);
+            setStatus({ is_linked: false });
         }
     };
 
@@ -46,18 +47,22 @@ const LineBindingCard = ({ language }) => {
     // 輪詢狀態 (如果正在等待綁定)
     useEffect(() => {
         let interval;
-        if (bindingData && !status.is_linked) {
+        if (bindingData && !status?.is_linked) {
             interval = setInterval(async () => {
-                const res = await lineService.getStatus();
-                if (res.is_linked) {
-                    setStatus(res);
-                    setBindingData(null);
-                    clearInterval(interval);
+                try {
+                    const res = await lineService.getStatus();
+                    if (res?.is_linked) {
+                        setStatus(res);
+                        setBindingData(null);
+                        clearInterval(interval);
+                    }
+                } catch (err) {
+                    console.error("Polling error:", err);
                 }
             }, 3000);
         }
         return () => clearInterval(interval);
-    }, [bindingData, status.is_linked]);
+    }, [bindingData, status?.is_linked]);
 
     return (
         <div style={{ 
@@ -69,23 +74,23 @@ const LineBindingCard = ({ language }) => {
         }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '16px' }}>
                 <div style={{ 
-                    backgroundColor: status.is_linked ? '#06c755' : 'rgba(255,255,255,0.05)', 
+                    backgroundColor: status?.is_linked ? '#06c755' : 'rgba(255,255,255,0.05)', 
                     padding: '10px', 
                     borderRadius: '12px' 
                 }}>
-                    <FiMessageSquare size={24} color={status.is_linked ? 'white' : 'var(--text-tertiary)'} />
+                    <FiMessageSquare size={24} color={status?.is_linked ? 'white' : 'var(--text-tertiary)'} />
                 </div>
                 <div>
                     <h3 style={{ margin: 0, color: 'var(--text-primary)' }}>{t('LINE Notification Bot', 'LINE 通知選單')}</h3>
                     <p style={{ margin: 0, fontSize: '0.85rem', color: 'var(--text-secondary)' }}>
-                        {status.is_linked 
+                        {status?.is_linked 
                             ? t('Linked Successfully', '連結狀態：已串聯') 
                             : t('Receive automated reports via LINE', '透過 LINE 接收自動化週報通知')}
                     </p>
                 </div>
             </div>
 
-            {status.is_linked ? (
+            {status?.is_linked ? (
                 <div style={{ backgroundColor: 'rgba(6, 199, 85, 0.1)', border: '1px solid rgba(6, 199, 85, 0.3)', borderRadius: '12px', padding: '16px', display: 'flex', alignItems: 'center', gap: '12px' }}>
                     <FiCheckCircle color="#06c755" size={20} />
                     <span style={{ color: '#06c755', fontWeight: '500' }}>{t('Service active', '通知服務已啟用')}</span>

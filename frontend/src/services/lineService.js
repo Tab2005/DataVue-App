@@ -11,6 +11,6 @@ export const lineService = {
     // 取得綁定狀態
     getStatus: async () => {
         const response = await apiClient.get('/api/line/status');
-        return response.data;
+        return response;
     }
 };

@@ -276,19 +276,19 @@ const ReportConfig = ({ onSave, onCancel, initialData = {}, language, teamId }) 
                 }}>
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                         <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-                            <FiMessageSquare color={lineStatus.is_linked ? "#06c755" : "var(--text-tertiary)"} />
+                            <FiMessageSquare color={lineStatus?.is_linked ? "#06c755" : "var(--text-tertiary)"} />
                             <span style={{ fontSize: '0.9rem', color: 'var(--text-primary)' }}>{t('LINE Notification', 'LINE 通知推播')}</span>
                         </div>
                         <label className="switch" style={{ position: 'relative', display: 'inline-block', width: '44px', height: '22px' }}>
                             <input 
                                 type="checkbox"
-                                disabled={!lineStatus.is_linked}
+                                disabled={!lineStatus?.is_linked}
                                 checked={formData.is_notify_line}
                                 onChange={(e) => updateField('is_notify_line', e.target.checked)}
                                 style={{ opacity: 0, width: 0, height: 0 }}
                             />
                             <span style={{
-                                position: 'absolute', cursor: lineStatus.is_linked ? 'pointer' : 'not-allowed', inset: 0,
+                                position: 'absolute', cursor: lineStatus?.is_linked ? 'pointer' : 'not-allowed', inset: 0,
                                 backgroundColor: formData.is_notify_line ? '#06c755' : '#444',
                                 transition: '.4s', borderRadius: '34px'
                             }}>
@@ -299,7 +299,7 @@ const ReportConfig = ({ onSave, onCancel, initialData = {}, language, teamId }) 
                             </span>
                         </label>
                     </div>
-                    {!lineStatus.is_linked && (
+                    {!lineStatus?.is_linked && (
                         <p style={{ margin: 0, fontSize: '0.75rem', color: 'var(--text-tertiary)' }}>
                             {t('Please link your LINE account in Integration Center first.', '⚠️ 請先至「整合中心」連結您的 LINE 帳號以啟用推播功能。')}
                         </p>
