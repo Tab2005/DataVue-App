@@ -14,7 +14,21 @@ from dependencies import get_current_user, require_module
 from core.scheduler import add_report_job, remove_report_job
 
 
+logger = logging.getLogger(__name__)
+router = APIRouter(prefix="/api/reports", tags=["reports"])
+fb_ads_check = require_module("fb_ads")
+
+# ---- Dependency ----
+def get_db():
+    db = SessionLocal()
+    try:
+        yield db
+    finally:
+        db.close()
+
+
 # ---- Pydantic Schemas for Schedules ----
+
 
 class ScheduleCreate(BaseModel):
     name: str
@@ -156,22 +170,8 @@ async def delete_schedule(
     db.commit()
     return {"message": "deleted"}
 
-
-logger = logging.getLogger(__name__)
-
-router = APIRouter(prefix="/api/reports", tags=["reports"])
-
-fb_ads_check = require_module("fb_ads")
-
-# ---- Dependency ----
-def get_db():
-    db = SessionLocal()
-    try:
-        yield db
-    finally:
-        db.close()
-
 # ---- Pydantic Schemas ----
+
 
 class ReportCreate(BaseModel):
     name: str
