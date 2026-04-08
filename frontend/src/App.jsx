@@ -21,6 +21,9 @@ const UserManagement = lazy(() => import('./pages/UserManagement'));
 const MetricsManager = lazy(() => import('./pages/MetricsManager'));
 const SearchConsole = lazy(() => import('./pages/SearchConsole'));
 const GA4Analytics = lazy(() => import('./pages/GA4Analytics'));
+const Reports = lazy(() => import('./pages/Reports'));
+const ReportViewer = lazy(() => import('./pages/ReportViewer'));
+const SharedReport = lazy(() => import('./pages/SharedReport'));
 
 /**
  * 內層 App 元件（需在 Router 內部才能使用 useNavigate）
@@ -49,6 +52,7 @@ function AppInner() {
       <Routes>
               <Route path="/login" element={<Login />} />
               <Route path="/invite/:code" element={<InvitePage />} />
+              <Route path="/reports/share/:token" element={<SharedReport />} />
               <Route element={<ProtectedRoute><Layout /></ProtectedRoute>}>
                 <Route path="/" element={
                   <ProtectedModule module="fb_ads">
@@ -92,6 +96,27 @@ function AppInner() {
                   <ProtectedModule module="ga4">
                     <ErrorBoundary>
                       <GA4Analytics />
+                    </ErrorBoundary>
+                  </ProtectedModule>
+                } />
+                <Route path="/reports" element={
+                  <ProtectedModule module="fb_ads">
+                    <ErrorBoundary>
+                      <Reports />
+                    </ErrorBoundary>
+                  </ProtectedModule>
+                } />
+                <Route path="/reports/new" element={
+                  <ProtectedModule module="fb_ads">
+                    <ErrorBoundary>
+                      <ReportViewer mode="create" />
+                    </ErrorBoundary>
+                  </ProtectedModule>
+                } />
+                <Route path="/reports/:id" element={
+                  <ProtectedModule module="fb_ads">
+                    <ErrorBoundary>
+                      <ReportViewer mode="view" />
                     </ErrorBoundary>
                   </ProtectedModule>
                 } />

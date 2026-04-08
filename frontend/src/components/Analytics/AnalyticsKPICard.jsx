@@ -23,6 +23,10 @@ const AnalyticsKPICard = memo(function AnalyticsKPICard({
         const num = parseFloat(val);
         switch (fmt) {
             case 'currency':
+                // For amounts >= 10, remove decimals. For smaller ones (like CPC), keep them if they are non-zero.
+                if (num >= 10 || Number.isInteger(num)) {
+                    return `$${num.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}`;
+                }
                 return `$${num.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
             case 'percent':
                 return `${num.toFixed(2)}%`;

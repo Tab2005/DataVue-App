@@ -49,7 +49,11 @@ DATABASE_URL = os.getenv("DATABASE_URL")
 def get_engine():
     """建立並回傳資料庫引擎（自動判斷 SQLite / PostgreSQL）"""
     url = os.getenv("DATABASE_URL")
-    if url and url.startswith("postgresql://"):
+    
+    # 支援 postgres:// 和 postgresql:// 前綴（Zeabur/Heroku 常用）
+    if url and (url.startswith("postgresql://") or url.startswith("postgres://")):
+        if url.startswith("postgres://"):
+            url = url.replace("postgres://", "postgresql://", 1)
         return create_engine(url)
 
     # Fallback 至 SQLite

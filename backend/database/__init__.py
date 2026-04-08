@@ -41,6 +41,7 @@ from database.models.permission import (
     UserPermission,
 )
 from database.models.integration import UserIntegration
+from database.models.report import WeeklyReport
 
 logger = logging.getLogger(__name__)
 
@@ -56,6 +57,7 @@ __all__ = [
     "Module", "Permission", "Role", "RolePermission",
     "UserModuleAccess", "UserPermission",
     "UserIntegration",
+    "WeeklyReport",
     # 初始化函式
     "init_db",
 ]
@@ -65,11 +67,34 @@ def init_db():
     """
     初始化資料庫 schema。
     開發模式（DEBUG_MODE=true）使用 create_all() 快速建表；
-    生產環境依賴 Alembic 遷移管理。
+    生產環境依賴 Alembic 遷移管理，但加入緊急降級機制（Fail-safe）。
     """
     DEBUG_MODE = os.getenv("DEBUG_MODE", "false").lower() == "true"
+    
     if DEBUG_MODE:
         logger.info("Dev Mode detected: Running Base.metadata.create_all().")
         Base.metadata.create_all(bind=engine)
-    else:
-        logger.info("Production Mode detected: Skipping metadata.create_all() (Use migrations).")
+        return
+
+    # 生產環境：先檢查核心新表是否存在 (e.g. weekly_reports)
+    # 若缺失則嘗試補足，確保功能不中斷
+    try:
+        from sqlalchemy import inspect
+        inspector = inspect(engine)
+        existing_tables = inspector.get_table_names()
+        
+        required_tables = ["user_integrations", "weekly_reports"]
+        missing = [t for t in required_tables if t not in existing_tables]
+        
+        if missing:
+            logger.warning(f"Production safety check: Tables {missing} are missing! Running emergency create_all...")
+            # create_all 僅會建立「不存在」的表，對現有資料安全
+            Base.metadata.create_all(bind=engine)
+            logger.info("✅ Missing tables created successfully.")
+        else:
+            logger.info("Production Mode: Verified all required tables exist.")
+            
+    except Exception as e:
+        logger.error(f"Fail-safe table check failed: {e}. Falling back to normal flow.")
+
+    logger.info("Production initialization completed.")

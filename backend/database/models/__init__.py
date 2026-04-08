@@ -13,6 +13,7 @@ from database.models.permission import (
     UserPermission,
 )
 from database.models.integration import UserIntegration
+from database.models.report import WeeklyReport
 
 __all__ = [
     "User", "UserRole", "UserStatus",
@@ -21,4 +22,5 @@ __all__ = [
     "Module", "Permission", "Role", "RolePermission",
     "UserModuleAccess", "UserPermission",
     "UserIntegration",
+    "WeeklyReport",
 ]

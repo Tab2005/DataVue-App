@@ -54,6 +54,7 @@ def _process_daily_item(item: dict) -> dict:
     row["post_reactions"] = acts.get("post_reaction", 0)
     row["page_likes"] = acts.get("like", 0)
 
+    # CPAS
     cpas_acts = FacebookService._process_actions({"actions": item.get("catalog_segment_actions", [])})
     cpas_vals = FacebookService._process_actions({"action_values": item.get("catalog_segment_value", [])})
 
@@ -64,6 +65,7 @@ def _process_daily_item(item: dict) -> dict:
     row["shared_view_content"] = cpas_acts.get("view_content", 0)
     row["shared_roas"] = (row["shared_purchase_value"] / row["spend"]) if row["spend"] > 0 else 0
 
+    # Funnel & Efficiency
     row["cpa"] = row["spend"] / row["purchases"] if row["purchases"] > 0 else 0
     row["cost_per_atc"] = row["spend"] / row["add_to_cart"] if row["add_to_cart"] > 0 else 0
     row["cvr"] = (row["purchases"] / row["link_clicks"] * 100) if row["link_clicks"] > 0 else 0
@@ -79,6 +81,22 @@ def _process_daily_item(item: dict) -> dict:
     row["cart_value_realization"] = (
         (row["purchase_value"] / row["atc_value"] * 100) if row["atc_value"] > 0 else 0
     )
+    
+    # Messaging & Leads
+    row["messaging_first_reply"] = acts.get("onsite_conversion.messaging_first_reply", 0)
+    row["leads"] = acts.get("lead", 0)
+    row["cost_per_lead"] = row["spend"] / row["leads"] if row["leads"] > 0 else 0
+    
+    # Video
+    def _v(f):
+        vd = item.get(f, [])
+        return int(vd[0].get("value", 0)) if isinstance(vd, list) and vd else 0
+    
+    row["video_views"] = acts.get("video_view", 0)
+    row["video_p25_watched"] = _v("video_p25_watched_actions")
+    row["video_p50_watched"] = _v("video_p50_watched_actions")
+    row["video_p75_watched"] = _v("video_p75_watched_actions")
+    row["video_p100_watched"] = _v("video_p100_watched_actions")
 
     return row
 

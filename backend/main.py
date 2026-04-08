@@ -87,7 +87,7 @@ allowed_origins = [o.strip() for o in raw_origins.split(",") if o.strip()]
 
 # Regex：生產域名僅允許 HTTPS，localhost/127.0.0.1 允許 HTTP 或 HTTPS
 allow_origin_regex = (
-    r"https://.*\.?(tabisme\.com|zeabur\.app)(:\d+)?$"  # 生產：僅 HTTPS
+    r"https://.*\.?(tabisme\.com|zeabur\.app|sitetegy\.com)(:\d+)?$"  # 生產：僅 HTTPS
     r"|https?://localhost(:\d+)?$"                        # 本地開發：允許 HTTP
     r"|https?://127\.0\.0\.1(:\d+)?$"                    # 本地 IP
 )
@@ -168,7 +168,7 @@ async def general_exception_handler(request: Request, exc: Exception):
 # ============================================================
 
 from routers import users, teams, invites, admin, ai, saved_views, gsc, permissions
-from routers import facebook, debug, ga4, auth
+from routers import facebook, debug, ga4, auth, reports
 from routers.metrics import router as metrics_router
 
 # Authentication & Users
@@ -188,6 +188,7 @@ app.include_router(ga4.router)
 # AI & Features
 app.include_router(ai.router, prefix="/api/ai", tags=["ai"])
 app.include_router(saved_views.router)
+app.include_router(reports.router)
 
 # Metrics Registry (4.6)
 app.include_router(metrics_router)
