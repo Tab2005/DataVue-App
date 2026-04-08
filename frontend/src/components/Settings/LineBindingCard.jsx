@@ -125,12 +125,21 @@ const LineBindingCard = ({ language }) => {
                                 <p style={{ fontSize: '0.9rem', color: 'var(--text-secondary)', marginBottom: '12px' }}>
                                     {t('1. Scan QR Code to add our Bot', '1. 第一步：掃描 QR Code 加入 DataVue 官方帳號')}
                                 </p>
-                                <div style={{ width: '120px', height: '120px', margin: '0 auto', backgroundColor: 'white', borderRadius: '8px', padding: '10px', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                                     {/* 這裡未來放入您的機器人實體 QR Code URL */}
-                                     <div style={{ textAlign: 'center', color: '#666' }}>
-                                        <FiMessageSquare size={48} color="#06c755" />
-                                        <div style={{ fontSize: '0.6rem' }}>Scan QR</div>
-                                     </div>
+                                <div style={{ width: '120px', height: '120px', margin: '0 auto', backgroundColor: 'white', borderRadius: '8px', padding: '10px', display: 'flex', alignItems: 'center', justifyContent: 'center', overflow: 'hidden' }}>
+                                     {bindingData.qr_code_url ? (
+                                         <a href={bindingData.qr_code_url} target="_blank" rel="noopener noreferrer" style={{ display: 'block', width: '100%', height: '100%' }}>
+                                            <img 
+                                                src={bindingData.qr_code_url.startsWith('http') ? bindingData.qr_code_url : `https://api.qrserver.com/v1/create-qr-code/?size=150x150&data=${encodeURIComponent(bindingData.qr_code_url)}`} 
+                                                alt="LINE QR Code" 
+                                                style={{ width: '100%', height: '100%', objectFit: 'contain' }}
+                                            />
+                                         </a>
+                                     ) : (
+                                         <div style={{ textAlign: 'center', color: '#666' }}>
+                                            <FiMessageSquare size={48} color="#06c755" />
+                                            <div style={{ fontSize: '0.6rem' }}>Scan QR</div>
+                                         </div>
+                                     )}
                                 </div>
                             </div>
 

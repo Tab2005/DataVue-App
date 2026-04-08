@@ -47,7 +47,8 @@ async def get_binding_code(
     return {
         "code": code,
         "expires_in_seconds": 600, # 10 分鐘
-        "status": "pending"
+        "status": "pending",
+        "qr_code_url": settings.LINE_BOT_QR_URL
     }
 
 @router.get("/status")

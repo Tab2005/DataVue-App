@@ -94,6 +94,11 @@ class Settings:
     def LINE_CHANNEL_SECRET(self) -> Optional[str]:
         return os.getenv("LINE_CHANNEL_SECRET")
     
+    @property
+    def LINE_BOT_QR_URL(self) -> Optional[str]:
+        """LINE 官方帳號 QR Code 或加友連結"""
+        return os.getenv("LINE_BOT_QR_URL")
+    
     # === URL 設定 ===
     @property
     def FRONTEND_URL(self) -> str:
