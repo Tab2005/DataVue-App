@@ -129,7 +129,11 @@ const LineBindingCard = ({ language }) => {
                                      {bindingData.qr_code_url ? (
                                          <a href={bindingData.qr_code_url} target="_blank" rel="noopener noreferrer" style={{ display: 'block', width: '100%', height: '100%' }}>
                                             <img 
-                                                src={bindingData.qr_code_url.startsWith('http') ? bindingData.qr_code_url : `https://api.qrserver.com/v1/create-qr-code/?size=150x150&data=${encodeURIComponent(bindingData.qr_code_url)}`} 
+                                                src={
+                                                    (bindingData.qr_code_url.includes('lin.ee') || bindingData.qr_code_url.includes('line.me')) 
+                                                    ? `https://api.qrserver.com/v1/create-qr-code/?size=150x150&data=${encodeURIComponent(bindingData.qr_code_url)}`
+                                                    : (bindingData.qr_code_url.startsWith('http') ? bindingData.qr_code_url : `https://api.qrserver.com/v1/create-qr-code/?size=150x150&data=${encodeURIComponent(bindingData.qr_code_url)}`)
+                                                } 
                                                 alt="LINE QR Code" 
                                                 style={{ width: '100%', height: '100%', objectFit: 'contain' }}
                                             />

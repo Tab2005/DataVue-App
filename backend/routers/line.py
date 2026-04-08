@@ -9,6 +9,7 @@ import logging
 from fastapi import APIRouter, Depends, HTTPException, Request, BackgroundTasks
 from sqlalchemy.orm import Session
 from database import User, LineBinding
+from core.config import settings
 from dependencies import get_db, get_current_active_user
 from services.line_service import handle_line_webhook
 
