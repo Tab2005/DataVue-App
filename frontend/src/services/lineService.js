@@ -5,7 +5,7 @@ export const lineService = {
     // 取得綁定代碼
     getBindingCode: async () => {
         const response = await apiClient.get('/api/line/binding-code');
-        return response.data;
+        return response;
     },
 
     // 取得綁定狀態
