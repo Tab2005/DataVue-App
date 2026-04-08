@@ -1,7 +1,7 @@
 // frontend/src/pages/Reports.jsx
 import React, { useState, useEffect } from 'react';
 import { useOutletContext, Link } from 'react-router-dom';
-import { FiPlus, FiFilter, FiSearch, FiFileText, FiChevronDown, FiAlertCircle } from 'react-icons/fi';
+import { FiPlus, FiFilter, FiSearch, FiFileText, FiChevronDown, FiAlertCircle, FiCalendar, FiActivity } from 'react-icons/fi';
 import { reportService } from '../services/reportService';
 import { ReportCard } from '../components/Reports';
 import PageLoading from '../components/PageLoading';
