@@ -66,8 +66,28 @@ from limiter import limiter
 async def lifespan(app: FastAPI):
     """Application lifespan handler."""
     logger.info("🚀 DataVue Application starting...")
+    
+    # Initialize Scheduler
+    from core.scheduler import scheduler, process_scheduled_report, add_report_job
+    from database import SessionLocal, ReportSchedule
+    
+    # Load and start scheduler
+    try:
+        db = SessionLocal()
+        active_schedules = db.query(ReportSchedule).filter(ReportSchedule.is_active == True).all()
+        for s in active_schedules:
+            add_report_job(s)
+        db.close()
+        scheduler.start()
+        logger.info(f"⏰ Scheduler started with {len(scheduler.get_jobs())} jobs.")
+    except Exception as e:
+        logger.error(f"Failed to start scheduler: {e}")
+
     yield
+    
     logger.info("👋 DataVue Application shutting down...")
+    scheduler.shutdown()
+
 
 
 app = FastAPI(

@@ -46,6 +46,14 @@ const ReportViewer = ({ mode = 'view' }) => {
     const handleCreate = async (formData) => {
         setIsSaving(true);
         try {
+            if (formData.is_automated) {
+                // Handle Automated Schedule creation
+                await reportService.createSchedule(formData);
+                navigate('/reports');
+                return;
+            }
+
+            // Normal manual report creation
             const res = await reportService.create(formData);
             const newReport = res;
             // After create, immediately trigger generation
@@ -65,6 +73,7 @@ const ReportViewer = ({ mode = 'view' }) => {
             setIsGenerating(false);
         }
     };
+
 
     const handleGenerate = async () => {
         if (!report) return;

@@ -41,7 +41,7 @@ from database.models.permission import (
     UserPermission,
 )
 from database.models.integration import UserIntegration
-from database.models.report import WeeklyReport
+from database.models.report import WeeklyReport, ReportSchedule
 
 logger = logging.getLogger(__name__)
 
@@ -58,6 +58,7 @@ __all__ = [
     "UserModuleAccess", "UserPermission",
     "UserIntegration",
     "WeeklyReport",
+    "ReportSchedule",
     # 初始化函式
     "init_db",
 ]
@@ -83,7 +84,7 @@ def init_db():
         inspector = inspect(engine)
         existing_tables = inspector.get_table_names()
         
-        required_tables = ["user_integrations", "weekly_reports"]
+        required_tables = ["user_integrations", "weekly_reports", "report_schedules"]
         missing = [t for t in required_tables if t not in existing_tables]
         
         if missing:

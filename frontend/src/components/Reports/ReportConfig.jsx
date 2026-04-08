@@ -16,10 +16,16 @@ const ReportConfig = ({ onSave, onCancel, initialData = {}, language, teamId }) 
     date_since: initialData.date_since || format(subDays(new Date(), 7), 'yyyy-MM-dd'),
     date_until: initialData.date_until || format(subDays(new Date(), 1), 'yyyy-MM-dd'),
     date_label: initialData.date_label || '',
-    selected_metrics: initialData.selected_metrics || ['spend', 'roas', 'purchases', 'cpc', 'ctr'],
     breakdown: initialData.breakdown || 'campaign',
-    team_id: initialData.team_id || null
+    team_id: initialData.team_id || null,
+    // Automation fields
+    is_automated: initialData.is_automated || false,
+    frequency: initialData.frequency || 'weekly',
+    day_of_week: initialData.day_of_week || '1', // Monday
+    day_of_month: initialData.day_of_month || '1',
+    time_of_day: initialData.time_of_day || '08:00'
   });
+
 
   const t = (en, zh) => (language === 'zh' ? zh : en);
 
@@ -87,7 +93,48 @@ const ReportConfig = ({ onSave, onCancel, initialData = {}, language, teamId }) 
                 language={language}
               />
             </div>
+            <div style={{ 
+                marginTop: '12px',
+                padding: '16px',
+                backgroundColor: 'rgba(99, 102, 241, 0.05)',
+                border: '1px solid rgba(99, 102, 241, 0.2)',
+                borderRadius: '12px',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'space-between'
+            }}>
+                <div>
+                    <h3 style={{ fontSize: '1rem', color: 'var(--text-primary)', margin: '0 0 4px 0' }}>{t('Automate this Report', '自動化此報表')}</h3>
+                    <p style={{ fontSize: '0.8rem', color: 'var(--text-secondary)', margin: 0 }}>{t('Automatically generate reports on a recurring schedule.', '設定排程，系統將定期為您自動產生報表。')}</p>
+                </div>
+                <div 
+                    onClick={() => updateField('is_automated', !formData.is_automated)}
+                    style={{
+                        width: '50px',
+                        height: '26px',
+                        backgroundColor: formData.is_automated ? 'var(--accent-primary)' : 'var(--bg-primary)',
+                        borderRadius: '13px',
+                        padding: '3px',
+                        cursor: 'pointer',
+                        transition: 'all 0.3s ease',
+                        border: '1px solid var(--glass-border)',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: formData.is_automated ? 'flex-end' : 'flex-start'
+                    }}
+                >
+                    <div style={{ 
+                        width: '20px', 
+                        height: '20px', 
+                        backgroundColor: 'white', 
+                        borderRadius: '50%', 
+                        boxShadow: '0 2px 4px rgba(0,0,0,0.2)',
+                        transition: 'all 0.3s ease'
+                    }} />
+                </div>
+            </div>
           </div>
+
         );
       case 2:
         return (
@@ -95,48 +142,114 @@ const ReportConfig = ({ onSave, onCancel, initialData = {}, language, teamId }) 
             <h2 style={{ fontSize: '1.25rem', color: 'var(--text-primary)', marginBottom: '12px', display: 'flex', alignItems: 'center', gap: '8px' }}>
               <FiCalendar color="var(--accent-primary)" /> {t('Step 2: Date Range', '步驟 2：日期範圍')}
             </h2>
-            <div style={{ display: 'flex', gap: '8px', marginBottom: '8px' }}>
-              {['this_week', 'last_week', 'last_month'].map(p => (
-                <button
-                  key={p}
-                  onClick={() => handleQuickDate(p)}
-                  style={{
-                    flex: 1,
-                    padding: '8px',
-                    borderRadius: '8px',
-                    border: '1px solid var(--glass-border)',
-                    backgroundColor: 'var(--bg-primary)',
-                    color: 'var(--text-secondary)',
-                    cursor: 'pointer',
-                    fontSize: '0.85rem'
-                  }}
-                >
-                  {p === 'this_week' && t('This Week', '本週')}
-                  {p === 'last_week' && t('Last Week', '上週')}
-                  {p === 'last_month' && t('Last Month', '上個月')}
-                </button>
-              ))}
-            </div>
-            <div style={{ display: 'flex', gap: '16px' }}>
-              <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: '8px' }}>
-                <label style={{ color: 'var(--text-secondary)', fontSize: '0.85rem' }}>{t('Start Date', '開始日期')}</label>
-                <input
-                  type="date"
-                  value={formData.date_since}
-                  onChange={(e) => updateField('date_since', e.target.value)}
-                  style={{ padding: '10px', backgroundColor: 'var(--bg-primary)', border: '1px solid var(--glass-border)', borderRadius: '8px', color: 'white' }}
-                />
+            <h2 style={{ fontSize: '1.25rem', color: 'var(--text-primary)', marginBottom: '12px', display: 'flex', alignItems: 'center', gap: '8px' }}>
+              <FiCalendar color="var(--accent-primary)" /> {formData.is_automated ? t('Step 2: Schedule Settings', '步驟 2：排程設定') : t('Step 2: Date Range', '步驟 2：日期範圍')}
+            </h2>
+            
+            {!formData.is_automated ? (
+              <>
+                <div style={{ display: 'flex', gap: '8px', marginBottom: '8px' }}>
+                  {['this_week', 'last_week', 'last_month'].map(p => (
+                    <button
+                      key={p}
+                      onClick={() => handleQuickDate(p)}
+                      style={{
+                        flex: 1,
+                        padding: '8px',
+                        borderRadius: '8px',
+                        border: '1px solid var(--glass-border)',
+                        backgroundColor: 'var(--bg-primary)',
+                        color: 'var(--text-secondary)',
+                        cursor: 'pointer',
+                        fontSize: '0.85rem'
+                      }}
+                    >
+                      {p === 'this_week' && t('This Week', '本週')}
+                      {p === 'last_week' && t('Last Week', '上週')}
+                      {p === 'last_month' && t('Last Month', '上個月')}
+                    </button>
+                  ))}
+                </div>
+                <div style={{ display: 'flex', gap: '16px' }}>
+                  <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                    <label style={{ color: 'var(--text-secondary)', fontSize: '0.85rem' }}>{t('Start Date', '開始日期')}</label>
+                    <input
+                      type="date"
+                      value={formData.date_since}
+                      onChange={(e) => updateField('date_since', e.target.value)}
+                      style={{ padding: '10px', backgroundColor: 'var(--bg-primary)', border: '1px solid var(--glass-border)', borderRadius: '8px', color: 'white' }}
+                    />
+                  </div>
+                  <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                    <label style={{ color: 'var(--text-secondary)', fontSize: '0.85rem' }}>{t('End Date', '結束日期')}</label>
+                    <input
+                      type="date"
+                      value={formData.date_until}
+                      onChange={(e) => updateField('date_until', e.target.value)}
+                      style={{ padding: '10px', backgroundColor: 'var(--bg-primary)', border: '1px solid var(--glass-border)', borderRadius: '8px', color: 'white' }}
+                    />
+                  </div>
+                </div>
+              </>
+            ) : (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                  <label style={{ color: 'var(--text-secondary)', fontSize: '0.9rem' }}>{t('Frequency', '產生頻率')}</label>
+                  <select
+                    value={formData.frequency}
+                    onChange={(e) => updateField('frequency', e.target.value)}
+                    style={{ padding: '12px', backgroundColor: 'var(--bg-primary)', border: '1px solid var(--glass-border)', borderRadius: '8px', color: 'white' }}
+                  >
+                    <option value="daily">{t('Daily', '每日')}</option>
+                    <option value="weekly">{t('Weekly', '每週')}</option>
+                    <option value="monthly">{t('Monthly', '每月')}</option>
+                  </select>
+                </div>
+
+                {formData.frequency === 'weekly' && (
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                    <label style={{ color: 'var(--text-secondary)', fontSize: '0.9rem' }}>{t('Day of Week', '每週執行日')}</label>
+                    <select
+                      value={formData.day_of_week}
+                      onChange={(e) => updateField('day_of_week', e.target.value)}
+                      style={{ padding: '12px', backgroundColor: 'var(--bg-primary)', border: '1px solid var(--glass-border)', borderRadius: '8px', color: 'white' }}
+                    >
+                      <option value="1">{t('Monday', '週一')}</option>
+                      <option value="2">{t('Tuesday', '週二')}</option>
+                      <option value="3">{t('Wednesday', '週三')}</option>
+                      <option value="4">{t('Thursday', '週四')}</option>
+                      <option value="5">{t('Friday', '週五')}</option>
+                      <option value="6">{t('Saturday', '週六')}</option>
+                      <option value="0">{t('Sunday', '週日')}</option>
+                    </select>
+                  </div>
+                )}
+
+                {formData.frequency === 'monthly' && (
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                    <label style={{ color: 'var(--text-secondary)', fontSize: '0.9rem' }}>{t('Day of Month', '每月執行日')}</label>
+                    <input
+                      type="number"
+                      min="1"
+                      max="28"
+                      value={formData.day_of_month}
+                      onChange={(e) => updateField('day_of_month', e.target.value)}
+                      style={{ padding: '12px', backgroundColor: 'var(--bg-primary)', border: '1px solid var(--glass-border)', borderRadius: '8px', color: 'white' }}
+                    />
+                  </div>
+                )}
+
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                  <label style={{ color: 'var(--text-secondary)', fontSize: '0.9rem' }}>{t('Execution Time', '執行時間 (UTC+8)')}</label>
+                  <input
+                    type="time"
+                    value={formData.time_of_day}
+                    onChange={(e) => updateField('time_of_day', e.target.value)}
+                    style={{ padding: '12px', backgroundColor: 'var(--bg-primary)', border: '1px solid var(--glass-border)', borderRadius: '8px', color: 'white' }}
+                  />
+                </div>
               </div>
-              <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: '8px' }}>
-                <label style={{ color: 'var(--text-secondary)', fontSize: '0.85rem' }}>{t('End Date', '結束日期')}</label>
-                <input
-                  type="date"
-                  value={formData.date_until}
-                  onChange={(e) => updateField('date_until', e.target.value)}
-                  style={{ padding: '10px', backgroundColor: 'var(--bg-primary)', border: '1px solid var(--glass-border)', borderRadius: '8px', color: 'white' }}
-                />
-              </div>
-            </div>
+            )}
             <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
               <label style={{ color: 'var(--text-secondary)', fontSize: '0.9rem' }}>{t('Analysis Level', '分析層級')}</label>
               <select
@@ -267,6 +380,12 @@ const ReportConfig = ({ onSave, onCancel, initialData = {}, language, teamId }) 
             </div>
             <div style={{ width: '100%', backgroundColor: 'var(--bg-primary)', padding: '16px', borderRadius: '12px', border: '1px solid var(--glass-border)' }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '8px' }}>
+                <span style={{ color: 'var(--text-tertiary)' }}>{t('Mode', '執行模式')}:</span>
+                <span style={{ color: formData.is_automated ? 'var(--accent-primary)' : 'var(--text-primary)', fontWeight: 'bold' }}>
+                    {formData.is_automated ? t('Automated Schedule', '自動排程') : t('Manual Report', '手動報表')}
+                </span>
+              </div>
+              <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '8px' }}>
                 <span style={{ color: 'var(--text-tertiary)' }}>{t('Name', '報表名稱')}:</span>
                 <span style={{ color: 'var(--text-primary)', fontWeight: 'bold' }}>{formData.name}</span>
               </div>
@@ -274,10 +393,22 @@ const ReportConfig = ({ onSave, onCancel, initialData = {}, language, teamId }) 
                 <span style={{ color: 'var(--text-tertiary)' }}>{t('Account', '廣告帳號')}:</span>
                 <span style={{ color: 'var(--text-primary)' }}>{formData.ad_account_name || formData.ad_account_id}</span>
               </div>
-              <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '8px' }}>
-                <span style={{ color: 'var(--text-tertiary)' }}>{t('Range', '日期範圍')}:</span>
-                <span style={{ color: 'var(--text-primary)' }}>{formData.date_since} ~ {formData.date_until}</span>
-              </div>
+              {formData.is_automated ? (
+                  <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '8px' }}>
+                    <span style={{ color: 'var(--text-tertiary)' }}>{t('Frequency', '頻率')}:</span>
+                    <span style={{ color: 'var(--text-primary)' }}>
+                        {formData.frequency === 'daily' && t('Daily', '每日')}
+                        {formData.frequency === 'weekly' && t('Weekly', '每週')}
+                        {formData.frequency === 'monthly' && t('Monthly', '每月')}
+                        {` @ ${formData.time_of_day}`}
+                    </span>
+                  </div>
+              ) : (
+                <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '8px' }}>
+                    <span style={{ color: 'var(--text-tertiary)' }}>{t('Range', '日期範圍')}:</span>
+                    <span style={{ color: 'var(--text-primary)' }}>{formData.date_since} ~ {formData.date_until}</span>
+                </div>
+              )}
               <div style={{ display: 'flex', justifyContent: 'space-between' }}>
                 <span style={{ color: 'var(--text-tertiary)' }}>{t('Metrics', '指標數量')}:</span>
                 <span style={{ color: 'var(--text-primary)' }}>{formData.selected_metrics.length}</span>
