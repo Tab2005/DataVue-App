@@ -42,7 +42,7 @@ const ReportTableSection = ({ data, columns, language, breakdown }) => {
           <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left' }}>
             <thead>
               <tr style={{ backgroundColor: 'rgba(255, 255, 255, 0.05)' }}>
-                <th style={{ padding: '12px 16px', borderBottom: '1px solid var(--glass-border)', color: 'var(--text-secondary)', fontSize: '0.85rem', whiteSpace: 'nowrap', minWidth: '120px' }}>
+                <th style={{ padding: '12px 16px', borderBottom: '1px solid var(--glass-border)', color: 'var(--text-secondary)', fontSize: '0.85rem', whiteSpace: 'nowrap', minWidth: '200px' }}>
                   {getHeaderLabel()}
                 </th>
                 {columns.map(col => (

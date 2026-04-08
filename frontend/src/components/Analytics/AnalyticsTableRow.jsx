@@ -119,14 +119,64 @@ const AnalyticsTableRow = memo(function AnalyticsTableRow({
             )}
 
             {/* Name column */}
-            <td style={styles.nameCell} title={row[nameKey] || '-'}>
-                {row[nameKey] || '-'}
-                {row.status && (
-                    <span style={{ marginLeft: '8px', ...styles.status(row.status === 'ACTIVE') }}>
-                        {row.status === 'ACTIVE' ? (language === 'zh' ? '啟用' : 'Active') : row.status}
-                    </span>
-                )}
+            <td style={{ ...styles.nameCell, maxWidth: '350px' }} title={row[nameKey] || '-'}>
+                <div style={{ display: 'flex', alignItems: 'flex-start', gap: '8px' }}>
+                    {/* Thumbnail & Preview */}
+                    {row.image_url && (
+                        <div
+                            style={{ position: 'relative', flexShrink: 0, marginTop: '2px' }}
+                            onMouseEnter={(e) => {
+                                const rect = e.currentTarget.getBoundingClientRect();
+                                const container = document.getElementById('preview-img-container');
+                                const img = document.getElementById('preview-img');
+                                if (container && img) {
+                                    container.style.display = 'block';
+                                    img.src = row.image_url;
+                                    container.style.top = `${rect.top}px`;
+                                    container.style.left = `${rect.right + 10}px`;
+                                }
+                            }}
+                            onMouseLeave={() => {
+                                const container = document.getElementById('preview-img-container');
+                                if (container) {
+                                    container.style.display = 'none';
+                                }
+                            }}
+                        >
+                            <img
+                                src={row.image_url}
+                                alt="Ad"
+                                style={{
+                                    width: '40px',
+                                    height: '40px',
+                                    objectFit: 'cover',
+                                    borderRadius: '4px',
+                                    cursor: 'zoom-in',
+                                    border: '1px solid rgba(255, 255, 255, 0.1)'
+                                }}
+                            />
+                        </div>
+                    )}
+                    
+                    <div style={{ flex: 1, overflow: 'hidden' }}>
+                        <div style={{ 
+                            overflow: 'hidden', 
+                            textOverflow: 'ellipsis', 
+                            whiteSpace: 'nowrap'
+                        }}>
+                            {row[nameKey] || '-'}
+                        </div>
+                        {row.status && (
+                            <div style={{ marginTop: '4px' }}>
+                                <span style={styles.status(row.status === 'ACTIVE')}>
+                                    {row.status === 'ACTIVE' ? (language === 'zh' ? '啟用' : 'Active') : row.status}
+                                </span>
+                            </div>
+                        )}
+                    </div>
+                </div>
             </td>
+
 
             {/* Data columns */}
             {columns.map((col) => (

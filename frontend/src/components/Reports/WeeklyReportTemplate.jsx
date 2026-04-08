@@ -210,7 +210,26 @@ const WeeklyReportTemplate = ({
         language={language}
         readOnly={isSharedView}
       />
+
+      {/* Hover Preview Container (Fixed Position) */}
+      <div
+          id="preview-img-container"
+          style={{
+              display: 'none',
+              position: 'fixed',
+              zIndex: 9999,
+              background: '#242526',
+              padding: '8px',
+              borderRadius: '8px',
+              border: '1px solid var(--glass-border)',
+              boxShadow: '0 20px 50px rgba(0,0,0,0.6)',
+              pointerEvents: 'none'
+          }}
+      >
+          <img id="preview-img" src="" alt="Preview" style={{ maxWidth: '300px', maxHeight: '300px', borderRadius: '4px' }} />
+      </div>
     </div>
+
   );
 };
 
