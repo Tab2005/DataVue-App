@@ -82,7 +82,7 @@ def init_db():
     # 生產環境：先檢查核心新表是否存在 (e.g. weekly_reports)
     # 若缺失則嘗試補足，確保功能不中斷
     try:
-        from sqlalchemy import inspect
+        from sqlalchemy import inspect, text
         inspector = inspect(engine)
         existing_tables = inspector.get_table_names()
         
