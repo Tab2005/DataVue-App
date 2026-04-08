@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import LineBindingCard from './Settings/LineBindingCard';
 
 const SettingsModal = ({ isOpen, onClose, language, teamId, teamName, onSuccess }) => {
     // Tabs: 'facebook' | 'ai'
@@ -46,7 +47,8 @@ const SettingsModal = ({ isOpen, onClose, language, teamId, teamName, onSuccess 
         tabs: {
             facebook: 'Facebook Ads',
             ai: 'Zeabur AI Hub',
-            gemini: 'Google Gemini'
+            gemini: 'Google Gemini',
+            line: language === 'zh' ? 'LINE 通知' : 'LINE Notify'
         },
         fb: {
             appId: 'App ID',
@@ -930,6 +932,9 @@ const SettingsModal = ({ isOpen, onClose, language, teamId, teamName, onSuccess 
                                     : 'After saving, switch to "💎 Gemini" in the provider selector above to start using it.'}
                             </div>
                         </div>
+                    )}
+                    {activeTab === 'line' && (
+                        <LineBindingCard language={language} />
                     )}
                 </div>
 

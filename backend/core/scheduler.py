@@ -103,10 +103,23 @@ async def process_scheduled_report(schedule_id: str):
         )
         db.add(new_report)
         
-        # 更新最後執行時間
         schedule.last_run = datetime.now()
         db.commit()
         logger.info(f"[Scheduler] Successfully generated report for {schedule.name}")
+
+        # 5. 發送 LINE 通知 (如果有開啟且用戶已綁定)
+        if schedule.is_notify_line and user.line_user_id:
+            from services.line_service import send_line_push_message
+            from core.config import settings
+            
+            report_name = f"{schedule.name} ({since_str})"
+            share_url = f"{settings.FRONTEND_URL}/reports/share/{new_report.share_token}"
+            
+            message = f"📊 【新報表通知】\n報表名稱：{report_name}\n\n系統已自動產生您的週報，點擊下方連結即可查看：\n{share_url}"
+            
+            # 使用 BackgroundTasks 或直接 await (在 APScheduler thread 中 OK)
+            import asyncio
+            asyncio.create_task(send_line_push_message(user.line_user_id, message))
 
     except Exception as e:
         logger.error(f"[Scheduler] Error processing schedule {schedule_id}: {e}", exc_info=True)

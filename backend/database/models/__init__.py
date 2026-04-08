@@ -13,7 +13,8 @@ from database.models.permission import (
     UserPermission,
 )
 from database.models.integration import UserIntegration
-from database.models.report import WeeklyReport
+from database.models.report import WeeklyReport, ReportSchedule
+from database.models.line_binding import LineBinding
 
 __all__ = [
     "User", "UserRole", "UserStatus",
@@ -23,4 +24,6 @@ __all__ = [
     "UserModuleAccess", "UserPermission",
     "UserIntegration",
     "WeeklyReport",
+    "ReportSchedule",
+    "LineBinding",
 ]

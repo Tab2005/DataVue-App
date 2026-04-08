@@ -68,6 +68,7 @@ class ReportSchedule(Base):
     time_of_day      = Column(String, default="08:00")       # HH:MM (UTC+8)
     
     is_active        = Column(Boolean, default=True)
+    is_notify_line   = Column(Boolean, default=False)
     
     # 擁有者
     user_id          = Column(String, ForeignKey("users.id"), nullable=True, index=True)

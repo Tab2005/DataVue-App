@@ -40,6 +40,7 @@ class ScheduleCreate(BaseModel):
     day_of_week: Optional[str] = None
     day_of_month: Optional[str] = None
     time_of_day: Optional[str] = "08:00"
+    is_notify_line: Optional[bool] = False
     team_id: Optional[str] = None
 
 class ScheduleUpdate(BaseModel):
@@ -51,6 +52,7 @@ class ScheduleUpdate(BaseModel):
     day_of_month: Optional[str] = None
     time_of_day: Optional[str] = None
     is_active: Optional[bool] = None
+    is_notify_line: Optional[bool] = None
 
 def _serialize_schedule(s: ReportSchedule) -> dict:
     return {
@@ -65,6 +67,7 @@ def _serialize_schedule(s: ReportSchedule) -> dict:
         "day_of_month": s.day_of_month,
         "time_of_day": s.time_of_day,
         "is_active": s.is_active,
+        "is_notify_line": s.is_notify_line,
         "user_id": s.user_id,
         "team_id": s.team_id,
         "last_run": s.last_run.isoformat() if s.last_run else None,
@@ -109,7 +112,8 @@ async def create_schedule(
         time_of_day=payload.time_of_day or "08:00",
         user_id=current_user.id if not payload.team_id else None,
         team_id=payload.team_id,
-        is_active=True
+        is_active=True,
+        is_notify_line=payload.is_notify_line or False
     )
     db.add(schedule)
     db.commit()
@@ -140,6 +144,7 @@ async def update_schedule(
     if payload.day_of_month is not None: schedule.day_of_month = payload.day_of_month
     if payload.time_of_day is not None: schedule.time_of_day = payload.time_of_day
     if payload.is_active is not None: schedule.is_active = payload.is_active
+    if payload.is_notify_line is not None: schedule.is_notify_line = payload.is_notify_line
     
     db.commit()
     db.refresh(schedule)

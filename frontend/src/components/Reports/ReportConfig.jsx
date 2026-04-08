@@ -1,7 +1,8 @@
 // frontend/src/components/Reports/ReportConfig.jsx
-import React, { useState } from 'react';
-import { FiChevronRight, FiChevronLeft, FiSettings, FiCalendar, FiActivity, FiCheckCircle } from 'react-icons/fi';
+import React, { useState, useEffect } from 'react';
+import { FiChevronRight, FiChevronLeft, FiSettings, FiCalendar, FiActivity, FiCheckCircle, FiMessageSquare } from 'react-icons/fi';
 import ReportAdAccountSelector from './ReportAdAccountSelector';
+import { lineService } from '../../services/lineService';
 import { MetricSelector } from '../Analytics';
 import { getMetricConfig, METRIC_GROUPS } from '../../constants/analyticsConfig';
 import { format, subDays, startOfWeek, endOfWeek, subMonths, startOfMonth, endOfMonth } from 'date-fns';
@@ -24,8 +25,23 @@ const ReportConfig = ({ onSave, onCancel, initialData = {}, language, teamId }) 
     frequency: initialData.frequency || 'weekly',
     day_of_week: initialData.day_of_week || '1', // Monday
     day_of_month: initialData.day_of_month || '1',
-    time_of_day: initialData.time_of_day || '08:00'
+    time_of_day: initialData.time_of_day || '08:00',
+    is_notify_line: initialData.is_notify_line || false
   });
+
+  const [lineStatus, setLineStatus] = useState({ is_linked: false });
+
+  useEffect(() => {
+    const fetchLineStatus = async () => {
+      try {
+        const status = await lineService.getStatus();
+        setLineStatus(status);
+      } catch (err) {
+        console.error("Failed to fetch LINE status", err);
+      }
+    };
+    fetchLineStatus();
+  }, []);
 
 
   const t = (en, zh) => (language === 'zh' ? zh : en);
@@ -245,6 +261,49 @@ const ReportConfig = ({ onSave, onCancel, initialData = {}, language, teamId }) 
                     onChange={(e) => updateField('time_of_day', e.target.value)}
                     style={{ padding: '12px', backgroundColor: 'var(--bg-primary)', border: '1px solid var(--glass-border)', borderRadius: '8px', color: 'white' }}
                   />
+                </div>
+
+                {/* LINE Notification Toggle */}
+                <div style={{ 
+                    marginTop: '8px',
+                    padding: '16px', 
+                    borderRadius: '12px', 
+                    backgroundColor: 'rgba(255,255,255,0.03)',
+                    border: '1px solid var(--glass-border)',
+                    display: 'flex',
+                    flexDirection: 'column',
+                    gap: '12px'
+                }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                            <FiMessageSquare color={lineStatus.is_linked ? "#06c755" : "var(--text-tertiary)"} />
+                            <span style={{ fontSize: '0.9rem', color: 'var(--text-primary)' }}>{t('LINE Notification', 'LINE 通知推播')}</span>
+                        </div>
+                        <label className="switch" style={{ position: 'relative', display: 'inline-block', width: '44px', height: '22px' }}>
+                            <input 
+                                type="checkbox"
+                                disabled={!lineStatus.is_linked}
+                                checked={formData.is_notify_line}
+                                onChange={(e) => updateField('is_notify_line', e.target.checked)}
+                                style={{ opacity: 0, width: 0, height: 0 }}
+                            />
+                            <span style={{
+                                position: 'absolute', cursor: lineStatus.is_linked ? 'pointer' : 'not-allowed', inset: 0,
+                                backgroundColor: formData.is_notify_line ? '#06c755' : '#444',
+                                transition: '.4s', borderRadius: '34px'
+                            }}>
+                                <span style={{
+                                    position: 'absolute', height: '18px', width: '18px', left: formData.is_notify_line ? '24px' : '2px', bottom: '2px',
+                                    backgroundColor: 'white', transition: '.4s', borderRadius: '50%'
+                                }}></span>
+                            </span>
+                        </label>
+                    </div>
+                    {!lineStatus.is_linked && (
+                        <p style={{ margin: 0, fontSize: '0.75rem', color: 'var(--text-tertiary)' }}>
+                            {t('Please link your LINE account in Integration Center first.', '⚠️ 請先至「整合中心」連結您的 LINE 帳號以啟用推播功能。')}
+                        </p>
+                    )}
                 </div>
               </div>
             )}
