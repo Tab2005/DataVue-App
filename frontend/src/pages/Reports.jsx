@@ -9,16 +9,6 @@ import PageLoading from '../components/PageLoading';
 const Reports = () => {
     const { user, language, selectedTeamId } = useOutletContext();
     const [reports, setReports] = useState([]);
-    const [loading, setLoading] = useState(true);
-    const [error, setError] = useState(null);
-    const [filter, setFilter] = useState('all'); // all, draft, generated, archived
-    const [searchQuery, setSearchQuery] = useState('');
-
-    const t = (en, zh) => (language === 'zh' ? zh : en);
-
-const Reports = () => {
-    const { user, language, selectedTeamId } = useOutletContext();
-    const [reports, setReports] = useState([]);
     const [schedules, setSchedules] = useState([]);
     const [loading, setLoading] = useState(true);
     const [loadingSchedules, setLoadingSchedules] = useState(false);
@@ -263,6 +253,5 @@ const Reports = () => {
     );
 };
 
-};
-
 export default Reports;
+
