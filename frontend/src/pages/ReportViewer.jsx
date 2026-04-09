@@ -103,10 +103,24 @@ const ReportViewer = ({ mode = 'view' }) => {
         if (!report || !report.report_data) return;
         setIsAnalyzing(true);
         try {
-             // Reuse existing aiService.analyzeDataStream
-             // We'll collect the stream and update the report once done
+             // Calculate period based on date range
+             const start = new Date(report.date_since);
+             const end = new Date(report.date_until);
+             const diffDays = Math.ceil(Math.abs(end - start) / (1000 * 60 * 60 * 24)) + 1;
+             
+             let period = 'weekly';
+             let periodText = '週報';
+             
+             if (diffDays <= 1) {
+                 period = 'daily';
+                 periodText = '日報';
+             } else if (diffDays > 14) {
+                 period = 'monthly';
+                 periodText = '月報';
+             }
+
              let fullText = '';
-             const context = `${t('Weekly Report for', '週報分析：')} ${report.ad_account_name}, ${t('Period', '期間')}: ${report.date_since} ~ ${report.date_until}`;
+             const context = `${periodText}分析：${report.ad_account_name}, 期間: ${report.date_since} ~ ${report.date_until}`;
              
              await aiService.analyzeDataStream(
                  report.report_data.summary,
@@ -115,9 +129,11 @@ const ReportViewer = ({ mode = 'view' }) => {
                  null, // apiKey
                  (chunk) => {
                     fullText += chunk;
-                    // Update local state for real-time preview
                     setReport(prev => ({ ...prev, ai_summary: fullText }));
-                 }
+                 },
+                 null, // provider
+                 null, // model
+                 period
              );
              
              // Final save to backend

@@ -20,6 +20,7 @@ class AnalysisRequest(BaseModel):
     provider: Optional[str] = "zeabur"  # 'zeabur' or 'google_gemini'
     model: Optional[str] = "gemini-1.5-flash"
     report_type: Optional[str] = "ad_analysis"  # 'ad_analysis' or 'weekly_summary'
+    period: Optional[str] = "weekly" # 'daily', 'weekly', 'monthly'
 
 
 class TestConnectionRequest(BaseModel):
@@ -124,7 +125,8 @@ async def analyze_data(
             api_key=api_key,
             provider=provider,
             model=model,
-            report_type=request.report_type
+            report_type=request.report_type,
+            period=request.period
         ),
         media_type="text/plain"
     )

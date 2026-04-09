@@ -26,7 +26,7 @@ export const aiService = {
      * @param {string|null} apiKey - Optional BYOK
      * @param {function} onChunk - Callback for streaming chunks
      */
-    analyzeDataStream: async (data, context, reportType = 'ad_analysis', apiKey = null, onChunk, provider = null, model = null) => {
+    analyzeDataStream: async (data, context, reportType = 'ad_analysis', apiKey = null, onChunk, provider = null, model = null, period = 'weekly') => {
         try {
             const token = getAuthToken();
             const res = await fetch(`${API_URL}/api/ai/analyze`, {
@@ -41,7 +41,8 @@ export const aiService = {
                     api_key: apiKey,
                     provider,
                     model,
-                    report_type: reportType
+                    report_type: reportType,
+                    period
                 })
             });
 
