@@ -106,9 +106,11 @@ async def analyze_data(
     # 獲取使用者目前的 AI 設定 (如果請求中沒有指定)
     user_settings = TokenManager.get_ai_settings(user.google_id) or {}
     
-    # 決定使用的 Provider 與 Model
-    provider = request.provider if request.provider != "zeabur" else user_settings.get("ai_provider", "zeabur")
-    model = request.model if request.model != "gemini-1.5-flash" else user_settings.get("ai_model", "gemini-1.5-flash")
+    # 決定使用的 Provider 與 Model (支援 'gemini' 映射到 'google_gemini')
+    raw_provider = request.provider if request.provider else user_settings.get("ai_provider", "zeabur")
+    provider = "google_gemini" if raw_provider == "gemini" else raw_provider
+    model = request.model if request.model and request.model != "gemini-1.5-flash" else user_settings.get("ai_model", "gemini-1.5-flash")
+    if not model: model = "gemini-1.5-flash"
     
     # 決定使用的 API Key
     api_key = request.api_key

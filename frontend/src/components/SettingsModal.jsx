@@ -399,7 +399,25 @@ const SettingsModal = ({ isOpen, onClose, language, teamId, teamName, onSuccess 
             // Fetch AI settings from backend
             fetchAiSettings().then(settings => {
                 if (settings) {
-                    setActiveAiProvider(settings.ai_provider || 'zeabur');
+                    const provider = settings.ai_provider || 'zeabur';
+                    setActiveAiProvider(provider);
+                    
+                    // 自動切換標籤頁到目前啟用的 AI Provider
+                    if (provider === 'gemini' || provider === 'google_gemini') {
+                        setActiveTab('gemini');
+                    } else if (provider === 'zeabur') {
+                        setActiveTab('zeabur');
+                    }
+
+                    // 修正模型名稱前綴匹配問題 (資料庫可能存在不帶 models/ 的舊資料)
+                    const formatModelName = (name) => {
+                        if (!name) return 'gemini-1.5-flash';
+                        if (!name.startsWith('models/') && (name.includes('gemini') || name.includes('gemma'))) {
+                            return `models/${name}`;
+                        }
+                        return name;
+                    };
+
                     setAiData(prev => ({ 
                         ...prev, 
                         model: settings.ai_model || 'gemini-1.5-flash',
@@ -407,11 +425,11 @@ const SettingsModal = ({ isOpen, onClose, language, teamId, teamName, onSuccess 
                     }));
                     setGeminiData(prev => ({ 
                         ...prev, 
-                        model: settings.ai_model || 'gemini-1.5-flash',
+                        model: formatModelName(settings.ai_model),
                         apiKey: settings.has_gemini_key ? '********' : ''
                     }));
                     // Store provider in localStorage for GSCStats to use (sync purpose only)
-                    localStorage.setItem('ai_provider', settings.ai_provider || 'zeabur');
+                    localStorage.setItem('ai_provider', provider);
                 }
             });
         }

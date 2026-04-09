@@ -291,8 +291,10 @@ class AIService:
             return
 
         try:
-            # 確保模型名稱路徑正確
-            model_to_use = model
+            # Handle possible None model
+            model_to_use = model or "gemini-1.5-flash"
+            
+            # Ensure model path is correct for Google SDK
             if not model_to_use.startswith('models/'):
                 model_to_use = f"models/{model_to_use}"
 
