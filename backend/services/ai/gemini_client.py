@@ -46,40 +46,62 @@ class GoogleGeminiClient:
         self.model_name = "models/gemini-1.5-flash" 
 
     def fetch_remote_models(self) -> Dict[str, Dict]:
-        """從 Google 伺服器同步所有可用模型清單 (無過濾模式)"""
+        """從 Google 伺服器同步所有可用模型清單 (包含 Gemma 系列)"""
         if not self.client:
             return self.MODELS
 
         try:
-            logger.info("[GoogleGeminiClient] Fetching all remote models...")
+            logger.info("[GoogleGeminiClient] Fetching all remote models (pagination-aware)...")
+            
+            # 使用 list() 獲取分頁物件
             remote_models = self.client.models.list()
             merged_models = {}
             
+            # Pager 會自動迭代所有分頁
             for m in remote_models:
-                # 取得完整名稱 (通常是 models/xxx)
-                model_full_name = m.name
-                # 取得短名稱 (xxx)
-                model_id = model_full_name.split('/')[-1]
+                full_name = m.name # 格式如 models/gemini-pro
+                short_id = full_name.split('/')[-1]
                 
-                # 移除過濾器，顯示所有模型以確保 Gemma 等能被看見
-                if model_id in self.MODELS:
-                    merged_models[model_full_name] = self.MODELS[model_id].copy()
-                    merged_models[model_full_name]["display_name"] = f"{self.MODELS[model_id]['display_name']} (穩定)"
+                # 跳過不支援生成的模型 (如 embedding, text-moderation 等)
+                # 但 Gemma 4 應該支援生成，所以我們保留它
+                methods = m.supported_generation_methods or []
+                is_generative = any(met in ['generateContent', 'generateText', 'generateAnswer'] for met in methods)
+                
+                if not is_generative and 'gemma' not in full_name.lower():
+                    continue
+
+                if short_id in self.MODELS:
+                    merged_models[full_name] = self.MODELS[short_id].copy()
+                    merged_models[full_name]["display_name"] = f"{self.MODELS[short_id]['display_name']} (穩定)"
                 else:
-                    display_name = m.display_name or model_id
-                    merged_models[model_full_name] = {
+                    display_name = m.display_name or short_id
+                    
+                    # 針對 Gemma 進行顯示優化
+                    if 'gemma' in full_name.lower() or 'gemma' in display_name.lower():
+                        display_name = f"💎 {display_name}"
+                    
+                    merged_models[full_name] = {
                         "display_name": display_name,
                         "description": f"{display_name} (外部同步)",
                         "max_tokens": getattr(m, 'output_token_limit', 8192) or 8192,
                         "provider": "google"
                     }
             
-            logger.info(f"[GoogleGeminiClient] Successfully fetched {len(merged_models)} models.")
-            # 列印前幾個抓到的模型 ID 以供除錯
-            sample_ids = list(merged_models.keys())[:5]
-            logger.debug(f"[GoogleGeminiClient] Sample model IDs: {sample_ids}")
+            # --- 排序邏輯 ---
+            # 依據 display_name 進行排序，並將推薦的模型放在最前面
+            sorted_keys = sorted(
+                merged_models.keys(), 
+                key=lambda k: (
+                    not k.endswith('flash'), # Flash 優先
+                    not 'gemini-1.5' in k,   # 1.5 優先
+                    merged_models[k]['display_name'].lower()
+                )
+            )
             
-            return merged_models if merged_models else self.MODELS
+            final_models = {k: merged_models[k] for k in sorted_keys}
+            
+            logger.info(f"[GoogleGeminiClient] Successfully fetched and sorted {len(final_models)} models.")
+            return final_models if final_models else self.MODELS
         except Exception as e:
             logger.error(f"[GoogleGeminiClient] Failed to fetch Google remote models: {e}")
             return self.MODELS
@@ -94,13 +116,11 @@ class GoogleGeminiClient:
     ) -> str:
         """生成內容"""
         if not self.client:
-            raise RuntimeError("Gemini Client not initialized. API Key is missing.")
+            raise RuntimeError("Gemini Client not initialized.")
             
         model_to_use = model or self.model_name
-        if '/' not in model_to_use and not model_to_use.startswith('models/'):
+        if '/' not in model_to_use:
             model_to_use = f"models/{model_to_use}"
-
-        logger.info(f"[GoogleGeminiClient] Calling generate_content with model: {model_to_use}")
 
         try:
             config = types.GenerateContentConfig(
@@ -117,23 +137,19 @@ class GoogleGeminiClient:
 
             return response.text
         except Exception as e:
-            logger.error(f"[GoogleGeminiClient] ERROR using model {model_to_use}: {str(e)}")
+            logger.error(f"[GoogleGeminiClient] Error using model {model_to_use}: {str(e)}")
             raise
 
     def set_model(self, model_name: str):
-        """設定目前的模型名稱"""
         self.model_name = model_name
 
     def get_available_models(self, remote: bool = False) -> Dict[str, Dict]:
-        """獲取可用模型列表"""
         if remote:
             return self.fetch_remote_models()
         return self.MODELS.copy()
 
     def test_connection(self) -> Dict:
-        """測試連線"""
         try:
-            # 測試請求，使用極短的輸出
             response = self.generate_content(prompt="Hi", temperature=0, max_tokens=5)
             return {
                 "success": True,
@@ -142,8 +158,4 @@ class GoogleGeminiClient:
                 "model": self.model_name
             }
         except Exception as e:
-            return {
-                "success": False, 
-                "message": f"Connection failed using {self.model_name}: {str(e)}", 
-                "model": self.model_name
-            }
+            return {"success": False, "message": f"Connection failed: {str(e)}", "model": self.model_name}
