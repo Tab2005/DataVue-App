@@ -284,8 +284,13 @@ class AIService:
             return
 
         try:
+            # 確保模型名稱路徑正確
+            model_to_use = model
+            if not model_to_use.startswith('models/'):
+                model_to_use = f"models/{model_to_use}"
+
             response_stream = client.models.generate_content_stream(
-                model=model,
+                model=model_to_use,
                 contents=[
                     types.Content(
                         role="user",
