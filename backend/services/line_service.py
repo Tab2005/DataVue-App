@@ -56,37 +56,44 @@ async def send_line_push_message(to_user_id: str, text: str, flex_content: Optio
         logger.error(f"[LineService] Error sending push message: {e}")
         return False
 
-async def handle_line_webhook(db: Session, body: str, signature: str):
+async def handle_line_webhook(body: str, signature: str):
     """
     處理來自 LINE 的 Webhook 事件。
     主要功能：解析用戶傳送的 6 位數代碼，完成帳號綁定。
     """
-    # TODO: 在正式開發中應驗證 signature (HMAC-SHA256)
+    from database import SessionLocal
+    
+    logger.info(f"[LineWebhook] Received raw body: {body[:200]}...")
     
     try:
         data = json.loads(body)
         events = data.get("events", [])
         
-        for event in events:
-            if event["type"] == "message" and event["message"]["type"] == "text":
-                user_id = event["source"]["userId"]
-                msg_text = event["message"]["text"].strip()
+        if not events:
+            logger.info("[LineWebhook] No events found in request.")
+            return
+
+        with SessionLocal() as db:
+            for event in events:
+                user_id = event.get("source", {}).get("userId")
                 
-                # 檢查是否為 6 位數純數字
-                if len(msg_text) == 6 and msg_text.isdigit():
-                    await _process_binding(db, user_id, msg_text)
-                else:
-                    # 選項：如果不是代碼，可以回傳預設歡迎語
-                    # await send_line_push_message(user_id, "您好！若要綁定帳號，請輸入系統產生的 6 位數驗證碼。")
-                    pass
-            
-            elif event["type"] == "follow":
-                # 用戶加入好友事件
-                user_id = event["source"]["userId"]
-                await send_line_push_message(user_id, "感謝您加入 DataVue 通知助手！請在系統介面取得 6 位數綁定碼並輸入於此，即可完成帳號連結。")
+                if event["type"] == "message" and event["message"]["type"] == "text":
+                    msg_text = event["message"]["text"].strip()
+                    logger.info(f"[LineWebhook] Message from {user_id}: {msg_text}")
+                    
+                    # 檢查是否為 6 位數純數字
+                    if len(msg_text) == 6 and msg_text.isdigit():
+                        await _process_binding(db, user_id, msg_text)
+                    else:
+                        logger.debug(f"[LineWebhook] Ignoring non-code text: {msg_text}")
+                
+                elif event["type"] == "follow":
+                    # 用戶加入好友事件
+                    logger.info(f"[LineWebhook] User {user_id} followed the bot.")
+                    await send_line_push_message(user_id, "感謝您加入 DataVue 通知助手！請在系統介面取得 6 位數綁定碼並輸入於此，即可完成帳號連結。")
 
     except Exception as e:
-        logger.error(f"[LineService] Error handling webhook: {e}")
+        logger.error(f"[LineWebhook] Critical Error: {type(e).__name__}: {str(e)}", exc_info=True)
 
 async def _process_binding(db: Session, line_user_id: str, code: str):
     """

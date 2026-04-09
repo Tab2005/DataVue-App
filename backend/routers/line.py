@@ -78,7 +78,7 @@ async def line_webhook(
     body = await request.body()
     body_str = body.decode("utf-8")
     
-    # 交給背景處理
-    background_tasks.add_task(handle_line_webhook, db, body_str, signature)
+    # 交給背景處理，不直接傳遞 db 實例以避免 session 已關閉
+    background_tasks.add_task(handle_line_webhook, body_str, signature)
     
     return {"message": "ok"}
