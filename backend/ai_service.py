@@ -47,12 +47,12 @@ class AIService:
         return providers
 
     @staticmethod
-    def get_available_models(provider: str = "zeabur", remote: bool = False) -> Dict[str, Dict]:
+    def get_available_models(provider: str = "zeabur", remote: bool = False, api_key: Optional[str] = None) -> Dict[str, Dict]:
         """Get available models for a provider"""
         if provider == "zeabur":
             # If remote is true, we need a client to fetch. 
-            # We use an empty client (it will fall back to local if no API key)
-            client = AIService.get_zeabur_client()
+            # We use the provided api_key (or empty if None)
+            client = AIService.get_zeabur_client(api_key=api_key)
             if client:
                 return client.get_available_models(remote=remote)
             return ZeaburAIClient.MODELS
