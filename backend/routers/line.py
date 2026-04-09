@@ -64,7 +64,13 @@ async def get_line_status(
         "line_user_id": user.line_user_id[:8] + "..." if user.line_user_id else None
     }
 
-@router.post("/webhook")
+@router.get("/webhook")
+async def line_webhook_test():
+    """供手動測試端點是否通暢"""
+    return {"message": "LINE Webhook endpoint is active. Please use POST for actual events."}
+
+@router.post("/webhook", include_in_schema=True)
+@router.post("/webhook/")
 async def line_webhook(
     request: Request,
     background_tasks: BackgroundTasks,
