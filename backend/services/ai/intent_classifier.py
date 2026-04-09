@@ -89,7 +89,7 @@ class AIIntentClassifier:
     def __init__(
         self,
         api_key: Optional[str] = None,
-        model: str = "gemini-2.5-flash",
+        model: str = "gemini-1.5-flash",
         provider: str = "zeabur"  # "zeabur" or "gemini"
     ):
         """
@@ -127,7 +127,7 @@ class AIIntentClassifier:
         Returns:
             {
                 "success": True,
-                "model": "gemini-2.5-flash",
+                "model": "gemini-1.5-flash",
                 "results": [
                     {
                         "query": "...",

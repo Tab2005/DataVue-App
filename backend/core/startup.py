@@ -162,7 +162,7 @@ def patch_database_schema(engine):
                 ("zeabur_api_key", "VARCHAR"),
                 ("gemini_api_key", "VARCHAR"),
                 ("ai_provider", "VARCHAR DEFAULT 'zeabur'"),
-                ("ai_model", "VARCHAR DEFAULT 'gemini-2.5-flash'"),
+                ("ai_model", "VARCHAR DEFAULT 'gemini-1.5-flash'"),
                 # GA4 Integration
                 ("ga4_access_token", "TEXT"),
                 ("ga4_refresh_token", "TEXT"),

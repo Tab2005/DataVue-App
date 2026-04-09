@@ -131,7 +131,7 @@ def get_ai_settings(
     if not settings:
         return {
             "ai_provider": "zeabur",
-            "ai_model": "gemini-2.5-flash",
+            "ai_model": "gemini-1.5-flash",
             "has_zeabur_key": False,
             "has_gemini_key": False
         }

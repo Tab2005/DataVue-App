@@ -337,7 +337,7 @@ class TokenManager:
             
             return {
                 "ai_provider": user.ai_provider or "zeabur",
-                "ai_model": user.ai_model or "gemini-2.5-flash",
+                "ai_model": user.ai_model or "gemini-1.5-flash",
                 "has_zeabur_key": bool(user.zeabur_api_key),
                 "has_gemini_key": bool(user.gemini_api_key)
             }

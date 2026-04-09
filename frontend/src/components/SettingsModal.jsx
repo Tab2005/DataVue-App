@@ -17,13 +17,13 @@ const SettingsModal = ({ isOpen, onClose, language, teamId, teamName, onSuccess 
     const [aiData, setAiData] = useState({
         provider: 'zeabur', // Default to Zeabur AI Hub
         apiKey: '',
-        model: 'gemini-2.5-flash'
+        model: 'gemini-1.5-flash'
     });
 
     // Google Gemini Direct API Data
     const [geminiData, setGeminiData] = useState({
         apiKey: '',
-        model: 'gemini-2.5-flash'
+        model: 'gemini-1.5-flash'
     });
 
     // Available models from backend (Separate lists)
@@ -323,7 +323,7 @@ const SettingsModal = ({ isOpen, onClose, language, teamId, teamName, onSuccess 
         try {
             // Save to backend (encrypted)
             await saveAiSettingsToServer({
-                zeabur_api_key: aiData.apiKey || null,
+                zeabur_api_key: aiData.apiKey === '********' ? null : aiData.apiKey,
                 ai_provider: 'zeabur',
                 ai_model: aiData.model
             });
@@ -379,7 +379,7 @@ const SettingsModal = ({ isOpen, onClose, language, teamId, teamName, onSuccess 
         setAiData(prev => ({ ...prev, provider: newProvider }));
         await fetchAvailableModels(newProvider);
         // Reset model to first available
-        setAiData(prev => ({ ...prev, model: 'gemini-2.5-flash' }));
+        setAiData(prev => ({ ...prev, model: 'gemini-1.5-flash' }));
     };
 
     const handleClearAiKey = () => {
@@ -400,7 +400,16 @@ const SettingsModal = ({ isOpen, onClose, language, teamId, teamName, onSuccess 
             fetchAiSettings().then(settings => {
                 if (settings) {
                     setActiveAiProvider(settings.ai_provider || 'zeabur');
-                    setAiData(prev => ({ ...prev, model: settings.ai_model || 'gemini-2.5-flash' }));
+                    setAiData(prev => ({ 
+                        ...prev, 
+                        model: settings.ai_model || 'gemini-1.5-flash',
+                        apiKey: settings.has_zeabur_key ? '********' : ''
+                    }));
+                    setGeminiData(prev => ({ 
+                        ...prev, 
+                        model: settings.ai_model || 'gemini-1.5-flash',
+                        apiKey: settings.has_gemini_key ? '********' : ''
+                    }));
                     // Store provider in localStorage for GSCStats to use (sync purpose only)
                     localStorage.setItem('ai_provider', settings.ai_provider || 'zeabur');
                 }
@@ -938,7 +947,7 @@ const SettingsModal = ({ isOpen, onClose, language, teamId, teamName, onSuccess 
                                             setAiLoading(true);
                                             try {
                                                 await saveAiSettingsToServer({ gemini_api_key: '' });
-                                                setGeminiData({ apiKey: '', model: 'gemini-2.5-flash' });
+                                                setGeminiData({ apiKey: '', model: 'gemini-1.5-flash' });
                                                 setStatus({ type: 'success', message: language === 'zh' ? '已清除 Google Gemini 設定' : 'Google Gemini settings cleared' });
                                             } catch (err) {
                                                 setStatus({ type: 'error', message: err.message });
@@ -960,8 +969,9 @@ const SettingsModal = ({ isOpen, onClose, language, teamId, teamName, onSuccess 
                                         setAiLoading(true);
                                         try {
                                             await saveAiSettingsToServer({
-                                                gemini_api_key: geminiData.apiKey,
-                                                ai_model: geminiData.model
+                                                gemini_api_key: geminiData.apiKey === '********' ? null : geminiData.apiKey,
+                                                ai_model: geminiData.model,
+                                                ai_provider: 'gemini'
                                             });
                                             setStatus({ type: 'success', message: language === 'zh' ? '✅ Google Gemini 設定已儲存至伺服器' : '✅ Google Gemini settings saved to server' });
                                         } catch (err) {

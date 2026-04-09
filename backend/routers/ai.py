@@ -156,7 +156,7 @@ async def get_ai_settings(user: User = Depends(get_current_user)):
         # Return defaults if no settings found
         return {
             "ai_provider": "zeabur",
-            "ai_model": "gemini-2.5-flash",
+            "ai_model": "gemini-1.5-flash",
             "has_zeabur_key": False,
             "has_gemini_key": False
         }
