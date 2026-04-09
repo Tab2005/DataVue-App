@@ -44,7 +44,7 @@ class GoogleGeminiClient:
         
         # 使用新版 SDK 的 Client 模式
         self.client = genai.Client(api_key=self.api_key)
-        self.model_name = "gemini-2.0-flash"  # 預設改用 2.0
+        self.model_name = "gemini-1.5-flash"  # 預設改用更穩定的 1.5 版本
 
     def set_model(self, model_name: str):
         """設定使用的模型"""
