@@ -64,11 +64,13 @@ class GoogleGeminiClient:
             for m in remote_models:
                 # 僅顯示支援內容生成的模型
                 if 'generateContent' in m.supported_generation_methods:
-                    # 去除 names/ 前綴
-                    model_id = m.id if hasattr(m, 'id') else m.name.split('/')[-1]
+                    # 使用完整名稱 (如 models/gemini-1.5-flash) 作為 ID，避免 404
+                    model_id = m.name if m.name.startswith('models/') else f"models/{m.name}"
                     
-                    if model_id in self.MODELS:
-                        merged_models[model_id] = self.MODELS[model_id]
+                    if model_id.split('/')[-1] in self.MODELS:
+                        short_id = model_id.split('/')[-1]
+                        merged_models[model_id] = self.MODELS[short_id].copy()
+                        merged_models[model_id]["display_name"] = f"{self.MODELS[short_id]['display_name']} (穩定)"
                     else:
                         merged_models[model_id] = {
                             "display_name": m.display_name or model_id,
