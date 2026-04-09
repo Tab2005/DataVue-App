@@ -48,8 +48,13 @@ async def get_models(
     Get available models for a provider.
     Supports 'sync=true' to fetch latest from remote.
     """
+    # Map provider names to internal key names
+    key_provider = provider
+    if provider == "google_gemini":
+        key_provider = "gemini"
+        
     # Get user's API key for this provider (if any)
-    api_key = TokenManager.get_ai_api_key(user.google_id, provider=provider)
+    api_key = TokenManager.get_ai_api_key(user.google_id, provider=key_provider)
     
     models = AIService.get_available_models(provider, remote=sync, api_key=api_key)
     if not models:
