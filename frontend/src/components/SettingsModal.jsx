@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { FiTrendingUp, FiMessageSquare, FiCpu, FiZap } from 'react-icons/fi';
+import { FiTrendingUp, FiMessageSquare, FiCpu, FiZap, FiRefreshCw } from 'react-icons/fi';
 import LineBindingCard from './Settings/LineBindingCard';
 
 const SettingsModal = ({ isOpen, onClose, language, teamId, teamName, onSuccess }) => {
@@ -214,19 +214,28 @@ const SettingsModal = ({ isOpen, onClose, language, teamId, teamName, onSuccess 
         }
     };
 
-    const fetchAvailableModels = async (provider = 'zeabur') => {
+    const [isSyncingModels, setIsSyncingModels] = useState(false);
+
+    const fetchAvailableModels = async (provider = 'zeabur', sync = false) => {
+        if (sync) setIsSyncingModels(true);
         try {
             const token = localStorage.getItem('google_token');
             const apiUrl = import.meta.env.VITE_API_URL || 'http://localhost:8000';
-            const res = await fetch(`${apiUrl}/api/ai/models?provider=${provider}`, {
+            const res = await fetch(`${apiUrl}/api/ai/models?provider=${provider}${sync ? '&sync=true' : ''}`, {
                 headers: { 'Authorization': `Bearer ${token}` }
             });
             if (res.ok) {
                 const data = await res.json();
                 setAvailableModels(data.models || {});
+                if (sync) {
+                    setStatus({ type: 'success', message: language === 'zh' ? '✅ 模型清單已同步完成' : '✅ Model list synced' });
+                }
             }
         } catch (err) {
             console.error("Failed to fetch AI models", err);
+            if (sync) setStatus({ type: 'error', message: language === 'zh' ? '❌ 同步失敗' : '❌ Sync failed' });
+        } finally {
+            if (sync) setIsSyncingModels(false);
         }
     };
 
@@ -723,9 +732,22 @@ const SettingsModal = ({ isOpen, onClose, language, teamId, teamName, onSuccess 
                                 <div style={{ display: 'flex', flexDirection: 'column', gap: '16px', opacity: aiLoading ? 0.5 : 1 }}>
                                     {/* Model Selection - Direct model choice without provider */}
                                     <div>
-                                        <label style={{ display: 'block', marginBottom: '8px', color: 'var(--text-secondary)' }}>
-                                            {language === 'zh' ? 'AI 模型' : 'AI Model'}
-                                        </label>
+                                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
+                                            <label style={{ color: 'var(--text-secondary)' }}>
+                                                {language === 'zh' ? 'AI 模型' : 'AI Model'}
+                                            </label>
+                                            <button 
+                                                onClick={() => fetchAvailableModels('zeabur', true)}
+                                                disabled={isSyncingModels}
+                                                style={{ 
+                                                    background: 'transparent', border: 'none', color: 'var(--accent-primary)', 
+                                                    cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '4px', fontSize: '12px' 
+                                                }}
+                                            >
+                                                <FiRefreshCw className={isSyncingModels ? 'spin' : ''} size={12} />
+                                                {language === 'zh' ? '同步清單' : 'Sync List'}
+                                            </button>
+                                        </div>
                                         <select
                                             value={aiData.model}
                                             onChange={(e) => setAiData({ ...aiData, model: e.target.value })}
@@ -738,24 +760,25 @@ const SettingsModal = ({ isOpen, onClose, language, teamId, teamName, onSuccess 
                                                 color: 'white'
                                             }}
                                         >
-                                            <optgroup label="Gemini (推薦 - 免費額度高)" style={{ background: '#2a2a2a' }}>
-                                                <option value="gemini-2.5-flash" style={{ background: '#1a1a1a' }}>gemini-2.5-flash (快速、免費額度高) ✅ 推薦</option>
-                                                <option value="gemini-2.5-pro" style={{ background: '#1a1a1a' }}>gemini-2.5-pro (高品質、長文本)</option>
-                                                <option value="gemini-3-flash-preview" style={{ background: '#1a1a1a' }}>gemini-3-flash-preview (最新預覽)</option>
-                                            </optgroup>
-                                            <optgroup label="Claude (Anthropic)" style={{ background: '#2a2a2a' }}>
-                                                <option value="claude-sonnet-4-5" style={{ background: '#1a1a1a' }}>claude-sonnet-4-5 (高品質)</option>
-                                                <option value="claude-haiku-4-5" style={{ background: '#1a1a1a' }}>claude-haiku-4-5 (快速、經濟)</option>
-                                            </optgroup>
-                                            <optgroup label="GPT (OpenAI)" style={{ background: '#2a2a2a' }}>
-                                                <option value="gpt-4o" style={{ background: '#1a1a1a' }}>gpt-4o (多模態)</option>
-                                                <option value="gpt-4o-mini" style={{ background: '#1a1a1a' }}>gpt-4o-mini (經濟實惠)</option>
-                                            </optgroup>
-                                            <optgroup label="其他模型" style={{ background: '#2a2a2a' }}>
-                                                <option value="deepseek-v3.2" style={{ background: '#1a1a1a' }}>deepseek-v3.2 (開源高品質)</option>
-                                                <option value="qwen-3-32" style={{ background: '#1a1a1a' }}>qwen-3-32 (通義千問，中文優化)</option>
-                                                <option value="llama-3.3-70b" style={{ background: '#1a1a1a' }}>llama-3.3-70b (Meta 開源)</option>
-                                            </optgroup>
+                                            {Object.entries(availableModels).length > 0 ? (
+                                                <>
+                                                    {/* Grouped by provider */}
+                                                    {Array.from(new Set(Object.values(availableModels).map(m => m.provider))).map(provider => (
+                                                        <optgroup key={provider} label={provider.toUpperCase()} style={{ background: '#2a2a2a' }}>
+                                                            {Object.entries(availableModels)
+                                                                .filter(([_, config]) => config.provider === provider)
+                                                                .map(([id, config]) => (
+                                                                    <option key={id} value={id} style={{ background: '#1a1a1a' }}>
+                                                                        {config.description || id}
+                                                                    </option>
+                                                                ))
+                                                            }
+                                                        </optgroup>
+                                                    ))}
+                                                </>
+                                            ) : (
+                                                <option value="gemini-1.5-flash">gemini-1.5-flash (Loading...)</option>
+                                            )}
                                         </select>
                                     </div>
 
@@ -833,9 +856,22 @@ const SettingsModal = ({ isOpen, onClose, language, teamId, teamName, onSuccess 
 
                             {/* Model Selection */}
                             <div>
-                                <label style={{ display: 'block', marginBottom: '8px', color: 'var(--text-secondary)' }}>
-                                    {language === 'zh' ? 'Gemini 模型' : 'Gemini Model'}
-                                </label>
+                                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
+                                    <label style={{ color: 'var(--text-secondary)' }}>
+                                        {language === 'zh' ? 'Gemini 模型' : 'Gemini Model'}
+                                    </label>
+                                    <button 
+                                        onClick={() => fetchAvailableModels('google_gemini', true)}
+                                        disabled={isSyncingModels}
+                                        style={{ 
+                                            background: 'transparent', border: 'none', color: 'var(--accent-primary)', 
+                                            cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '4px', fontSize: '12px' 
+                                        }}
+                                    >
+                                        <FiRefreshCw className={isSyncingModels ? 'spin' : ''} size={12} />
+                                        {language === 'zh' ? '同步清單' : 'Sync List'}
+                                    </button>
+                                </div>
                                 <select
                                     value={geminiData.model}
                                     onChange={(e) => setGeminiData({ ...geminiData, model: e.target.value })}
@@ -848,11 +884,21 @@ const SettingsModal = ({ isOpen, onClose, language, teamId, teamName, onSuccess 
                                         color: 'white'
                                     }}
                                 >
-                                    <option value="gemini-2.5-flash">gemini-2.5-flash (快速、免費額度高) ✅ 推薦</option>
-                                    <option value="gemini-2.5-pro">gemini-2.5-pro (高品質、長文本)</option>
-                                    <option value="gemini-2.0-flash">gemini-2.0-flash (上一代快速)</option>
-                                    <option value="gemini-1.5-flash">gemini-1.5-flash (穩定版)</option>
-                                    <option value="gemini-1.5-pro">gemini-1.5-pro (穩定高品質)</option>
+                                    {Object.entries(availableModels).length > 0 ? (
+                                        Object.entries(availableModels)
+                                            .filter(([_, config]) => config.provider === 'google' || config.provider === 'gemini')
+                                            .map(([id, config]) => (
+                                            <option key={id} value={id}>
+                                                {config.description || id}
+                                            </option>
+                                        ))
+                                    ) : (
+                                        <>
+                                            <option value="gemini-1.5-flash">gemini-1.5-flash (穩定版)</option>
+                                            <option value="gemini-2.0-flash">gemini-2.0-flash (最新世代)</option>
+                                            <option value="gemini-1.5-pro">gemini-1.5-pro (穩定高品質)</option>
+                                        </>
+                                    )}
                                 </select>
                             </div>
 

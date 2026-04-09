@@ -47,15 +47,21 @@ class AIService:
         return providers
 
     @staticmethod
-    def get_available_models(provider: str = "zeabur") -> Dict[str, Dict]:
+    def get_available_models(provider: str = "zeabur", remote: bool = False) -> Dict[str, Dict]:
         """Get available models for a provider"""
         if provider == "zeabur":
+            # If remote is true, we need a client to fetch. 
+            # We use an empty client (it will fall back to local if no API key)
+            client = AIService.get_zeabur_client()
+            if client:
+                return client.get_available_models(remote=remote)
             return ZeaburAIClient.MODELS
         elif provider == "google_gemini":
             # Limited models for legacy mode
             return {
-                "gemini-2.5-flash": {"description": "Gemini 2.5 Flash", "provider": "google"},
-                "gemini-2.5-pro": {"description": "Gemini 2.5 Pro", "provider": "google"},
+                "gemini-2.0-flash": {"description": "Gemini 2.0 Flash", "provider": "google"},
+                "gemini-1.5-flash": {"description": "Gemini 1.5 Flash", "provider": "google"},
+                "gemini-1.5-pro": {"description": "Gemini 1.5 Pro", "provider": "google"},
             }
         return {}
 

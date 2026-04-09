@@ -18,14 +18,14 @@ class AnalysisRequest(BaseModel):
     context: str
     api_key: Optional[str] = None  # Optional: For BYOK mode
     provider: Optional[str] = "zeabur"  # 'zeabur' or 'google_gemini'
-    model: Optional[str] = "gemini-2.5-flash"
+    model: Optional[str] = "gemini-1.5-flash"
     report_type: Optional[str] = "ad_analysis"  # 'ad_analysis' or 'weekly_summary'
 
 
 class TestConnectionRequest(BaseModel):
     api_key: Optional[str] = None
     provider: Optional[str] = "zeabur"
-    model: Optional[str] = "gemini-2.5-flash"
+    model: Optional[str] = "gemini-1.5-flash"
 
 
 @router.get("/providers")
@@ -41,18 +41,21 @@ async def get_providers(user: User = Depends(get_current_user)):
 @router.get("/models")
 async def get_models(
     provider: str = "zeabur",
+    sync: bool = False,
     user: User = Depends(get_current_user)
 ):
     """
     Get available models for a provider.
+    Supports 'sync=true' to fetch latest from remote.
     """
-    models = AIService.get_available_models(provider)
+    models = AIService.get_available_models(provider, remote=sync)
     if not models:
         raise HTTPException(status_code=400, detail=f"Unknown provider: {provider}")
     
     return {
         "provider": provider,
-        "models": models
+        "models": models,
+        "synced": sync
     }
 
 
