@@ -978,7 +978,11 @@ const SettingsModal = ({ isOpen, onClose, language, teamId, teamName, onSuccess 
                                             const apiUrl = import.meta.env.VITE_API_URL || 'http://localhost:8000';
                                             const res = await fetch(`${apiUrl}/api/ai/test-gemini`, {
                                                 method: 'POST',
-                                                headers: { 'Authorization': `Bearer ${token}` }
+                                                headers: { 
+                                                    'Authorization': `Bearer ${token}`,
+                                                    'Content-Type': 'application/json'
+                                                },
+                                                body: JSON.stringify({ model: geminiData.model })
                                             });
                                             const data = await res.json();
                                             if (data.success) {

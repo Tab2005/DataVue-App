@@ -203,9 +203,13 @@ async def clear_ai_key(
 
 
 @router.post("/test-gemini")
-async def test_gemini_connection(user: User = Depends(get_current_user)):
+async def test_gemini_connection(
+    request: TestConnectionRequest = None,
+    user: User = Depends(get_current_user)
+):
     """
     Test Google Gemini API connection using the user's saved API key.
+    Allows passing a specific model to test with.
     """
     logger.info(f"[AI API] Testing Gemini connection for user: {user.email}")
     
@@ -213,21 +217,29 @@ async def test_gemini_connection(user: User = Depends(get_current_user)):
     api_key = TokenManager.get_ai_api_key(user.google_id, provider="gemini")
     
     if not api_key:
-        logger.warning(f"[AI API] No Gemini API key found for user: {user.email}")
         return {
             "success": False,
-            "message": "No Google Gemini API key configured. Please save your API key first.",
+            "message": "No Google Gemini API key configured.",
             "provider": "gemini"
         }
-    
-    logger.debug(f"[AI API] Found Gemini API key (length={len(api_key)})")
     
     try:
         from services.ai.gemini_client import GoogleGeminiClient
         client = GoogleGeminiClient(api_key=api_key)
-        result = client.test_connection()
         
-        logger.info(f"[AI API] Gemini test result: success={result.get('success')}")
+        # Use provided model if available, otherwise fallback to saved setting
+        test_model = None
+        if request and request.model:
+            test_model = request.model
+        else:
+            settings = TokenManager.get_ai_settings(user.google_id)
+            if settings:
+                test_model = settings.get("ai_model")
+        
+        if test_model:
+            client.set_model(test_model)
+            
+        result = client.test_connection()
         
         return {
             "success": result.get("success", False),

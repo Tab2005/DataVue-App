@@ -27,12 +27,6 @@ class GoogleGeminiClient:
             "description": "最新世代、極速",
             "max_tokens": 8192,
             "provider": "google"
-        },
-        "gemini-1.5-pro": {
-            "display_name": "Gemini 1.5 Pro",
-            "description": "高品質、長文本",
-            "max_tokens": 32000,
-            "provider": "google"
         }
     }
 
@@ -44,8 +38,6 @@ class GoogleGeminiClient:
             return
         
         try:
-            # 使用新版 SDK 的 Client 模式
-            # 注意: 不手動指定 v1beta，讓 SDK 根據模型自動判斷
             self.client = genai.Client(api_key=self.api_key)
         except Exception as e:
             logger.error(f"Failed to initialize Gemini Client: {e}")
@@ -54,11 +46,12 @@ class GoogleGeminiClient:
         self.model_name = "models/gemini-1.5-flash" 
 
     def fetch_remote_models(self) -> Dict[str, Dict]:
-        """從 Google 伺服器同步最新可用模型清單"""
+        """從 Google 伺服器同步所有可用模型清單 (無過濾模式)"""
         if not self.client:
             return self.MODELS
 
         try:
+            logger.info("[GoogleGeminiClient] Fetching all remote models...")
             remote_models = self.client.models.list()
             merged_models = {}
             
@@ -68,28 +61,27 @@ class GoogleGeminiClient:
                 # 取得短名稱 (xxx)
                 model_id = model_full_name.split('/')[-1]
                 
-                # 放寬限制：只要支援生成 (Content, Text, Answer) 都顯示
-                methods = m.supported_generation_methods or []
-                is_generative = any(method in ['generateContent', 'generateText', 'generateAnswer'] for method in methods)
-                
-                if is_generative:
-                    if model_id in self.MODELS:
-                        merged_models[model_full_name] = self.MODELS[model_id].copy()
-                        merged_models[model_full_name]["display_name"] = f"{self.MODELS[model_id]['display_name']} (穩定)"
-                    else:
-                        # 對於 Gemma 或其他新模型
-                        display_name = m.display_name or model_id
-                        merged_models[model_full_name] = {
-                            "display_name": display_name,
-                            "description": f"{display_name} (外部同步)",
-                            "max_tokens": m.output_token_limit or 8192,
-                            "provider": "google"
-                        }
+                # 移除過濾器，顯示所有模型以確保 Gemma 等能被看見
+                if model_id in self.MODELS:
+                    merged_models[model_full_name] = self.MODELS[model_id].copy()
+                    merged_models[model_full_name]["display_name"] = f"{self.MODELS[model_id]['display_name']} (穩定)"
+                else:
+                    display_name = m.display_name or model_id
+                    merged_models[model_full_name] = {
+                        "display_name": display_name,
+                        "description": f"{display_name} (外部同步)",
+                        "max_tokens": getattr(m, 'output_token_limit', 8192) or 8192,
+                        "provider": "google"
+                    }
             
-            logger.info(f"Fetched {len(merged_models)} remote models from Google")
+            logger.info(f"[GoogleGeminiClient] Successfully fetched {len(merged_models)} models.")
+            # 列印前幾個抓到的模型 ID 以供除錯
+            sample_ids = list(merged_models.keys())[:5]
+            logger.debug(f"[GoogleGeminiClient] Sample model IDs: {sample_ids}")
+            
             return merged_models if merged_models else self.MODELS
         except Exception as e:
-            logger.error(f"Failed to fetch Google remote models: {e}")
+            logger.error(f"[GoogleGeminiClient] Failed to fetch Google remote models: {e}")
             return self.MODELS
 
     def generate_content(
@@ -104,11 +96,11 @@ class GoogleGeminiClient:
         if not self.client:
             raise RuntimeError("Gemini Client not initialized. API Key is missing.")
             
-        # 確保傳遞給 SDK 的名稱格式正確
         model_to_use = model or self.model_name
-        # 如果模型名稱不包含 models/ 前綴且不是特定路徑，則嘗試補全 (但通常 sync 下來的已經包含了)
-        if '/' not in model_to_use:
+        if '/' not in model_to_use and not model_to_use.startswith('models/'):
             model_to_use = f"models/{model_to_use}"
+
+        logger.info(f"[GoogleGeminiClient] Calling generate_content with model: {model_to_use}")
 
         try:
             config = types.GenerateContentConfig(
@@ -117,7 +109,6 @@ class GoogleGeminiClient:
                 max_output_tokens=max_tokens or 8192
             )
 
-            # 呼叫新版 SDK
             response = self.client.models.generate_content(
                 model=model_to_use,
                 contents=prompt,
@@ -142,12 +133,17 @@ class GoogleGeminiClient:
     def test_connection(self) -> Dict:
         """測試連線"""
         try:
-            response = self.generate_content(prompt="OK", temperature=0)
+            # 測試請求，使用極短的輸出
+            response = self.generate_content(prompt="Hi", temperature=0, max_tokens=5)
             return {
                 "success": True,
-                "message": "Connected Successfully!",
+                "message": f"Connected Successfully! Using {self.model_name}",
                 "response": response,
                 "model": self.model_name
             }
         except Exception as e:
-            return {"success": False, "message": f"Connection failed: {str(e)}", "model": self.model_name}
+            return {
+                "success": False, 
+                "message": f"Connection failed using {self.model_name}: {str(e)}", 
+                "model": self.model_name
+            }
