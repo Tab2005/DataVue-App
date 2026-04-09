@@ -65,35 +65,37 @@ class GoogleGeminiClient:
                 full_name = m.name 
                 short_id = full_name.split('/')[-1]
                 
-                # 排除一些非生成型的模型 (選填)
-                methods = getattr(m, 'supported_generation_methods', [])
-                isValid = any(met in ['generateContent', 'generateText', 'generateAnswer'] for met in methods)
-                if not isValid and 'gemma' not in full_name.lower():
+                lower_name = full_name.lower()
+                # 只要名稱包含 gemini 或 gemma 就納入，不再做嚴格的方法檢查
+                if 'gemini' not in lower_name and 'gemma' not in lower_name:
                     continue
 
                 display_name = m.display_name or short_id
                 
-                # 針對 Gemma 系列模型標記星星，方便用戶識別
-                if 'gemma' in full_name.lower() or 'gemma' in display_name.lower():
+                # 針對 Gemma 系列模型標記星星
+                is_gemma = 'gemma' in lower_name or 'gemma' in display_name.lower()
+                if is_gemma:
                     display_name = f"⭐ {display_name}"
                 
                 merged_models[full_name] = {
                     "display_name": display_name,
                     "description": f"{display_name} (同步自 Google)",
                     "max_tokens": getattr(m, 'output_token_limit', 8192) or 8192,
-                    "provider": "google"
+                    "provider": "google",
+                    "is_gemma": is_gemma
                 }
 
             if not merged_models:
                 logger.warning("[GoogleGeminiClient] No eligible models found in remote list.")
                 return self.MODELS
 
-            # 排序：穩定版優先，然後依名稱
+            # 排序：Gemini 優先於 Gemma -> Flash 優先 -> Gemini 1.5 優先
             sorted_keys = sorted(
                 merged_models.keys(),
                 key=lambda k: (
-                    not 'flash' in k.lower(),
-                    not 'gemini-1.5' in k.lower(),
+                    merged_models[k].get('is_gemma', False), # False (Gemini) < True (Gemma)
+                    not 'flash' in k.lower(),                 # False (Flash) < True
+                    not 'gemini-1.5' in k.lower(),            # False (1.5) < True
                     merged_models[k]['display_name']
                 )
             )
