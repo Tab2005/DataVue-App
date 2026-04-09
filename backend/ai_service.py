@@ -57,12 +57,26 @@ class AIService:
                 return client.get_available_models(remote=remote)
             return ZeaburAIClient.MODELS
         elif provider == "google_gemini":
-            # Limited models for legacy mode
-            return {
-                "gemini-2.0-flash": {"description": "Gemini 2.0 Flash", "provider": "google"},
-                "gemini-1.5-flash": {"description": "Gemini 1.5 Flash", "provider": "google"},
-                "gemini-1.5-pro": {"description": "Gemini 1.5 Pro", "provider": "google"},
-            }
+            # Direct Google Gemini Mode
+            try:
+                from services.ai.gemini_client import GoogleGeminiClient
+                client = GoogleGeminiClient(api_key=api_key)
+                models = client.get_available_models(remote=remote)
+                
+                # Transform to common format if needed (GoogleGeminiClient already returns a good format)
+                # Just Ensure 'description' exists for unified UI
+                for m_id, config in models.items():
+                    if 'description' not in config:
+                        config['description'] = config.get('display_name', m_id)
+                    if 'provider' not in config:
+                        config['provider'] = 'google'
+                return models
+            except Exception as e:
+                print(f"Error fetching Google Gemini models: {e}")
+                return {
+                    "gemini-1.5-flash": {"description": "Gemini 1.5 Flash", "provider": "google"},
+                    "gemini-1.5-pro": {"description": "Gemini 1.5 Pro", "provider": "google"},
+                }
         return {}
 
     @staticmethod
