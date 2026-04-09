@@ -102,13 +102,28 @@ async def analyze_data(
     """
     Stream analysis results.
     """
+    # 獲取使用者目前的 AI 設定 (如果請求中沒有指定)
+    user_settings = TokenManager.get_ai_settings(user.google_id) or {}
+    
+    # 決定使用的 Provider 與 Model
+    provider = request.provider if request.provider != "zeabur" else user_settings.get("ai_provider", "zeabur")
+    model = request.model if request.model != "gemini-1.5-flash" else user_settings.get("ai_model", "gemini-1.5-flash")
+    
+    # 決定使用的 API Key
+    api_key = request.api_key
+    if not api_key:
+        key_provider = "gemini" if provider == "google_gemini" else "zeabur"
+        api_key = TokenManager.get_ai_api_key(user.google_id, provider=key_provider)
+
+    logger.info(f"[AI Router] Starting analysis with provider={provider}, model={model}")
+
     return StreamingResponse(
         AIService.analyze_data(
             data=request.data, 
             context=request.context, 
-            api_key=request.api_key,
-            provider=request.provider,
-            model=request.model,
+            api_key=api_key,
+            provider=provider,
+            model=model,
             report_type=request.report_type
         ),
         media_type="text/plain"
