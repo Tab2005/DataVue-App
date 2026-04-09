@@ -26,8 +26,9 @@ const SettingsModal = ({ isOpen, onClose, language, teamId, teamName, onSuccess 
         model: 'gemini-2.5-flash'
     });
 
-    // Available models from backend
-    const [availableModels, setAvailableModels] = useState({});
+    // Available models from backend (Separate lists)
+    const [zeaburModels, setZeaburModels] = useState({});
+    const [googleModels, setGoogleModels] = useState({});
 
     // Status & Loading (separate for FB and AI tabs)
     const [status, setStatus] = useState(null); // { type: 'success' | 'error', message: '' }
@@ -226,7 +227,12 @@ const SettingsModal = ({ isOpen, onClose, language, teamId, teamName, onSuccess 
             });
             if (res.ok) {
                 const data = await res.json();
-                setAvailableModels(data.models || {});
+                if (provider === 'zeabur') {
+                    setZeaburModels(data.models || {});
+                } else if (provider === 'google_gemini') {
+                    setGoogleModels(data.models || {});
+                }
+                
                 if (sync) {
                     setStatus({ type: 'success', message: language === 'zh' ? '✅ 模型清單已同步完成' : '✅ Model list synced' });
                 }
@@ -244,7 +250,7 @@ const SettingsModal = ({ isOpen, onClose, language, teamId, teamName, onSuccess 
         // 1. Check LocalStorage for user key and settings
         const localKey = localStorage.getItem('ai_api_key');
         const savedProvider = localStorage.getItem('ai_provider') || 'zeabur';
-        const savedModel = localStorage.getItem('ai_model') || 'gemini-2.5-flash';
+        const savedModel = localStorage.getItem('ai_model') || 'gemini-1.5-flash';
 
         if (localKey) {
             setAiData(prev => ({ ...prev, apiKey: localKey, provider: savedProvider, model: savedModel }));
@@ -252,8 +258,11 @@ const SettingsModal = ({ isOpen, onClose, language, teamId, teamName, onSuccess 
             setAiData(prev => ({ ...prev, provider: savedProvider, model: savedModel }));
         }
 
-        // Fetch available models for the provider
-        await fetchAvailableModels(savedProvider);
+        // Fetch BOTH model lists initially
+        await Promise.all([
+            fetchAvailableModels('zeabur'),
+            fetchAvailableModels('google_gemini')
+        ]);
 
         // 2. Test Connection (Backend will check Zeabur env if key is null)
         try {
@@ -760,12 +769,12 @@ const SettingsModal = ({ isOpen, onClose, language, teamId, teamName, onSuccess 
                                                 color: 'white'
                                             }}
                                         >
-                                            {Object.entries(availableModels).length > 0 ? (
+                                            {Object.entries(zeaburModels).length > 0 ? (
                                                 <>
                                                     {/* Grouped by provider */}
-                                                    {Array.from(new Set(Object.values(availableModels).map(m => m.provider))).map(provider => (
+                                                    {Array.from(new Set(Object.values(zeaburModels).map(m => m.provider))).map(provider => (
                                                         <optgroup key={provider} label={provider.toUpperCase()} style={{ background: '#2a2a2a' }}>
-                                                            {Object.entries(availableModels)
+                                                            {Object.entries(zeaburModels)
                                                                 .filter(([_, config]) => config.provider === provider)
                                                                 .map(([id, config]) => (
                                                                     <option key={id} value={id} style={{ background: '#1a1a1a' }}>
@@ -777,7 +786,7 @@ const SettingsModal = ({ isOpen, onClose, language, teamId, teamName, onSuccess 
                                                     ))}
                                                 </>
                                             ) : (
-                                                <option value="gemini-1.5-flash">gemini-1.5-flash (Loading...)</option>
+                                                <option value="gemini-1.5-flash">Gemini 1.5 Flash (Loading...)</option>
                                             )}
                                         </select>
                                     </div>
@@ -884,19 +893,17 @@ const SettingsModal = ({ isOpen, onClose, language, teamId, teamName, onSuccess 
                                         color: 'white'
                                     }}
                                 >
-                                    {Object.entries(availableModels).length > 0 ? (
-                                        Object.entries(availableModels)
-                                            .filter(([_, config]) => config.provider === 'google' || config.provider === 'gemini')
-                                            .map(([id, config]) => (
+                                    {Object.entries(googleModels).length > 0 ? (
+                                        Object.entries(googleModels).map(([id, config]) => (
                                             <option key={id} value={id}>
-                                                {config.description || id}
+                                                {config.display_name || id}
                                             </option>
                                         ))
                                     ) : (
                                         <>
-                                            <option value="gemini-1.5-flash">gemini-1.5-flash (穩定版)</option>
-                                            <option value="gemini-2.0-flash">gemini-2.0-flash (最新世代)</option>
-                                            <option value="gemini-1.5-pro">gemini-1.5-pro (穩定高品質)</option>
+                                            <option value="models/gemini-1.5-flash">Gemini 1.5 Flash (穩定版)</option>
+                                            <option value="models/gemini-2.0-flash">Gemini 2.0 Flash (最新世代)</option>
+                                            <option value="models/gemini-1.5-pro">Gemini 1.5 Pro (高品質)</option>
                                         </>
                                     )}
                                 </select>
