@@ -7,8 +7,9 @@ import { MetricSelector } from '../Analytics';
 import { getMetricConfig, METRIC_GROUPS } from '../../constants/analyticsConfig';
 import { format, subDays, startOfWeek, endOfWeek, subMonths, startOfMonth, endOfMonth } from 'date-fns';
 
-const ReportConfig = ({ onSave, onCancel, initialData = {}, language, teamId }) => {
+const ReportConfig = ({ onSave, onCancel, initialData = {}, initialEditData = null, language, teamId }) => {
   const [step, setStep] = useState(1);
+  const [isEditMode, setIsEditMode] = useState(false);
   const [formData, setFormData] = useState({
     name: initialData.name || '',
     description: initialData.description || '',
@@ -42,6 +43,31 @@ const ReportConfig = ({ onSave, onCancel, initialData = {}, language, teamId }) 
     };
     fetchLineStatus();
   }, []);
+
+  // 編輯模式：回填資料
+  useEffect(() => {
+    if (initialEditData) {
+      setIsEditMode(true);
+      setFormData(prev => ({
+        ...prev,
+        id: initialEditData.id,
+        name: initialEditData.name || '',
+        ad_account_id: initialEditData.ad_account_id || '',
+        ad_account_name: initialEditData.ad_account_name || '',
+        breakdown: initialEditData.breakdown || 'campaign',
+        selected_metrics: Array.isArray(initialEditData.selected_metrics) 
+          ? initialEditData.selected_metrics 
+          : (typeof initialEditData.selected_metrics === 'string' ? JSON.parse(initialEditData.selected_metrics) : []),
+        is_automated: true, // 既然是從編輯排程進入，強制為 true
+        frequency: initialEditData.frequency || 'weekly',
+        day_of_week: initialEditData.day_of_week || '1',
+        day_of_month: initialEditData.day_of_month || '1',
+        time_of_day: initialEditData.time_of_day || '08:00',
+        is_notify_line: initialEditData.is_notify_line || false,
+        team_id: initialEditData.team_id || teamId
+      }));
+    }
+  }, [initialEditData, teamId]);
 
 
   const t = (en, zh) => (language === 'zh' ? zh : en);
@@ -430,9 +456,13 @@ const ReportConfig = ({ onSave, onCancel, initialData = {}, language, teamId }) 
           <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '24px', padding: '20px 0' }}>
             <FiCheckCircle size={64} color="#10b981" />
             <div style={{ textAlign: 'center' }}>
-              <h2 style={{ fontSize: '1.5rem', color: 'var(--text-primary)', marginBottom: '8px' }}>{t('Ready to Create', '準備就緒')}</h2>
+              <h2 style={{ fontSize: '1.5rem', color: 'var(--text-primary)', marginBottom: '8px' }}>
+                {isEditMode ? t('Save Changes', '確認修改') : t('Ready to Create', '準備就緒')}
+              </h2>
               <p style={{ color: 'var(--text-secondary)' }}>
-                {t('Confirm your settings and click save to create the report draft.', '確認您的設定無誤後，點擊儲存以建立報表草稿。')}
+                {isEditMode 
+                  ? t('Confirm your updated settings and click save.', '確認修改後的設定無誤後，點擊儲存。')
+                  : t('Confirm your settings and click save to create the report draft.', '確認您的設定無誤後，點擊儲存以建立報表草稿。')}
               </p>
             </div>
             <div style={{ width: '100%', backgroundColor: 'var(--bg-primary)', padding: '16px', borderRadius: '12px', border: '1px solid var(--glass-border)' }}>
@@ -552,7 +582,7 @@ const ReportConfig = ({ onSave, onCancel, initialData = {}, language, teamId }) 
                 fontWeight: 'bold'
               }}
             >
-              {t('Create & Run', '建立並產生報表')}
+              {isEditMode ? t('Save Changes', '儲存修改') : t('Create & Run', '建立並產生報表')}
             </button>
           )}
         </div>

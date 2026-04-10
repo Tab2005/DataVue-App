@@ -1,12 +1,13 @@
 // frontend/src/pages/Reports.jsx
 import React, { useState, useEffect } from 'react';
-import { useOutletContext, Link } from 'react-router-dom';
-import { FiPlus, FiFilter, FiSearch, FiFileText, FiChevronDown, FiAlertCircle, FiCalendar, FiActivity } from 'react-icons/fi';
+import { useOutletContext, Link, useNavigate } from 'react-router-dom';
+import { FiPlus, FiFilter, FiSearch, FiFileText, FiChevronDown, FiAlertCircle, FiCalendar, FiActivity, FiEdit } from 'react-icons/fi';
 import { reportService } from '../services/reportService';
 import { ReportCard } from '../components/Reports';
 import PageLoading from '../components/PageLoading';
 
 const Reports = () => {
+    const navigate = useNavigate();
     const { user, language, selectedTeamId } = useOutletContext();
     const [reports, setReports] = useState([]);
     const [schedules, setSchedules] = useState([]);
@@ -215,8 +216,16 @@ const Reports = () => {
                                                 {s.is_active ? t('Active', '啟用中') : t('Paused', '已暫停')}
                                             </button>
                                             <button 
+                                                onClick={() => navigate(`/reports/schedules/edit/${s.id}`)}
+                                                style={{ padding: '6px', color: 'var(--text-secondary)', backgroundColor: 'transparent', border: 'none', cursor: 'pointer' }}
+                                                title={t('Edit', '編輯')}
+                                            >
+                                                <FiEdit size={18} />
+                                            </button>
+                                            <button 
                                                 onClick={() => handleDeleteSchedule(s.id)}
                                                 style={{ padding: '6px', color: '#ef4444', backgroundColor: 'transparent', border: 'none', cursor: 'pointer' }}
+                                                title={t('Delete', '刪除')}
                                             >
                                                 {t('Delete', '刪除')}
                                             </button>

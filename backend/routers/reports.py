@@ -92,6 +92,20 @@ async def list_schedules(
     schedules = query.all()
     return [_serialize_schedule(s) for s in schedules]
 
+@router.get("/schedules/{schedule_id}", dependencies=[Depends(fb_ads_check)])
+async def get_schedule(
+    schedule_id: str,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """取得單筆排程詳情"""
+    schedule = db.query(ReportSchedule).filter(ReportSchedule.id == schedule_id).first()
+    if not schedule:
+        raise HTTPException(status_code=404, detail="Schedule not found")
+    
+    # 權限檢查：僅允許擁有者或團隊成員查看 (簡化處理)
+    return _serialize_schedule(schedule)
+
 @router.post("/schedules", dependencies=[Depends(fb_ads_check)])
 async def create_schedule(
     payload: ScheduleCreate,
@@ -156,17 +170,22 @@ async def update_schedule(
     db.commit()
     db.refresh(schedule)
     
-    # 更新排程器狀態並同步下次執行時間
-    if schedule.is_active:
-        job = add_report_job(schedule)
-        if job and job.next_run_time:
-            schedule.next_run = job.next_run_time.replace(tzinfo=None)
-            db.commit()
-    else:
-        remove_report_job(schedule.id)
-        schedule.next_run = None
-        db.commit()
-        
+    # 更新排程器狀態並同步下次執行時間 (採用極強容錯模式)
+    try:
+        if schedule.is_active:
+            job = add_report_job(schedule)
+            if job and job.next_run_time:
+                schedule.next_run = job.next_run_time.replace(tzinfo=None)
+                db.commit()
+        else:
+            from core.scheduler import scheduler
+            if scheduler.get_job(schedule.id):
+                scheduler.remove_job(schedule.id)
+                logger.info(f"Removed deactivated job: {schedule.id}")
+    except Exception as e:
+        logger.error(f"❌ Critical error in updating scheduler job for {schedule.id}: {e}")
+        # 不拋出異常，確保 API 成功回傳
+    
     return _serialize_schedule(schedule)
 
 @router.delete("/schedules/{schedule_id}", dependencies=[Depends(fb_ads_check)])

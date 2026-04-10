@@ -29,6 +29,9 @@ export const reportService = {
   listSchedules: (teamId) => 
     apiClient.get('/api/reports/schedules', { params: teamId ? { team_id: teamId } : {} }),
     
+  /** 取得單筆排程詳情 */
+  getSchedule: (id) => apiClient.get(`/api/reports/schedules/${id}`),
+
   /** 建立新排程 */
   createSchedule: (payload) => apiClient.post('/api/reports/schedules', payload),
   
