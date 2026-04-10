@@ -308,12 +308,11 @@ def run_startup_tasks():
         logger.info("Database module imported")
         
         if not check_db_connection():
-            DEBUG_MODE = os.getenv("DEBUG_MODE", "false").lower() == "true"
-            if not DEBUG_MODE:
-                logger.critical("Database connection failed in production. Aborting startup.")
-                sys.exit(1)
-            else:
-                logger.warning("Database connection failed. Continuing in local/degraded mode.")
+            logger.warning("=" * 60)
+            logger.warning("⚠️  DATABASE CONNECTION FAILED!")
+            logger.warning("The system will attempt to continue in degraded mode (likely using SQLite).")
+            logger.warning("Please check your DATABASE_URL environment variable if you expect to use PostgreSQL.")
+            logger.warning("=" * 60)
         else:
             logger.info("Database connection verified")
     except Exception as e:
