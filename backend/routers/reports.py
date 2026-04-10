@@ -119,11 +119,15 @@ async def create_schedule(
     db.commit()
     db.refresh(schedule)
     
-    # 加入排程器並同步下次執行時間
-    job = add_report_job(schedule)
-    if job and job.next_run_time:
-        schedule.next_run = job.next_run_time.replace(tzinfo=None)
-        db.commit()
+    # 加入排程器並同步下次執行時間 (採用極強容錯模式)
+    try:
+        job = add_report_job(schedule)
+        if job and job.next_run_time:
+            schedule.next_run = job.next_run_time.replace(tzinfo=None)
+            db.commit()
+    except Exception as e:
+        logger.error(f"❌ Critical error in starting scheduler job for {schedule.id}: {e}")
+        # 注意：此處不拋出異常，確保 API 能成功回傳，因為 DB 已經 commit 過了
     
     return _serialize_schedule(schedule)
 
