@@ -1,7 +1,7 @@
 // frontend/src/pages/Reports.jsx
 import React, { useState, useEffect } from 'react';
 import { useOutletContext, Link, useNavigate } from 'react-router-dom';
-import { FiPlus, FiFilter, FiSearch, FiFileText, FiChevronDown, FiAlertCircle, FiCalendar, FiActivity, FiEdit } from 'react-icons/fi';
+import { FiPlus, FiFilter, FiSearch, FiFileText, FiChevronDown, FiAlertCircle, FiCalendar, FiActivity, FiEdit, FiTrash2 } from 'react-icons/fi';
 import { reportService } from '../services/reportService';
 import { ReportCard } from '../components/Reports';
 import PageLoading from '../components/PageLoading';
@@ -197,37 +197,52 @@ const Reports = () => {
                                     transition: 'transform 0.2s',
                                     opacity: s.is_active ? 1 : 0.6
                                 }}>
-                                    <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '16px' }}>
-                                        <div>
-                                            <h3 style={{ color: 'var(--text-primary)', margin: '0 0 4px 0' }}>{s.name}</h3>
-                                            <p style={{ fontSize: '0.85rem', color: 'var(--text-secondary)', margin: 0 }}>
+                                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '16px', gap: '12px' }}>
+                                        <div style={{ flex: 1, minWidth: 0 }}>
+                                            <h3 style={{ color: 'var(--text-primary)', margin: '0 0 4px 0', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }} title={s.name}>
+                                                {s.name}
+                                            </h3>
+                                            <p style={{ fontSize: '0.85rem', color: 'var(--text-secondary)', margin: 0, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
                                                 {s.ad_account_name || s.ad_account_id}
                                             </p>
                                         </div>
-                                        <div style={{ display: 'flex', gap: '8px' }}>
+                                        <div style={{ display: 'flex', gap: '4px', alignItems: 'center', flexShrink: 0 }}>
                                             <button 
                                                 onClick={() => handleToggleSchedule(s.id, s.is_active)}
                                                 style={{ 
-                                                    padding: '6px 12px', borderRadius: '6px', border: '1px solid var(--glass-border)',
+                                                    padding: '4px 10px', borderRadius: '6px', border: '1px solid var(--glass-border)',
                                                     backgroundColor: s.is_active ? 'rgba(16, 185, 129, 0.1)' : 'rgba(255,255,255,0.05)',
-                                                    color: s.is_active ? '#10b981' : 'var(--text-tertiary)', cursor: 'pointer'
+                                                    color: s.is_active ? '#10b981' : 'var(--text-tertiary)', cursor: 'pointer',
+                                                    fontSize: '0.8rem', marginRight: '4px'
                                                 }}
                                             >
                                                 {s.is_active ? t('Active', '啟用中') : t('Paused', '已暫停')}
                                             </button>
                                             <button 
                                                 onClick={() => navigate(`/reports/schedules/edit/${s.id}`)}
-                                                style={{ padding: '6px', color: 'var(--text-secondary)', backgroundColor: 'transparent', border: 'none', cursor: 'pointer' }}
+                                                style={{ 
+                                                    width: '32px', height: '32px', borderRadius: '6px', display: 'flex', alignItems: 'center', justifyContent: 'center',
+                                                    color: 'var(--text-secondary)', backgroundColor: 'transparent', border: 'none', cursor: 'pointer',
+                                                    transition: 'all 0.2s'
+                                                }}
+                                                onMouseEnter={(e) => e.target.style.backgroundColor = 'rgba(255,255,255,0.05)'}
+                                                onMouseLeave={(e) => e.target.style.backgroundColor = 'transparent'}
                                                 title={t('Edit', '編輯')}
                                             >
                                                 <FiEdit size={18} />
                                             </button>
                                             <button 
                                                 onClick={() => handleDeleteSchedule(s.id)}
-                                                style={{ padding: '6px', color: '#ef4444', backgroundColor: 'transparent', border: 'none', cursor: 'pointer' }}
+                                                style={{ 
+                                                    width: '32px', height: '32px', borderRadius: '6px', display: 'flex', alignItems: 'center', justifyContent: 'center',
+                                                    color: '#ef4444', backgroundColor: 'transparent', border: 'none', cursor: 'pointer',
+                                                    transition: 'all 0.2s'
+                                                }}
+                                                onMouseEnter={(e) => e.target.style.backgroundColor = 'rgba(239, 68, 68, 0.1)'}
+                                                onMouseLeave={(e) => e.target.style.backgroundColor = 'transparent'}
                                                 title={t('Delete', '刪除')}
                                             >
-                                                {t('Delete', '刪除')}
+                                                <FiTrash2 size={18} />
                                             </button>
                                         </div>
                                     </div>
