@@ -46,15 +46,21 @@ async def process_scheduled_report(schedule_id: str):
             logger.error(f"[Scheduler] User {schedule.user_id} not found for schedule {schedule.name}")
             return
 
-        # 1. 計算日期區間 (基於 Asia/Taipei 昨日)
-        # 由於是自動產生，通常是在凌晨執行，所以取「昨日」作為結束日
-        today = datetime.now(timezone(timedelta(hours=8))).date()
+        # 1. 計算日期區間 (基於 Asia/Taipei)
+        # 由於是自動產生，通常是在凌晨執行，所以取「昨日」作為基準
+        t_now = datetime.now(timezone(timedelta(hours=8)))
+        today = t_now.date()
         until_date = today - timedelta(days=1)
         
         if schedule.frequency == 'daily':
             since_date = until_date
         elif schedule.frequency == 'weekly':
-            since_date = until_date - timedelta(days=6)
+            # 優化為「上個完整週」：上週一到上週日
+            # weekday() 0=Mon, 6=Sun
+            days_since_monday = today.weekday()
+            last_sunday = today - timedelta(days=days_since_monday + 1)
+            since_date = last_sunday - timedelta(days=6)
+            until_date = last_sunday
         elif schedule.frequency == 'monthly':
             # 上個月的第一天到最後一天
             first_day_this_month = today.replace(day=1)
@@ -103,9 +109,15 @@ async def process_scheduled_report(schedule_id: str):
         )
         db.add(new_report)
         
-        schedule.last_run = datetime.now()
+        schedule.last_run = t_now.replace(tzinfo=None) # 移除時區資訊存入 DB (保持一致性)
+        
+        # 嘗試取得下次執行時間
+        job = scheduler.get_job(f"report_{schedule.id}")
+        if job and job.next_run_time:
+            schedule.next_run = job.next_run_time.replace(tzinfo=None)
+
         db.commit()
-        logger.info(f"[Scheduler] Successfully generated report for {schedule.name}")
+        logger.info(f"[Scheduler] Successfully generated report for {schedule.name} (Range: {since_str} ~ {until_str})")
 
         # 5. 發送 LINE 通知 (如果有開啟且用戶已綁定)
         if schedule.is_notify_line and user.line_user_id:
@@ -142,14 +154,25 @@ def add_report_job(schedule: ReportSchedule):
         trigger = CronTrigger(day=schedule.day_of_month or '1', hour=h, minute=m)
 
     if trigger:
-        scheduler.add_job(
+        job = scheduler.add_job(
             process_scheduled_report,
             trigger=trigger,
             args=[schedule.id],
             id=f"report_{schedule.id}",
-            replace_existing=True
+            replace_existing=True,
+            misfire_grace_time=3600 # 錯過一小時內允許補執行
         )
-        logger.info(f"⏰ Added job: {schedule.name} (ID: {schedule.id}, Frequency: {schedule.frequency})")
+        
+        # 同步 next_run 到資料庫供 UI 顯示
+        if job and job.next_run_time:
+            from database import SessionLocal
+            with SessionLocal() as db:
+                s = db.query(ReportSchedule).filter(ReportSchedule.id == schedule.id).first()
+                if s:
+                    s.next_run = job.next_run_time.replace(tzinfo=None)
+                    db.commit()
+                    
+        logger.info(f"⏰ Added job: {schedule.name} (ID: {schedule.id}, Frequency: {schedule.frequency}, Next: {job.next_run_time})")
 
 def remove_report_job(schedule_id: str):
     """
