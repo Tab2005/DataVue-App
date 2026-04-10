@@ -163,14 +163,18 @@ def add_report_job(schedule: ReportSchedule):
             misfire_grace_time=3600 # 錯過一小時內允許補執行
         )
         
-        # 同步 next_run 到資料庫供 UI 顯示
+        # 同步 next_run 到資料庫供 UI 顯示 (加上 try-except 防止干擾主流程)
         if job and job.next_run_time:
-            from database import SessionLocal
-            with SessionLocal() as db:
-                s = db.query(ReportSchedule).filter(ReportSchedule.id == schedule.id).first()
-                if s:
-                    s.next_run = job.next_run_time.replace(tzinfo=None)
-                    db.commit()
+            try:
+                from database import SessionLocal
+                db_sync = SessionLocal()
+                db_sync.query(ReportSchedule).filter(ReportSchedule.id == schedule.id).update({
+                    "next_run": job.next_run_time.replace(tzinfo=None)
+                })
+                db_sync.commit()
+                db_sync.close()
+            except Exception as sync_err:
+                logger.warning(f"⏰ [Scheduler] Failed to sync next_run for {schedule.id}: {sync_err}")
                     
         logger.info(f"⏰ Added job: {schedule.name} (ID: {schedule.id}, Frequency: {schedule.frequency}, Next: {job.next_run_time})")
 
