@@ -119,8 +119,11 @@ async def create_schedule(
     db.commit()
     db.refresh(schedule)
     
-    # 加入排程器
-    add_report_job(schedule)
+    # 加入排程器並同步下次執行時間
+    job = add_report_job(schedule)
+    if job and job.next_run_time:
+        schedule.next_run = job.next_run_time.replace(tzinfo=None)
+        db.commit()
     
     return _serialize_schedule(schedule)
 
@@ -149,11 +152,16 @@ async def update_schedule(
     db.commit()
     db.refresh(schedule)
     
-    # 更新排程器狀態
+    # 更新排程器狀態並同步下次執行時間
     if schedule.is_active:
-        add_report_job(schedule)
+        job = add_report_job(schedule)
+        if job and job.next_run_time:
+            schedule.next_run = job.next_run_time.replace(tzinfo=None)
+            db.commit()
     else:
         remove_report_job(schedule.id)
+        schedule.next_run = None
+        db.commit()
         
     return _serialize_schedule(schedule)
 

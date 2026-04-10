@@ -144,7 +144,10 @@ def add_report_job(schedule: ReportSchedule):
     將排程加入 APScheduler
     """
     trigger = None
-    h, m = map(int, schedule.time_of_day.split(':'))
+    # 支援 HH:MM 或 HH:MM:SS 格式
+    time_parts = schedule.time_of_day.split(':')
+    h = int(time_parts[0])
+    m = int(time_parts[1])
 
     if schedule.frequency == 'daily':
         trigger = CronTrigger(hour=h, minute=m)
@@ -177,6 +180,9 @@ def add_report_job(schedule: ReportSchedule):
                 logger.warning(f"⏰ [Scheduler] Failed to sync next_run for {schedule.id}: {sync_err}")
                     
         logger.info(f"⏰ Added job: {schedule.name} (ID: {schedule.id}, Frequency: {schedule.frequency}, Next: {job.next_run_time})")
+        return job
+
+    return None
 
 def remove_report_job(schedule_id: str):
     """
