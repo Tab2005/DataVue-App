@@ -18,6 +18,10 @@ logger = logging.getLogger(__name__)
 # 全域 Scheduler 實例
 scheduler = AsyncIOScheduler(timezone="Asia/Taipei")
 
+def get_job_id(schedule_id: str) -> str:
+    """統一生成 APScheduler Job ID"""
+    return f"report_{schedule_id}"
+
 def get_db():
     db = SessionLocal()
     try:
@@ -112,7 +116,7 @@ async def process_scheduled_report(schedule_id: str):
         schedule.last_run = t_now.replace(tzinfo=None) # 移除時區資訊存入 DB (保持一致性)
         
         # 嘗試取得下次執行時間
-        job = scheduler.get_job(f"report_{schedule.id}")
+        job = scheduler.get_job(get_job_id(schedule.id))
         if job and job.next_run_time:
             schedule.next_run = job.next_run_time.replace(tzinfo=None)
 
@@ -160,16 +164,17 @@ def add_report_job(schedule: ReportSchedule):
         trigger = CronTrigger(day=schedule.day_of_month or '1', hour=h, minute=m)
 
     if trigger:
+        job_id = get_job_id(schedule.id)
         job = scheduler.add_job(
             process_scheduled_report,
             trigger=trigger,
             args=[schedule.id],
-            id=f"report_{schedule.id}",
+            id=job_id,
             replace_existing=True,
             misfire_grace_time=3600 # 錯過一小時內允許補執行
         )
         
-        logger.info(f"⏰ Added job: {schedule.name} (ID: {schedule.id}, Frequency: {schedule.frequency}, Next: {job.next_run_time})")
+        logger.info(f"⏰ [Scheduler] Job added/updated: {schedule.name} (Job_ID: {job_id}, Frequency: {schedule.frequency}, Next: {job.next_run_time})")
         return job
 
     return None
@@ -178,7 +183,9 @@ def remove_report_job(schedule_id: str):
     """
     移除排程
     """
-    job_id = f"report_{schedule_id}"
+    job_id = get_job_id(schedule_id)
     if scheduler.get_job(job_id):
         scheduler.remove_job(job_id)
-        logger.info(f"⏰ Removed job: {job_id}")
+        logger.info(f"⏰ [Scheduler] Job removed: {job_id}")
+    else:
+        logger.debug(f"⏰ [Scheduler] Attempted to remove non-existent job: {job_id}")
