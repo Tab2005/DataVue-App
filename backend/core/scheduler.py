@@ -14,7 +14,7 @@ from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from apscheduler.triggers.cron import CronTrigger
 from sqlalchemy.orm import Session
 
-from database import SessionLocal, ReportSchedule, WeeklyReport, User
+from database import SessionLocal, ReportSchedule, Team, WeeklyReport, User
 from services.report_service import generate_report_content
 
 logger = logging.getLogger(__name__)
@@ -182,6 +182,30 @@ def get_scheduler_status() -> dict:
     }
 
 
+def resolve_schedule_user(db: Session, schedule: ReportSchedule) -> User | None:
+    """解析排程實際執行者。舊版 team schedule 若缺 user_id，回退到 team owner。"""
+    if schedule.user_id:
+        user = db.query(User).filter(User.id == schedule.user_id).first()
+        if user:
+            return user
+
+    if schedule.team_id:
+        team = db.query(Team).filter(Team.id == schedule.team_id).first()
+        if team and team.owner_id:
+            owner = db.query(User).filter(User.id == team.owner_id).first()
+            if owner:
+                logger.warning(
+                    "[Scheduler] Schedule %s missing user_id. Falling back to team owner %s.",
+                    schedule.id,
+                    owner.id,
+                )
+                schedule.user_id = owner.id
+                db.add(schedule)
+                return owner
+
+    return None
+
+
 async def process_scheduled_report(schedule_id: str):
     """
     執行排程任務：
@@ -201,7 +225,7 @@ async def process_scheduled_report(schedule_id: str):
             logger.warning("[Scheduler] Schedule %s not found or inactive.", schedule_id)
             return
 
-        user = db.query(User).filter(User.id == schedule.user_id).first()
+        user = resolve_schedule_user(db, schedule)
         if not user:
             logger.error(
                 "[Scheduler] User %s not found for schedule %s",
@@ -249,6 +273,7 @@ async def process_scheduled_report(schedule_id: str):
             breakdown=schedule.breakdown,
             selected_metrics=metrics_list,
             google_id=user.google_id,
+            team_id=schedule.team_id,
         )
 
         from uuid import uuid4
@@ -265,7 +290,7 @@ async def process_scheduled_report(schedule_id: str):
             selected_metrics=schedule.selected_metrics,
             report_data=json.dumps(report_data),
             status="generated",
-            user_id=schedule.user_id,
+            user_id=user.id,
             team_id=schedule.team_id,
             share_token=str(uuid4()),
         )

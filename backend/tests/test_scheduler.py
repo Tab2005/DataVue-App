@@ -2,8 +2,9 @@ from datetime import datetime
 
 import pytest
 
-from core.scheduler import get_next_run_time, is_schedule_overdue
+from core.scheduler import get_next_run_time, is_schedule_overdue, resolve_schedule_user
 from database.models.report import ReportSchedule
+from database.models.team import Team
 
 
 def _build_schedule(**overrides):
@@ -54,3 +55,17 @@ def test_is_schedule_not_overdue_when_inactive_or_future():
 
     assert is_schedule_overdue(inactive_schedule, reference_time=reference) is False
     assert is_schedule_overdue(future_schedule, reference_time=reference) is False
+
+
+@pytest.mark.unit
+def test_resolve_schedule_user_falls_back_to_team_owner(db, sample_user):
+    team = Team(id="team-1", name="Team One", owner_id=sample_user.id)
+    db.add(team)
+    db.commit()
+
+    schedule = _build_schedule(user_id=None, team_id=team.id)
+    resolved_user = resolve_schedule_user(db, schedule)
+
+    assert resolved_user is not None
+    assert resolved_user.id == sample_user.id
+    assert schedule.user_id == sample_user.id

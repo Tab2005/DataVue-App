@@ -20,7 +20,8 @@ async def generate_report_content(
     until: str,
     breakdown: str,
     selected_metrics: list,
-    google_id: str
+    google_id: str,
+    team_id: str | None = None,
 ):
     """
     核心報表數據產生成邏輯（原本在 routers/reports.py 中的 generate_report）
@@ -45,6 +46,7 @@ async def generate_report_content(
         until=until,
         user_id=google_id,
         level=breakdown or "campaign",
+        team_id=team_id,
         custom_fields=custom_fields
     )
 
@@ -55,7 +57,8 @@ async def generate_report_content(
         since=since,
         until=until,
         prev_since=prev_since,
-        prev_until=prev_until
+        prev_until=prev_until,
+        team_id=team_id,
     )
 
     if current_rows is None:
@@ -140,7 +143,8 @@ async def trigger_manual_generate(db: Session, report_id: str, google_id: str):
         until=report.date_until,
         breakdown=report.breakdown,
         selected_metrics=metrics_list,
-        google_id=google_id
+        google_id=google_id,
+        team_id=report.team_id,
     )
 
     report.report_data = json.dumps(structured_data)

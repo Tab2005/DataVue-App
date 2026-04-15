@@ -9,7 +9,7 @@ import json, uuid, logging
 from datetime import datetime, timezone, timedelta
 from sqlalchemy.orm import Session
 
-from database import SessionLocal, WeeklyReport, User, ReportSchedule
+from database import SessionLocal, WeeklyReport, User, ReportSchedule, Team, TeamMember
 from dependencies import get_current_user, require_module
 from core.scheduler import add_report_job, get_next_run_time, remove_report_job
 
@@ -25,6 +25,45 @@ def get_db():
         yield db
     finally:
         db.close()
+
+
+def _ensure_team_access(db: Session, current_user: User, team_id: Optional[str]) -> Optional[Team]:
+    if not team_id:
+        return None
+
+    team = db.query(Team).filter(Team.id == team_id).first()
+    if not team:
+        raise HTTPException(status_code=404, detail="Team not found")
+
+    if current_user.is_super_admin:
+        return team
+
+    membership = db.query(TeamMember).filter(
+        TeamMember.team_id == team_id,
+        TeamMember.user_id == current_user.id,
+    ).first()
+    if not membership:
+        raise HTTPException(status_code=403, detail="Not a member of this team")
+
+    return team
+
+
+def _ensure_schedule_access(db: Session, current_user: User, schedule: ReportSchedule) -> None:
+    if schedule.team_id:
+        _ensure_team_access(db, current_user, schedule.team_id)
+        return
+
+    if not current_user.is_super_admin and schedule.user_id != current_user.id:
+        raise HTTPException(status_code=403, detail="Not allowed to access this schedule")
+
+
+def _ensure_report_access(db: Session, current_user: User, report: WeeklyReport) -> None:
+    if report.team_id:
+        _ensure_team_access(db, current_user, report.team_id)
+        return
+
+    if not current_user.is_super_admin and report.user_id != current_user.id:
+        raise HTTPException(status_code=403, detail="Not allowed to access this report")
 
 
 # ---- Pydantic Schemas for Schedules ----
@@ -85,9 +124,13 @@ async def list_schedules(
     """取得排程列表"""
     query = db.query(ReportSchedule)
     if team_id:
+        _ensure_team_access(db, current_user, team_id)
         query = query.filter(ReportSchedule.team_id == team_id)
     else:
-        query = query.filter(ReportSchedule.user_id == current_user.id)
+        query = query.filter(
+            ReportSchedule.user_id == current_user.id,
+            ReportSchedule.team_id.is_(None),
+        )
     
     schedules = query.all()
     return [_serialize_schedule(s) for s in schedules]
@@ -102,8 +145,8 @@ async def get_schedule(
     schedule = db.query(ReportSchedule).filter(ReportSchedule.id == schedule_id).first()
     if not schedule:
         raise HTTPException(status_code=404, detail="Schedule not found")
-    
-    # 權限檢查：僅允許擁有者或團隊成員查看 (簡化處理)
+
+    _ensure_schedule_access(db, current_user, schedule)
     return _serialize_schedule(schedule)
 
 @router.post("/schedules", dependencies=[Depends(fb_ads_check)])
@@ -113,6 +156,8 @@ async def create_schedule(
     db: Session = Depends(get_db)
 ):
     """建立新排程"""
+    _ensure_team_access(db, current_user, payload.team_id)
+
     schedule = ReportSchedule(
         id=str(uuid.uuid4()),
         name=payload.name,
@@ -124,7 +169,7 @@ async def create_schedule(
         day_of_week=payload.day_of_week,
         day_of_month=payload.day_of_month,
         time_of_day=payload.time_of_day or "08:00",
-        user_id=current_user.id if not payload.team_id else None,
+        user_id=current_user.id,
         team_id=payload.team_id,
         is_active=True,
         is_notify_line=payload.is_notify_line or False
@@ -156,6 +201,8 @@ async def update_schedule(
     schedule = db.query(ReportSchedule).filter(ReportSchedule.id == schedule_id).first()
     if not schedule:
         raise HTTPException(status_code=404, detail="Schedule not found")
+
+    _ensure_schedule_access(db, current_user, schedule)
     
     if payload.name is not None: schedule.name = payload.name
     if payload.selected_metrics is not None: schedule.selected_metrics = json.dumps(payload.selected_metrics)
@@ -198,6 +245,8 @@ async def delete_schedule(
     schedule = db.query(ReportSchedule).filter(ReportSchedule.id == schedule_id).first()
     if not schedule:
         raise HTTPException(status_code=404, detail="Schedule not found")
+
+    _ensure_schedule_access(db, current_user, schedule)
     
     # 從排程器移除
     remove_report_job(schedule.id)
@@ -282,13 +331,14 @@ async def list_reports(
     reports_map = {}
     # 個人
     personal = db.query(WeeklyReport)\
-        .filter(WeeklyReport.user_id == current_user.id)\
+        .filter(WeeklyReport.user_id == current_user.id, WeeklyReport.team_id.is_(None))\
         .order_by(WeeklyReport.created_at.desc()).all()
     for r in personal:
         reports_map[r.id] = _serialize(r)
         
     # 團隊
     if team_id:
+        _ensure_team_access(db, current_user, team_id)
         team_reports = db.query(WeeklyReport)\
             .filter(WeeklyReport.team_id == team_id)\
             .order_by(WeeklyReport.created_at.desc()).all()
@@ -305,6 +355,8 @@ async def create_report(
     db: Session = Depends(get_db)
 ):
     """建立新週報（草稿狀態）"""
+    _ensure_team_access(db, current_user, payload.team_id)
+
     report = WeeklyReport(
         id=str(uuid.uuid4()),
         name=payload.name,
@@ -318,7 +370,7 @@ async def create_report(
         selected_metrics=json.dumps(payload.selected_metrics),
         status="draft",
         share_token=str(uuid.uuid4()),
-        user_id=current_user.id if not payload.team_id else None,
+        user_id=current_user.id,
         team_id=payload.team_id,
         created_by=current_user.id,
         created_at=datetime.now(timezone.utc),
@@ -340,6 +392,8 @@ async def get_report(
     report = db.query(WeeklyReport).filter(WeeklyReport.id == report_id).first()
     if not report:
         raise HTTPException(status_code=404, detail="Report not found")
+
+    _ensure_report_access(db, current_user, report)
     
     # 自動補齊遺漏的 share_token (針對舊報表)
     if not report.share_token:
@@ -361,6 +415,7 @@ async def update_report(
     report = db.query(WeeklyReport).filter(WeeklyReport.id == report_id).first()
     if not report:
         raise HTTPException(status_code=404, detail="Report not found")
+    _ensure_report_access(db, current_user, report)
     if payload.name is not None:
         report.name = payload.name
     if payload.description is not None:
@@ -386,6 +441,7 @@ async def delete_report(
     report = db.query(WeeklyReport).filter(WeeklyReport.id == report_id).first()
     if not report:
         raise HTTPException(status_code=404, detail="Report not found")
+    _ensure_report_access(db, current_user, report)
     db.delete(report)
     db.commit()
     return {"message": "deleted"}
