@@ -11,7 +11,7 @@ from sqlalchemy.orm import Session
 
 from database import SessionLocal, WeeklyReport, User, ReportSchedule
 from dependencies import get_current_user, require_module
-from core.scheduler import add_report_job, remove_report_job, get_job_id
+from core.scheduler import add_report_job, get_next_run_time, remove_report_job
 
 
 logger = logging.getLogger(__name__)
@@ -135,11 +135,10 @@ async def create_schedule(
     
     # 加入排程器並同步下次執行時間 (採用極強容錯模式)
     try:
-        job = add_report_job(schedule)
-        if job and job.next_run_time:
-            schedule.next_run = job.next_run_time.replace(tzinfo=None)
-            db.add(schedule) # 確保更新到下次執行時間
-            db.commit()
+        add_report_job(schedule)
+        schedule.next_run = get_next_run_time(schedule)
+        db.add(schedule)
+        db.commit()
     except Exception as e:
         logger.error(f"❌ [API] Critical error in starting scheduler job for {schedule.id}: {e}")
         # 注意：此處不拋出異常，確保 API 能成功回傳，因為 DB 基礎紀錄已經 commit
@@ -174,13 +173,15 @@ async def update_schedule(
     # 更新排程器狀態並同步下次執行時間 (與資料庫狀態同步)
     try:
         if schedule.is_active:
-            job = add_report_job(schedule)
-            if job and job.next_run_time:
-                schedule.next_run = job.next_run_time.replace(tzinfo=None)
-                db.add(schedule) # 確保更新
-                db.commit()
+            add_report_job(schedule)
+            schedule.next_run = get_next_run_time(schedule)
+            db.add(schedule)
+            db.commit()
         else:
             remove_report_job(schedule.id)
+            schedule.next_run = None
+            db.add(schedule)
+            db.commit()
     except Exception as e:
         logger.error(f"❌ [API] Critical error in updating scheduler job for {schedule.id}: {e}")
         # 不拋出異常，因基礎資料已在下方 commit 或已成功

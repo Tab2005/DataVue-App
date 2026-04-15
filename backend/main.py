@@ -66,27 +66,19 @@ from limiter import limiter
 async def lifespan(app: FastAPI):
     """Application lifespan handler."""
     logger.info("🚀 DataVue Application starting...")
-    
-    # Initialize Scheduler
-    from core.scheduler import scheduler, process_scheduled_report, add_report_job
-    from database import SessionLocal, ReportSchedule
-    
-    # Load and start scheduler
+
+    from core.scheduler import start_scheduler, stop_scheduler
+
     try:
-        db = SessionLocal()
-        active_schedules = db.query(ReportSchedule).filter(ReportSchedule.is_active == True).all()
-        for s in active_schedules:
-            add_report_job(s)
-        db.close()
-        scheduler.start()
-        logger.info(f"⏰ Scheduler started with {len(scheduler.get_jobs())} jobs.")
+        scheduler_status = await start_scheduler()
+        logger.info(f"⏰ Scheduler bootstrap finished: {scheduler_status}")
     except Exception as e:
-        logger.error(f"Failed to start scheduler: {e}")
+        logger.error(f"Failed to start scheduler: {e}", exc_info=True)
 
     yield
-    
+
     logger.info("👋 DataVue Application shutting down...")
-    scheduler.shutdown()
+    stop_scheduler()
 
 
 
@@ -275,6 +267,13 @@ async def health_check():
             health_status["checks"]["redis"] = "not_configured"
     except Exception as e:
         health_status["checks"]["redis"] = f"error: {str(e)}"
+
+    try:
+        from core.scheduler import get_scheduler_status
+
+        health_status["checks"]["scheduler"] = get_scheduler_status()
+    except Exception as e:
+        health_status["checks"]["scheduler"] = f"error: {str(e)}"
 
     if health_status["status"] == "unhealthy":
         return JSONResponse(status_code=503, content=health_status)
