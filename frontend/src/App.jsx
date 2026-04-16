@@ -113,6 +113,13 @@ function AppInner() {
                     </ErrorBoundary>
                   </ProtectedModule>
                 } />
+                <Route path="/reports/schedules/edit/:id" element={
+                  <ProtectedModule module="fb_ads">
+                    <ErrorBoundary>
+                      <ReportViewer mode="edit-schedule" />
+                    </ErrorBoundary>
+                  </ProtectedModule>
+                } />
                 <Route path="/reports/:id" element={
                   <ProtectedModule module="fb_ads">
                     <ErrorBoundary>

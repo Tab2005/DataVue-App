@@ -3,9 +3,9 @@ Google Gemini 直連客戶端
 直接使用 Google AI Studio 的 API Key 呼叫 Gemini 模型
 """
 import google.genai as genai
+from google.genai import types
 import logging
-import sys
-from typing import Optional, Dict, List
+from typing import Optional, Dict, List, Union
 import os
 
 logger = logging.getLogger(__name__)
@@ -14,55 +14,106 @@ logger = logging.getLogger(__name__)
 class GoogleGeminiClient:
     """Google Gemini 直連客戶端 - 使用 Google AI Studio API Key"""
 
-    # 支援的 Gemini 模型
+    # 本地備份清單 - 當同步失敗時作為最低限度支援
     MODELS = {
-        "gemini-2.5-flash": {
-            "display_name": "Gemini 2.5 Flash",
-            "description": "快速、免費額度高 ✅ 推薦",
-            "max_tokens": 8192
-        },
-        "gemini-2.5-pro": {
-            "display_name": "Gemini 2.5 Pro",
-            "description": "高品質、長文本",
-            "max_tokens": 32000
-        },
-        "gemini-2.0-flash": {
-            "display_name": "Gemini 2.0 Flash",
-            "description": "上一代快速版本",
-            "max_tokens": 8192
-        },
-        "gemini-1.5-flash": {
+        "models/gemini-1.5-flash": {
             "display_name": "Gemini 1.5 Flash",
-            "description": "穩定版",
-            "max_tokens": 8192
+            "description": "本地預設模型 (同步失敗)",
+            "max_tokens": 8192,
+            "provider": "google"
         },
-        "gemini-1.5-pro": {
-            "display_name": "Gemini 1.5 Pro",
-            "description": "穩定高品質",
-            "max_tokens": 32000
+        "models/gemini-2.0-flash": {
+            "display_name": "Gemini 2.0 Flash",
+            "description": "本地預設模型 (同步失敗)",
+            "max_tokens": 8192,
+            "provider": "google"
         }
     }
 
     def __init__(self, api_key: Optional[str] = None):
-        """
-        初始化 Google Gemini 客戶端
-
-        Args:
-            api_key: Google AI Studio API Key (如果不提供，會從環境變數讀取)
-        """
+        """初始化 Google Gemini 客戶端"""
         self.api_key = api_key or os.getenv("GOOGLE_AI_API_KEY")
         if not self.api_key:
-            raise ValueError("Google AI API Key is required. Set GOOGLE_AI_API_KEY environment variable or pass api_key parameter.")
+            self.client = None
+            return
         
-        # 配置 API Key
-        genai.configure(api_key=self.api_key)
-        self.model_name = "gemini-2.5-flash"  # 預設模型
+        try:
+            # 確保 API KEY 是乾淨的字串
+            clean_key = self.api_key.strip()
+            self.client = genai.Client(api_key=clean_key)
+        except Exception as e:
+            logger.error(f"Failed to initialize Gemini Client: {e}")
+            self.client = None
+            
+        self.model_name = "models/gemini-1.5-flash" 
 
-    def set_model(self, model_name: str):
-        """設定使用的模型"""
-        if model_name not in self.MODELS:
-            raise ValueError(f"Unsupported model: {model_name}. Available: {list(self.MODELS.keys())}")
-        self.model_name = model_name
+    def fetch_remote_models(self) -> Dict[str, Dict]:
+        """從 Google 伺服器同步模型"""
+        if not self.client:
+            logger.warning("[GoogleGeminiClient] Client is None, returning fallback models.")
+            return self.MODELS
+
+        try:
+            logger.info("[GoogleGeminiClient] Requesting remote models via SDK...")
+            # 強制迭代所有分頁
+            remote_models = list(self.client.models.list())
+            merged_models = {}
+            
+            logger.debug(f"[GoogleGeminiClient] SDK returned {len(remote_models)} raw models.")
+            
+            for m in remote_models:
+                full_name = m.name 
+                short_id = full_name.split('/')[-1]
+                
+                lower_name = full_name.lower()
+                # 只要名稱包含 gemini 或 gemma 就納入，不再做嚴格的方法檢查
+                if 'gemini' not in lower_name and 'gemma' not in lower_name:
+                    continue
+
+                display_name = m.display_name or short_id
+                
+                # 針對 Gemma 系列模型標記星星
+                is_gemma = 'gemma' in lower_name or 'gemma' in display_name.lower()
+                if is_gemma:
+                    display_name = f"⭐ {display_name}"
+                
+                merged_models[full_name] = {
+                    "display_name": display_name,
+                    "description": f"{display_name} (同步自 Google)",
+                    "max_tokens": getattr(m, 'output_token_limit', 8192) or 8192,
+                    "provider": "google",
+                    "is_gemma": is_gemma
+                }
+
+            if not merged_models:
+                logger.warning("[GoogleGeminiClient] No eligible models found in remote list.")
+                return self.MODELS
+
+            # 排序：Gemini 優先於 Gemma -> Flash 優先 -> Gemini 1.5 優先
+            sorted_keys = sorted(
+                merged_models.keys(),
+                key=lambda k: (
+                    merged_models[k].get('is_gemma', False), # False (Gemini) < True (Gemma)
+                    not 'flash' in k.lower(),                 # False (Flash) < True
+                    not 'gemini-1.5' in k.lower(),            # False (1.5) < True
+                    merged_models[k]['display_name']
+                )
+            )
+            
+            return {k: merged_models[k] for k in sorted_keys}
+            
+        except Exception as e:
+            error_msg = str(e)
+            logger.error(f"[GoogleGeminiClient] SYNCHRONIZATION FAILED: {error_msg}")
+            # 將錯誤訊息放進清單中，讓前端使用者能看見
+            error_list = self.MODELS.copy()
+            error_list["error_info"] = {
+                "display_name": "❌ 同步異常 (點此看細節)",
+                "description": f"原因: {error_msg}",
+                "max_tokens": 0,
+                "provider": "google"
+            }
+            return error_list
 
     def generate_content(
         self,
@@ -72,117 +123,48 @@ class GoogleGeminiClient:
         temperature: float = 0.7,
         max_tokens: Optional[int] = None
     ) -> str:
-        """
-        生成內容
-
-        Args:
-            prompt: 使用者輸入的提示詞
-            model: 模型名稱 (如果不提供，使用預設)
-            system_prompt: 系統提示詞
-            temperature: 創意度 (0-1)
-            max_tokens: 最大輸出 tokens
-
-        Returns:
-            生成的文字內容
-        """
-        import sys
-        model_name = model or self.model_name
-        
-        logger.debug(f"[GoogleGeminiClient] generate_content called with model={model_name}")
-        
-        # 構建完整提示詞
-        full_prompt = prompt
-        if system_prompt:
-            full_prompt = f"{system_prompt}\n\n{prompt}"
+        """生成內容"""
+        if not self.client:
+            raise RuntimeError("Gemini Client not initialized.")
+            
+        model_to_use = model or self.model_name
+        # 修正 ID 格式
+        if not model_to_use.startswith('models/'):
+            model_to_use = f"models/{model_to_use}"
 
         try:
-            # 取得模型
-            model_instance = genai.GenerativeModel(model_name)
-
-            # 生成配置
-            generation_config = genai.types.GenerationConfig(
+            config = types.GenerateContentConfig(
+                system_instruction=system_prompt,
                 temperature=temperature,
-                max_output_tokens=max_tokens or self.MODELS.get(model_name, {}).get("max_tokens", 8192)
+                max_output_tokens=max_tokens or 8192
             )
 
-            # 生成內容
-            logger.debug("[GoogleGeminiClient] Calling Gemini API...")
-            response = model_instance.generate_content(
-                full_prompt,
-                generation_config=generation_config
+            response = self.client.models.generate_content(
+                model=model_to_use,
+                contents=prompt,
+                config=config
             )
 
-            logger.debug(f"[GoogleGeminiClient] Response received, length={len(response.text) if response.text else 0}")
             return response.text
-            
         except Exception as e:
-            logger.error(f"[GoogleGeminiClient] ERROR: {type(e).__name__}: {str(e)}", exc_info=True)
+            logger.error(f"[GoogleGeminiClient] Generation error: {str(e)}")
             raise
 
-    def test_connection(self) -> Dict:
-        """
-        測試連線
+    def set_model(self, model_name: str):
+        self.model_name = model_name
 
-        Returns:
-            測試結果字典
-        """
+    def get_available_models(self, remote: bool = False) -> Dict[str, Dict]:
+        if remote:
+            return self.fetch_remote_models()
+        return self.MODELS.copy()
+
+    def test_connection(self) -> Dict:
         try:
-            # 簡單測試
-            response = self.generate_content(
-                prompt="Hello, respond with 'Connection successful!' in exactly those words.",
-                temperature=0
-            )
-            
+            response = self.generate_content(prompt="hi", temperature=0, max_tokens=5)
             return {
                 "success": True,
-                "message": "Connected to Google Gemini API",
-                "response": response[:100],
+                "message": f"Connected! Using {self.model_name}",
                 "model": self.model_name
             }
         except Exception as e:
-            return {
-                "success": False,
-                "message": f"Connection failed: {str(e)}",
-                "model": self.model_name
-            }
-
-    @classmethod
-    def get_available_models(cls) -> Dict:
-        """取得可用模型列表"""
-        return cls.MODELS
-
-
-# ============================================================
-# 測試用函數
-# ============================================================
-def test_gemini_client():
-    """測試 Google Gemini 客戶端"""
-    print("=" * 60)
-    print("💎 Google Gemini Direct Client Test")
-    print("=" * 60)
-
-    try:
-        client = GoogleGeminiClient()
-        
-        print("\n📡 Testing connection...")
-        result = client.test_connection()
-        
-        if result["success"]:
-            print(f"✅ {result['message']}")
-            print(f"   Model: {result['model']}")
-            print(f"   Response: {result['response']}")
-        else:
-            print(f"❌ {result['message']}")
-
-        print("\n📝 Available models:")
-        for name, info in client.MODELS.items():
-            print(f"   - {name}: {info['description']}")
-
-    except Exception as e:
-        print(f"❌ Error: {e}")
-        import traceback
-        traceback.print_exc()
-
-
-if __name__ == "__main__":
-    test_gemini_client()
+            return {"success": False, "message": f"Error: {str(e)}", "model": self.model_name}

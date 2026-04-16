@@ -18,14 +18,15 @@ class AnalysisRequest(BaseModel):
     context: str
     api_key: Optional[str] = None  # Optional: For BYOK mode
     provider: Optional[str] = "zeabur"  # 'zeabur' or 'google_gemini'
-    model: Optional[str] = "gemini-2.5-flash"
+    model: Optional[str] = "gemini-1.5-flash"
     report_type: Optional[str] = "ad_analysis"  # 'ad_analysis' or 'weekly_summary'
+    period: Optional[str] = "weekly" # 'daily', 'weekly', 'monthly'
 
 
 class TestConnectionRequest(BaseModel):
     api_key: Optional[str] = None
     provider: Optional[str] = "zeabur"
-    model: Optional[str] = "gemini-2.5-flash"
+    model: Optional[str] = "gemini-1.5-flash"
 
 
 @router.get("/providers")
@@ -41,18 +42,29 @@ async def get_providers(user: User = Depends(get_current_user)):
 @router.get("/models")
 async def get_models(
     provider: str = "zeabur",
+    sync: bool = False,
     user: User = Depends(get_current_user)
 ):
     """
     Get available models for a provider.
+    Supports 'sync=true' to fetch latest from remote.
     """
-    models = AIService.get_available_models(provider)
+    # Map provider names to internal key names
+    key_provider = provider
+    if provider == "google_gemini":
+        key_provider = "gemini"
+        
+    # Get user's API key for this provider (if any)
+    api_key = TokenManager.get_ai_api_key(user.google_id, provider=key_provider)
+    
+    models = AIService.get_available_models(provider, remote=sync, api_key=api_key)
     if not models:
         raise HTTPException(status_code=400, detail=f"Unknown provider: {provider}")
     
     return {
         "provider": provider,
-        "models": models
+        "models": models,
+        "synced": sync
     }
 
 
@@ -91,14 +103,32 @@ async def analyze_data(
     """
     Stream analysis results.
     """
+    # 獲取使用者目前的 AI 設定 (如果請求中沒有指定)
+    user_settings = TokenManager.get_ai_settings(user.google_id) or {}
+    
+    # 決定使用的 Provider 與 Model (支援 'gemini' 映射到 'google_gemini')
+    raw_provider = request.provider if request.provider else user_settings.get("ai_provider", "zeabur")
+    provider = "google_gemini" if raw_provider == "gemini" else raw_provider
+    model = request.model if request.model and request.model != "gemini-1.5-flash" else user_settings.get("ai_model", "gemini-1.5-flash")
+    if not model: model = "gemini-1.5-flash"
+    
+    # 決定使用的 API Key
+    api_key = request.api_key
+    if not api_key:
+        key_provider = "gemini" if provider == "google_gemini" else "zeabur"
+        api_key = TokenManager.get_ai_api_key(user.google_id, provider=key_provider)
+
+    logger.info(f"[AI Router] Starting analysis with provider={provider}, model={model}")
+
     return StreamingResponse(
         AIService.analyze_data(
             data=request.data, 
             context=request.context, 
-            api_key=request.api_key,
-            provider=request.provider,
-            model=request.model,
-            report_type=request.report_type
+            api_key=api_key,
+            provider=provider,
+            model=model,
+            report_type=request.report_type,
+            period=request.period
         ),
         media_type="text/plain"
     )
@@ -128,7 +158,7 @@ async def get_ai_settings(user: User = Depends(get_current_user)):
         # Return defaults if no settings found
         return {
             "ai_provider": "zeabur",
-            "ai_model": "gemini-2.5-flash",
+            "ai_model": "gemini-1.5-flash",
             "has_zeabur_key": False,
             "has_gemini_key": False
         }
@@ -197,9 +227,13 @@ async def clear_ai_key(
 
 
 @router.post("/test-gemini")
-async def test_gemini_connection(user: User = Depends(get_current_user)):
+async def test_gemini_connection(
+    request: TestConnectionRequest = None,
+    user: User = Depends(get_current_user)
+):
     """
     Test Google Gemini API connection using the user's saved API key.
+    Allows passing a specific model to test with.
     """
     logger.info(f"[AI API] Testing Gemini connection for user: {user.email}")
     
@@ -207,21 +241,29 @@ async def test_gemini_connection(user: User = Depends(get_current_user)):
     api_key = TokenManager.get_ai_api_key(user.google_id, provider="gemini")
     
     if not api_key:
-        logger.warning(f"[AI API] No Gemini API key found for user: {user.email}")
         return {
             "success": False,
-            "message": "No Google Gemini API key configured. Please save your API key first.",
+            "message": "No Google Gemini API key configured.",
             "provider": "gemini"
         }
-    
-    logger.debug(f"[AI API] Found Gemini API key (length={len(api_key)})")
     
     try:
         from services.ai.gemini_client import GoogleGeminiClient
         client = GoogleGeminiClient(api_key=api_key)
-        result = client.test_connection()
         
-        logger.info(f"[AI API] Gemini test result: success={result.get('success')}")
+        # Use provided model if available, otherwise fallback to saved setting
+        test_model = None
+        if request and request.model:
+            test_model = request.model
+        else:
+            settings = TokenManager.get_ai_settings(user.google_id)
+            if settings:
+                test_model = settings.get("ai_model")
+        
+        if test_model:
+            client.set_model(test_model)
+            
+        result = client.test_connection()
         
         return {
             "success": result.get("success", False),

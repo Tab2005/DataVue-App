@@ -66,8 +66,20 @@ from limiter import limiter
 async def lifespan(app: FastAPI):
     """Application lifespan handler."""
     logger.info("🚀 DataVue Application starting...")
+
+    from core.scheduler import start_scheduler, stop_scheduler
+
+    try:
+        scheduler_status = await start_scheduler()
+        logger.info(f"⏰ Scheduler bootstrap finished: {scheduler_status}")
+    except Exception as e:
+        logger.error(f"Failed to start scheduler: {e}", exc_info=True)
+
     yield
+
     logger.info("👋 DataVue Application shutting down...")
+    stop_scheduler()
+
 
 
 app = FastAPI(
@@ -168,7 +180,7 @@ async def general_exception_handler(request: Request, exc: Exception):
 # ============================================================
 
 from routers import users, teams, invites, admin, ai, saved_views, gsc, permissions
-from routers import facebook, debug, ga4, auth, reports
+from routers import facebook, debug, ga4, auth, reports, line
 from routers.metrics import router as metrics_router
 
 # Authentication & Users
@@ -189,6 +201,7 @@ app.include_router(ga4.router)
 app.include_router(ai.router, prefix="/api/ai", tags=["ai"])
 app.include_router(saved_views.router)
 app.include_router(reports.router)
+app.include_router(line.router)
 
 # Metrics Registry (4.6)
 app.include_router(metrics_router)
@@ -254,6 +267,13 @@ async def health_check():
             health_status["checks"]["redis"] = "not_configured"
     except Exception as e:
         health_status["checks"]["redis"] = f"error: {str(e)}"
+
+    try:
+        from core.scheduler import get_scheduler_status
+
+        health_status["checks"]["scheduler"] = get_scheduler_status()
+    except Exception as e:
+        health_status["checks"]["scheduler"] = f"error: {str(e)}"
 
     if health_status["status"] == "unhealthy":
         return JSONResponse(status_code=503, content=health_status)

@@ -6,6 +6,10 @@
 2. 不干擾本地開發的 SQLite 檔案
 3. 不需要 PostgreSQL 連線即可執行所有單元測試
 """
+import os
+
+os.environ.setdefault("ENABLE_REPORT_SCHEDULER", "false")
+
 import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy import create_engine

@@ -13,7 +13,8 @@ const ReportViewer = ({ mode = 'view' }) => {
     const { user, language, selectedTeamId } = useOutletContext();
     
     const [report, setReport] = useState(null);
-    const [loading, setLoading] = useState(mode === 'view');
+    const [schedule, setSchedule] = useState(null);
+    const [loading, setLoading] = useState(mode !== 'create');
     const [error, setError] = useState(null);
     const [isGenerating, setIsGenerating] = useState(false);
     const [isAnalyzing, setIsAnalyzing] = useState(false);
@@ -37,34 +38,62 @@ const ReportViewer = ({ mode = 'view' }) => {
         }
     };
 
+    const fetchSchedule = async () => {
+        if (!id) return;
+        setLoading(true);
+        try {
+            const res = await reportService.getSchedule(id);
+            setSchedule(res);
+            setError(null);
+        } catch (err) {
+            console.error('Failed to fetch schedule:', err);
+            setError(t('Failed to load schedule.', '載入排程失敗。'));
+        } finally {
+            setLoading(false);
+        }
+    };
+
     useEffect(() => {
         if (mode === 'view' && id) {
             fetchReport();
+        } else if (mode === 'edit-schedule' && id) {
+            fetchSchedule();
         }
     }, [id, mode]);
 
-    const handleCreate = async (formData) => {
+    const handleSave = async (formData) => {
         setIsSaving(true);
         try {
+            if (formData.is_automated) {
+                if (mode === 'edit-schedule' && id) {
+                    await reportService.updateSchedule(id, formData);
+                } else {
+                    await reportService.createSchedule(formData);
+                }
+                navigate('/reports');
+                return;
+            }
+            
+            // 下方為手動報表建立邏輯 (保持不變)
             const res = await reportService.create(formData);
             const newReport = res;
-            // After create, immediately trigger generation
             setIsGenerating(true);
             try {
                 await reportService.generate(newReport.id);
                 navigate(`/reports/${newReport.id}`);
             } catch (err) {
                 console.error('Initial generation failed:', err);
-                navigate(`/reports/${newReport.id}`); // Still navigate to see the draft
+                navigate(`/reports/${newReport.id}`);
             }
         } catch (err) {
-            console.error('Create failed:', err);
-            alert(t('Failed to create report.', '建立週報失敗。'));
+            console.error('Save failed:', err);
+            alert(t('Failed to save.', '儲存失敗。'));
         } finally {
             setIsSaving(false);
             setIsGenerating(false);
         }
     };
+
 
     const handleGenerate = async () => {
         if (!report) return;
@@ -94,10 +123,24 @@ const ReportViewer = ({ mode = 'view' }) => {
         if (!report || !report.report_data) return;
         setIsAnalyzing(true);
         try {
-             // Reuse existing aiService.analyzeDataStream
-             // We'll collect the stream and update the report once done
+             // Calculate period based on date range
+             const start = new Date(report.date_since);
+             const end = new Date(report.date_until);
+             const diffDays = Math.ceil(Math.abs(end - start) / (1000 * 60 * 60 * 24)) + 1;
+             
+             let period = 'weekly';
+             let periodText = '週報';
+             
+             if (diffDays <= 1) {
+                 period = 'daily';
+                 periodText = '日報';
+             } else if (diffDays > 14) {
+                 period = 'monthly';
+                 periodText = '月報';
+             }
+
              let fullText = '';
-             const context = `${t('Weekly Report for', '週報分析：')} ${report.ad_account_name}, ${t('Period', '期間')}: ${report.date_since} ~ ${report.date_until}`;
+             const context = `${periodText}分析：${report.ad_account_name}, 期間: ${report.date_since} ~ ${report.date_until}`;
              
              await aiService.analyzeDataStream(
                  report.report_data.summary,
@@ -106,9 +149,11 @@ const ReportViewer = ({ mode = 'view' }) => {
                  null, // apiKey
                  (chunk) => {
                     fullText += chunk;
-                    // Update local state for real-time preview
                     setReport(prev => ({ ...prev, ai_summary: fullText }));
-                 }
+                 },
+                 null, // provider
+                 null, // model
+                 period
              );
              
              // Final save to backend
@@ -212,12 +257,13 @@ const ReportViewer = ({ mode = 'view' }) => {
                 </div>
             )}
 
-            {!error && mode === 'create' && (
+            {!error && (mode === 'create' || mode === 'edit-schedule') && (
                 <ReportConfig
-                   onSave={handleCreate}
+                   onSave={handleSave}
                    onCancel={() => navigate('/reports')}
                    language={language}
                    teamId={selectedTeamId}
+                   initialEditData={schedule}
                 />
             )}
 

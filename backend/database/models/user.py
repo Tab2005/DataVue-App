@@ -53,7 +53,8 @@ class User(Base):
     zeabur_api_key = Column(String, nullable=True)
     gemini_api_key = Column(String, nullable=True)
     ai_provider = Column(String, nullable=True, default="zeabur")
-    ai_model = Column(String, nullable=True, default="gemini-2.5-flash")
+    ai_model = Column(String, nullable=True, default="gemini-1.5-flash")
+    line_user_id = Column(String, nullable=True, index=True)
 
     # Role Based Access Control (Legacy / Default Team Role)
     role = Column(SAEnum(UserRole), default=UserRole.VIEWER)

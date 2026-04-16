@@ -47,16 +47,36 @@ class AIService:
         return providers
 
     @staticmethod
-    def get_available_models(provider: str = "zeabur") -> Dict[str, Dict]:
+    def get_available_models(provider: str = "zeabur", remote: bool = False, api_key: Optional[str] = None) -> Dict[str, Dict]:
         """Get available models for a provider"""
         if provider == "zeabur":
+            # If remote is true, we need a client to fetch. 
+            # We use the provided api_key (or empty if None)
+            client = AIService.get_zeabur_client(api_key=api_key)
+            if client:
+                return client.get_available_models(remote=remote)
             return ZeaburAIClient.MODELS
         elif provider == "google_gemini":
-            # Limited models for legacy mode
-            return {
-                "gemini-2.5-flash": {"description": "Gemini 2.5 Flash", "provider": "google"},
-                "gemini-2.5-pro": {"description": "Gemini 2.5 Pro", "provider": "google"},
-            }
+            # Direct Google Gemini Mode
+            try:
+                from services.ai.gemini_client import GoogleGeminiClient
+                client = GoogleGeminiClient(api_key=api_key)
+                models = client.get_available_models(remote=remote)
+                
+                # Transform to common format if needed (GoogleGeminiClient already returns a good format)
+                # Just Ensure 'description' exists for unified UI
+                for m_id, config in models.items():
+                    if 'description' not in config:
+                        config['description'] = config.get('display_name', m_id)
+                    if 'provider' not in config:
+                        config['provider'] = 'google'
+                return models
+            except Exception as e:
+                print(f"Error fetching Google Gemini models: {e}")
+                return {
+                    "gemini-1.5-flash": {"description": "Gemini 1.5 Flash", "provider": "google"},
+                    "gemini-1.5-pro": {"description": "Gemini 1.5 Pro", "provider": "google"},
+                }
         return {}
 
     @staticmethod
@@ -129,7 +149,7 @@ class AIService:
                 return False
             try:
                 response = client.models.generate_content(
-                    model="gemini-2.5-flash",
+                    model="gemini-1.5-flash",
                     contents="Hello",
                 )
                 return True
@@ -143,37 +163,45 @@ class AIService:
         context: str, 
         api_key: Optional[str] = None,
         provider: str = "zeabur",
-        model: str = "gemini-2.5-flash",
-        report_type: str = "ad_analysis"
+        model: str = "gemini-1.5-flash",
+        report_type: str = "ad_analysis",
+        period: str = "weekly"
     ) -> Generator[str, None, None]:
         """
         Analyzes the provided data using the LLM.
         Returns a generator for streaming response.
-        
-        Args:
-            data: Data to analyze
-            context: Context description
-            api_key: User's API key (optional, falls back to env var)
-            provider: AI provider ('zeabur' or 'google_gemini')
-            model: Model to use
-            report_type: 'ad_analysis' or 'weekly_summary'
         """
         
-        # Build system prompt based on report type
+        # Build system prompt based on report type and period
         if report_type == "weekly_summary":
-            system_prompt = """
-            You are a Senior Facebook Ads Consultant helping a client prepare a Weekly Performance Report (週報).
-            Your goal is to write a cohesive, professional summary based on the provided data context.
+            period_labels = {
+                "daily": "日報 (Daily)",
+                "weekly": "週報 (Weekly)",
+                "monthly": "月報 (Monthly)"
+            }
+            label = period_labels.get(period, "績效")
             
-            Structure:
-            1. **Executive Summary (本週總結)**: 2-3 sentences summarizing the overall performance (Spend, ROAS, Purchases) compared to the previous period (if available).
-            2. **Key Wins (亮點分析)**: Identify 1-2 campaigns or ad sets that performed efficiently (High ROAS, Low CPA).
-            3. **Areas for Improvement (優化空間)**: Identify 1-2 areas with declining performance or wasted budget.
-            4. **Next Steps (下週建議)**: 2-3 specific actionable bullet points for the next week.
+            period_focus = ""
+            if period == "daily":
+                period_focus = "請特別關注昨日與前日的數據波動、預算消耗情況，以及是否需要立即進行開關調整或排除異常。"
+            elif period == "weekly":
+                period_focus = "請著重於本週與上週的趨勢對比、廣告組合（Ad Sets）的表現差異，以及下一階段的預算分配建議。"
+            elif period == "monthly":
+                period_focus = "請從戰略角度分析本月整體 ROI、不同廣告創意（Creative）的長期表現趨勢，並提供下個月的整體投放策略建議。"
 
-            Tone: Professional, Encouraging, Insightful.
-            Language: Traditional Chinese (繁體中文).
-            Format: Markdown (use bolding for key numbers).
+            system_prompt = f"""
+            您是一位資深的 Facebook 廣告顧問，正在協助客戶撰寫一份{label}分析報告。
+            您的目標是根據提供的數據，產出一份專業且具備深度洞察的摘要。
+            
+            報告結構：
+            1. **執行摘要 ({label}總結)**：用 2-3 句話總結整體表現（花費、ROAS、成交數），並嘗試與前期對比。
+            2. **亮點分析**：識別 1-2 個表現優秀的廣告活動或組合（例如高 ROAS 或低 CPA）。
+            3. **優化空間與異常檢測**：{period_focus}
+            4. **後續行動建議**：提供 2-3 個最具體且可執行的建議。
+
+            語氣：專業、鼓勵、數據導向。
+            語言：繁體中文 (Traditional Chinese)。
+            格式：Markdown（對關鍵指標數字加粗）。
             """
         else:
             system_prompt = """
@@ -184,15 +212,14 @@ class AIService:
             
             ### 🔴 Critical Issues (紅燈警示)
             Identify ads or ad sets that are wasting budget (High CPA, Low ROAS, Saturation).
-            Be specific with names and numbers.
             
             ### 🟢 Opportunities (綠燈機會)
             Identify high-performing assets that deserve more budget.
             
             ### 💡 Strategic Advice (策略建議)
-            Give 1-2 high-level actionable suggestions based on the funnel data (CTR -> CVR).
+            Give 1-2 high-level actionable suggestions based on the funnel data.
             
-            Tone: Professional, Concise, Action-oriented. No fluff.
+            Tone: Professional, Concise, Action-oriented.
             Language: Traditional Chinese (繁體中文).
             """
         
@@ -264,8 +291,15 @@ class AIService:
             return
 
         try:
+            # Handle possible None model
+            model_to_use = model or "gemini-1.5-flash"
+            
+            # Ensure model path is correct for Google SDK
+            if not model_to_use.startswith('models/'):
+                model_to_use = f"models/{model_to_use}"
+
             response_stream = client.models.generate_content_stream(
-                model=model,
+                model=model_to_use,
                 contents=[
                     types.Content(
                         role="user",

@@ -1,4 +1,6 @@
 import React, { useState, useEffect } from 'react';
+import { FiTrendingUp, FiMessageSquare, FiCpu, FiZap, FiRefreshCw } from 'react-icons/fi';
+import LineBindingCard from './Settings/LineBindingCard';
 
 const SettingsModal = ({ isOpen, onClose, language, teamId, teamName, onSuccess }) => {
     // Tabs: 'facebook' | 'ai'
@@ -15,17 +17,18 @@ const SettingsModal = ({ isOpen, onClose, language, teamId, teamName, onSuccess 
     const [aiData, setAiData] = useState({
         provider: 'zeabur', // Default to Zeabur AI Hub
         apiKey: '',
-        model: 'gemini-2.5-flash'
+        model: 'gemini-1.5-flash'
     });
 
     // Google Gemini Direct API Data
     const [geminiData, setGeminiData] = useState({
         apiKey: '',
-        model: 'gemini-2.5-flash'
+        model: 'gemini-1.5-flash'
     });
 
-    // Available models from backend
-    const [availableModels, setAvailableModels] = useState({});
+    // Available models from backend (Separate lists)
+    const [zeaburModels, setZeaburModels] = useState({});
+    const [googleModels, setGoogleModels] = useState({});
 
     // Status & Loading (separate for FB and AI tabs)
     const [status, setStatus] = useState(null); // { type: 'success' | 'error', message: '' }
@@ -46,7 +49,8 @@ const SettingsModal = ({ isOpen, onClose, language, teamId, teamName, onSuccess 
         tabs: {
             facebook: 'Facebook Ads',
             ai: 'Zeabur AI Hub',
-            gemini: 'Google Gemini'
+            gemini: 'Google Gemini',
+            line: language === 'zh' ? 'LINE 通知' : 'LINE Notify'
         },
         fb: {
             appId: 'App ID',
@@ -211,19 +215,33 @@ const SettingsModal = ({ isOpen, onClose, language, teamId, teamName, onSuccess 
         }
     };
 
-    const fetchAvailableModels = async (provider = 'zeabur') => {
+    const [isSyncingModels, setIsSyncingModels] = useState(false);
+
+    const fetchAvailableModels = async (provider = 'zeabur', sync = false) => {
+        if (sync) setIsSyncingModels(true);
         try {
             const token = localStorage.getItem('google_token');
             const apiUrl = import.meta.env.VITE_API_URL || 'http://localhost:8000';
-            const res = await fetch(`${apiUrl}/api/ai/models?provider=${provider}`, {
+            const res = await fetch(`${apiUrl}/api/ai/models?provider=${provider}${sync ? '&sync=true' : ''}`, {
                 headers: { 'Authorization': `Bearer ${token}` }
             });
             if (res.ok) {
                 const data = await res.json();
-                setAvailableModels(data.models || {});
+                if (provider === 'zeabur') {
+                    setZeaburModels(data.models || {});
+                } else if (provider === 'google_gemini') {
+                    setGoogleModels(data.models || {});
+                }
+                
+                if (sync) {
+                    setStatus({ type: 'success', message: language === 'zh' ? '✅ 模型清單已同步完成' : '✅ Model list synced' });
+                }
             }
         } catch (err) {
             console.error("Failed to fetch AI models", err);
+            if (sync) setStatus({ type: 'error', message: language === 'zh' ? '❌ 同步失敗' : '❌ Sync failed' });
+        } finally {
+            if (sync) setIsSyncingModels(false);
         }
     };
 
@@ -232,7 +250,7 @@ const SettingsModal = ({ isOpen, onClose, language, teamId, teamName, onSuccess 
         // 1. Check LocalStorage for user key and settings
         const localKey = localStorage.getItem('ai_api_key');
         const savedProvider = localStorage.getItem('ai_provider') || 'zeabur';
-        const savedModel = localStorage.getItem('ai_model') || 'gemini-2.5-flash';
+        const savedModel = localStorage.getItem('ai_model') || 'gemini-1.5-flash';
 
         if (localKey) {
             setAiData(prev => ({ ...prev, apiKey: localKey, provider: savedProvider, model: savedModel }));
@@ -240,8 +258,11 @@ const SettingsModal = ({ isOpen, onClose, language, teamId, teamName, onSuccess 
             setAiData(prev => ({ ...prev, provider: savedProvider, model: savedModel }));
         }
 
-        // Fetch available models for the provider
-        await fetchAvailableModels(savedProvider);
+        // Fetch BOTH model lists initially
+        await Promise.all([
+            fetchAvailableModels('zeabur'),
+            fetchAvailableModels('google_gemini')
+        ]);
 
         // 2. Test Connection (Backend will check Zeabur env if key is null)
         try {
@@ -302,7 +323,7 @@ const SettingsModal = ({ isOpen, onClose, language, teamId, teamName, onSuccess 
         try {
             // Save to backend (encrypted)
             await saveAiSettingsToServer({
-                zeabur_api_key: aiData.apiKey || null,
+                zeabur_api_key: aiData.apiKey === '********' ? null : aiData.apiKey,
                 ai_provider: 'zeabur',
                 ai_model: aiData.model
             });
@@ -358,7 +379,7 @@ const SettingsModal = ({ isOpen, onClose, language, teamId, teamName, onSuccess 
         setAiData(prev => ({ ...prev, provider: newProvider }));
         await fetchAvailableModels(newProvider);
         // Reset model to first available
-        setAiData(prev => ({ ...prev, model: 'gemini-2.5-flash' }));
+        setAiData(prev => ({ ...prev, model: 'gemini-1.5-flash' }));
     };
 
     const handleClearAiKey = () => {
@@ -378,10 +399,37 @@ const SettingsModal = ({ isOpen, onClose, language, teamId, teamName, onSuccess 
             // Fetch AI settings from backend
             fetchAiSettings().then(settings => {
                 if (settings) {
-                    setActiveAiProvider(settings.ai_provider || 'zeabur');
-                    setAiData(prev => ({ ...prev, model: settings.ai_model || 'gemini-2.5-flash' }));
+                    const provider = settings.ai_provider || 'zeabur';
+                    setActiveAiProvider(provider);
+                    
+                    // 自動切換標籤頁到目前啟用的 AI Provider
+                    if (provider === 'gemini' || provider === 'google_gemini') {
+                        setActiveTab('gemini');
+                    } else if (provider === 'zeabur') {
+                        setActiveTab('zeabur');
+                    }
+
+                    // 修正模型名稱前綴匹配問題 (資料庫可能存在不帶 models/ 的舊資料)
+                    const formatModelName = (name) => {
+                        if (!name) return 'gemini-1.5-flash';
+                        if (!name.startsWith('models/') && (name.includes('gemini') || name.includes('gemma'))) {
+                            return `models/${name}`;
+                        }
+                        return name;
+                    };
+
+                    setAiData(prev => ({ 
+                        ...prev, 
+                        model: settings.ai_model || 'gemini-1.5-flash',
+                        apiKey: settings.has_zeabur_key ? '********' : ''
+                    }));
+                    setGeminiData(prev => ({ 
+                        ...prev, 
+                        model: formatModelName(settings.ai_model),
+                        apiKey: settings.has_gemini_key ? '********' : ''
+                    }));
                     // Store provider in localStorage for GSCStats to use (sync purpose only)
-                    localStorage.setItem('ai_provider', settings.ai_provider || 'zeabur');
+                    localStorage.setItem('ai_provider', provider);
                 }
             });
         }
@@ -521,27 +569,60 @@ const SettingsModal = ({ isOpen, onClose, language, teamId, teamName, onSuccess 
                     </div>
                 )}
 
-                {/* Tabs Config */}
-                <div style={{ display: 'flex', gap: '8px', marginBottom: '24px', borderBottom: '1px solid var(--glass-border)' }}>
-                    {Object.keys(t.tabs).map(key => (
-                        <button
-                            key={key}
-                            onClick={() => { setActiveTab(key); setStatus(null); }}
-                            style={{
-                                padding: '12px 24px',
-                                background: 'transparent',
-                                border: 'none',
-                                borderBottom: activeTab === key ? '2px solid var(--accent-primary)' : '2px solid transparent',
-                                color: activeTab === key ? 'var(--accent-primary)' : 'var(--text-secondary)',
-                                fontWeight: activeTab === key ? 'bold' : 'normal',
-                                cursor: 'pointer',
-                                transition: 'all 0.2s',
-                                fontSize: '1rem'
-                            }}
-                        >
-                            {t.tabs[key]}
-                        </button>
-                    ))}
+                {/* Tabs Config - Optimized Layout to prevent wrapping */}
+                <div style={{ 
+                    display: 'flex', 
+                    marginBottom: '24px', 
+                    borderBottom: '1px solid var(--glass-border)',
+                    overflowX: 'auto',
+                    scrollbarWidth: 'none',
+                    msOverflowStyle: 'none',
+                    position: 'relative'
+                }}>
+                    <style>{`
+                        .settings-tab-container::-webkit-scrollbar { display: none; }
+                        .settings-tab-btn {
+                            padding: 12px 14px;
+                            background: transparent;
+                            border: none;
+                            border-bottom: 2px solid transparent;
+                            color: var(--text-secondary);
+                            cursor: pointer;
+                            transition: all 0.2s;
+                            font-size: 0.88rem;
+                            white-space: nowrap;
+                            display: flex;
+                            align-items: center;
+                            gap: 6px;
+                            flex-shrink: 0;
+                        }
+                        .settings-tab-btn.active {
+                            border-bottom: 2px solid var(--accent-primary);
+                            color: var(--accent-primary);
+                            font-weight: 600;
+                            background: rgba(45, 136, 255, 0.05);
+                        }
+                        .settings-tab-btn:hover:not(.active) {
+                            color: var(--text-primary);
+                            background: rgba(255, 255, 255, 0.02);
+                        }
+                    `}</style>
+                    
+                    <div className="settings-tab-container" style={{ display: 'flex', width: '100%', overflowX: 'auto' }}>
+                        {Object.keys(t.tabs).map(key => (
+                            <button
+                                key={key}
+                                className={`settings-tab-btn ${activeTab === key ? 'active' : ''}`}
+                                onClick={() => { setActiveTab(key); setStatus(null); }}
+                            >
+                                {key === 'facebook' && <FiTrendingUp size={14} />}
+                                {key === 'ai' && <FiZap size={14} />}
+                                {key === 'gemini' && <FiCpu size={14} />}
+                                {key === 'line' && <FiMessageSquare size={14} />}
+                                {t.tabs[key]}
+                            </button>
+                        ))}
+                    </div>
                 </div>
 
                 {/* Content Area */}
@@ -687,9 +768,22 @@ const SettingsModal = ({ isOpen, onClose, language, teamId, teamName, onSuccess 
                                 <div style={{ display: 'flex', flexDirection: 'column', gap: '16px', opacity: aiLoading ? 0.5 : 1 }}>
                                     {/* Model Selection - Direct model choice without provider */}
                                     <div>
-                                        <label style={{ display: 'block', marginBottom: '8px', color: 'var(--text-secondary)' }}>
-                                            {language === 'zh' ? 'AI 模型' : 'AI Model'}
-                                        </label>
+                                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
+                                            <label style={{ color: 'var(--text-secondary)' }}>
+                                                {language === 'zh' ? 'AI 模型' : 'AI Model'}
+                                            </label>
+                                            <button 
+                                                onClick={() => fetchAvailableModels('zeabur', true)}
+                                                disabled={isSyncingModels}
+                                                style={{ 
+                                                    background: 'transparent', border: 'none', color: 'var(--accent-primary)', 
+                                                    cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '4px', fontSize: '12px' 
+                                                }}
+                                            >
+                                                <FiRefreshCw className={isSyncingModels ? 'spin' : ''} size={12} />
+                                                {language === 'zh' ? '同步清單' : 'Sync List'}
+                                            </button>
+                                        </div>
                                         <select
                                             value={aiData.model}
                                             onChange={(e) => setAiData({ ...aiData, model: e.target.value })}
@@ -702,24 +796,25 @@ const SettingsModal = ({ isOpen, onClose, language, teamId, teamName, onSuccess 
                                                 color: 'white'
                                             }}
                                         >
-                                            <optgroup label="Gemini (推薦 - 免費額度高)" style={{ background: '#2a2a2a' }}>
-                                                <option value="gemini-2.5-flash" style={{ background: '#1a1a1a' }}>gemini-2.5-flash (快速、免費額度高) ✅ 推薦</option>
-                                                <option value="gemini-2.5-pro" style={{ background: '#1a1a1a' }}>gemini-2.5-pro (高品質、長文本)</option>
-                                                <option value="gemini-3-flash-preview" style={{ background: '#1a1a1a' }}>gemini-3-flash-preview (最新預覽)</option>
-                                            </optgroup>
-                                            <optgroup label="Claude (Anthropic)" style={{ background: '#2a2a2a' }}>
-                                                <option value="claude-sonnet-4-5" style={{ background: '#1a1a1a' }}>claude-sonnet-4-5 (高品質)</option>
-                                                <option value="claude-haiku-4-5" style={{ background: '#1a1a1a' }}>claude-haiku-4-5 (快速、經濟)</option>
-                                            </optgroup>
-                                            <optgroup label="GPT (OpenAI)" style={{ background: '#2a2a2a' }}>
-                                                <option value="gpt-4o" style={{ background: '#1a1a1a' }}>gpt-4o (多模態)</option>
-                                                <option value="gpt-4o-mini" style={{ background: '#1a1a1a' }}>gpt-4o-mini (經濟實惠)</option>
-                                            </optgroup>
-                                            <optgroup label="其他模型" style={{ background: '#2a2a2a' }}>
-                                                <option value="deepseek-v3.2" style={{ background: '#1a1a1a' }}>deepseek-v3.2 (開源高品質)</option>
-                                                <option value="qwen-3-32" style={{ background: '#1a1a1a' }}>qwen-3-32 (通義千問，中文優化)</option>
-                                                <option value="llama-3.3-70b" style={{ background: '#1a1a1a' }}>llama-3.3-70b (Meta 開源)</option>
-                                            </optgroup>
+                                            {Object.entries(zeaburModels).length > 0 ? (
+                                                <>
+                                                    {/* Grouped by provider */}
+                                                    {Array.from(new Set(Object.values(zeaburModels).map(m => m.provider))).map(provider => (
+                                                        <optgroup key={provider} label={provider.toUpperCase()} style={{ background: '#2a2a2a' }}>
+                                                            {Object.entries(zeaburModels)
+                                                                .filter(([_, config]) => config.provider === provider)
+                                                                .map(([id, config]) => (
+                                                                    <option key={id} value={id} style={{ background: '#1a1a1a' }}>
+                                                                        {config.description || id}
+                                                                    </option>
+                                                                ))
+                                                            }
+                                                        </optgroup>
+                                                    ))}
+                                                </>
+                                            ) : (
+                                                <option value="gemini-1.5-flash">Gemini 1.5 Flash (Loading...)</option>
+                                            )}
                                         </select>
                                     </div>
 
@@ -797,9 +892,22 @@ const SettingsModal = ({ isOpen, onClose, language, teamId, teamName, onSuccess 
 
                             {/* Model Selection */}
                             <div>
-                                <label style={{ display: 'block', marginBottom: '8px', color: 'var(--text-secondary)' }}>
-                                    {language === 'zh' ? 'Gemini 模型' : 'Gemini Model'}
-                                </label>
+                                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
+                                    <label style={{ color: 'var(--text-secondary)' }}>
+                                        {language === 'zh' ? 'Gemini 模型' : 'Gemini Model'}
+                                    </label>
+                                    <button 
+                                        onClick={() => fetchAvailableModels('google_gemini', true)}
+                                        disabled={isSyncingModels}
+                                        style={{ 
+                                            background: 'transparent', border: 'none', color: 'var(--accent-primary)', 
+                                            cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '4px', fontSize: '12px' 
+                                        }}
+                                    >
+                                        <FiRefreshCw className={isSyncingModels ? 'spin' : ''} size={12} />
+                                        {language === 'zh' ? '同步清單' : 'Sync List'}
+                                    </button>
+                                </div>
                                 <select
                                     value={geminiData.model}
                                     onChange={(e) => setGeminiData({ ...geminiData, model: e.target.value })}
@@ -812,11 +920,19 @@ const SettingsModal = ({ isOpen, onClose, language, teamId, teamName, onSuccess 
                                         color: 'white'
                                     }}
                                 >
-                                    <option value="gemini-2.5-flash">gemini-2.5-flash (快速、免費額度高) ✅ 推薦</option>
-                                    <option value="gemini-2.5-pro">gemini-2.5-pro (高品質、長文本)</option>
-                                    <option value="gemini-2.0-flash">gemini-2.0-flash (上一代快速)</option>
-                                    <option value="gemini-1.5-flash">gemini-1.5-flash (穩定版)</option>
-                                    <option value="gemini-1.5-pro">gemini-1.5-pro (穩定高品質)</option>
+                                    {Object.entries(googleModels).length > 0 ? (
+                                        Object.entries(googleModels).map(([id, config]) => (
+                                            <option key={id} value={id}>
+                                                {config.display_name || id}
+                                            </option>
+                                        ))
+                                    ) : (
+                                        <>
+                                            <option value="models/gemini-1.5-flash">Gemini 1.5 Flash (穩定版)</option>
+                                            <option value="models/gemini-2.0-flash">Gemini 2.0 Flash (最新世代)</option>
+                                            <option value="models/gemini-1.5-pro">Gemini 1.5 Pro (高品質)</option>
+                                        </>
+                                    )}
                                 </select>
                             </div>
 
@@ -849,7 +965,7 @@ const SettingsModal = ({ isOpen, onClose, language, teamId, teamName, onSuccess 
                                             setAiLoading(true);
                                             try {
                                                 await saveAiSettingsToServer({ gemini_api_key: '' });
-                                                setGeminiData({ apiKey: '', model: 'gemini-2.5-flash' });
+                                                setGeminiData({ apiKey: '', model: 'gemini-1.5-flash' });
                                                 setStatus({ type: 'success', message: language === 'zh' ? '已清除 Google Gemini 設定' : 'Google Gemini settings cleared' });
                                             } catch (err) {
                                                 setStatus({ type: 'error', message: err.message });
@@ -871,8 +987,9 @@ const SettingsModal = ({ isOpen, onClose, language, teamId, teamName, onSuccess 
                                         setAiLoading(true);
                                         try {
                                             await saveAiSettingsToServer({
-                                                gemini_api_key: geminiData.apiKey,
-                                                ai_model: geminiData.model
+                                                gemini_api_key: geminiData.apiKey === '********' ? null : geminiData.apiKey,
+                                                ai_model: geminiData.model,
+                                                ai_provider: 'gemini'
                                             });
                                             setStatus({ type: 'success', message: language === 'zh' ? '✅ Google Gemini 設定已儲存至伺服器' : '✅ Google Gemini settings saved to server' });
                                         } catch (err) {
@@ -896,7 +1013,11 @@ const SettingsModal = ({ isOpen, onClose, language, teamId, teamName, onSuccess 
                                             const apiUrl = import.meta.env.VITE_API_URL || 'http://localhost:8000';
                                             const res = await fetch(`${apiUrl}/api/ai/test-gemini`, {
                                                 method: 'POST',
-                                                headers: { 'Authorization': `Bearer ${token}` }
+                                                headers: { 
+                                                    'Authorization': `Bearer ${token}`,
+                                                    'Content-Type': 'application/json'
+                                                },
+                                                body: JSON.stringify({ model: geminiData.model })
                                             });
                                             const data = await res.json();
                                             if (data.success) {
@@ -930,6 +1051,9 @@ const SettingsModal = ({ isOpen, onClose, language, teamId, teamName, onSuccess 
                                     : 'After saving, switch to "💎 Gemini" in the provider selector above to start using it.'}
                             </div>
                         </div>
+                    )}
+                    {activeTab === 'line' && (
+                        <LineBindingCard language={language} />
                     )}
                 </div>
 

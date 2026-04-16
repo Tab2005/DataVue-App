@@ -3,8 +3,8 @@ import apiClient from './apiClient';
 
 export const reportService = {
   /** 取得報表列表 */
-  list: (teamId) =>
-    apiClient.get('/api/reports', { params: teamId ? { team_id: teamId } : {} }),
+  list: (params = {}) =>
+    apiClient.get('/api/reports', { params }),
 
   /** 取得單筆報表 */
   get: (id) => apiClient.get(`/api/reports/${id}`),
@@ -24,4 +24,21 @@ export const reportService = {
   /** 取得公開分享報表 */
   getSharedReport: (token) =>
     apiClient.get(`/api/reports/share/${token}`, { skipAuth: true }),
+  
+  /** 取得自動排程列表 */
+  listSchedules: (teamId) => 
+    apiClient.get('/api/reports/schedules', { params: teamId ? { team_id: teamId } : {} }),
+    
+  /** 取得單筆排程詳情 */
+  getSchedule: (id) => apiClient.get(`/api/reports/schedules/${id}`),
+
+  /** 建立新排程 */
+  createSchedule: (payload) => apiClient.post('/api/reports/schedules', payload),
+  
+  /** 更新排程 */
+  updateSchedule: (id, payload) => apiClient.put(`/api/reports/schedules/${id}`, payload),
+  
+  /** 刪除排程 */
+  deleteSchedule: (id) => apiClient.delete(`/api/reports/schedules/${id}`),
 };
+

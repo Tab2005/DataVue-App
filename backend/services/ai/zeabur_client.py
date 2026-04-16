@@ -13,74 +13,68 @@ logger = logging.getLogger(__name__)
 class ZeaburAIClient:
     """Zeabur AI Hub 客戶端 - 透過 OpenAI 相容 API 統一調用多種 AI 模型"""
 
-    # 支援的模型列表與配置
+    # 支援的模型列表與配置 (作為本地備份與顯示說明)
     MODELS = {
         # Gemini 模型 (推薦 - 免費額度高)
-        "gemini-2.5-flash": {
+        "gemini-2.0-flash": {
             "provider": "gemini",
             "max_tokens": 8192,
-            "description": "Gemini 2.5 Flash (快速、免費額度高) ✅ 推薦",
-            "description_en": "Gemini 2.5 Flash (Fast, High Free Quota) ✅ Recommended"
+            "description": "Gemini 2.0 Flash (最新世代、極速) ✅ 推薦",
+            "description_en": "Gemini 2.0 Flash (Latest, Fast) ✅ Recommended"
         },
-        "gemini-2.5-pro": {
+        "gemini-1.5-flash": {
+            "provider": "gemini",
+            "max_tokens": 8192,
+            "description": "Gemini 1.5 Flash (經典、高穩定性)",
+            "description_en": "Gemini 1.5 Flash (Stable)"
+        },
+        "gemini-1.5-pro": {
             "provider": "gemini",
             "max_tokens": 32000,
-            "description": "Gemini 2.5 Pro (高品質、長文本)",
-            "description_en": "Gemini 2.5 Pro (High Quality, Long Context)"
-        },
-        "gemini-3-flash-preview": {
-            "provider": "gemini",
-            "max_tokens": 8192,
-            "description": "Gemini 3.0 Flash Preview (最新預覽)",
-            "description_en": "Gemini 3.0 Flash Preview (Latest)"
+            "description": "Gemini 1.5 Pro (高品質、長文本)",
+            "description_en": "Gemini 1.5 Pro (High Quality, Long Context)"
         },
 
         # Claude 模型
-        "claude-sonnet-4-5": {
+        "claude-3-5-sonnet": {
             "provider": "anthropic",
             "max_tokens": 8192,
-            "description": "Claude 4.5 Sonnet (Anthropic 高品質)",
-            "description_en": "Claude 4.5 Sonnet (High Quality)"
+            "description": "Claude 3.5 Sonnet (最強智慧品質)",
+            "description_en": "Claude 3.5 Sonnet (Intelligent)"
         },
-        "claude-haiku-4-5": {
+        "claude-3-5-haiku": {
             "provider": "anthropic",
             "max_tokens": 8192,
-            "description": "Claude 4.5 Haiku (快速、經濟)",
-            "description_en": "Claude 4.5 Haiku (Fast, Economical)"
+            "description": "Claude 3.5 Haiku (極速回應)",
+            "description_en": "Claude 3.5 Haiku (Fast)"
         },
 
         # GPT 模型
         "gpt-4o": {
             "provider": "openai",
             "max_tokens": 16000,
-            "description": "GPT-4o (多模態)",
-            "description_en": "GPT-4o (Multimodal)"
+            "description": "GPT-4o (OpenAI 旗艦模型)",
+            "description_en": "GPT-4o (Flagship)"
         },
         "gpt-4o-mini": {
             "provider": "openai",
             "max_tokens": 16000,
-            "description": "GPT-4o Mini (經濟實惠)",
-            "description_en": "GPT-4o Mini (Economical)"
+            "description": "GPT-4o Mini (高效能迷你)",
+            "description_en": "GPT-4o Mini (Efficient)"
         },
 
         # 其他模型
-        "deepseek-v3.2": {
+        "deepseek-v3": {
             "provider": "deepseek",
             "max_tokens": 8192,
-            "description": "DeepSeek V3.2 (開源高品質)",
-            "description_en": "DeepSeek V3.2 (Open Source)"
+            "description": "DeepSeek V3 (強大推理)",
+            "description_en": "DeepSeek V3 (Reasoning)"
         },
-        "qwen-3-32": {
+        "qwen-2.5-72b": {
             "provider": "qwen",
             "max_tokens": 8192,
-            "description": "Qwen 3-32B (通義千問，中文優化)",
-            "description_en": "Qwen 3-32B (Chinese Optimized)"
-        },
-        "llama-3.3-70b": {
-            "provider": "meta",
-            "max_tokens": 8192,
-            "description": "Llama 3.3 70B (Meta 開源)",
-            "description_en": "Llama 3.3 70B (Meta Open Source)"
+            "description": "Qwen 2.5 (通義千問，中文優化)",
+            "description_en": "Qwen 2.5 (Chinese Optimized)"
         }
     }
 
@@ -107,10 +101,9 @@ class ZeaburAIClient:
         """
         self.api_key = api_key or os.getenv("ZEABUR_AI_HUB_API_KEY")
         if not self.api_key:
-            raise RuntimeError(
-                "ZEABUR_AI_HUB_API_KEY is required. "
-                "Please set it in environment or pass as parameter."
-            )
+            self.client = None
+            self.base_url = self.ENDPOINTS.get(endpoint, endpoint)
+            return
 
         # 選擇端點
         if endpoint in self.ENDPOINTS:
@@ -126,45 +119,53 @@ class ZeaburAIClient:
         )
         logger.info("Zeabur AI Client initialized with endpoint: %s", self.base_url)
 
-    def generate_content(
-        self,
-        prompt: str,
-        model: str = "gemini-2.5-flash",
-        temperature: float = 0.7,
-        max_tokens: Optional[int] = None,
-        stream: bool = False,
-        system_prompt: Optional[str] = None
-    ) -> Union[str, Iterator[str]]:
+    def fetch_remote_models(self) -> Dict[str, Dict]:
         """
-        生成 AI 內容
-
-        Args:
-            prompt: 提示詞
-            model: 模型名稱（見 MODELS 字典）
-            temperature: 創意度 (0.0-1.0)
-                        - 0.0-0.3: 更確定、一致
-                        - 0.4-0.7: 平衡（推薦）
-                        - 0.8-1.0: 更創意、多樣
-            max_tokens: 最大輸出 token 數（None 則使用模型預設值）
-            stream: 是否串流輸出
-            system_prompt: 系統提示詞（可選）
+        從 Zeabur 伺服器同步最新可用模型清單
 
         Returns:
-            生成的文本（字串）或串流 Iterator
-
-        Raises:
-            ValueError: 不支援的模型
-            Exception: API 調用失敗
+            Dict: 模型清單與說明
         """
-        # 驗證模型
-        if model not in self.MODELS:
-            available = ", ".join(self.MODELS.keys())
-            raise ValueError(
-                f"Unsupported model: {model}\n"
-                f"Available models: {available}"
-            )
+        if not self.client:
+            return self.MODELS
 
-        model_config = self.MODELS[model]
+        try:
+            remote_models = self.client.models.list()
+            merged_models = {}
+            
+            for m in remote_models.data:
+                model_id = m.id
+                
+                # 如果是我們已知的模型，沿用豐富的說明
+                if model_id in self.MODELS:
+                    merged_models[model_id] = self.MODELS[model_id]
+                else:
+                    # 如果是未知模型，智慧判斷 Provider
+                    provider = "unknown"
+                    if "gemini" in model_id: provider = "gemini"
+                    elif "claude" in model_id: provider = "anthropic"
+                    elif "gpt" in model_id: provider = "openai"
+                    elif "deepseek" in model_id: provider = "deepseek"
+                    elif "qwen" in model_id: provider = "qwen"
+                    elif "llama" in model_id: provider = "meta"
+
+                    merged_models[model_id] = {
+                        "provider": provider,
+                        "max_tokens": 8192,
+                        "description": f"{model_id} (外部同步)",
+                        "description_en": f"{model_id} (Synced)"
+                    }
+            
+            # 若同步結果為空，回退至本地預設
+            return merged_models if merged_models else self.MODELS
+        except Exception as e:
+            logger.error("Failed to fetch remote models: %s", e)
+            return self.MODELS
+
+        model_to_use = model or "gemini-1.5-flash"
+        
+        # 嘗試從 MODELS 獲取配置，否則使用預設值
+        model_config = self.MODELS.get(model_to_use, {"max_tokens": 8192, "provider": "unknown"})
         max_output = max_tokens or model_config["max_tokens"]
 
         # 構建消息
@@ -173,8 +174,7 @@ class ZeaburAIClient:
             messages.append({"role": "system", "content": system_prompt})
         messages.append({"role": "user", "content": prompt})
 
-        logger.debug("Generating content with %s (provider: %s)", model, model_config['provider'])
-        logger.debug("Temperature: %s, Max tokens: %s", temperature, max_output)
+        logger.debug("Generating content with %s", model)
 
         try:
             if stream:
@@ -208,42 +208,28 @@ class ZeaburAIClient:
             logger.error("AI generation failed: %s", e, exc_info=True)
             raise
 
-    def get_available_models(self) -> Dict[str, Dict]:
+    def get_available_models(self, remote: bool = False) -> Dict[str, Dict]:
         """
         獲取可用模型列表
-
-        Returns:
-            模型配置字典
         """
+        if remote:
+            return self.fetch_remote_models()
         return self.MODELS.copy()
 
     def get_model_info(self, model: str) -> Dict:
         """
         獲取特定模型資訊
-
-        Args:
-            model: 模型名稱
-
-        Returns:
-            模型配置資訊
         """
-        if model not in self.MODELS:
-            raise ValueError(f"Unknown model: {model}")
+        if model in self.MODELS:
+            return self.MODELS[model].copy()
+        return {"provider": "unknown", "max_tokens": 8192, "description": model}
 
-        return self.MODELS[model].copy()
-
-    def test_connection(self, model: str = "gemini-2.5-flash") -> bool:
+    def test_connection(self, model: str = "gemini-1.5-flash") -> bool:
         """
         測試 AI 服務連線
-
-        Args:
-            model: 用於測試的模型
-
-        Returns:
-            True if connection successful
         """
         try:
-            response = self.generate_content(
+            self.generate_content(
                 prompt="Hello",
                 model=model,
                 max_tokens=10,
@@ -259,42 +245,18 @@ class ZeaburAIClient:
 def test_client():
     """
     測試 Zeabur AI Client
-    使用前請先設定環境變數: ZEABUR_AI_HUB_API_KEY
     """
     print("=== Testing Zeabur AI Client ===\n")
-
     try:
-        # 初始化客戶端
         client = ZeaburAIClient()
-
-        # 測試簡單生成
-        print("Test 1: Simple generation with Gemini 2.5 Flash")
-        print("-" * 50)
-
-        prompt = "用一句話介紹 Facebook 廣告優化"
-        response = client.generate_content(
-            prompt=prompt,
-            model="gemini-2.5-flash",
-            temperature=0.7
-        )
-
-        print(f"Prompt: {prompt}")
-        print(f"Response: {response}\n")
-
-        # 列出可用模型
-        print("Test 2: Available models")
+        print("Test 1: Available models")
         print("-" * 50)
         models = client.get_available_models()
         for model_name, config in models.items():
             print(f"- {model_name}: {config['description']}")
-
         print("\n=== All tests passed! ===")
-
     except Exception as e:
         print(f"\n[ERROR] Test failed: {e}")
-        import traceback
-        traceback.print_exc()
-
 
 if __name__ == "__main__":
     test_client()

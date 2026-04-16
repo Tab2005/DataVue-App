@@ -85,6 +85,26 @@ class Settings:
     def is_production(self) -> bool:
         return self.ENV == "production"
     
+    # === LINE Messaging API ===
+    @property
+    def LINE_CHANNEL_ACCESS_TOKEN(self) -> Optional[str]:
+        return os.getenv("LINE_CHANNEL_ACCESS_TOKEN")
+    
+    @property
+    def LINE_CHANNEL_SECRET(self) -> Optional[str]:
+        return os.getenv("LINE_CHANNEL_SECRET")
+    
+    @property
+    def LINE_BOT_QR_URL(self) -> Optional[str]:
+        """LINE 官方帳號 QR Code 或加友連結"""
+        return os.getenv("LINE_BOT_QR_URL")
+    
+    # === URL 設定 ===
+    @property
+    def FRONTEND_URL(self) -> str:
+        """前端網址，用於發送通知中的連結"""
+        return os.getenv("FRONTEND_URL", "http://localhost:3000")
+    
     # === 驗證方法 ===
     def validate_required(self) -> list[str]:
         """驗證必要環境變數，回傳缺少的變數名稱列表"""

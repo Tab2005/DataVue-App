@@ -41,7 +41,16 @@ def _process_flat_row(row: dict, level: str, ad_meta_map: dict) -> dict:
             or row.get("ad_name") or "Unknown"
         )
 
-    meta = ad_meta_map.get(row.get("ad_id"), {}) if level == "ad" else {}
+    # 根據層級取得對應的元數據 (狀態與圖片)
+    lookup_id = row_id
+    if level == "ad":
+        lookup_id = row.get("ad_id")
+    elif level == "adset":
+        lookup_id = row.get("adset_id")
+    elif level == "campaign":
+        lookup_id = row.get("campaign_id")
+
+    meta = ad_meta_map.get(lookup_id, {})
 
     flat = {
         "id": row_id or row.get("campaign_id") or row.get("adset_id") or row.get("ad_id") or "total",
@@ -261,6 +270,20 @@ async def get_custom_report(
                 c_url = f"{BASE_URL}/{account_id}/ads"
                 c_params = {
                     "fields": "id,effective_status,creative{thumbnail_url,image_url}",
+                    "limit": 1000,
+                }
+                ad_meta_task = client.get(c_url, headers=headers, params=c_params)
+            elif level == "adset":
+                c_url = f"{BASE_URL}/{account_id}/adsets"
+                c_params = {
+                    "fields": "id,effective_status",
+                    "limit": 1000,
+                }
+                ad_meta_task = client.get(c_url, headers=headers, params=c_params)
+            elif level == "campaign":
+                c_url = f"{BASE_URL}/{account_id}/campaigns"
+                c_params = {
+                    "fields": "id,effective_status",
                     "limit": 1000,
                 }
                 ad_meta_task = client.get(c_url, headers=headers, params=c_params)
