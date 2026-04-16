@@ -412,16 +412,20 @@ const Sidebar = ({ user, language, isCollapsed, setIsCollapsed, isMobile, select
                 <div style={{
                     padding: '0 12px 12px 12px',
                     textAlign: 'center',
-                    marginTop: 'auto', // Pushes to bottom if flex container allows, but we have 'nav' with flex:1 so it pushes this down
-                    opacity: isCollapsed && !isMobile ? 0 : 0.5,
+                    marginTop: 'auto',
+                    opacity: isCollapsed && !isMobile ? 0 : 0.6,
                     transform: isCollapsed && !isMobile ? 'scale(0)' : 'scale(1)',
                     transition: 'all 0.3s ease',
                     height: isCollapsed && !isMobile ? '0' : 'auto',
-                    overflow: 'hidden',
-                    whiteSpace: 'nowrap'
+                    overflow: 'hidden'
                 }}>
-                    <div style={{ fontSize: '0.75rem', fontWeight: 'bold', letterSpacing: '1px' }}>FACEBOOK DB</div>
-                    <div style={{ fontSize: '0.6rem' }}>Analysis Dashboard</div>
+                    <div style={{ marginBottom: '8px', display: 'flex', justifyContent: 'center' }}>
+                        <FiFileText size={20} color="var(--accent-primary)" />
+                    </div>
+                    <div style={{ fontSize: '0.65rem', color: 'var(--text-tertiary)', lineHeight: '1.4' }}>
+                        © 2026 DataVue Analytics.<br />
+                        保留所有權利。
+                    </div>
                 </div>
 
                 {/* Collapse Toggle Button (Desktop Only) */}
