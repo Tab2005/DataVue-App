@@ -3,8 +3,8 @@ import apiClient from './apiClient';
 
 export const reportService = {
   /** 取得報表列表 */
-  list: (teamId) =>
-    apiClient.get('/api/reports', { params: teamId ? { team_id: teamId } : {} }),
+  list: (params = {}) =>
+    apiClient.get('/api/reports', { params }),
 
   /** 取得單筆報表 */
   get: (id) => apiClient.get(`/api/reports/${id}`),

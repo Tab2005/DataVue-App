@@ -324,28 +324,50 @@ async def get_shared_report(token: str, db: Session = Depends(get_db)):
 @router.get("", dependencies=[Depends(fb_ads_check)])
 async def list_reports(
     team_id: Optional[str] = None,
+    status: Optional[str] = "all",
+    search: Optional[str] = None,
+    page: int = 1,
+    page_size: int = 20,
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
-    """列出個人 + 團隊週報列表"""
-    reports_map = {}
-    # 個人
-    personal = db.query(WeeklyReport)\
-        .filter(WeeklyReport.user_id == current_user.id, WeeklyReport.team_id.is_(None))\
-        .order_by(WeeklyReport.created_at.desc()).all()
-    for r in personal:
-        reports_map[r.id] = _serialize(r)
-        
-    # 團隊
+    """列出週報列表（包含分頁與過濾）"""
+    query = db.query(WeeklyReport)
+    
+    # 基礎權限與歸屬篩選
     if team_id:
         _ensure_team_access(db, current_user, team_id)
-        team_reports = db.query(WeeklyReport)\
-            .filter(WeeklyReport.team_id == team_id)\
-            .order_by(WeeklyReport.created_at.desc()).all()
-        for r in team_reports:
-            reports_map[r.id] = _serialize(r)
-            
-    return list(reports_map.values())
+        query = query.filter(WeeklyReport.team_id == team_id)
+    else:
+        # 如果沒有指定團隊，預設看個人的
+        query = query.filter(WeeklyReport.user_id == current_user.id, WeeklyReport.team_id.is_(None))
+        
+    # 狀態過濾
+    if status and status != "all":
+        query = query.filter(WeeklyReport.status == status)
+        
+    # 搜尋過濾
+    if search:
+        query = query.filter(WeeklyReport.name.ilike(f"%{search}%"))
+        
+    # 計算總數 (分頁前)
+    total_count = query.count()
+    
+    # 排序與分頁
+    reports = query.order_by(WeeklyReport.created_at.desc())\
+        .offset((page - 1) * page_size)\
+        .limit(page_size)\
+        .all()
+        
+    total_pages = (total_count + page_size - 1) // page_size
+    
+    return {
+        "items": [_serialize(r) for r in reports],
+        "total_count": total_count,
+        "total_pages": total_pages,
+        "current_page": page,
+        "page_size": page_size
+    }
 
 
 @router.post("", dependencies=[Depends(fb_ads_check)])

@@ -16,15 +16,37 @@ const Reports = () => {
     const [error, setError] = useState(null);
     const [filter, setFilter] = useState('all'); // all, draft, generated, archived
     const [searchQuery, setSearchQuery] = useState('');
+    const [debouncedSearch, setDebouncedSearch] = useState('');
     const [viewMode, setViewMode] = useState('reports'); // reports, schedules
+    const [page, setPage] = useState(1);
+    const [totalPages, setTotalPages] = useState(1);
+    const [totalCount, setTotalCount] = useState(0);
 
     const t = (en, zh) => (language === 'zh' ? zh : en);
 
+    // Search Debounce
+    useEffect(() => {
+        const timer = setTimeout(() => {
+            setDebouncedSearch(searchQuery);
+            setPage(1);
+        }, 500);
+        return () => clearTimeout(timer);
+    }, [searchQuery]);
+
     const fetchReports = async () => {
+        if (viewMode !== 'reports') return;
         setLoading(true);
         try {
-            const res = await reportService.list(selectedTeamId);
-            setReports(res || []);
+            const res = await reportService.list({
+                team_id: selectedTeamId,
+                status: filter,
+                search: debouncedSearch,
+                page,
+                page_size: 12
+            });
+            setReports(res.items || []);
+            setTotalPages(res.total_pages || 1);
+            setTotalCount(res.total_count || 0);
             setError(null);
         } catch (err) {
             console.error('Failed to fetch reports:', err);
@@ -48,6 +70,9 @@ const Reports = () => {
 
     useEffect(() => {
         fetchReports();
+    }, [selectedTeamId, filter, debouncedSearch, page, viewMode]);
+
+    useEffect(() => {
         if (viewMode === 'schedules') fetchSchedules();
     }, [selectedTeamId, viewMode]);
 
@@ -80,11 +105,10 @@ const Reports = () => {
         }
     };
 
-    const filteredReports = reports.filter(r => {
-        const matchesFilter = filter === 'all' || r.status === filter;
-        const matchesSearch = r.name.toLowerCase().includes(searchQuery.toLowerCase());
-        return matchesFilter && matchesSearch;
-    });
+    const handleFilterChange = (newFilter) => {
+        setFilter(newFilter);
+        setPage(1); // Reset to first page
+    };
 
     if (loading && viewMode === 'reports') return <PageLoading />;
 
@@ -157,7 +181,7 @@ const Reports = () => {
                         </div>
                         <div style={{ display: 'flex', gap: '8px', padding: '4px', backgroundColor: 'var(--bg-secondary)', borderRadius: '10px' }}>
                             {['all', 'draft', 'generated', 'archived'].map(f => (
-                                <button key={f} onClick={() => setFilter(f)}
+                                <button key={f} onClick={() => handleFilterChange(f)}
                                     style={{
                                         padding: '8px 16px', borderRadius: '8px', border: 'none',
                                         backgroundColor: filter === f ? 'var(--bg-hover)' : 'transparent',
@@ -173,12 +197,68 @@ const Reports = () => {
                         </div>
                     </div>
 
-                    {filteredReports.length > 0 ? (
-                        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(320px, 1fr))', gap: '24px' }}>
-                            {filteredReports.map(report => (
-                                <ReportCard key={report.id} report={report} onDelete={handleDelete} language={language} />
-                            ))}
-                        </div>
+                    {reports.length > 0 ? (
+                        <>
+                            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(320px, 1fr))', gap: '24px' }}>
+                                {reports.map(report => (
+                                    <ReportCard key={report.id} report={report} onDelete={handleDelete} language={language} />
+                                ))}
+                            </div>
+
+                            {/* Pagination Controls */}
+                            {totalPages > 1 && (
+                                <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', gap: '8px', marginTop: '40px', paddingBottom: '20px' }}>
+                                    <button 
+                                        disabled={page === 1}
+                                        onClick={() => { setPage(p => p - 1); window.scrollTo({ top: 0, behavior: 'smooth' }); }}
+                                        style={{ 
+                                            padding: '8px 12px', borderRadius: '8px', border: '1px solid var(--glass-border)',
+                                            backgroundColor: 'var(--bg-secondary)', color: page === 1 ? 'var(--text-tertiary)' : 'var(--text-primary)',
+                                            cursor: page === 1 ? 'not-allowed' : 'pointer'
+                                        }}
+                                    >
+                                        {t('Prev', '上一頁')}
+                                    </button>
+                                    
+                                    <div style={{ display: 'flex', gap: '4px' }}>
+                                        {[...Array(totalPages)].map((_, i) => {
+                                            const p = i + 1;
+                                            // 簡單的摘要邏輯：只顯示前後兩頁
+                                            if (totalPages > 7 && Math.abs(p - page) > 2 && p !== 1 && p !== totalPages) {
+                                                if (Math.abs(p - page) === 3) return <span key={p} style={{ color: 'var(--text-tertiary)', padding: '0 4px' }}>...</span>;
+                                                return null;
+                                            }
+                                            return (
+                                                <button 
+                                                    key={p}
+                                                    onClick={() => { setPage(p); window.scrollTo({ top: 0, behavior: 'smooth' }); }}
+                                                    style={{ 
+                                                        width: '36px', height: '36px', borderRadius: '8px', border: 'none',
+                                                        backgroundColor: page === p ? 'var(--accent-primary)' : 'var(--bg-secondary)',
+                                                        color: page === p ? 'white' : 'var(--text-secondary)',
+                                                        cursor: page === p ? 'not-allowed' : 'pointer', fontWeight: 'bold'
+                                                    }}
+                                                >
+                                                    {p}
+                                                </button>
+                                            );
+                                        })}
+                                    </div>
+
+                                    <button 
+                                        disabled={page === totalPages}
+                                        onClick={() => { setPage(p => p + 1); window.scrollTo({ top: 0, behavior: 'smooth' }); }}
+                                        style={{ 
+                                            padding: '8px 12px', borderRadius: '8px', border: '1px solid var(--glass-border)',
+                                            backgroundColor: 'var(--bg-secondary)', color: page === totalPages ? 'var(--text-tertiary)' : 'var(--text-primary)',
+                                            cursor: page === totalPages ? 'not-allowed' : 'pointer'
+                                        }}
+                                    >
+                                        {t('Next', '下一頁')}
+                                    </button>
+                                </div>
+                            )}
+                        </>
                     ) : (
                         <div style={{ textAlign: 'center', padding: '100px', backgroundColor: 'var(--bg-secondary)', borderRadius: '20px', border: '2px dashed var(--glass-border)' }}>
                             <FiFileText size={64} color="var(--glass-border)" style={{ marginBottom: '20px' }} />
