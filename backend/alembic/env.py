@@ -3,9 +3,11 @@ from sqlalchemy import engine_from_config
 from sqlalchemy import pool
 import os
 import sys
+from dotenv import load_dotenv
 
 # Add parent directory to path so we can import from database
 sys.path.append(os.getcwd())
+load_dotenv()
 
 from alembic import context
 # 使用新的 database 套件（原 database.py 已重構為 database/ 套件）
