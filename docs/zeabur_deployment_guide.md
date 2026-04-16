@@ -46,6 +46,7 @@
 | `LINE_CHANNEL_ACCESS_TOKEN` | LINE 權杖 | LINE Developers (發送通知用) |
 | `ALLOWED_ORIGINS` | 允許的前端來源 | `https://your-app.zeabur.app` |
 | `FRONTEND_URL` | 前端連結網址 | 用於週報與 LINE 訊息中的回連導向 |
+| `LINE_BOT_QR_URL` | LINE 官方帳號 QR Code 連結 | 從 LINE 後台取得的加友連結 (如 `https://lin.ee/xxx`) |
 | `ENV` | 執行環境 | `production` |
 
 ---
