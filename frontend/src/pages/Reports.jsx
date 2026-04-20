@@ -330,7 +330,13 @@ const Reports = () => {
                                         <div style={{ backgroundColor: 'rgba(255,255,255,0.03)', padding: '6px 12px', borderRadius: '6px', color: 'var(--text-secondary)' }}>
                                             <FiCalendar style={{ marginRight: '6px', verticalAlign: 'middle' }} />
                                             {s.frequency === 'daily' && t('Daily', '每日')}
-                                            {s.frequency === 'weekly' && `${t('Weekly', '每週')} (${t('Mon', '週一')})`}
+                                            {s.frequency === 'weekly' && `${t('Weekly', '每週')} (${(() => {
+                                                const days = {
+                                                    '1': t('Mon', '週一'), '2': t('Tue', '週二'), '3': t('Wed', '週三'),
+                                                    '4': t('Thu', '週四'), '5': t('Fri', '週五'), '6': t('Sat', '週六'), '0': t('Sun', '週日')
+                                                };
+                                                return days[s.day_of_week] || t('Mon', '週一');
+                                            })()})`}
                                             {s.frequency === 'monthly' && `${t('Monthly', '每月')} (${s.day_of_month})`}
                                             {` @ ${s.time_of_day}`}
                                         </div>

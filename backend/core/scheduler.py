@@ -82,8 +82,18 @@ def _build_trigger(schedule: ReportSchedule) -> CronTrigger | None:
     if schedule.frequency == "daily":
         return CronTrigger(hour=hour, minute=minute, timezone=SCHEDULER_TIMEZONE)
     if schedule.frequency == "weekly":
+        # 前端傳入 0=週日, 1=週一... 6=週六
+        # APScheduler 期待 0=週一, 1=週二... 6=週日
+        # 轉換公式: (int - 1) % 7
+        try:
+            raw_day = int(schedule.day_of_week or "1")
+            mapped_day = (raw_day - 1) % 7
+        except (ValueError, TypeError):
+            mapped_day = 0  # 預設週一
+            logger.warning(f"⏰ [Scheduler] Invalid day_of_week '{schedule.day_of_week}', fallback to Mon")
+
         return CronTrigger(
-            day_of_week=schedule.day_of_week or "0",
+            day_of_week=str(mapped_day),
             hour=hour,
             minute=minute,
             timezone=SCHEDULER_TIMEZONE,

@@ -12,6 +12,7 @@ __pycache__/
 .vscode/settings.json
 *.swp
 *.swo
+scratch/
 
 # 敏感設定檔（絕對不能提交）
 .env
