@@ -12,6 +12,7 @@ import { ProtectedModule, useTokenRefresh } from './hooks';
 import { getAuthToken, isTokenExpired } from './utils/auth';
 
 // Lazy-loaded pages (loaded on demand)
+const LandingPage = lazy(() => import('./pages/LandingPage'));
 const Dashboard = lazy(() => import('./pages/Dashboard'));
 const Analytics = lazy(() => import('./pages/Analytics'));
 const TeamSettings = lazy(() => import('./pages/TeamSettings'));
@@ -50,11 +51,12 @@ function AppInner() {
   return (
     <Suspense fallback={<PageLoading />}>
       <Routes>
+              <Route path="/" element={<LandingPage />} />
               <Route path="/login" element={<Login />} />
               <Route path="/invite/:code" element={<InvitePage />} />
               <Route path="/reports/share/:token" element={<SharedReport />} />
               <Route element={<ProtectedRoute><Layout /></ProtectedRoute>}>
-                <Route path="/" element={
+                <Route path="/dashboard" element={
                   <ProtectedModule module="fb_ads">
                     <ErrorBoundary>
                       <Dashboard />
