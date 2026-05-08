@@ -56,6 +56,7 @@ export const GA4_METRIC_GROUPS = [
             { key: 'newUsers', label_zh: '新使用者', label_en: 'New Users', format: 'number' },
             { key: 'sessions', label_zh: '工作階段', label_en: 'Sessions', format: 'number' },
             { key: 'screenPageViews', label_zh: '頁面瀏覽次數', label_en: 'Pageviews', format: 'number' },
+            { key: 'screenPageViewsPerSession', label_zh: '每工作階段瀏覽頁數', label_en: 'Pageviews per Session', format: 'decimal' },
             { key: 'sessionsPerUser', label_zh: '每人工作階段數', label_en: 'Sessions per User', format: 'decimal' },
         ]
     },
@@ -67,6 +68,7 @@ export const GA4_METRIC_GROUPS = [
         module: 'ga4',
         metrics: [
             { key: 'engagementRate', label_zh: '參與率', label_en: 'Engagement Rate', format: 'percent' },
+            { key: 'averageEngagementTime', label_zh: '平均參與時間', label_en: 'Avg. Engagement Time', format: 'duration' },
             { key: 'averageSessionDuration', label_zh: '平均工作階段時間', label_en: 'Avg. Session Duration', format: 'duration' },
             { key: 'bounceRate', label_zh: '跳出率', label_en: 'Bounce Rate', format: 'percent', isInverse: true },
             { key: 'engagedSessions', label_zh: '參與工作階段', label_en: 'Engaged Sessions', format: 'number' },

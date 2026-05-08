@@ -425,9 +425,19 @@ class GA4Service:
                     for i, metric in enumerate(metrics):
                         value = row.metric_values[i].value
                         # Convert string values to appropriate types
-                        if metric in ["activeUsers", "totalUsers", "newUsers", "sessions", "screenPageViews", "engagedSessions", "addToCarts", "ecommercePurchases", "itemsViewed", "itemsAddedToCart", "itemsPurchased", "totalPurchasers", "checkouts", "firstTimePurchasers"]:
+                        if metric in [
+                            "activeUsers", "totalUsers", "newUsers", "sessions", "screenPageViews", 
+                            "engagedSessions", "addToCarts", "ecommercePurchases", "itemsViewed", 
+                            "itemsAddedToCart", "itemsPurchased", "totalPurchasers", "checkouts", 
+                            "firstTimePurchasers", "conversions", "eventCount"
+                        ]:
                             row_data[metric] = int(value)
-                        elif metric in ["averageSessionDuration", "bounceRate", "engagementRate", "purchaseRevenue", "itemRevenue"]:
+                        elif metric in [
+                            "averageSessionDuration", "bounceRate", "engagementRate", 
+                            "purchaseRevenue", "itemRevenue", "totalRevenue",
+                            "sessionConversionRate", "userConversionRate",
+                            "averageEngagementTime", "screenPageViewsPerSession", "sessionsPerUser"
+                        ]:
                             row_data[metric] = float(value)
                         else:
                             row_data[metric] = value

@@ -102,32 +102,24 @@ function AppInner() {
                   </ProtectedModule>
                 } />
                 <Route path="/reports" element={
-                  <ProtectedModule module="fb_ads">
-                    <ErrorBoundary>
-                      <Reports />
-                    </ErrorBoundary>
-                  </ProtectedModule>
+                  <ErrorBoundary>
+                    <Reports />
+                  </ErrorBoundary>
                 } />
                 <Route path="/reports/new" element={
-                  <ProtectedModule module="fb_ads">
-                    <ErrorBoundary>
-                      <ReportViewer mode="create" />
-                    </ErrorBoundary>
-                  </ProtectedModule>
+                  <ErrorBoundary>
+                    <ReportViewer mode="create" />
+                  </ErrorBoundary>
                 } />
                 <Route path="/reports/schedules/edit/:id" element={
-                  <ProtectedModule module="fb_ads">
-                    <ErrorBoundary>
-                      <ReportViewer mode="edit-schedule" />
-                    </ErrorBoundary>
-                  </ProtectedModule>
+                  <ErrorBoundary>
+                    <ReportViewer mode="edit-schedule" />
+                  </ErrorBoundary>
                 } />
                 <Route path="/reports/:id" element={
-                  <ProtectedModule module="fb_ads">
-                    <ErrorBoundary>
-                      <ReportViewer mode="view" />
-                    </ErrorBoundary>
-                  </ProtectedModule>
+                  <ErrorBoundary>
+                    <ReportViewer mode="view" />
+                  </ErrorBoundary>
                 } />
               </Route>
             </Routes>
