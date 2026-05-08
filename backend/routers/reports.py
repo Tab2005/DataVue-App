@@ -395,32 +395,34 @@ async def create_report(
     db: Session = Depends(get_db)
 ):
     """建立新週報（草稿狀態）"""
-    _ensure_team_access(db, current_user, payload.team_id)
+    try:
+        _ensure_team_access(db, current_user, payload.team_id)
 
-    report = WeeklyReport(
-        id=str(uuid.uuid4()),
-        name=payload.name,
-        module_type=payload.module_type or "fb_ads",
-        description=payload.description,
-        ad_account_id=payload.ad_account_id,
-        ad_account_name=payload.ad_account_name,
-        date_since=payload.date_since,
-        date_until=payload.date_until,
-        date_label=payload.date_label,
-        breakdown=payload.breakdown or "campaign",
-        selected_metrics=json.dumps(payload.selected_metrics),
-        status="draft",
-        share_token=str(uuid.uuid4()),
-        user_id=current_user.id,
-        team_id=payload.team_id,
-        created_by=current_user.id,
-        created_at=datetime.now(timezone.utc),
-        updated_at=datetime.now(timezone.utc),
-    )
-    db.add(report)
-    db.commit()
-    db.refresh(report)
-    return _serialize(report)
+        report = WeeklyReport(
+            id=str(uuid.uuid4()),
+            name=payload.name,
+            module_type=payload.module_type or "fb_ads",
+            description=payload.description,
+            ad_account_id=payload.ad_account_id,
+            ad_account_name=payload.ad_account_name,
+            date_since=payload.date_since,
+            date_until=payload.date_until,
+            date_label=payload.date_label,
+            breakdown=payload.breakdown or "campaign",
+            selected_metrics=json.dumps(payload.selected_metrics),
+            status="draft",
+            share_token=str(uuid.uuid4()),
+            user_id=current_user.id,
+            team_id=payload.team_id,
+            created_by=current_user.id
+        )
+        db.add(report)
+        db.commit()
+        db.refresh(report)
+        return _serialize(report)
+    except Exception as e:
+        logger.error(f"❌ [API] Create report failed: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=f"Create report failed: {str(e)}")
 
 
 @router.get("/{report_id}", dependencies=[Depends(reports_check)])
