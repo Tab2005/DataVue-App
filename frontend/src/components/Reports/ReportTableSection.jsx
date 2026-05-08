@@ -12,9 +12,14 @@ const ReportTableSection = ({ data, columns, language, breakdown }) => {
       case 'campaign': return t('Campaign Name', '廣告活動名稱');
       case 'adset': return t('Ad Set Name', '廣告組合名稱');
       case 'ad': return t('Ad Name', '廣告名稱');
+      case 'sessionSourceMedium': return t('Source / Medium', '來源 / 媒介');
+      case 'pagePath': return t('Page Path', '網頁路徑');
+      case 'country': return t('Country', '國家');
       default: return t('Name', '名稱');
     }
   };
+
+  const nameKey = ['campaign', 'adset', 'ad'].includes(breakdown) ? 'name' : breakdown || 'name';
 
   return (
     <div style={{ marginBottom: '32px' }}>
@@ -30,7 +35,7 @@ const ReportTableSection = ({ data, columns, language, breakdown }) => {
         paddingLeft: '12px',
         fontWeight: 600
       }}>
-        {t('III. Detailed Performance Breakdown', '三、 廣告明細成效圖表')}
+        {t('III. Detailed Performance Breakdown', '三、 詳細成效數據明細')}
       </h2>
       <div style={{
         backgroundColor: 'var(--bg-secondary)',
@@ -61,7 +66,7 @@ const ReportTableSection = ({ data, columns, language, breakdown }) => {
                   rowIndex={idx}
                   showCheckbox={false}
                   language={language}
-                  nameKey="name"
+                  nameKey={nameKey}
                 />
               ))}
             </tbody>

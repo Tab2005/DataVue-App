@@ -375,7 +375,11 @@ class GA4Service:
 
                     # Add dimension values
                     for i, dimension in enumerate(dimensions):
-                        row_data[dimension] = row.dimension_values[i].value
+                        value = row.dimension_values[i].value
+                        # 特殊處理日期格式：GA4 返回 YYYYMMDD -> 轉換為 YYYY-MM-DD
+                        if dimension == "date" and len(value) == 8 and value.isdigit():
+                            value = f"{value[:4]}-{value[4:6]}-{value[6:]}"
+                        row_data[dimension] = value
 
                     # Add metric values
                     for i, metric in enumerate(metrics):
@@ -518,3 +522,60 @@ class GA4Service:
         except Exception as e:
             print(f"[GA4] Error getting analytics: {e}")
             return None, str(e)
+
+    @staticmethod
+    async def get_weekly_report_data(
+        user: User,
+        property_id: str,
+        since: str,
+        until: str,
+        selected_metrics: List[str],
+        db: Session = None
+    ) -> Dict[str, Any]:
+        """
+        取得週報所需的 GA4 數據格式 (Summary + Comparison + Trends)
+        """
+        # 推算前一期日期 (Comparison Period)
+        since_dt = datetime.strptime(since, '%Y-%m-%d')
+        until_dt = datetime.strptime(until, '%Y-%m-%d')
+        duration = (until_dt - since_dt).days + 1
+        prev_until = (since_dt - timedelta(days=1)).strftime('%Y-%m-%d')
+        prev_since = (since_dt - timedelta(days=duration)).strftime('%Y-%m-%d')
+
+        # 1. 抓取當前總計 (Summary) - 不帶 dimension
+        current_summary_data, err = GA4Service.get_analytics(
+            user=user, property_id=property_id, 
+            start_date=since, end_date=until,
+            metrics=selected_metrics, dimensions=[], db=db
+        )
+        if err: raise Exception(f"GA4 Summary Error: {err}")
+
+        # 2. 抓取前期總計 (Prev Summary)
+        prev_summary_data, err = GA4Service.get_analytics(
+            user=user, property_id=property_id, 
+            start_date=prev_since, end_date=prev_until,
+            metrics=selected_metrics, dimensions=[], db=db
+        )
+        # 前期資料若抓取失敗，給予空物件但不報錯
+        prev_summary = prev_summary_data["rows"][0] if prev_summary_data and prev_summary_data.get("rows") else {}
+
+        # 3. 抓取趨勢資料 (Trends) - 帶 date dimension
+        trend_data_raw, err = GA4Service.get_analytics(
+            user=user, property_id=property_id, 
+            start_date=since, end_date=until,
+            metrics=selected_metrics, dimensions=["date"], db=db
+        )
+
+        # 4. 抓取表格明細資料 (Table Data) - 以 sessionSourceMedium 為維度 (常用於網站週報)
+        table_data_raw, err = GA4Service.get_analytics(
+            user=user, property_id=property_id, 
+            start_date=since, end_date=until,
+            metrics=selected_metrics, dimensions=["sessionSourceMedium"], db=db
+        )
+
+        return {
+            "summary": current_summary_data["rows"][0] if current_summary_data["rows"] else {},
+            "prev_summary": prev_summary,
+            "trends": trend_data_raw["rows"] if trend_data_raw else [],
+            "table_data": table_data_raw["rows"] if table_data_raw else []
+        }

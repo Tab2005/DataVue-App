@@ -42,12 +42,60 @@ export const VIEW_PRESETS = {
 
 // Unified Metric Groups Config
 // Used for BOTH the Metric Selector (Checkbox) and the KPI Cards/Table Columns
+
+export const GA4_METRIC_GROUPS = [
+    {
+        id: 'ga4_traffic',
+        label_zh: 'GA4 流量指標',
+        label_en: 'GA4 Traffic',
+        color: '#10b981', // Emerald
+        module: 'ga4',
+        metrics: [
+            { key: 'activeUsers', label_zh: '活躍使用者', label_en: 'Active Users', format: 'number' },
+            { key: 'totalUsers', label_zh: '總使用者', label_en: 'Total Users', format: 'number' },
+            { key: 'newUsers', label_zh: '新使用者', label_en: 'New Users', format: 'number' },
+            { key: 'sessions', label_zh: '工作階段', label_en: 'Sessions', format: 'number' },
+            { key: 'screenPageViews', label_zh: '頁面瀏覽次數', label_en: 'Pageviews', format: 'number' },
+            { key: 'sessionsPerUser', label_zh: '每人工作階段數', label_en: 'Sessions per User', format: 'decimal' },
+        ]
+    },
+    {
+        id: 'ga4_behavior',
+        label_zh: 'GA4 行為與參與',
+        label_en: 'GA4 Behavior',
+        color: '#3b82f6', // Blue
+        module: 'ga4',
+        metrics: [
+            { key: 'engagementRate', label_zh: '參與率', label_en: 'Engagement Rate', format: 'percent' },
+            { key: 'averageSessionDuration', label_zh: '平均工作階段時間', label_en: 'Avg. Session Duration', format: 'duration' },
+            { key: 'bounceRate', label_zh: '跳出率', label_en: 'Bounce Rate', format: 'percent', isInverse: true },
+            { key: 'engagedSessions', label_zh: '參與工作階段', label_en: 'Engaged Sessions', format: 'number' },
+            { key: 'eventCount', label_zh: '事件數', label_en: 'Event Count', format: 'number' },
+        ]
+    },
+    {
+        id: 'ga4_conversion',
+        label_zh: 'GA4 轉換與營收',
+        label_en: 'GA4 Conversions',
+        color: '#f59e0b', // Amber
+        module: 'ga4',
+        metrics: [
+            { key: 'conversions', label_zh: '轉換數', label_en: 'Conversions', format: 'number' },
+            { key: 'totalRevenue', label_zh: '總收益', label_en: 'Total Revenue', format: 'currency' },
+            { key: 'purchaseRevenue', label_zh: '購買收益', label_en: 'Purchase Revenue', format: 'currency' },
+            { key: 'sessionConversionRate', label_zh: '工作階段轉換率', label_en: 'Session CV Rate', format: 'percent' },
+            { key: 'userConversionRate', label_zh: '使用者轉換率', label_en: 'User CV Rate', format: 'percent' },
+        ]
+    }
+];
+
 export const METRIC_GROUPS = [
     {
         id: 'general',
         label_zh: '通用指標',
         label_en: 'General Metrics',
         color: '#3b82f6', // Blue
+        module: 'fb_ads',
         metrics: [
             { key: 'spend', label_zh: '花費金額', label_en: 'Spend', format: 'currency', isInverse: true },
             { key: 'reach', label_zh: '觸及人數', label_en: 'Reach', format: 'number' },
@@ -63,6 +111,7 @@ export const METRIC_GROUPS = [
         label_zh: '電商指標',
         label_en: 'E-commerce Metrics',
         color: '#8b5cf6', // Violet
+        module: 'fb_ads',
         metrics: [
             { key: 'roas', label_zh: '購買 ROAS', label_en: 'ROAS', format: 'decimal' },
             { key: 'purchases', label_zh: '購買次數', label_en: 'Purchases', format: 'number' },
@@ -80,6 +129,7 @@ export const METRIC_GROUPS = [
         label_zh: '漏斗指標',
         label_en: 'Funnel Metrics',
         color: '#f59e0b', // Amber
+        module: 'fb_ads',
         metrics: [
             { key: 'view_to_cart', label_zh: '查看後購物車加入率', label_en: 'View to Cart Rate', format: 'percent' },
             { key: 'cvr', label_zh: '購買轉換率', label_en: 'Conversion Rate', format: 'percent' },
@@ -93,6 +143,7 @@ export const METRIC_GROUPS = [
         label_zh: '互動指標',
         label_en: 'Engagement',
         color: '#ec4899', // Pink
+        module: 'fb_ads',
         metrics: [
             { key: 'post_comments', label_zh: '貼文留言', label_en: 'Post Comments', format: 'number' },
             { key: 'post_saves', label_zh: '貼文儲存', label_en: 'Post Saves', format: 'number' },
@@ -107,6 +158,7 @@ export const METRIC_GROUPS = [
         label_zh: '品質診斷',
         label_en: 'Quality Diagnosis',
         color: '#10b981', // Emerald
+        module: 'fb_ads',
         metrics: [
             { key: 'quality_ranking', label_zh: '品質排名', label_en: 'Quality Ranking', format: 'string' },
             { key: 'conversion_rate_ranking', label_zh: '轉換率排名', label_en: 'Conversion Rate Ranking', format: 'string' },
@@ -118,6 +170,7 @@ export const METRIC_GROUPS = [
         label_zh: '協作指標 (CPAS)',
         label_en: 'Collaborative Ads',
         color: '#06b6d4', // Cyan
+        module: 'fb_ads',
         metrics: [
             { key: 'shared_purchases', label_zh: '共享購買次數', label_en: 'Shared Purch.', format: 'number' },
             { key: 'shared_purchase_value', label_zh: '共享購買值', label_en: 'Shared Value', format: 'currency' },
@@ -126,8 +179,16 @@ export const METRIC_GROUPS = [
             { key: 'shared_atc_value', label_zh: '共享加購值', label_en: 'Shared ATC Val', format: 'currency' },
             { key: 'shared_view_content', label_zh: '共享瀏覽次數', label_en: 'Shared Views', format: 'number' },
         ]
-    }
+    },
+    ...GA4_METRIC_GROUPS
 ];
+
+/**
+ * Get all metric groups for a specific module
+ */
+export const getGroupsByModule = (module = 'fb_ads') => {
+    return METRIC_GROUPS.filter(g => g.module === module);
+};
 
 /**
  * Get all metric keys from a specific group

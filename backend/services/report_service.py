@@ -22,10 +22,27 @@ async def generate_report_content(
     selected_metrics: list,
     google_id: str,
     team_id: str | None = None,
+    module_type: str = "fb_ads",
 ):
     """
-    核心報表數據產生成邏輯（原本在 routers/reports.py 中的 generate_report）
+    核心報表數據產生成邏輯
     """
+    if module_type == "ga4":
+        from ga4_service import GA4Service
+        user = db.query(User).filter(User.google_id == google_id).first()
+        if not user:
+            raise Exception("User not found for GA4 authentication")
+            
+        return await GA4Service.get_weekly_report_data(
+            user=user,
+            property_id=ad_account_id,
+            since=since,
+            until=until,
+            selected_metrics=selected_metrics,
+            db=db
+        )
+
+    # --- 以下為 FB 廣告邏輯 ---
     custom_fields = ",".join(selected_metrics)
 
     # 推算前一期日期 (Comparison Period)
@@ -145,6 +162,7 @@ async def trigger_manual_generate(db: Session, report_id: str, google_id: str):
         selected_metrics=metrics_list,
         google_id=google_id,
         team_id=report.team_id,
+        module_type=getattr(report, 'module_type', 'fb_ads')
     )
 
     report.report_data = json.dumps(structured_data)
