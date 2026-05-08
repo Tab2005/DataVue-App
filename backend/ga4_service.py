@@ -327,6 +327,46 @@ class GA4Service:
                     "bounceRate"        # 跳出率
                 ]
 
+            # GA4 API Limit: Max 10 metrics per request.
+            # If we have more than 10, we split and merge.
+            if len(metrics) > 10:
+                print(f"[GA4] Large request detected ({len(metrics)} metrics). Splitting into multiple requests...")
+                
+                # Split metrics into chunks of 10
+                metric_chunks = [metrics[i:i + 10] for i in range(0, len(metrics), 10)]
+                combined_results = None
+                
+                for chunk in metric_chunks:
+                    chunk_result, chunk_err = GA4Service.get_analytics(
+                        user=user,
+                        property_id=property_id,
+                        start_date=start_date,
+                        end_date=end_date,
+                        metrics=chunk,
+                        dimensions=dimensions,
+                        limit=limit,
+                        offset=offset,
+                        db=db
+                    )
+                    
+                    if chunk_err:
+                        return None, chunk_err
+                        
+                    if combined_results is None:
+                        combined_results = chunk_result
+                    else:
+                        # Merge rows based on dimensions
+                        # Assume rows are in the same order if limit/offset/dimensions are the same
+                        # For extra safety, we could use dimension values as keys, but GA4 returns ordered results.
+                        for i, row in enumerate(chunk_result.get("rows", [])):
+                            if i < len(combined_results["rows"]):
+                                combined_results["rows"][i].update(row)
+                        
+                        # Update metrics list in metadata
+                        combined_results["metrics"].extend(chunk)
+                
+                return combined_results, None
+
             # 允許空的 dimensions 來獲取去重的總數
             # 如果 dimensions 是 None，使用預設值；如果是空列表或空字串，則不使用 dimension
             use_dimensions = True
