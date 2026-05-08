@@ -75,7 +75,7 @@ export const GA4_METRIC_GROUPS = [
     },
     {
         id: 'ga4_conversion',
-        label_zh: 'GA4 轉換與營收',
+        label_zh: 'GA4 轉換與電商',
         label_en: 'GA4 Conversions',
         color: '#f59e0b', // Amber
         module: 'ga4',
@@ -83,6 +83,10 @@ export const GA4_METRIC_GROUPS = [
             { key: 'conversions', label_zh: '轉換數', label_en: 'Conversions', format: 'number' },
             { key: 'totalRevenue', label_zh: '總收益', label_en: 'Total Revenue', format: 'currency' },
             { key: 'purchaseRevenue', label_zh: '購買收益', label_en: 'Purchase Revenue', format: 'currency' },
+            { key: 'addToCarts', label_zh: '加入購物車次數', label_en: 'Add to Carts', format: 'number' },
+            { key: 'checkouts', label_zh: '開始結帳次數', label_en: 'Checkouts', format: 'number' },
+            { key: 'ecommercePurchases', label_zh: '電商購買次數', label_en: 'E-commerce Purchases', format: 'number' },
+            { key: 'firstPurchasers', label_zh: '首次購買者人數', label_en: 'First Purchasers', format: 'number' },
             { key: 'sessionConversionRate', label_zh: '工作階段轉換率', label_en: 'Session CV Rate', format: 'percent' },
             { key: 'userConversionRate', label_zh: '使用者轉換率', label_en: 'User CV Rate', format: 'percent' },
         ]
