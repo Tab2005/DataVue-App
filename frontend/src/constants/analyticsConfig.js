@@ -86,7 +86,7 @@ export const GA4_METRIC_GROUPS = [
             { key: 'addToCarts', label_zh: '加入購物車次數', label_en: 'Add to Carts', format: 'number' },
             { key: 'checkouts', label_zh: '開始結帳次數', label_en: 'Checkouts', format: 'number' },
             { key: 'ecommercePurchases', label_zh: '電商購買次數', label_en: 'E-commerce Purchases', format: 'number' },
-            { key: 'firstPurchasers', label_zh: '首次購買者人數', label_en: 'First Purchasers', format: 'number' },
+            { key: 'firstTimePurchasers', label_zh: '首次購買者人數', label_en: 'First Purchasers', format: 'number' },
             { key: 'sessionConversionRate', label_zh: '工作階段轉換率', label_en: 'Session CV Rate', format: 'percent' },
             { key: 'userConversionRate', label_zh: '使用者轉換率', label_en: 'User CV Rate', format: 'percent' },
         ]
