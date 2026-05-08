@@ -25,8 +25,12 @@ export const aiService = {
      * @param {string} reportType - "ad_analysis" or "weekly_summary"
      * @param {string|null} apiKey - Optional BYOK
      * @param {function} onChunk - Callback for streaming chunks
+     * @param {string|null} provider - AI Provider
+     * @param {string|null} model - AI Model
+     * @param {string} period - "daily", "weekly", "monthly"
+     * @param {string} moduleType - "fb_ads", "ga4", "gsc"
      */
-    analyzeDataStream: async (data, context, reportType = 'ad_analysis', apiKey = null, onChunk, provider = null, model = null, period = 'weekly') => {
+    analyzeDataStream: async (data, context, reportType = 'ad_analysis', apiKey = null, onChunk, provider = null, model = null, period = 'weekly', moduleType = 'fb_ads') => {
         try {
             const token = getAuthToken();
             const res = await fetch(`${API_URL}/api/ai/analyze`, {
@@ -42,7 +46,8 @@ export const aiService = {
                     provider,
                     model,
                     report_type: reportType,
-                    period
+                    period,
+                    module_type: moduleType
                 })
             });
 
