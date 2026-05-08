@@ -21,6 +21,7 @@ class AnalysisRequest(BaseModel):
     model: Optional[str] = "gemini-1.5-flash"
     report_type: Optional[str] = "ad_analysis"  # 'ad_analysis' or 'weekly_summary'
     period: Optional[str] = "weekly" # 'daily', 'weekly', 'monthly'
+    module_type: Optional[str] = "fb_ads" # 'fb_ads', 'ga4', 'gsc'
 
 
 class TestConnectionRequest(BaseModel):
@@ -128,7 +129,8 @@ async def analyze_data(
             provider=provider,
             model=model,
             report_type=request.report_type,
-            period=request.period
+            period=request.period,
+            module_type=request.module_type
         ),
         media_type="text/plain"
     )

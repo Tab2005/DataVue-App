@@ -153,7 +153,8 @@ const ReportViewer = ({ mode = 'view' }) => {
                  },
                  null, // provider
                  null, // model
-                 period
+                 period,
+                 report.module_type
              );
              
              // Final save to backend

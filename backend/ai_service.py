@@ -165,14 +165,15 @@ class AIService:
         provider: str = "zeabur",
         model: str = "gemini-1.5-flash",
         report_type: str = "ad_analysis",
-        period: str = "weekly"
+        period: str = "weekly",
+        module_type: str = "fb_ads"
     ) -> Generator[str, None, None]:
         """
         Analyzes the provided data using the LLM.
         Returns a generator for streaming response.
         """
         
-        # Build system prompt based on report type and period
+        # Build system prompt based on report type, period and module type
         if report_type == "weekly_summary":
             period_labels = {
                 "daily": "日報 (Daily)",
@@ -181,28 +182,47 @@ class AIService:
             }
             label = period_labels.get(period, "績效")
             
-            period_focus = ""
-            if period == "daily":
-                period_focus = "請特別關注昨日與前日的數據波動、預算消耗情況，以及是否需要立即進行開關調整或排除異常。"
-            elif period == "weekly":
-                period_focus = "請著重於本週與上週的趨勢對比、廣告組合（Ad Sets）的表現差異，以及下一階段的預算分配建議。"
-            elif period == "monthly":
-                period_focus = "請從戰略角度分析本月整體 ROI、不同廣告創意（Creative）的長期表現趨勢，並提供下個月的整體投放策略建議。"
+            # --- Module-Specific Focus ---
+            if module_type == "ga4":
+                # GA4 Prompt
+                system_prompt = f"""
+                您是一位資深的 網站分析師 與 增長顧問，正在協助客戶撰寫一份 GA4 {label}分析報告。
+                您的目標是根據提供的數據，產出一份專業且具備深度洞察的摘要。
+                
+                報告結構：
+                1. **數據總覽 ({label}核心指標)**：總結網站流量（使用者、工作階段）與品質指標（參與率、平均參與時間），並與前期對比。
+                2. **流量來源分析**：識別表現最優異或成長最顯著的流量管道。
+                3. **轉換與收益分析**：分析轉換數、轉換率與收益趨勢。
+                4. **優化行動建議**：提供 2-3 個針對網站內容優化、流量獲取策略或轉換漏斗改善的具體建議。
 
-            system_prompt = f"""
-            您是一位資深的 Facebook 廣告顧問，正在協助客戶撰寫一份{label}分析報告。
-            您的目標是根據提供的數據，產出一份專業且具備深度洞察的摘要。
-            
-            報告結構：
-            1. **執行摘要 ({label}總結)**：用 2-3 句話總結整體表現（花費、ROAS、成交數），並嘗試與前期對比。
-            2. **亮點分析**：識別 1-2 個表現優秀的廣告活動或組合（例如高 ROAS 或低 CPA）。
-            3. **優化空間與異常檢測**：{period_focus}
-            4. **後續行動建議**：提供 2-3 個最具體且可執行的建議。
+                語氣：專業、銳利、數據導向。
+                語言：繁體中文 (Traditional Chinese)。
+                格式：Markdown（對關鍵指標數字加粗）。
+                """
+            else:
+                # Facebook Ads Prompt (Default)
+                period_focus = ""
+                if period == "daily":
+                    period_focus = "請特別關注昨日與前日的數據波動、預算消耗情況，以及是否需要立即進行開關調整或排除異常。"
+                elif period == "weekly":
+                    period_focus = "請著重於本週與上週的趨勢對比、廣告組合（Ad Sets）的表現差異，以及下一階段的預算分配建議。"
+                elif period == "monthly":
+                    period_focus = "請從戰略角度分析本月整體 ROI、不同廣告創意（Creative）的長期表現趨勢，並提供下個月的整體投放策略建議。"
 
-            語氣：專業、鼓勵、數據導向。
-            語言：繁體中文 (Traditional Chinese)。
-            格式：Markdown（對關鍵指標數字加粗）。
-            """
+                system_prompt = f"""
+                您是一位資深的 Facebook 廣告顧問，正在協助客戶撰寫一份{label}分析報告。
+                您的目標是根據提供的數據，產出一份專業且具備深度洞察的摘要。
+                
+                報告結構：
+                1. **執行摘要 ({label}總結)**：用 2-3 句話總結整體表現（花費、ROAS、成交數），並嘗試與前期對比。
+                2. **亮點分析**：識別 1-2 個表現優秀的廣告活動或組合（例如高 ROAS 或低 CPA）。
+                3. **優化空間與異常檢測**：{period_focus}
+                4. **後續行動建議**：提供 2-3 個最具體且可執行的建議。
+
+                語氣：專業、鼓勵、數據導向。
+                語言：繁體中文 (Traditional Chinese)。
+                格式：Markdown（對關鍵指標數字加粗）。
+                """
         else:
             system_prompt = """
             You are an expert Facebook Ads Analyst (Senior Media Buyer).
