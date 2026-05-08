@@ -43,6 +43,11 @@ class GA4Service:
         'profile'
     ]
 
+    # Metrics that require expressions (Virtual Metrics)
+    VIRTUAL_METRICS = {
+        "averageEngagementTime": "userEngagementDuration/activeUsers",
+    }
+
     @staticmethod
     def exchange_code(user: User, code: str, db: Session) -> Tuple[bool, str]:
         """
@@ -496,13 +501,20 @@ class GA4Service:
                     print(f"[GA4 CACHE HIT] Returning {len(cached_data.get('rows', []))} rows.")
                     return cached_data, None
 
+            # Helper to build metrics with expressions
+            def _build_api_metrics(m_keys):
+                return [
+                    Metric(name=m, expression=GA4Service.VIRTUAL_METRICS[m]) if m in GA4Service.VIRTUAL_METRICS else Metric(name=m)
+                    for m in m_keys
+                ]
+
             # Build and execute the request(s)
             if not use_dimensions:
                 # 不帶 dimension 的請求，會返回整個期間的去重總數
                 request = RunReportRequest(
                     property=f"properties/{property_id}",
                     date_ranges=[DateRange(start_date=start_date, end_date=effective_end_date)],
-                    metrics=[Metric(name=met) for met in metrics],
+                    metrics=_build_api_metrics(metrics),
                 )
                 dimensions = []  # 確保後續處理正確
                 response = data_client.run_report(request)
@@ -516,7 +528,7 @@ class GA4Service:
                     property=f"properties/{property_id}",
                     date_ranges=[DateRange(start_date=start_date, end_date=effective_end_date)],
                     dimensions=[Dimension(name=dim) for dim in dimensions],
-                    metrics=[Metric(name=met) for met in metrics],
+                    metrics=_build_api_metrics(metrics),
                     limit=request_limit,
                     offset=offset
                 )
@@ -535,7 +547,7 @@ class GA4Service:
                         property=f"properties/{property_id}",
                         date_ranges=[DateRange(start_date=start_date, end_date=effective_end_date)],
                         dimensions=[Dimension(name=dim) for dim in dimensions],
-                        metrics=[Metric(name=met) for met in metrics],
+                        metrics=_build_api_metrics(metrics),
                         limit=page_limit,
                         offset=page_offset
                     )
