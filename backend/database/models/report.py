@@ -17,6 +17,7 @@ class WeeklyReport(Base):
     id           = Column(String, primary_key=True, default=lambda: str(uuid.uuid4()))
     name         = Column(String, nullable=False)           # 報表名稱，e.g. "2026 W09 電商廣告週報"
     description  = Column(Text, nullable=True)              # 自訂備註
+    module_type  = Column(String, default="fb_ads")         # 報表類型: fb_ads | ga4
 
     # --- 查詢條件（條件快照） ---
     ad_account_id   = Column(String, nullable=False)        # 廣告帳號 ID
@@ -54,6 +55,7 @@ class ReportSchedule(Base):
 
     id               = Column(String, primary_key=True, default=lambda: str(uuid.uuid4()))
     name             = Column(String, nullable=False)        # 排程名稱
+    module_type      = Column(String, default="fb_ads")      # 報表類型: fb_ads | ga4
     
     # 報表參數副本
     ad_account_id    = Column(String, nullable=False)

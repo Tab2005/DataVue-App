@@ -1,10 +1,11 @@
 // frontend/src/components/Reports/ReportConfig.jsx
 import React, { useState, useEffect } from 'react';
-import { FiChevronRight, FiChevronLeft, FiSettings, FiCalendar, FiActivity, FiCheckCircle, FiMessageSquare } from 'react-icons/fi';
+import { FiChevronRight, FiChevronLeft, FiSettings, FiCalendar, FiActivity, FiCheckCircle, FiMessageSquare, FiFacebook, FiGlobe } from 'react-icons/fi';
 import ReportAdAccountSelector from './ReportAdAccountSelector';
+import ReportGA4PropertySelector from './ReportGA4PropertySelector';
 import { lineService } from '../../services/lineService';
 import { MetricSelector } from '../Analytics';
-import { getMetricConfig, METRIC_GROUPS } from '../../constants/analyticsConfig';
+import { getMetricConfig, METRIC_GROUPS, getGroupsByModule } from '../../constants/analyticsConfig';
 import { format, subDays, startOfWeek, endOfWeek, subMonths, startOfMonth, endOfMonth } from 'date-fns';
 
 const ReportConfig = ({ onSave, onCancel, initialData = {}, initialEditData = null, language, teamId }) => {
@@ -13,14 +14,15 @@ const ReportConfig = ({ onSave, onCancel, initialData = {}, initialEditData = nu
   const [formData, setFormData] = useState({
     name: initialData.name || '',
     description: initialData.description || '',
+    module_type: initialData.module_type || 'fb_ads',
     ad_account_id: initialData.ad_account_id || '',
     ad_account_name: initialData.ad_account_name || '',
     date_since: initialData.date_since || format(subDays(new Date(), 7), 'yyyy-MM-dd'),
     date_until: initialData.date_until || format(subDays(new Date(), 1), 'yyyy-MM-dd'),
     date_label: initialData.date_label || '',
-    breakdown: initialData.breakdown || 'campaign',
+    breakdown: initialData.breakdown || (initialData.module_type === 'ga4' ? 'sessionSourceMedium' : 'campaign'),
     team_id: initialData.team_id || null,
-    selected_metrics: initialData.selected_metrics || ['spend', 'roas', 'purchases', 'cpc', 'ctr'],
+    selected_metrics: initialData.selected_metrics || (initialData.module_type === 'ga4' ? ['activeUsers', 'sessions', 'screenPageViews', 'engagementRate'] : ['spend', 'roas', 'purchases', 'cpc', 'ctr']),
     // Automation fields
     is_automated: initialData.is_automated || false,
     frequency: initialData.frequency || 'weekly',
@@ -48,13 +50,15 @@ const ReportConfig = ({ onSave, onCancel, initialData = {}, initialEditData = nu
   useEffect(() => {
     if (initialEditData) {
       setIsEditMode(true);
+      const mType = initialEditData.module_type || 'fb_ads';
       setFormData(prev => ({
         ...prev,
         id: initialEditData.id,
         name: initialEditData.name || '',
+        module_type: mType,
         ad_account_id: initialEditData.ad_account_id || '',
         ad_account_name: initialEditData.ad_account_name || '',
-        breakdown: initialEditData.breakdown || 'campaign',
+        breakdown: initialEditData.breakdown || (mType === 'ga4' ? 'sessionSourceMedium' : 'campaign'),
         selected_metrics: Array.isArray(initialEditData.selected_metrics) 
           ? initialEditData.selected_metrics 
           : (typeof initialEditData.selected_metrics === 'string' ? JSON.parse(initialEditData.selected_metrics) : []),
@@ -76,8 +80,25 @@ const ReportConfig = ({ onSave, onCancel, initialData = {}, initialEditData = nu
   const handleBack = () => setStep(s => s - 1);
 
   const updateField = (field, value) => {
-    setFormData(prev => ({ ...prev, [field]: value }));
+    setFormData(prev => {
+        const newData = { ...prev, [field]: value };
+        // 當切換 module_type 時，重置相關欄位
+        if (field === 'module_type' && value !== prev.module_type) {
+            newData.ad_account_id = '';
+            newData.ad_account_name = '';
+            if (value === 'ga4') {
+                newData.selected_metrics = ['activeUsers', 'sessions', 'screenPageViews', 'engagementRate'];
+                newData.breakdown = 'sessionSourceMedium';
+            } else {
+                newData.selected_metrics = ['spend', 'roas', 'purchases', 'cpc', 'ctr'];
+                newData.breakdown = 'campaign';
+            }
+        }
+        return newData;
+    });
   };
+
+  const currentMetricGroups = getGroupsByModule(formData.module_type);
 
   const handleQuickDate = (preset) => {
     const today = new Date();
@@ -108,6 +129,54 @@ const ReportConfig = ({ onSave, onCancel, initialData = {}, initialEditData = nu
             <h2 style={{ fontSize: '1.25rem', color: 'var(--text-primary)', marginBottom: '12px', display: 'flex', alignItems: 'center', gap: '8px' }}>
               <FiSettings color="var(--accent-primary)" /> {t('Step 1: Basic Information', '步驟 1：基本資訊')}
             </h2>
+
+            {/* Module Type Selector */}
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+              <label style={{ color: 'var(--text-secondary)', fontSize: '0.9rem' }}>{t('Report Type', '報表類型')}</label>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
+                <div 
+                  onClick={() => updateField('module_type', 'fb_ads')}
+                  style={{
+                    padding: '16px',
+                    borderRadius: '12px',
+                    border: formData.module_type === 'fb_ads' ? '2px solid var(--accent-primary)' : '1px solid var(--glass-border)',
+                    backgroundColor: formData.module_type === 'fb_ads' ? 'rgba(99, 102, 241, 0.1)' : 'var(--bg-primary)',
+                    cursor: 'pointer',
+                    display: 'flex',
+                    flexDirection: 'column',
+                    alignItems: 'center',
+                    gap: '8px',
+                    transition: 'all 0.2s'
+                  }}
+                >
+                  <FiFacebook size={24} color={formData.module_type === 'fb_ads' ? 'var(--accent-primary)' : 'var(--text-tertiary)'} />
+                  <span style={{ fontSize: '0.9rem', color: formData.module_type === 'fb_ads' ? 'var(--text-primary)' : 'var(--text-secondary)', fontWeight: formData.module_type === 'fb_ads' ? '600' : 'normal' }}>
+                    {t('Facebook Ads', 'Facebook 廣告')}
+                  </span>
+                </div>
+                <div 
+                  onClick={() => updateField('module_type', 'ga4')}
+                  style={{
+                    padding: '16px',
+                    borderRadius: '12px',
+                    border: formData.module_type === 'ga4' ? '2px solid var(--accent-primary)' : '1px solid var(--glass-border)',
+                    backgroundColor: formData.module_type === 'ga4' ? 'rgba(99, 102, 241, 0.1)' : 'var(--bg-primary)',
+                    cursor: 'pointer',
+                    display: 'flex',
+                    flexDirection: 'column',
+                    alignItems: 'center',
+                    gap: '8px',
+                    transition: 'all 0.2s'
+                  }}
+                >
+                  <FiGlobe size={24} color={formData.module_type === 'ga4' ? 'var(--accent-primary)' : 'var(--text-tertiary)'} />
+                  <span style={{ fontSize: '0.9rem', color: formData.module_type === 'ga4' ? 'var(--text-primary)' : 'var(--text-secondary)', fontWeight: formData.module_type === 'ga4' ? '600' : 'normal' }}>
+                    {t('GA4 Website', 'GA4 網站數據')}
+                  </span>
+                </div>
+              </div>
+            </div>
+
             <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
               <label style={{ color: 'var(--text-secondary)', fontSize: '0.9rem' }}>{t('Report Name', '報表名稱')}</label>
               <input
@@ -125,16 +194,29 @@ const ReportConfig = ({ onSave, onCancel, initialData = {}, initialEditData = nu
               />
             </div>
             <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-              <label style={{ color: 'var(--text-secondary)', fontSize: '0.9rem' }}>{t('Ad Account', '廣告帳號')}</label>
-              <ReportAdAccountSelector
-                teamId={teamId}
-                selectedId={formData.ad_account_id}
-                onSelect={(id, name) => {
-                  updateField('ad_account_id', id);
-                  updateField('ad_account_name', name);
-                }}
-                language={language}
-              />
+              <label style={{ color: 'var(--text-secondary)', fontSize: '0.9rem' }}>
+                {formData.module_type === 'ga4' ? t('GA4 Property', 'GA4 資源') : t('Ad Account', '廣告帳號')}
+              </label>
+              {formData.module_type === 'ga4' ? (
+                <ReportGA4PropertySelector
+                  selectedId={formData.ad_account_id}
+                  onSelect={(id, name) => {
+                    updateField('ad_account_id', id);
+                    updateField('ad_account_name', name);
+                  }}
+                  language={language}
+                />
+              ) : (
+                <ReportAdAccountSelector
+                  teamId={teamId}
+                  selectedId={formData.ad_account_id}
+                  onSelect={(id, name) => {
+                    updateField('ad_account_id', id);
+                    updateField('ad_account_name', name);
+                  }}
+                  language={language}
+                />
+              )}
             </div>
             <div style={{ 
                 marginTop: '12px',
@@ -340,10 +422,20 @@ const ReportConfig = ({ onSave, onCancel, initialData = {}, initialEditData = nu
                 onChange={(e) => updateField('breakdown', e.target.value)}
                 style={{ padding: '12px', backgroundColor: 'var(--bg-primary)', border: '1px solid var(--glass-border)', borderRadius: '8px', color: 'white' }}
               >
-                <option value="account">{t('Account Overview', '整體總覽')}</option>
-                <option value="campaign">{t('Campaign Level', '廣告活動層級')}</option>
-                <option value="adset">{t('Ad Set Level', '廣告組合層級')}</option>
-                <option value="ad">{t('Ad Level', '廣告層級')}</option>
+                {formData.module_type === 'ga4' ? (
+                  <>
+                    <option value="sessionSourceMedium">{t('Source / Medium', '來源 / 媒介')}</option>
+                    <option value="pagePath">{t('Page Path', '網頁路徑')}</option>
+                    <option value="country">{t('Country', '國家')}</option>
+                  </>
+                ) : (
+                  <>
+                    <option value="account">{t('Account Overview', '整體總覽')}</option>
+                    <option value="campaign">{t('Campaign Level', '廣告活動層級')}</option>
+                    <option value="adset">{t('Ad Set Level', '廣告組合層級')}</option>
+                    <option value="ad">{t('Ad Level', '廣告層級')}</option>
+                  </>
+                )}
               </select>
             </div>
           </div>
@@ -365,7 +457,7 @@ const ReportConfig = ({ onSave, onCancel, initialData = {}, initialEditData = nu
               gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))',
               gap: '20px'
             }}>
-               {METRIC_GROUPS.map((group) => {
+               {currentMetricGroups.map((group) => {
                  const groupKeys = group.metrics.map(m => m.key);
                  const isAllSelected = groupKeys.every(k => formData.selected_metrics.includes(k));
                  
@@ -473,11 +565,17 @@ const ReportConfig = ({ onSave, onCancel, initialData = {}, initialEditData = nu
                 </span>
               </div>
               <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '8px' }}>
+                <span style={{ color: 'var(--text-tertiary)' }}>{t('Type', '報表類型')}:</span>
+                <span style={{ color: 'var(--text-primary)', fontWeight: 'bold' }}>
+                  {formData.module_type === 'ga4' ? t('GA4 Website', 'GA4 網站數據') : t('Facebook Ads', 'Facebook 廣告')}
+                </span>
+              </div>
+              <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '8px' }}>
                 <span style={{ color: 'var(--text-tertiary)' }}>{t('Name', '報表名稱')}:</span>
                 <span style={{ color: 'var(--text-primary)', fontWeight: 'bold' }}>{formData.name}</span>
               </div>
               <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '8px' }}>
-                <span style={{ color: 'var(--text-tertiary)' }}>{t('Account', '廣告帳號')}:</span>
+                <span style={{ color: 'var(--text-tertiary)' }}>{formData.module_type === 'ga4' ? t('Property', 'GA4 資源') : t('Account', '廣告帳號')}:</span>
                 <span style={{ color: 'var(--text-primary)' }}>{formData.ad_account_name || formData.ad_account_id}</span>
               </div>
               {formData.is_automated ? (

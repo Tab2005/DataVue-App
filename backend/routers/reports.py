@@ -16,7 +16,6 @@ from core.scheduler import add_report_job, get_next_run_time, remove_report_job
 
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/reports", tags=["reports"])
-fb_ads_check = require_module("fb_ads")
 
 # ---- Dependency ----
 def get_db():
@@ -25,6 +24,17 @@ def get_db():
         yield db
     finally:
         db.close()
+
+def reports_module_check(user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    from services.permission_service import PermissionService
+    if user.is_super_admin: return True
+    service = PermissionService(db)
+    if service.check_module_access(user.id, "fb_ads", None) or \
+       service.check_module_access(user.id, "ga4", None):
+        return True
+    raise HTTPException(status_code=403, detail="Module access denied: reports require fb_ads or ga4.")
+
+reports_check = reports_module_check
 
 
 def _ensure_team_access(db: Session, current_user: User, team_id: Optional[str]) -> Optional[Team]:
@@ -81,6 +91,7 @@ class ScheduleCreate(BaseModel):
     time_of_day: Optional[str] = "08:00"
     is_notify_line: Optional[bool] = False
     team_id: Optional[str] = None
+    module_type: Optional[str] = "fb_ads"
 
 class ScheduleUpdate(BaseModel):
     name: Optional[str] = None
@@ -92,11 +103,13 @@ class ScheduleUpdate(BaseModel):
     time_of_day: Optional[str] = None
     is_active: Optional[bool] = None
     is_notify_line: Optional[bool] = None
+    module_type: Optional[str] = None
 
 def _serialize_schedule(s: ReportSchedule) -> dict:
     return {
         "id": s.id,
         "name": s.name,
+        "module_type": getattr(s, 'module_type', 'fb_ads'),
         "ad_account_id": s.ad_account_id,
         "ad_account_name": s.ad_account_name,
         "selected_metrics": json.loads(s.selected_metrics) if s.selected_metrics else [],
@@ -115,7 +128,7 @@ def _serialize_schedule(s: ReportSchedule) -> dict:
 
 # ---- Schedule Endpoints ----
 
-@router.get("/schedules", dependencies=[Depends(fb_ads_check)])
+@router.get("/schedules", dependencies=[Depends(reports_check)])
 async def list_schedules(
     team_id: Optional[str] = None,
     current_user: User = Depends(get_current_user),
@@ -135,7 +148,7 @@ async def list_schedules(
     schedules = query.all()
     return [_serialize_schedule(s) for s in schedules]
 
-@router.get("/schedules/{schedule_id}", dependencies=[Depends(fb_ads_check)])
+@router.get("/schedules/{schedule_id}", dependencies=[Depends(reports_check)])
 async def get_schedule(
     schedule_id: str,
     current_user: User = Depends(get_current_user),
@@ -149,7 +162,7 @@ async def get_schedule(
     _ensure_schedule_access(db, current_user, schedule)
     return _serialize_schedule(schedule)
 
-@router.post("/schedules", dependencies=[Depends(fb_ads_check)])
+@router.post("/schedules", dependencies=[Depends(reports_check)])
 async def create_schedule(
     payload: ScheduleCreate,
     current_user: User = Depends(get_current_user),
@@ -161,6 +174,7 @@ async def create_schedule(
     schedule = ReportSchedule(
         id=str(uuid.uuid4()),
         name=payload.name,
+        module_type=payload.module_type or "fb_ads",
         ad_account_id=payload.ad_account_id,
         ad_account_name=payload.ad_account_name,
         selected_metrics=json.dumps(payload.selected_metrics),
@@ -190,7 +204,7 @@ async def create_schedule(
     
     return _serialize_schedule(schedule)
 
-@router.put("/schedules/{schedule_id}", dependencies=[Depends(fb_ads_check)])
+@router.put("/schedules/{schedule_id}", dependencies=[Depends(reports_check)])
 async def update_schedule(
     schedule_id: str,
     payload: ScheduleUpdate,
@@ -205,6 +219,7 @@ async def update_schedule(
     _ensure_schedule_access(db, current_user, schedule)
     
     if payload.name is not None: schedule.name = payload.name
+    if payload.module_type is not None: schedule.module_type = payload.module_type
     if payload.selected_metrics is not None: schedule.selected_metrics = json.dumps(payload.selected_metrics)
     if payload.breakdown is not None: schedule.breakdown = payload.breakdown
     if payload.frequency is not None: schedule.frequency = payload.frequency
@@ -235,7 +250,7 @@ async def update_schedule(
     
     return _serialize_schedule(schedule)
 
-@router.delete("/schedules/{schedule_id}", dependencies=[Depends(fb_ads_check)])
+@router.delete("/schedules/{schedule_id}", dependencies=[Depends(reports_check)])
 async def delete_schedule(
     schedule_id: str,
     current_user: User = Depends(get_current_user),
@@ -269,6 +284,7 @@ class ReportCreate(BaseModel):
     breakdown: Optional[str] = "campaign"
     selected_metrics: List[str]
     team_id: Optional[str] = None
+    module_type: Optional[str] = "fb_ads"
 
 class ReportUpdate(BaseModel):
     name: Optional[str] = None
@@ -276,6 +292,7 @@ class ReportUpdate(BaseModel):
     sections: Optional[List[dict]] = None
     ai_summary: Optional[str] = None
     status: Optional[str] = None
+    module_type: Optional[str] = None
 
 # ---- Helpers ----
 def _serialize(report: WeeklyReport) -> dict:
@@ -289,6 +306,7 @@ def _serialize(report: WeeklyReport) -> dict:
     return {
         "id": report.id,
         "name": report.name,
+        "module_type": getattr(report, 'module_type', 'fb_ads'),
         "description": report.description,
         "ad_account_id": report.ad_account_id,
         "ad_account_name": report.ad_account_name,
@@ -321,7 +339,7 @@ async def get_shared_report(token: str, db: Session = Depends(get_db)):
     data = _serialize(report)
     return data
 
-@router.get("", dependencies=[Depends(fb_ads_check)])
+@router.get("", dependencies=[Depends(reports_check)])
 async def list_reports(
     team_id: Optional[str] = None,
     status: Optional[str] = "all",
@@ -370,41 +388,44 @@ async def list_reports(
     }
 
 
-@router.post("", dependencies=[Depends(fb_ads_check)])
+@router.post("", dependencies=[Depends(reports_check)])
 async def create_report(
     payload: ReportCreate,
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
     """建立新週報（草稿狀態）"""
-    _ensure_team_access(db, current_user, payload.team_id)
+    try:
+        _ensure_team_access(db, current_user, payload.team_id)
 
-    report = WeeklyReport(
-        id=str(uuid.uuid4()),
-        name=payload.name,
-        description=payload.description,
-        ad_account_id=payload.ad_account_id,
-        ad_account_name=payload.ad_account_name,
-        date_since=payload.date_since,
-        date_until=payload.date_until,
-        date_label=payload.date_label,
-        breakdown=payload.breakdown or "campaign",
-        selected_metrics=json.dumps(payload.selected_metrics),
-        status="draft",
-        share_token=str(uuid.uuid4()),
-        user_id=current_user.id,
-        team_id=payload.team_id,
-        created_by=current_user.id,
-        created_at=datetime.now(timezone.utc),
-        updated_at=datetime.now(timezone.utc),
-    )
-    db.add(report)
-    db.commit()
-    db.refresh(report)
-    return _serialize(report)
+        report = WeeklyReport(
+            id=str(uuid.uuid4()),
+            name=payload.name,
+            module_type=payload.module_type or "fb_ads",
+            description=payload.description,
+            ad_account_id=payload.ad_account_id,
+            ad_account_name=payload.ad_account_name,
+            date_since=payload.date_since,
+            date_until=payload.date_until,
+            date_label=payload.date_label,
+            breakdown=payload.breakdown or "campaign",
+            selected_metrics=json.dumps(payload.selected_metrics),
+            status="draft",
+            share_token=str(uuid.uuid4()),
+            user_id=current_user.id,
+            team_id=payload.team_id,
+            created_by=current_user.id
+        )
+        db.add(report)
+        db.commit()
+        db.refresh(report)
+        return _serialize(report)
+    except Exception as e:
+        logger.error(f"❌ [API] Create report failed: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=f"Create report failed: {str(e)}")
 
 
-@router.get("/{report_id}", dependencies=[Depends(fb_ads_check)])
+@router.get("/{report_id}", dependencies=[Depends(reports_check)])
 async def get_report(
     report_id: str,
     current_user: User = Depends(get_current_user),
@@ -426,7 +447,7 @@ async def get_report(
     return _serialize(report)
 
 
-@router.put("/{report_id}", dependencies=[Depends(fb_ads_check)])
+@router.put("/{report_id}", dependencies=[Depends(reports_check)])
 async def update_report(
     report_id: str,
     payload: ReportUpdate,
@@ -448,12 +469,14 @@ async def update_report(
         report.ai_summary = payload.ai_summary
     if payload.status is not None:
         report.status = payload.status
+    if payload.module_type is not None:
+        report.module_type = payload.module_type
     report.updated_at = datetime.now(timezone.utc)
     db.commit()
     return _serialize(report)
 
 
-@router.delete("/{report_id}", dependencies=[Depends(fb_ads_check)])
+@router.delete("/{report_id}", dependencies=[Depends(reports_check)])
 async def delete_report(
     report_id: str,
     current_user: User = Depends(get_current_user),
@@ -469,16 +492,14 @@ async def delete_report(
     return {"message": "deleted"}
 
 
-@router.post("/{report_id}/generate", dependencies=[Depends(fb_ads_check)])
+@router.post("/{report_id}/generate", dependencies=[Depends(reports_check)])
 async def generate_report(
     report_id: str,
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db)
 ):
     """
-    觸發報表資料產生：
-    複用現有 analytics_service 抓取 FB 廣告資料，
-    並計算摘要 (Summary)、對比數據與趨勢圖表。
+    觸發報表資料產生
     """
     from services.report_service import trigger_manual_generate
     try:

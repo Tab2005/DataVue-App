@@ -284,6 +284,7 @@ async def process_scheduled_report(schedule_id: str):
             selected_metrics=metrics_list,
             google_id=user.google_id,
             team_id=schedule.team_id,
+            module_type=schedule.module_type or "fb_ads"
         )
 
         from uuid import uuid4
@@ -291,6 +292,7 @@ async def process_scheduled_report(schedule_id: str):
         new_report = WeeklyReport(
             id=str(uuid4()),
             name=f"[Auto] {schedule.name} ({since_str})",
+            module_type=schedule.module_type or "fb_ads",
             ad_account_id=schedule.ad_account_id,
             ad_account_name=schedule.ad_account_name,
             date_since=since_str,
