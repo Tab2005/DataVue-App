@@ -8,7 +8,8 @@ export const ga4Service = {
    * 取得使用者的 GA4 屬性列表
    */
   getProperties: async () => {
-    return apiClient.get('/api/ga4/properties');
+    const res = await apiClient.get('/api/ga4/properties');
+    return res?.properties || res || [];
   },
 
   /**

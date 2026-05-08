@@ -21,8 +21,8 @@ const ReportGA4PropertySelector = ({ selectedId, onSelect, language }) => {
         const fetchProperties = async () => {
             setLoading(true);
             try {
-                const data = await ga4Service.getProperties();
-                setProperties(data || []);
+                const propertyList = await ga4Service.getProperties();
+                setProperties(propertyList || []);
             } catch (err) {
                 console.error("Failed to fetch GA4 properties for reports", err);
                 setError(t('Failed to load GA4 properties', '無法載入 GA4 資源'));
