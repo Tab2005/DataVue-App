@@ -27,6 +27,14 @@ def get_db():
 
 def reports_module_check(user: User = Depends(get_current_user), db: Session = Depends(get_db)):
     from services.permission_service import PermissionService
+    if user.is_super_admin: return True
+    service = PermissionService(db)
+    if service.check_module_access(user.id, "fb_ads", None) or \
+       service.check_module_access(user.id, "ga4", None):
+        return True
+    raise HTTPException(status_code=403, detail="Module access denied: reports require fb_ads or ga4.")
+
+reports_check = reports_module_check
 
 
 def _ensure_team_access(db: Session, current_user: User, team_id: Optional[str]) -> Optional[Team]:
