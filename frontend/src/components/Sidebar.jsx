@@ -30,7 +30,7 @@ const Sidebar = ({ user, language, isCollapsed, setIsCollapsed, isMobile, select
         { icon: <FiHome size={20} />, label: t('Overview', '總覽'), path: '/dashboard' },
         { icon: <FiBarChart2 size={20} />, label: t('Analytics', '成效分析'), path: '/analytics' },
         { icon: <FiActivity size={20} />, label: t('Metrics Manager', '指標管理'), path: '/metrics' },
-        { icon: <FiFileText size={20} />, label: t('Weekly Reports', '週報管理'), path: '/reports' },
+        { icon: <FiFileText size={20} />, label: t('Reports', '報表管理'), path: '/reports' },
         { icon: <FiSearch size={20} />, label: t('Search Console', '搜尋管理'), path: '/gsc' },
         { icon: <FiTrendingUp size={20} />, label: t('Traffic Analytics', '流量分析'), path: '/ga4' },
         // Grouped Team Settings

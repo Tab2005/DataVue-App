@@ -50,7 +50,7 @@ const Reports = () => {
             setError(null);
         } catch (err) {
             console.error('Failed to fetch reports:', err);
-            setError(t('Failed to load reports.', '載入週報失敗。'));
+            setError(t('Failed to load reports.', '載入報表失敗。'));
         } finally {
             setLoading(false);
         }
@@ -77,7 +77,7 @@ const Reports = () => {
     }, [selectedTeamId, viewMode]);
 
     const handleDelete = async (id) => {
-        if (!window.confirm(t('Are you sure you want to delete this report?', '您確定要刪除這份週報嗎？'))) return;
+        if (!window.confirm(t('Are you sure you want to delete this report?', '您確定要刪除這份報表嗎？'))) return;
         try {
             await reportService.delete(id);
             setReports(prev => prev.filter(r => r.id !== id));
@@ -119,7 +119,7 @@ const Reports = () => {
                 <div>
                     <h1 style={{ fontSize: '2.2rem', fontWeight: 'bold', color: 'var(--text-primary)', margin: '0', display: 'flex', alignItems: 'center', gap: '12px' }}>
                         <FiFileText size={36} color="var(--accent-primary)" />
-                        {viewMode === 'reports' ? t('Weekly Reports', '週報管理') : t('Automated Schedules', '自動排程管理')}
+                        {viewMode === 'reports' ? t('Reports', '報表管理') : t('Automated Schedules', '自動排程管理')}
                     </h1>
                 </div>
                 <div style={{ display: 'flex', gap: '12px' }}>
@@ -134,7 +134,7 @@ const Reports = () => {
                                 cursor: 'pointer', fontWeight: '600', transition: 'all 0.2s'
                             }}
                         >
-                            {t('Reports', '所有週報')}
+                            {t('Reports', '所有報表')}
                         </button>
                         <button 
                             onClick={() => setViewMode('schedules')}
@@ -262,7 +262,7 @@ const Reports = () => {
                     ) : (
                         <div style={{ textAlign: 'center', padding: '100px', backgroundColor: 'var(--bg-secondary)', borderRadius: '20px', border: '2px dashed var(--glass-border)' }}>
                             <FiFileText size={64} color="var(--glass-border)" style={{ marginBottom: '20px' }} />
-                            <h3 style={{ color: 'white' }}>{t('No reports found', '目前沒有週報')}</h3>
+                            <h3 style={{ color: 'white' }}>{t('No reports found', '目前沒有報表')}</h3>
                         </div>
                     )}
                 </>

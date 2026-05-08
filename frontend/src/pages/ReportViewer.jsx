@@ -32,7 +32,7 @@ const ReportViewer = ({ mode = 'view' }) => {
             setError(null);
         } catch (err) {
             console.error('Failed to fetch report:', err);
-            setError(t('Failed to load report.', '載入週報失敗。'));
+            setError(t('Failed to load report.', '載入報表失敗。'));
         } finally {
             setLoading(false);
         }
