@@ -33,7 +33,7 @@ const Login = () => {
         if (returnTo) {
             navigate(decodeURIComponent(returnTo));
         } else {
-            navigate('/');
+            navigate('/dashboard');
         }
     };
 

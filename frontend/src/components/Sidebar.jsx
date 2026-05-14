@@ -27,7 +27,7 @@ const Sidebar = ({ user, language, isCollapsed, setIsCollapsed, isMobile, select
     const t = (en, zh) => language === 'zh' ? zh : en;
 
     const menuItems = [
-        { icon: <FiHome size={20} />, label: t('Overview', '總覽'), path: '/' },
+        { icon: <FiHome size={20} />, label: t('Overview', '總覽'), path: '/dashboard' },
         { icon: <FiBarChart2 size={20} />, label: t('Analytics', '成效分析'), path: '/analytics' },
         { icon: <FiActivity size={20} />, label: t('Metrics Manager', '指標管理'), path: '/metrics' },
         { icon: <FiSearch size={20} />, label: t('Search Console', '搜尋管理'), path: '/gsc' },
