@@ -1,19 +1,19 @@
 import { motion } from 'framer-motion';
-import { User, Building2, Rocket } from 'lucide-react';
+import { FiUser, FiBriefcase, FiSend } from 'react-icons/fi';
 
 const targets = [
   {
-    icon: <User className="w-10 h-10 text-brand-blue" />,
+    icon: <FiUser className="w-10 h-10 text-brand-blue" />,
     title: "個人品牌創作者",
     description: "精準掌控內容影響力，將粉絲轉化為忠誠客戶。"
   },
   {
-    icon: <Building2 className="w-10 h-10 text-brand-purple" />,
+    icon: <FiBriefcase className="w-10 h-10 text-brand-purple" />,
     title: "中小企業 / 電商",
     description: "最大化跨平台廣告效益，降低獲客成本，提升 LTV。"
   },
   {
-    icon: <Rocket className="w-10 h-10 text-brand-cyan" />,
+    icon: <FiSend className="w-10 h-10 text-brand-cyan" />,
     title: "初創團隊",
     description: "快速建立「數據驅動」的決策文化，避免盲目燒錢。"
   }

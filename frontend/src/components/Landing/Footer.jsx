@@ -1,4 +1,4 @@
-import { Database } from 'lucide-react';
+import { FiDatabase } from 'react-icons/fi';
 
 export default function Footer() {
   return (
@@ -16,7 +16,7 @@ export default function Footer() {
         <div className="w-full flex flex-col md:flex-row justify-between items-center gap-10 pt-10 border-t border-white/5">
           <div className="flex items-center gap-2">
             <div className="w-8 h-8 bg-brand-blue rounded-lg flex items-center justify-center">
-              <Database className="text-white w-5 h-5" />
+              <FiDatabase className="text-white w-5 h-5" />
             </div>
             <span className="font-display font-bold text-lg text-white">DataVue</span>
           </div>

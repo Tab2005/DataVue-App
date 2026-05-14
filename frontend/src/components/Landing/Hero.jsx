@@ -1,5 +1,5 @@
 import { motion } from 'framer-motion';
-import { ArrowRight, Play } from 'lucide-react';
+import { FiArrowRight, FiPlay } from 'react-icons/fi';
 
 export default function Hero() {
   return (
@@ -34,7 +34,7 @@ export default function Hero() {
             whileTap={{ scale: 0.95 }}
             className="w-full sm:w-auto bg-white text-black px-8 py-4 rounded-2xl font-bold text-lg flex items-center justify-center gap-2 shadow-[0_0_20px_rgba(255,255,255,0.3)]"
           >
-            免費體驗 <ArrowRight className="w-5 h-5" />
+            免費體驗 <FiArrowRight className="w-5 h-5" />
           </motion.button>
           
           <motion.button 
@@ -42,7 +42,7 @@ export default function Hero() {
             whileTap={{ scale: 0.95 }}
             className="w-full sm:w-auto glass hover:bg-white/10 px-8 py-4 rounded-2xl font-bold text-lg flex items-center justify-center gap-2 text-white border-white/20 transition-colors"
           >
-            <Play className="w-5 h-5 fill-current" /> 了解運作方式
+            <FiPlay className="w-5 h-5 fill-current" /> 了解運作方式
           </motion.button>
         </div>
       </motion.div>

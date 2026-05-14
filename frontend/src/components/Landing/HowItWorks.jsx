@@ -1,19 +1,19 @@
 import { motion } from 'framer-motion';
-import { Link2, Sparkles, Zap } from 'lucide-react';
+import { FiLink, FiStar, FiZap } from 'react-icons/fi';
 
 const steps = [
   {
-    icon: <Link2 className="w-10 h-10 text-brand-blue" />,
+    icon: <FiLink className="w-10 h-10 text-brand-blue" />,
     title: "Connect (一鍵串接)",
     description: "OAuth2 授權，快速連結 Google 與 Facebook，無需複雜設定。"
   },
   {
-    icon: <Sparkles className="w-10 h-10 text-brand-purple" />,
+    icon: <FiStar className="w-10 h-10 text-brand-purple" />,
     title: "Analyze (自動彙整)",
     description: "專屬工作區，查看自動化數據視圖，AI 即時進行數據清洗與建模。"
   },
   {
-    icon: <Zap className="w-10 h-10 text-brand-cyan" />,
+    icon: <FiZap className="w-10 h-10 text-brand-cyan" />,
     title: "Strategize (戰略出擊)",
     description: "呼叫 AI 分析師，獲取可立即執行的優化策略，搶佔市場先機。"
   }

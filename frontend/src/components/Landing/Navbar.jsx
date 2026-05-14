@@ -1,5 +1,5 @@
 import { motion } from 'framer-motion';
-import { Database } from 'lucide-react';
+import { FiDatabase } from 'react-icons/fi';
 import { useNavigate } from 'react-router-dom';
 
 export default function Navbar() {
@@ -15,7 +15,7 @@ export default function Navbar() {
       <div className="max-w-7xl mx-auto glass rounded-2xl px-6 py-3 flex items-center justify-between">
         <div className="flex items-center gap-2">
           <div className="w-10 h-10 bg-brand-blue rounded-lg flex items-center justify-center shadow-[0_0_15px_rgba(59,130,246,0.5)]">
-            <Database className="text-white w-6 h-6" />
+            <FiDatabase className="text-white w-6 h-6" />
           </div>
           <span className="font-display font-bold text-xl tracking-wider text-white">DataVue</span>
         </div>

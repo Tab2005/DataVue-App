@@ -1,24 +1,24 @@
 import { motion } from 'framer-motion';
-import { XCircle, CheckCircle2 } from 'lucide-react';
+import { FiXCircle, FiCheckCircle } from 'react-icons/fi';
 
 const painPoints = [
   {
-    icon: <XCircle className="w-10 h-10 text-red-500/70" />,
-    solIcon: <CheckCircle2 className="w-10 h-10 text-brand-cyan" />,
+    icon: <FiXCircle className="w-10 h-10 text-red-500/70" />,
+    solIcon: <FiCheckCircle className="w-10 h-10 text-brand-cyan" />,
     title: "報表分散",
     problem: "登入多個平台，每天在不同頁面切換，數據難以對齊。",
     solution: "一站式儀表板，跨平台數據即刻對照，一眼看穿局勢。"
   },
   {
-    icon: <XCircle className="w-10 h-10 text-red-500/70" />,
-    solIcon: <CheckCircle2 className="w-10 h-10 text-brand-purple" />,
+    icon: <FiXCircle className="w-10 h-10 text-red-500/70" />,
+    solIcon: <FiCheckCircle className="w-10 h-10 text-brand-purple" />,
     title: "分析盲點",
     problem: "看著滿滿的數字不知從何優化，甚至不知道哪裡出錯。",
     solution: "AI 戰略導向，深度剖析用戶意圖並提供具體行動建議。"
   },
   {
-    icon: <XCircle className="w-10 h-10 text-red-500/70" />,
-    solIcon: <CheckCircle2 className="w-10 h-10 text-brand-blue" />,
+    icon: <FiXCircle className="w-10 h-10 text-red-500/70" />,
+    solIcon: <FiCheckCircle className="w-10 h-10 text-brand-blue" />,
     title: "擴充困難",
     problem: "系統僵化，當需要串接新平台時往往束手無策。",
     solution: "模組化架構，如同套件般靈活。未來，我們與您共同成長。"

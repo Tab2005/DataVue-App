@@ -1,27 +1,27 @@
 import { motion } from 'framer-motion';
-import { Search, Facebook as FacebookIcon, BarChart3, Bot } from 'lucide-react';
+import { FiSearch, FiFacebook, FiBarChart2, FiCpu } from 'react-icons/fi';
 
 const features = [
   {
-    icon: <Search className="w-8 h-8 text-blue-400" />,
+    icon: <FiSearch className="w-8 h-8 text-blue-400" />,
     title: "GSC 搜尋意圖洞察",
     description: "深入關鍵字戰場，掌握受眾真實的搜尋動機與意圖，而不僅僅是排名。",
     color: "from-blue-500/20 to-transparent"
   },
   {
-    icon: <FacebookIcon className="w-8 h-8 text-cyan-400" />,
+    icon: <FiFacebook className="w-8 h-8 text-cyan-400" />,
     title: "Facebook Ads 精準追蹤",
     description: "一目了然的廣告表現追蹤，實時優化轉化成本，拒絕預算浪費。",
     color: "from-cyan-500/20 to-transparent"
   },
   {
-    icon: <BarChart3 className="w-8 h-8 text-purple-400" />,
+    icon: <FiBarChart2 className="w-8 h-8 text-purple-400" />,
     title: "GA4 全方位流量分析",
     description: "還原用戶網站行為路徑，進行深度的內容分組優化，提升跳出率表現。",
     color: "from-purple-500/20 to-transparent"
   },
   {
-    icon: <Bot className="w-8 h-8 text-emerald-400" />,
+    icon: <FiCpu className="w-8 h-8 text-emerald-400" />,
     title: "Site-tegy AI Hub",
     description: "24小時 AI 分析師，整合多源數據，產出具備「勝負感」的具體優化指令。",
     color: "from-emerald-500/20 to-transparent"
