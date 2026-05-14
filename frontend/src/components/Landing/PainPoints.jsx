@@ -1,4 +1,4 @@
-import { motion } from 'motion';
+import { motion } from 'framer-motion';
 import { XCircle, CheckCircle2 } from 'lucide-react';
 
 const painPoints = [

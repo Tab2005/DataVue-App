@@ -1,4 +1,4 @@
-import { motion } from 'motion';
+import { motion } from 'framer-motion';
 import { Link2, Sparkles, Zap } from 'lucide-react';
 
 const steps = [

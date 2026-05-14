@@ -1,4 +1,4 @@
-import { motion } from 'motion';
+import { motion } from 'framer-motion';
 import { Database } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 

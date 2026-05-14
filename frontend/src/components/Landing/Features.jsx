@@ -1,4 +1,4 @@
-import { motion } from 'motion';
+import { motion } from 'framer-motion';
 import { Search, Facebook, BarChart3, Bot } from 'lucide-react';
 
 const features = [

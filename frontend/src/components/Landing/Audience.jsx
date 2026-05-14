@@ -1,4 +1,4 @@
-import { motion } from 'motion';
+import { motion } from 'framer-motion';
 import { User, Building2, Rocket } from 'lucide-react';
 
 const targets = [
