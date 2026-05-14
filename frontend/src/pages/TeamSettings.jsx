@@ -110,7 +110,6 @@ const TeamSettings = () => {
         container: {
             maxWidth: '1024px',
             margin: '0 auto',
-            margin: '0 auto',
             padding: isMobile ? '16px' : '48px 32px',
             display: 'flex',
             flexDirection: 'column',
@@ -173,7 +172,6 @@ const TeamSettings = () => {
             fontWeight: 'bold',
             backgroundColor: 'rgba(239, 68, 68, 0.1)',
             color: '#ef4444',
-            border: 'none',
             cursor: loading ? 'not-allowed' : 'pointer',
             transition: 'all 0.2s',
             border: '1px solid transparent'
