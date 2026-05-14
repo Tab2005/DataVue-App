@@ -7,9 +7,9 @@ export default function Footer() {
       
       <div className="max-w-7xl mx-auto flex flex-col items-center">
         <div className="text-center mb-16">
-          <h2 className="text-3xl md:text-5xl font-display font-bold mb-6">讓�?一?��?算�?<br className="sm:hidden" />?��??�奪?��??��??�略?��???/h2>
+          <h2 className="text-3xl md:text-5xl font-display font-bold mb-6">讓每一分預算，<br className="sm:hidden" />都成為奪取市場的戰略物資。</h2>
           <button className="bg-white text-black px-10 py-5 rounded-2xl font-bold text-xl shadow-2xl shadow-white/10 hover:scale-105 transition-transform active:scale-95">
-            立即建�??��? DataVue 工�??�
+            立即建立您的 DataVue 工作區
           </button>
         </div>
 
@@ -22,10 +22,10 @@ export default function Footer() {
           </div>
 
           <div className="flex flex-wrap justify-center gap-8 text-sm text-slate-500">
-            <a href="#" className="hover:text-white transition-colors">?�件中�?</a>
-            <a href="#" className="hover:text-white transition-colors">API ?�考�???/a>
-            <a href="#" className="hover:text-white transition-colors">?��?權政�?/a>
-            <a href="#" className="hover:text-white transition-colors">?��?條款</a>
+            <a href="#" className="hover:text-white transition-colors">文件中心</a>
+            <a href="#" className="hover:text-white transition-colors">API 參考手冊</a>
+            <a href="#" className="hover:text-white transition-colors">隱私權政策</a>
+            <a href="#" className="hover:text-white transition-colors">服務條款</a>
           </div>
 
           <div className="text-sm text-slate-600 font-mono">
@@ -36,4 +36,3 @@ export default function Footer() {
     </footer>
   );
 }
-

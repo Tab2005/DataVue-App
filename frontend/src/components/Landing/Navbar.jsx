@@ -1,7 +1,10 @@
 import { motion } from 'motion';
 import { Database } from 'lucide-react';
+import { useNavigate } from 'react-router-dom';
 
 export default function Navbar() {
+  const navigate = useNavigate();
+
   return (
     <motion.nav 
       initial={{ y: -100, opacity: 0 }}
@@ -18,20 +21,27 @@ export default function Navbar() {
         </div>
         
         <div className="hidden md:flex items-center gap-8">
-          <a href="#features" className="text-sm font-medium text-slate-400 hover:text-white transition-colors">?Ÿèƒ½?¸å?</a>
-          <a href="#solutions" className="text-sm font-medium text-slate-400 hover:text-white transition-colors">è§?±º?¹æ?</a>
-          <a href="#target" className="text-sm font-medium text-slate-400 hover:text-white transition-colors">?©ç”¨å°è±¡</a>
-          <a href="#how-it-works" className="text-sm font-medium text-slate-400 hover:text-white transition-colors">?‹ä??¹å?</a>
+          <a href="#features" className="text-sm font-medium text-slate-400 hover:text-white transition-colors">åŠŸèƒ½æ ¸å¿ƒ</a>
+          <a href="#solutions" className="text-sm font-medium text-slate-400 hover:text-white transition-colors">è§£æ±ºæ–¹æ¡ˆ</a>
+          <a href="#target" className="text-sm font-medium text-slate-400 hover:text-white transition-colors">é©ç”¨å°è±¡</a>
+          <a href="#how-it-works" className="text-sm font-medium text-slate-400 hover:text-white transition-colors">é‹ä½œæ–¹å¼</a>
         </div>
 
         <div className="flex items-center gap-4">
-          <button className="text-sm font-medium text-white hover:opacity-80 transition-opacity hidden sm:block">?»å…¥</button>
-          <button className="bg-gradient-to-r from-brand-blue to-brand-purple text-white px-5 py-2 rounded-xl text-sm font-semibold shadow-lg shadow-brand-blue/20 hover:scale-105 transition-transform active:scale-95">
-            ?è²»é«”é?
+          <button 
+            onClick={() => navigate('/login')}
+            className="text-sm font-medium text-white hover:opacity-80 transition-opacity hidden sm:block"
+          >
+            ç™»å…¥
+          </button>
+          <button 
+            onClick={() => navigate('/login')}
+            className="bg-gradient-to-r from-brand-blue to-brand-purple text-white px-5 py-2 rounded-xl text-sm font-semibold shadow-lg shadow-brand-blue/20 hover:scale-105 transition-transform active:scale-95"
+          >
+            å…è²»é«”é©—
           </button>
         </div>
       </div>
     </motion.nav>
   );
 }
-

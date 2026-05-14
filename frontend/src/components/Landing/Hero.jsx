@@ -20,11 +20,13 @@ export default function Hero() {
         </div>
         
         <h1 className="text-5xl md:text-7xl font-display font-bold mb-6 leading-tight">
-          DataVue ??<span className="text-gradient">?��??�景</span><br />
-          一?��???        </h1>
+          DataVue — <span className="text-gradient">數據全景</span><br />
+          一目了然
+        </h1>
         
         <p className="text-lg md:text-xl text-slate-400 mb-10 max-w-2xl mx-auto leading-relaxed">
-          終�??��?迷航?��?站�??��? Facebook Ads?�Google Search Console ??GA4，�? AI 將您?�冰?�數字�??�為?��??�略??        </p>
+          終結數據迷航。一站式整合 Facebook Ads、Google Search Console 與 GA4，讓 AI 將您的冰冷數字轉化為致勝戰略。
+        </p>
         
         <div className="flex flex-col sm:flex-row items-center justify-center gap-4">
           <motion.button 
@@ -32,7 +34,7 @@ export default function Hero() {
             whileTap={{ scale: 0.95 }}
             className="w-full sm:w-auto bg-white text-black px-8 py-4 rounded-2xl font-bold text-lg flex items-center justify-center gap-2 shadow-[0_0_20px_rgba(255,255,255,0.3)]"
           >
-            ?�費體�? <ArrowRight className="w-5 h-5" />
+            免費體驗 <ArrowRight className="w-5 h-5" />
           </motion.button>
           
           <motion.button 
@@ -40,7 +42,7 @@ export default function Hero() {
             whileTap={{ scale: 0.95 }}
             className="w-full sm:w-auto glass hover:bg-white/10 px-8 py-4 rounded-2xl font-bold text-lg flex items-center justify-center gap-2 text-white border-white/20 transition-colors"
           >
-            <Play className="w-5 h-5 fill-current" /> 了解?��??��?
+            <Play className="w-5 h-5 fill-current" /> 了解運作方式
           </motion.button>
         </div>
       </motion.div>
@@ -70,7 +72,7 @@ export default function Hero() {
              <div className="absolute inset-0 flex items-center justify-center">
                 <div className="glass p-6 rounded-2xl border-white/20 shadow-2xl backdrop-blur-2xl">
                    <div className="text-brand-cyan font-mono text-sm mb-2">Analyzing Intent...</div>
-                   <div className="text-white font-medium">?�現 12 ?��??��??��?機�?</div>
+                   <div className="text-white font-medium">發現 12 個高效關鍵字機會</div>
                 </div>
              </div>
           </div>
@@ -79,4 +81,3 @@ export default function Hero() {
     </section>
   );
 }
-
