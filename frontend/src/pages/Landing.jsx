@@ -6,8 +6,6 @@ import Features from '../components/Landing/Features';
 import Audience from '../components/Landing/Audience';
 import HowItWorks from '../components/Landing/HowItWorks';
 import Footer from '../components/Landing/Footer';
-import '../landing.css';
-
 export default function Landing() {
   // Simple scroll reveal implementation for elements with 'reveal' class
   useEffect(() => {
@@ -33,7 +31,7 @@ export default function Landing() {
   }, []);
 
   return (
-    <div className="min-h-screen bg-[#050508] selection:bg-brand-blue/30 selection:text-white">
+    <div className="landing-page-root min-h-screen selection:bg-brand-blue/30 selection:text-white">
       <Navbar />
       
       <main>

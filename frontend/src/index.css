@@ -1,3 +1,13 @@
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Orbitron:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap');
+@import "tailwindcss";
+
+@theme {
+  --color-brand-blue: #3b82f6;
+  --color-brand-purple: #a855f7;
+  --color-brand-cyan: #22d3ee;
+  --font-display: "Orbitron", sans-serif;
+}
+
 :root {
   /* Colors - Premium Dark Mode */
   --bg-primary: #18191a;
@@ -33,6 +43,10 @@
   --radius-md: 8px;
   --radius-lg: 12px;
   --radius-xl: 16px;
+
+  /* Landing Page Variables */
+  --landing-bg: #050508;
+  --landing-fg: #f8fafc;
 }
 
 * {
@@ -41,12 +55,27 @@
   padding: 0;
 }
 
+/* Base Body Style - Default to System Theme */
 body {
   font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, 'Open Sans', 'Helvetica Neue', sans-serif;
   background-color: var(--bg-primary);
   color: var(--text-primary);
   line-height: 1.5;
   overflow-x: hidden;
+}
+
+/* Landing Page Specific Overrides */
+.landing-page-root {
+  background-color: var(--landing-bg);
+  color: var(--landing-fg);
+  font-family: 'Inter', sans-serif;
+  scroll-behavior: smooth;
+}
+
+.landing-page-root h1, 
+.landing-page-root h2, 
+.landing-page-root h3 {
+  font-family: var(--font-display);
 }
 
 /* Typography Utilities */
@@ -75,6 +104,30 @@ a:hover {
   box-shadow: var(--shadow-md);
 }
 
+/* Landing Specific Glass */
+.glass {
+  background: rgba(255, 255, 255, 0.03);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.37);
+  border-radius: 1rem;
+}
+
+.text-gradient {
+  background-clip: text;
+  -webkit-background-clip: text;
+  color: transparent;
+  background-image: linear-gradient(to right, var(--color-brand-blue), var(--color-brand-cyan), var(--color-brand-purple));
+}
+
+.bg-mesh {
+  background-image: 
+    radial-gradient(at 0% 0%, rgba(59, 130, 246, 0.15) 0px, transparent 50%),
+    radial-gradient(at 100% 0%, rgba(168, 85, 247, 0.15) 0px, transparent 50%),
+    radial-gradient(at 50% 100%, rgba(34, 211, 238, 0.1) 0px, transparent 50%);
+}
+
 /* Animations */
 @keyframes fadeIn {
   from { opacity: 0; transform: translateY(10px); }
@@ -83,6 +136,18 @@ a:hover {
 
 .animate-fade-in {
   animation: fadeIn 0.5s var(--transition-medium) forwards;
+}
+
+/* Reveal Animation */
+.reveal {
+  opacity: 0;
+  transform: translateY(20px);
+  transition: all 0.8s ease-out;
+}
+
+.reveal.active {
+  opacity: 1;
+  transform: translateY(0);
 }
 
 .spin {
@@ -110,5 +175,5 @@ a:hover {
 }
 
 ::-webkit-scrollbar-thumb:hover {
-  background: var(--text-secondary);
+  background: #2d2d44;
 }
