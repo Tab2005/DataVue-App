@@ -300,6 +300,7 @@ const Analytics = () => {
     // Comparison State
     const [isCompareMode, setIsCompareMode] = useState(false);
     const [comparePreset, setComparePreset] = useState('previous_period');
+    const [compareDateRange, setCompareDateRange] = useState({ since: '', until: '' });
 
     // Metric Selector State (Default: Select all keys from all groups)
     // Use composite keys "group:metric" to allow independent selection of same metric in different groups
@@ -442,6 +443,22 @@ const Analytics = () => {
         }
 
         setDateRange(newRange);
+    };
+    
+    // 2.2 Handle Compare Preset Change
+    const handleComparePresetChange = (e) => {
+        const preset = e.target.value;
+        setComparePreset(preset);
+
+        if (preset === 'custom' && (!compareDateRange.since || !compareDateRange.until)) {
+            // Calculate previous period as default custom compare dates
+            const startDate = new Date(dateRange.since);
+            const endDate = new Date(dateRange.until);
+            const diffDays = differenceInDays(endDate, startDate) + 1; // Inclusive
+            const prevSince = format(subDays(startDate, diffDays), 'yyyy-MM-dd');
+            const prevUntil = format(subDays(endDate, diffDays), 'yyyy-MM-dd');
+            setCompareDateRange({ since: prevSince, until: prevUntil });
+        }
     };
 
     // 3. Data State
@@ -597,6 +614,9 @@ const Analytics = () => {
                 if (comparePreset === 'year_over_year') {
                     prevSince = format(subYears(startDate, 1), 'yyyy-MM-dd');
                     prevUntil = format(subYears(endDate, 1), 'yyyy-MM-dd');
+                } else if (comparePreset === 'custom') {
+                    prevSince = compareDateRange.since || format(subDays(startDate, diffDays), 'yyyy-MM-dd');
+                    prevUntil = compareDateRange.until || format(subDays(endDate, diffDays), 'yyyy-MM-dd');
                 } else {
                     // Default: Previous Period
                     prevSince = format(subDays(startDate, diffDays), 'yyyy-MM-dd');
@@ -1301,7 +1321,7 @@ const Analytics = () => {
                                 <label style={{ fontSize: '0.85rem', color: 'var(--text-secondary)', fontWeight: 600 }}>{txt.comparePeriod}</label>
                                 <select
                                     value={comparePreset}
-                                    onChange={(e) => setComparePreset(e.target.value)}
+                                    onChange={handleComparePresetChange}
                                     style={{
                                         padding: '10px',
                                         borderRadius: '8px',
@@ -1317,6 +1337,50 @@ const Analytics = () => {
                                         </option>
                                     ))}
                                 </select>
+
+                                {/* Custom Compare Date Inputs */}
+                                {comparePreset === 'custom' && (
+                                    <div style={{ display: 'flex', gap: '16px', marginTop: '8px' }}>
+                                        <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', flex: 1 }}>
+                                            <label style={{ fontSize: '0.85rem', color: 'var(--text-secondary)', fontWeight: 600 }}>
+                                                {language === 'zh' ? '比較開始日期' : 'Compare Start'}
+                                            </label>
+                                            <input 
+                                                type="date" 
+                                                value={compareDateRange.since} 
+                                                onChange={(e) => setCompareDateRange({ ...compareDateRange, since: e.target.value })}
+                                                style={{ 
+                                                    padding: '10px', 
+                                                    borderRadius: '8px', 
+                                                    background: 'rgba(255,255,255,0.05)', 
+                                                    border: '1px solid var(--glass-border)', 
+                                                    color: 'var(--text-primary)', 
+                                                    colorScheme: 'dark', 
+                                                    width: '100%' 
+                                                }} 
+                                            />
+                                        </div>
+                                        <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', flex: 1 }}>
+                                            <label style={{ fontSize: '0.85rem', color: 'var(--text-secondary)', fontWeight: 600 }}>
+                                                {language === 'zh' ? '比較結束日期' : 'Compare End'}
+                                            </label>
+                                            <input 
+                                                type="date" 
+                                                value={compareDateRange.until} 
+                                                onChange={(e) => setCompareDateRange({ ...compareDateRange, until: e.target.value })}
+                                                style={{ 
+                                                    padding: '10px', 
+                                                    borderRadius: '8px', 
+                                                    background: 'rgba(255,255,255,0.05)', 
+                                                    border: '1px solid var(--glass-border)', 
+                                                    color: 'var(--text-primary)', 
+                                                    colorScheme: 'dark', 
+                                                    width: '100%' 
+                                                }} 
+                                            />
+                                        </div>
+                                    </div>
+                                )}
                             </div>
                         )}
                     </div>
