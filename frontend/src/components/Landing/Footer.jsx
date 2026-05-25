@@ -7,7 +7,7 @@ export default function Footer() {
       
       <div className="max-w-7xl mx-auto flex flex-col items-center">
         <div className="text-center mb-16">
-          <h2 className="text-3xl md:text-5xl font-display font-bold mb-6">讓每一分預算，<br className="sm:hidden" />都成為奪取市場的戰略物資。</h2>
+          <h2 className="text-3xl md:text-5xl font-display font-bold mb-10 leading-tight md:leading-snug">讓每一分預算，<br className="sm:hidden" />都成為奪取市場的戰略物資。</h2>
           <button className="bg-white text-black px-10 py-5 rounded-2xl font-bold text-xl shadow-2xl shadow-white/10 hover:scale-105 transition-transform active:scale-95">
             立即建立您的 DataVue 工作區
           </button>

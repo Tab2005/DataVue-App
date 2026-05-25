@@ -3,7 +3,7 @@ import { FiArrowRight, FiPlay } from 'react-icons/fi';
 
 export default function Hero() {
   return (
-    <section className="relative pt-32 pb-20 px-6 overflow-hidden bg-mesh min-h-screen flex flex-col items-center justify-center">
+    <section className="relative pt-44 pb-20 px-6 overflow-hidden bg-mesh min-h-screen flex flex-col items-center">
       {/* Background Glows */}
       <div className="absolute top-1/4 left-1/4 w-96 h-96 bg-brand-blue/20 rounded-full blur-[120px] -z-10" />
       <div className="absolute bottom-1/4 right-1/4 w-96 h-96 bg-brand-purple/20 rounded-full blur-[120px] -z-10" />
@@ -12,7 +12,7 @@ export default function Hero() {
         initial={{ opacity: 0, y: 30 }}
         animate={{ opacity: 1, y: 0 }}
         transition={{ duration: 0.8, delay: 0.2 }}
-        className="max-w-4xl mx-auto text-center"
+        className="max-w-4xl mx-auto text-center shrink-0"
       >
         <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full glass border-white/10 mb-8">
           <span className="w-2 h-2 rounded-full bg-brand-cyan animate-pulse" />
@@ -52,7 +52,7 @@ export default function Hero() {
         initial={{ opacity: 0, y: 100 }}
         animate={{ opacity: 1, y: 0 }}
         transition={{ duration: 1, delay: 0.6 }}
-        className="mt-20 w-full max-w-5xl mx-auto relative group"
+        className="mt-20 w-full max-w-5xl mx-auto relative group shrink-0"
       >
         <div className="absolute inset-0 bg-gradient-to-t from-background via-transparent to-transparent z-10" />
         <div className="glass rounded-3xl overflow-hidden border border-white/10 shadow-2xl">
