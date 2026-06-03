@@ -1,32 +1,35 @@
-@import url('https://fonts.googleapis.com/css2?family=Fira+Code:wght@400;500;600;700&family=Fira+Sans:wght@300;400;500;600;700&family=Inter:wght@300;400;500;600;700&family=Orbitron:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,300;0,9..144,400;0,9..144,600;0,9..144,800;1,9..144,400&family=Outfit:wght@200;300;400;500;600;700;800;900&family=Fira+Code:wght@400;500;600;700&family=Fira+Sans:wght@300;400;500;600;700&family=Inter:wght@300;400;500;600;700&family=Orbitron:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap');
 @import "tailwindcss";
 
 @theme {
-  --color-brand-blue: #2563eb;
-  --color-brand-blue-hover: #1d4ed8;
-  --color-brand-purple: #a855f7;
-  --color-brand-cyan: #22d3ee;
+  --color-brand-blue: #3b82f6;
+  --color-brand-blue-hover: #2563eb;
+  --color-brand-purple: #8b5cf6;
+  --color-brand-cyan: #06b6d4;
   --color-brand-orange: #f97316;
   --color-brand-orange-hover: #ea580c;
-  --color-brand-slate: #1e293b;
-  --font-display: "Fira Code", monospace;
-  --font-sans: "Fira Sans", sans-serif;
+  --color-brand-slate: #0f172a;
+  --font-display: "Outfit", "Fira Code", monospace;
+  --font-sans: "Outfit", "Fira Sans", sans-serif;
+  --font-serif: "Fraunces", serif;
 }
 
 :root {
-  /* Colors - Premium Dark Mode */
-  --bg-primary: #18191a;
-  --bg-secondary: #242526;
-  --bg-hover: #3a3b3c;
+  /* Colors - Premium Obsidian Chrome Theme */
+  --bg-primary: #040507;
+  --bg-secondary: #090b0f;
+  --bg-hover: #12161f;
   
-  --text-primary: #e4e6eb;
-  --text-secondary: #b0b3b8;
+  --text-primary: #f8fafc;
+  --text-secondary: #94a3b8;
+  --text-muted: #475569;
   
-  --accent-primary: #2d88ff; /* Facebook Blue */
-  --accent-hover: #1a6dd9;
+  --accent-primary: #3b82f6;
+  --accent-hover: #2563eb;
   
-  --glass-bg: rgba(36, 37, 38, 0.7);
-  --glass-border: rgba(255, 255, 255, 0.08);
+  --glass-bg: rgba(6, 8, 12, 0.6);
+  --glass-border: rgba(255, 255, 255, 0.04);
+  --glass-border-hover: rgba(255, 255, 255, 0.08);
   
   /* Spacing */
   --spacing-xs: 4px;
@@ -50,7 +53,7 @@
   --radius-xl: 16px;
 
   /* Landing Page Variables */
-  --landing-bg: #0f172a;
+  --landing-bg: #040507;
   --landing-fg: #f8fafc;
 }
 
@@ -62,7 +65,7 @@
 
 /* Base Body Style - Default to System Theme */
 body {
-  font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, 'Open Sans', 'Helvetica Neue', sans-serif;
+  font-family: 'Outfit', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, 'Open Sans', 'Helvetica Neue', sans-serif;
   background-color: var(--bg-primary);
   color: var(--text-primary);
   line-height: 1.5;
@@ -73,13 +76,15 @@ body {
 .landing-page-root {
   background-color: var(--landing-bg);
   color: var(--landing-fg);
-  font-family: 'Fira Sans', 'Inter', sans-serif;
+  font-family: var(--font-sans);
   scroll-behavior: smooth;
+  position: relative;
 }
 
 .landing-page-root h1, 
 .landing-page-root h2, 
-.landing-page-root h3 {
+.landing-page-root h3,
+.landing-page-root h4 {
   font-family: var(--font-sans);
   font-weight: 700;
 }
@@ -104,43 +109,64 @@ a:hover {
 /* Glassmorphism Utility */
 .glass-panel {
   background: var(--glass-bg);
-  backdrop-filter: blur(12px);
-  -webkit-backdrop-filter: blur(12px);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
   border: 1px solid var(--glass-border);
-  box-shadow: var(--shadow-md);
+  box-shadow: var(--shadow-lg);
+  transition: border-color var(--transition-fast), background var(--transition-fast);
+}
+
+.glass-panel:hover {
+  border-color: var(--glass-border-hover);
 }
 
 /* Landing Specific Glass */
 .glass {
-  background: rgba(30, 41, 59, 0.4);
-  backdrop-filter: blur(12px);
-  -webkit-backdrop-filter: blur(12px);
-  border: 1px solid rgba(255, 255, 255, 0.05);
-  box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.5);
-  border-radius: 1rem;
+  background: rgba(10, 12, 18, 0.4);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  border: 1px solid rgba(255, 255, 255, 0.03);
+  box-shadow: 0 20px 50px 0 rgba(0, 0, 0, 0.8), inset 0 1px 0 0 rgba(255, 255, 255, 0.05);
+  border-radius: 1.25rem;
 }
 
 .glass-morphism {
-  background: rgba(30, 41, 59, 0.6);
-  backdrop-filter: blur(16px);
-  -webkit-backdrop-filter: blur(16px);
-  border: 1px solid rgba(255, 255, 255, 0.08);
-  box-shadow: 0 12px 40px 0 rgba(0, 0, 0, 0.6);
-  border-radius: 1.5rem;
+  background: rgba(8, 10, 15, 0.6);
+  backdrop-filter: blur(24px);
+  -webkit-backdrop-filter: blur(24px);
+  border: 1px solid rgba(255, 255, 255, 0.05);
+  box-shadow: 0 30px 60px 0 rgba(0, 0, 0, 0.9), inset 0 1px 0 0 rgba(255, 255, 255, 0.08);
+  border-radius: 2rem;
 }
 
 .text-gradient {
   background-clip: text;
   -webkit-background-clip: text;
   color: transparent;
-  background-image: linear-gradient(to right, var(--color-brand-blue), #3b82f6, var(--color-brand-orange));
+  background-image: linear-gradient(135deg, #ffffff 0%, #cbd5e1 50%, #475569 100%);
+}
+
+.text-chrome-gradient {
+  background-clip: text;
+  -webkit-background-clip: text;
+  color: transparent;
+  background-image: linear-gradient(135deg, #ffffff 0%, #93c5fd 30%, #a855f7 70%, #fda4af 100%);
 }
 
 .bg-mesh {
+  background-color: #040507;
   background-image: 
-    radial-gradient(at 0% 0%, rgba(37, 99, 235, 0.12) 0px, transparent 50%),
-    radial-gradient(at 100% 0%, rgba(249, 115, 22, 0.08) 0px, transparent 50%),
-    radial-gradient(at 50% 100%, rgba(37, 99, 235, 0.06) 0px, transparent 50%);
+    radial-gradient(at 0% 0%, rgba(59, 130, 246, 0.08) 0px, transparent 50%),
+    radial-gradient(at 100% 0%, rgba(236, 72, 153, 0.05) 0px, transparent 50%),
+    radial-gradient(at 50% 50%, rgba(139, 92, 246, 0.06) 0px, transparent 60%);
+}
+
+/* Linear Grid Background */
+.bg-grid {
+  background-size: 40px 40px;
+  background-image: 
+    linear-gradient(to right, rgba(255, 255, 255, 0.02) 1px, transparent 1px),
+    linear-gradient(to bottom, rgba(255, 255, 255, 0.02) 1px, transparent 1px);
 }
 
 .code-highlight {
