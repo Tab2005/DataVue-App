@@ -1,24 +1,24 @@
 import { motion } from 'framer-motion';
-import { FiXCircle, FiCheckCircle } from 'react-icons/fi';
+import { XCircle, CheckCircle2 } from 'lucide-react';
 
 const painPoints = [
   {
-    icon: <FiXCircle className="w-10 h-10 text-red-500/70" />,
-    solIcon: <FiCheckCircle className="w-10 h-10 text-brand-cyan" />,
+    icon: <XCircle className="w-10 h-10 text-red-500/70" />,
+    solIcon: <CheckCircle2 className="w-10 h-10 text-brand-orange" />,
     title: "報表分散",
     problem: "登入多個平台，每天在不同頁面切換，數據難以對齊。",
     solution: "一站式儀表板，跨平台數據即刻對照，一眼看穿局勢。"
   },
   {
-    icon: <FiXCircle className="w-10 h-10 text-red-500/70" />,
-    solIcon: <FiCheckCircle className="w-10 h-10 text-brand-purple" />,
+    icon: <XCircle className="w-10 h-10 text-red-500/70" />,
+    solIcon: <CheckCircle2 className="w-10 h-10 text-brand-blue" />,
     title: "分析盲點",
-    problem: "看著滿滿的數字不知從何優化，甚至不知道哪裡出錯。",
+    problem: "看著滿滿 of 數字不知從何優化，甚至不知道哪裡出錯。",
     solution: "AI 戰略導向，深度剖析用戶意圖並提供具體行動建議。"
   },
   {
-    icon: <FiXCircle className="w-10 h-10 text-red-500/70" />,
-    solIcon: <FiCheckCircle className="w-10 h-10 text-brand-blue" />,
+    icon: <XCircle className="w-10 h-10 text-red-500/70" />,
+    solIcon: <CheckCircle2 className="w-10 h-10 text-brand-orange" />,
     title: "擴充困難",
     problem: "系統僵化，當需要串接新平台時往往束手無策。",
     solution: "模組化架構，如同套件般靈活。未來，我們與您共同成長。"
@@ -27,10 +27,10 @@ const painPoints = [
 
 export default function PainPoints() {
   return (
-    <section id="solutions" className="py-24 px-6 bg-slate-950/20">
+    <section id="solutions" className="py-24 px-6 bg-slate-900/10">
       <div className="max-w-7xl mx-auto">
         <div className="text-center mb-16">
-          <h2 className="text-3xl md:text-5xl font-display font-bold mb-4">為什麼選擇 DataVue？</h2>
+          <h2 className="text-3xl md:text-5xl font-sans font-bold mb-4 text-white">為什麼選擇 DataVue？</h2>
           <p className="text-slate-400 max-w-xl mx-auto">我們懂您的痛苦，因此我們打造了更聰明的解決方案。</p>
         </div>
 
@@ -42,7 +42,7 @@ export default function PainPoints() {
               whileInView={{ opacity: 1, x: 0 }}
               viewport={{ once: true }}
               transition={{ duration: 0.6, delay: index * 0.1 }}
-              className="glass rounded-3xl p-8 border-white/5 flex flex-col md:flex-row gap-12 items-center"
+              className="glass rounded-3xl p-8 border-white/5 flex flex-col md:flex-row gap-12 items-center bg-slate-900/20"
             >
               <div className="flex-1 opacity-50 grayscale hover:grayscale-0 transition-all duration-500">
                 <div className="flex items-start gap-4 mb-4">
