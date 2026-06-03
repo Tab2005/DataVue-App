@@ -1,5 +1,6 @@
 import { motion } from 'framer-motion';
-import { Search, Facebook, BarChart3, Bot } from 'lucide-react';
+import { Search, BarChart3, Bot } from 'lucide-react';
+import { FaFacebook } from 'react-icons/fa';
 
 const features = [
   {
@@ -9,7 +10,7 @@ const features = [
     color: "from-blue-500/10 to-transparent"
   },
   {
-    icon: <Facebook className="w-8 h-8 text-blue-300" />,
+    icon: <FaFacebook className="w-8 h-8 text-blue-300" />,
     title: "Facebook Ads 精準追蹤",
     description: "一目了然的廣告表現追蹤，實時優化轉化成本，拒絕預算浪費。",
     color: "from-blue-600/10 to-transparent"
