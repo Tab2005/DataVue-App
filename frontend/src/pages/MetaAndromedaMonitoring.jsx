@@ -9,7 +9,7 @@ import {
 } from '../services/metaAndromedaMonitoringService';
 
 const MetaAndromedaMonitoring = () => {
-    const { isMobile, language } = useOutletContext();
+    const { isMobile, language, selectedTeamId } = useOutletContext();
     const [searchParams, setSearchParams] = useSearchParams();
     const [summary, setSummary] = useState(null);
     const [timeline, setTimeline] = useState(null);
@@ -23,7 +23,7 @@ const MetaAndromedaMonitoring = () => {
     const [selectedScoreEventId, setSelectedScoreEventId] = useState(searchParams.get('event') || '');
     const [driftWindowKind, setDriftWindowKind] = useState(searchParams.get('window') || 'last_24h');
     const [driftNote, setDriftNote] = useState('');
-    const { hasPermission: canOperate, loading: loadingOperatePermission } = usePermission('meta_andromeda:operate');
+    const { hasPermission: canOperate, loading: loadingOperatePermission } = usePermission('meta_andromeda:operate', selectedTeamId);
 
     const t = (en, zh) => (language === 'en' ? en : zh);
 

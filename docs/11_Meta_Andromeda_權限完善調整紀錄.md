@@ -129,7 +129,7 @@
 
 - 明確區分「模組可進入」與「模組內功能操作」
 - 保留 `meta_andromeda` 作為 module access key
-- 保留 `meta_andromeda:view` 作為可讀取功能權限，或明確決定由 module access 取代該用途
+- 保留 `meta_andromeda:view` 作為唯讀檢視語義，不作為 module access 的別名
 - 修正文檔中 `meta_andromeda:module` 的描述，避免與實作不一致
 
 ### Phase 2. 後端 team-aware 權限檢查
@@ -176,12 +176,32 @@
 - 建立本調整紀錄文件
 - 完成現況盤點
 - 確認本次優先處理範圍為權限模型、team-aware 授權、前端顯示與測試覆蓋
+- 完成 Phase 1 決策：
+  - `meta_andromeda` = module access key，負責模組可見性與主入口存取
+  - `meta_andromeda:view` = 唯讀檢視語義，保留給角色矩陣與 finer-grained read permission
+  - `meta_andromeda:feedback / operate / release` = 模組內操作權限
+- 已同步更新 Meta Andromeda 模組說明與模組 README
+- 已將 seed 中 `meta_andromeda:view` 的顯示名稱改為「唯讀檢視」
+- 完成 Phase 2 後端 team-aware 授權：
+  - `backend/modules/auth/dependencies.py` 的 `require_module()` / `require_permission()` 已改為讀取 `X-Team-ID`
+  - 舊版 `backend/dependencies.py` 同步對齊，避免新舊授權邏輯分叉
+  - 已新增測試驗證 team-scoped module access 與 team role permission 會隨 `X-Team-ID` 生效
+- 完成 Phase 3 前端工作區權限同步：
+  - `frontend/src/hooks/usePermission.jsx` 新增 `useSelectedTeamId()`，集中追蹤目前工作區
+  - 未顯式傳入 `teamId` 的 `ProtectedModule` / `useModuleAccess` / `usePermission` / `useUserModules` / `useUserPermissions`，會自動使用目前選取工作區
+  - `frontend/src/components/Layout.jsx` 在工作區切換時會派發前端事件，確保同頁面內 hook 立即同步
+  - Meta Andromeda 的 Monitoring / Release / ReviewQueue / ScoreLab 頁面已顯式使用 `selectedTeamId`
+  - 已執行 `frontend` build 驗證通過
+- 完成側欄模組顯示過濾：
+  - `frontend/src/components/Sidebar.jsx` 已改為使用 `useUserModules()` 動態過濾 module-backed 選單
+  - 目前 `fb_ads` / `gsc` / `ga4` / `meta_andromeda` 相關入口都會依目前工作區的 module access 顯示或隱藏
+  - 已再次執行 `frontend` build 驗證通過
 
 ## 待辦清單
 
-- [ ] 統一 Meta Andromeda 權限命名與文件
-- [ ] 修正後端 `require_module()` / `require_permission()` 的 team-aware 行為
-- [ ] 修正前端 route guard 與 page-level permission hook 的 team 同步
-- [ ] 修正側欄模組顯示過濾
+- [x] 統一 Meta Andromeda 權限命名與文件
+- [x] 修正後端 `require_module()` / `require_permission()` 的 team-aware 行為
+- [x] 修正前端 route guard 與 page-level permission hook 的 team 同步
+- [x] 修正側欄模組顯示過濾
 - [ ] 補齊後端權限測試
 - [ ] 更新模組說明文件與驗收結果

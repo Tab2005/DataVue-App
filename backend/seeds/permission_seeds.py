@@ -28,7 +28,7 @@ PERMISSIONS = {
         {"key": "ga4:analytics:view", "name": "數據查看", "category": "feature"},
     ],
     "meta_andromeda": [
-        {"key": "meta_andromeda:view", "name": "模組查看", "category": "feature"},
+        {"key": "meta_andromeda:view", "name": "唯讀檢視", "category": "feature"},
         {"key": "meta_andromeda:feedback", "name": "審核回饋", "category": "feature"},
         {"key": "meta_andromeda:operate", "name": "營運操作", "category": "admin"},
         {"key": "meta_andromeda:release", "name": "版本操作", "category": "admin"},

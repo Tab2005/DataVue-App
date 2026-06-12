@@ -270,7 +270,8 @@ def require_permission(permission_key: str):
     """
     def permission_checker(
         user: User = Depends(get_current_user),
-        db = Depends(get_db)
+        db = Depends(get_db),
+        x_team_id: str | None = Header(default=None),
     ):
         if user.is_super_admin:
             return True
@@ -278,7 +279,7 @@ def require_permission(permission_key: str):
         from services.permission_service import PermissionService
         service = PermissionService(db)
         
-        if not service.check_permission(user.id, permission_key, None):
+        if not service.check_permission(user.id, permission_key, x_team_id):
             raise HTTPException(
                 status_code=403, 
                 detail=f"Permission denied: {permission_key}"
@@ -299,7 +300,8 @@ def require_module(module_key: str):
     """
     def module_checker(
         user: User = Depends(get_current_user),
-        db = Depends(get_db)
+        db = Depends(get_db),
+        x_team_id: str | None = Header(default=None),
     ):
         if user.is_super_admin:
             return True
@@ -307,7 +309,7 @@ def require_module(module_key: str):
         from services.permission_service import PermissionService
         service = PermissionService(db)
         
-        if not service.check_module_access(user.id, module_key, None):
+        if not service.check_module_access(user.id, module_key, x_team_id):
             raise HTTPException(
                 status_code=403, 
                 detail=f"Module access denied: {module_key}"

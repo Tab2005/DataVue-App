@@ -23,7 +23,7 @@ const defaultFeedbackForm = {
 };
 
 const MetaAndromedaReviewQueue = () => {
-    const { isMobile, language } = useOutletContext();
+    const { isMobile, language, selectedTeamId } = useOutletContext();
     const [statusFilter, setStatusFilter] = useState('completed');
     const [reviewedFilter, setReviewedFilter] = useState('unreviewed');
     const [queueItems, setQueueItems] = useState([]);
@@ -35,7 +35,7 @@ const MetaAndromedaReviewQueue = () => {
     const [submittingFeedback, setSubmittingFeedback] = useState(false);
     const [error, setError] = useState(null);
     const [feedbackForm, setFeedbackForm] = useState(defaultFeedbackForm);
-    const { hasPermission: canSubmitFeedback, loading: loadingFeedbackPermission } = usePermission('meta_andromeda:feedback');
+    const { hasPermission: canSubmitFeedback, loading: loadingFeedbackPermission } = usePermission('meta_andromeda:feedback', selectedTeamId);
 
     const t = (en, zh) => (language === 'en' ? en : zh);
 

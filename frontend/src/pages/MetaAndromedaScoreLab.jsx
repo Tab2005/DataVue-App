@@ -21,8 +21,8 @@ const inferAssetType = (file) => {
 const terminalStatuses = new Set(['completed', 'failed']);
 
 const MetaAndromedaScoreLab = () => {
-    const { isMobile, language } = useOutletContext();
-    const { hasPermission: canOperate, loading: loadingOperatePermission } = usePermission('meta_andromeda:operate');
+    const { isMobile, language, selectedTeamId } = useOutletContext();
+    const { hasPermission: canOperate, loading: loadingOperatePermission } = usePermission('meta_andromeda:operate', selectedTeamId);
     const [selectedFile, setSelectedFile] = useState(null);
     const [uploadedAsset, setUploadedAsset] = useState(null);
     const [scoreResult, setScoreResult] = useState(null);

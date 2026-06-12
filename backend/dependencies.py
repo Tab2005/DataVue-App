@@ -161,7 +161,8 @@ def require_permission(permission_key: str, team_id_param: str = None):
     """
     def permission_checker(
         user: User = Depends(get_current_user),
-        db = Depends(get_db)
+        db = Depends(get_db),
+        x_team_id: str = Header(None),
     ):
         from services.permission_service import PermissionService
         
@@ -170,7 +171,7 @@ def require_permission(permission_key: str, team_id_param: str = None):
             return True
         
         service = PermissionService(db)
-        has_permission = service.check_permission(user.id, permission_key, None)
+        has_permission = service.check_permission(user.id, permission_key, x_team_id)
         
         if not has_permission:
             raise HTTPException(
@@ -196,7 +197,8 @@ def require_module(module_key: str):
     """
     def module_checker(
         user: User = Depends(get_current_user),
-        db = Depends(get_db)
+        db = Depends(get_db),
+        x_team_id: str = Header(None),
     ):
         from services.permission_service import PermissionService
         
@@ -205,7 +207,7 @@ def require_module(module_key: str):
             return True
         
         service = PermissionService(db)
-        has_access = service.check_module_access(user.id, module_key, None)
+        has_access = service.check_module_access(user.id, module_key, x_team_id)
         
         if not has_access:
             raise HTTPException(

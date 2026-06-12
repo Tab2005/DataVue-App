@@ -68,9 +68,34 @@
 
 模組權限依賴 DataVue 既有 Google 登入與後端 permission mapping，不存在獨立帳密登入。
 
-目前使用的權限點：
+### 權限語義
 
-- `meta_andromeda:module`
+`Meta Andromeda` 目前採用兩層語義：
+
+1. `module access`
+
+- module key：`meta_andromeda`
+- 來源：`modules` + `user_module_access`
+- 用途：控制模組是否可見、是否可進入 `/meta-andromeda*` 路由、是否可通過目前的模組級 API 入口保護
+
+2. `feature permissions`
+
+- `meta_andromeda:view`
+- `meta_andromeda:feedback`
+- `meta_andromeda:operate`
+- `meta_andromeda:release`
+
+其中：
+
+- `meta_andromeda:view` 的語義是「唯讀檢視權」，不是 `module access` 的別名
+- 目前實作上，Meta Andromeda 的主要唯讀入口仍以 `module access` 為主
+- `meta_andromeda:view` 保留作為角色矩陣與後續 finer-grained read permission 的語義基礎
+- `meta_andromeda:feedback` / `operate` / `release` 分別對應回饋、營運操作與版本操作
+
+### 目前使用的權限點
+
+- module access：`meta_andromeda`
+- `meta_andromeda:view`
 - `meta_andromeda:operate`
 - `meta_andromeda:feedback`
 - `meta_andromeda:release`
@@ -85,6 +110,7 @@
 
 - 目前共享環境 smoke 已使用 Google `Bearer token` 驗證通過。
 - 若使用 super-admin token，只能證明功能與整合可用，不能代表 reviewer / operator 權限隔離已完成。
+- 若文件、後台設定頁與程式碼有權限語彙差異，應以本文件所定義的 `module access` / `view permission` 分工為準。
 
 ## Shared Runtime 組成
 
@@ -192,4 +218,3 @@ shared-environment smoke script 位於：
 - [06_部署指南.md](C:\Users\BWM2\Documents\python\DataVue-App\docs\06_部署指南.md)
 - [zeabur_deployment_guide.md](C:\Users\BWM2\Documents\python\DataVue-App\docs\zeabur_deployment_guide.md)
 - [backend/modules/meta_andromeda/README.md](C:\Users\BWM2\Documents\python\DataVue-App\backend\modules\meta_andromeda\README.md)
-

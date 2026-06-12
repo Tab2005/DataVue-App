@@ -10,13 +10,13 @@ import {
 } from '../services/metaAndromedaReleaseService';
 
 const MetaAndromedaRelease = () => {
-    const { isMobile, language } = useOutletContext();
+    const { isMobile, language, selectedTeamId } = useOutletContext();
     const [overview, setOverview] = useState(null);
     const [loading, setLoading] = useState(true);
     const [submitting, setSubmitting] = useState(false);
     const [error, setError] = useState(null);
     const [actionMessage, setActionMessage] = useState(null);
-    const { hasPermission: canRelease, loading: loadingReleasePermission } = usePermission('meta_andromeda:release');
+    const { hasPermission: canRelease, loading: loadingReleasePermission } = usePermission('meta_andromeda:release', selectedTeamId);
 
     const t = (en, zh) => (language === 'en' ? en : zh);
 

@@ -5,6 +5,10 @@
 import { useState, useEffect, useCallback } from 'react';
 
 const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000';
+const SELECTED_TEAM_STORAGE_KEY = 'selected_team_id';
+const SELECTED_TEAM_EVENT = 'datavue:selected-team-changed';
+
+const readSelectedTeamId = () => localStorage.getItem(SELECTED_TEAM_STORAGE_KEY) || null;
 
 /**
  * 取得 API 請求 headers
@@ -15,6 +19,39 @@ const getAuthHeaders = () => {
         'Authorization': `Bearer ${token}`,
         'Content-Type': 'application/json'
     };
+};
+
+/**
+ * useSelectedTeamId Hook
+ * 取得並追蹤目前工作區 team id。
+ *
+ * 回傳 null 代表個人工作區。
+ */
+export const useSelectedTeamId = () => {
+    const [selectedTeamId, setSelectedTeamId] = useState(readSelectedTeamId);
+
+    useEffect(() => {
+        const handleStorageChange = (event) => {
+            if (!event.key || event.key === SELECTED_TEAM_STORAGE_KEY) {
+                setSelectedTeamId(readSelectedTeamId());
+            }
+        };
+
+        const handleSelectedTeamChange = (event) => {
+            const nextTeamId = event?.detail?.teamId;
+            setSelectedTeamId(nextTeamId || null);
+        };
+
+        window.addEventListener('storage', handleStorageChange);
+        window.addEventListener(SELECTED_TEAM_EVENT, handleSelectedTeamChange);
+
+        return () => {
+            window.removeEventListener('storage', handleStorageChange);
+            window.removeEventListener(SELECTED_TEAM_EVENT, handleSelectedTeamChange);
+        };
+    }, []);
+
+    return selectedTeamId;
 };
 
 /**
@@ -29,10 +66,12 @@ const getAuthHeaders = () => {
  * const { hasAccess, loading } = useModuleAccess('gsc');
  * if (!hasAccess) return <AccessDenied />;
  */
-export const useModuleAccess = (moduleKey, teamId = null) => {
+export const useModuleAccess = (moduleKey, teamId) => {
     const [hasAccess, setHasAccess] = useState(false);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState(null);
+    const selectedTeamId = useSelectedTeamId();
+    const resolvedTeamId = teamId === undefined ? selectedTeamId : teamId;
 
     useEffect(() => {
         const checkAccess = async () => {
@@ -42,8 +81,8 @@ export const useModuleAccess = (moduleKey, teamId = null) => {
             }
 
             try {
-                const url = teamId
-                    ? `${API_URL}/api/permissions/me/module/${moduleKey}?team_id=${teamId}`
+                const url = resolvedTeamId
+                    ? `${API_URL}/api/permissions/me/module/${moduleKey}?team_id=${resolvedTeamId}`
                     : `${API_URL}/api/permissions/me/module/${moduleKey}`;
 
                 const res = await fetch(url, { headers: getAuthHeaders() });
@@ -65,7 +104,7 @@ export const useModuleAccess = (moduleKey, teamId = null) => {
         };
 
         checkAccess();
-    }, [moduleKey, teamId]);
+    }, [moduleKey, resolvedTeamId]);
 
     return { hasAccess, loading, error };
 };
@@ -82,10 +121,12 @@ export const useModuleAccess = (moduleKey, teamId = null) => {
  * const { hasPermission } = usePermission('fb_ads:ai:use');
  * if (!hasPermission) return <UpgradePrompt />;
  */
-export const usePermission = (permissionKey, teamId = null) => {
+export const usePermission = (permissionKey, teamId) => {
     const [hasPermission, setHasPermission] = useState(false);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState(null);
+    const selectedTeamId = useSelectedTeamId();
+    const resolvedTeamId = teamId === undefined ? selectedTeamId : teamId;
 
     useEffect(() => {
         const checkPermission = async () => {
@@ -95,8 +136,8 @@ export const usePermission = (permissionKey, teamId = null) => {
             }
 
             try {
-                const url = teamId
-                    ? `${API_URL}/api/permissions/me/check/${permissionKey}?team_id=${teamId}`
+                const url = resolvedTeamId
+                    ? `${API_URL}/api/permissions/me/check/${permissionKey}?team_id=${resolvedTeamId}`
                     : `${API_URL}/api/permissions/me/check/${permissionKey}`;
 
                 const res = await fetch(url, { headers: getAuthHeaders() });
@@ -118,7 +159,7 @@ export const usePermission = (permissionKey, teamId = null) => {
         };
 
         checkPermission();
-    }, [permissionKey, teamId]);
+    }, [permissionKey, resolvedTeamId]);
 
     return { hasPermission, loading, error };
 };
@@ -134,16 +175,18 @@ export const usePermission = (permissionKey, teamId = null) => {
  * const { modules } = useUserModules();
  * // modules = ['fb_ads', 'gsc']
  */
-export const useUserModules = (teamId = null) => {
+export const useUserModules = (teamId) => {
     const [modules, setModules] = useState([]);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState(null);
+    const selectedTeamId = useSelectedTeamId();
+    const resolvedTeamId = teamId === undefined ? selectedTeamId : teamId;
 
     const fetchModules = useCallback(async () => {
         setLoading(true);
         try {
-            const url = teamId
-                ? `${API_URL}/api/permissions/me/modules?team_id=${teamId}`
+            const url = resolvedTeamId
+                ? `${API_URL}/api/permissions/me/modules?team_id=${resolvedTeamId}`
                 : `${API_URL}/api/permissions/me/modules`;
 
             const res = await fetch(url, { headers: getAuthHeaders() });
@@ -162,7 +205,7 @@ export const useUserModules = (teamId = null) => {
         } finally {
             setLoading(false);
         }
-    }, [teamId]);
+    }, [resolvedTeamId]);
 
     useEffect(() => {
         fetchModules();
@@ -178,16 +221,18 @@ export const useUserModules = (teamId = null) => {
  * @param {string|null} teamId - 團隊 ID
  * @returns {{ permissions: string[], loading: boolean, error: string|null, refetch: Function }}
  */
-export const useUserPermissions = (teamId = null) => {
+export const useUserPermissions = (teamId) => {
     const [permissions, setPermissions] = useState([]);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState(null);
+    const selectedTeamId = useSelectedTeamId();
+    const resolvedTeamId = teamId === undefined ? selectedTeamId : teamId;
 
     const fetchPermissions = useCallback(async () => {
         setLoading(true);
         try {
-            const url = teamId
-                ? `${API_URL}/api/permissions/me/permissions?team_id=${teamId}`
+            const url = resolvedTeamId
+                ? `${API_URL}/api/permissions/me/permissions?team_id=${resolvedTeamId}`
                 : `${API_URL}/api/permissions/me/permissions`;
 
             const res = await fetch(url, { headers: getAuthHeaders() });
@@ -206,7 +251,7 @@ export const useUserPermissions = (teamId = null) => {
         } finally {
             setLoading(false);
         }
-    }, [teamId]);
+    }, [resolvedTeamId]);
 
     useEffect(() => {
         fetchPermissions();
@@ -224,7 +269,7 @@ export const useUserPermissions = (teamId = null) => {
  *   <GSCDashboard />
  * </ProtectedModule>
  */
-export const ProtectedModule = ({ module, teamId = null, fallback = null, children }) => {
+export const ProtectedModule = ({ module, teamId, fallback = null, children }) => {
     const { hasAccess, loading } = useModuleAccess(module, teamId);
 
     if (loading) {
@@ -270,7 +315,7 @@ export const ProtectedModule = ({ module, teamId = null, fallback = null, childr
  *   <AIAnalystButton />
  * </ProtectedPermission>
  */
-export const ProtectedPermission = ({ permission, teamId = null, fallback = null, children }) => {
+export const ProtectedPermission = ({ permission, teamId, fallback = null, children }) => {
     const { hasPermission, loading } = usePermission(permission, teamId);
 
     if (loading) return null; // 不顯示 loading 狀態
@@ -285,6 +330,7 @@ export const ProtectedPermission = ({ permission, teamId = null, fallback = null
 export default {
     useModuleAccess,
     usePermission,
+    useSelectedTeamId,
     useUserModules,
     useUserPermissions,
     ProtectedModule,
