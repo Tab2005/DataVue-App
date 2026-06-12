@@ -43,6 +43,15 @@ from database.models.permission import (
 from database.models.integration import UserIntegration
 from database.models.report import WeeklyReport, ReportSchedule
 from database.models.line_binding import LineBinding
+from database.models.meta_andromeda import (
+    MetaAndromedaAsset,
+    MetaAndromedaScoreEvent,
+    MetaAndromedaFeedbackEvent,
+    MetaAndromedaReleaseRecord,
+    MetaAndromedaReleaseEvent,
+    MetaAndromedaWorkerEvent,
+    MetaAndromedaDeadLetter,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -61,6 +70,13 @@ __all__ = [
     "WeeklyReport",
     "ReportSchedule",
     "LineBinding",
+    "MetaAndromedaAsset",
+    "MetaAndromedaScoreEvent",
+    "MetaAndromedaFeedbackEvent",
+    "MetaAndromedaReleaseRecord",
+    "MetaAndromedaReleaseEvent",
+    "MetaAndromedaWorkerEvent",
+    "MetaAndromedaDeadLetter",
     # 初始化函式
     "init_db",
 ]

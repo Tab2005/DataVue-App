@@ -4,6 +4,7 @@ MODULES = [
     {"key": "fb_ads", "name": "FB Ads 廣告管理", "icon": "📊", "sort_order": 1},
     {"key": "gsc", "name": "Google Search Console", "icon": "🔍", "sort_order": 2},
     {"key": "ga4", "name": "Google Analytics 4", "icon": "📈", "sort_order": 3, "enabled": True},
+    {"key": "meta_andromeda", "name": "Meta Andromeda", "icon": "🛰️", "sort_order": 4, "enabled": True},
 ]
 
 PERMISSIONS = {
@@ -26,6 +27,12 @@ PERMISSIONS = {
         {"key": "ga4:property:connect", "name": "連接屬性", "category": "admin"},
         {"key": "ga4:analytics:view", "name": "數據查看", "category": "feature"},
     ],
+    "meta_andromeda": [
+        {"key": "meta_andromeda:view", "name": "模組查看", "category": "feature"},
+        {"key": "meta_andromeda:feedback", "name": "審核回饋", "category": "feature"},
+        {"key": "meta_andromeda:operate", "name": "營運操作", "category": "admin"},
+        {"key": "meta_andromeda:release", "name": "版本操作", "category": "admin"},
+    ],
 }
 
 ROLES = [
@@ -44,16 +51,19 @@ ROLE_PERMISSIONS = {
         "gsc:site:connect", "gsc:analytics:view", "gsc:keyword:view",
         "gsc:page:view", "gsc:trend:view",
         "ga4:property:connect", "ga4:analytics:view",
+        "meta_andromeda:view", "meta_andromeda:feedback", "meta_andromeda:operate", "meta_andromeda:release",
     ],
     "team_member": [
         "fb_ads:analytics:view", "fb_ads:report:generate",
         "fb_ads:view:create", "fb_ads:view:edit", "fb_ads:ai:use",
         "gsc:analytics:view", "gsc:keyword:view", "gsc:page:view", "gsc:trend:view",
         "ga4:analytics:view",
+        "meta_andromeda:view", "meta_andromeda:feedback",
     ],
     "team_viewer": [
         "fb_ads:analytics:view", "fb_ads:report:generate",
         "gsc:analytics:view", "gsc:keyword:view", "gsc:page:view", "gsc:trend:view",
         "ga4:analytics:view",
+        "meta_andromeda:view",
     ],
 }

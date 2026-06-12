@@ -1,0 +1,623 @@
+"""
+Meta Andromeda Module - Service
+"""
+
+import asyncio
+import hashlib
+import hmac
+from pathlib import Path
+
+from core.config import settings
+from database import SessionLocal
+from .model_registry import model_registry
+from .queue_host import queue_host_adapter
+from .repository import repository
+from .runtime import runtime_adapter
+from .storage import storage_adapter
+from redis_cache import get_redis_client
+
+
+class MetaAndromedaService:
+    """Service layer for the current DataVue integration slice."""
+
+    @staticmethod
+    def get_ping_payload() -> dict:
+        return {
+            "status": "ok",
+            "module": "meta_andromeda",
+            "message": "Meta Andromeda module is mounted",
+        }
+
+    @staticmethod
+    def get_overview_payload() -> dict:
+        return {
+            "module": {
+                "key": "meta_andromeda",
+                "name": "Meta Andromeda",
+                "status": "active",
+                "phase": "phase_2_workflow_actions",
+            },
+            "summary": {
+                "integration_status": "in_progress",
+                "current_slice": "queue_host_observability_enabled",
+                "next_slice": "external_queue_host_and_shared_storage_rollout",
+            },
+            "capabilities": [
+                {
+                    "key": "creative_scoring",
+                    "label": "Creative Scoring",
+                    "status": "registry_backed",
+                },
+                {
+                    "key": "review_queue",
+                    "label": "Review Queue",
+                    "status": "interactive",
+                },
+                {
+                    "key": "monitoring",
+                    "label": "Monitoring",
+                    "status": "worker_observable",
+                },
+                {
+                    "key": "release_console",
+                    "label": "Release Console",
+                    "status": "registry_aware",
+                },
+            ],
+            "notes": [
+                "Meta Andromeda is being integrated into DataVue incrementally.",
+                "Overview, review queue, monitoring, and release paths are mounted in DataVue.",
+                "Feedback, release actions, filesystem storage, and queued scoring are active.",
+                "Scoring runtime now resolves provider/model metadata from the local Meta Andromeda registry.",
+                "Queue host dispatch, worker audit, and dead-letter observability are now persisted in DataVue DB.",
+                "Shared object storage and external worker deployment are still pending host alignment.",
+            ],
+        }
+
+    @staticmethod
+    def list_review_queue(
+        db,
+        status: str | None = None,
+        reviewed: bool | None = None,
+        limit: int = 30,
+    ) -> dict:
+        return repository.list_review_queue(db, status=status, reviewed=reviewed, limit=limit)
+
+    @staticmethod
+    def get_review_queue_detail(db, score_event_id: str) -> dict:
+        return repository.get_review_queue_detail(db, score_event_id)
+
+    @staticmethod
+    def get_monitoring_summary(db) -> dict:
+        summary = repository.get_monitoring_summary(db)
+        summary.setdefault("worker_host", {})
+        summary["worker_host"]["active_host"] = queue_host_adapter.get_active_host()
+        summary["worker_host"]["host_strategy"] = "shared_queue_host_adapter"
+        return summary
+
+    @staticmethod
+    def get_monitoring_timeline(db, score_event_id: str) -> dict:
+        return repository.get_score_event_timeline(db, score_event_id)
+
+    @staticmethod
+    def trigger_drift_report(
+        db,
+        window_kind: str,
+        triggered_by: str | None = None,
+        note: str | None = None,
+    ) -> dict:
+        return repository.create_drift_report(
+            db,
+            window_kind=window_kind,
+            triggered_by=triggered_by,
+            note=note,
+        )
+
+    @staticmethod
+    def get_runtime_health(db) -> dict:
+        queue_host = queue_host_adapter.get_active_host()
+        checks: dict = {
+            "database": "ok",
+            "queue_host": queue_host,
+            "model_registry": "ok",
+        }
+        notes: list[str] = []
+        status = "healthy"
+
+        try:
+            repository.list_review_queue(db, limit=1)
+        except Exception as exc:
+            checks["database"] = f"error: {exc}"
+            status = "unhealthy"
+
+        try:
+            registry_entry = model_registry.get_entry()
+            checks["model_registry"] = {
+                "model_version": registry_entry.model_version,
+                "provider": registry_entry.provider,
+                "feature_manifest_id": registry_entry.feature_manifest_id,
+                "source_of_truth": registry_entry.source_of_truth,
+            }
+        except Exception as exc:
+            checks["model_registry"] = f"error: {exc}"
+            status = "unhealthy"
+
+        storage_backend = settings.META_ANDROMEDA_STORAGE_BACKEND
+        storage_check: dict | str
+        if storage_backend == "filesystem":
+            storage_root = Path(settings.META_ANDROMEDA_STORAGE_ROOT)
+            probe_dir = storage_root if storage_root.exists() else storage_root.parent
+            writable = probe_dir.exists() and probe_dir.is_dir()
+            storage_check = {
+                "backend": "filesystem",
+                "root": str(storage_root),
+                "probe_dir": str(probe_dir),
+                "writable_probe_present": writable,
+            }
+            if not writable:
+                status = "degraded" if status == "healthy" else status
+                notes.append("filesystem storage root is not present yet; upload path has not been validated on this host.")
+        elif storage_backend == "s3_compatible":
+            missing = [
+                key
+                for key, value in {
+                    "bucket": settings.META_ANDROMEDA_STORAGE_S3_BUCKET,
+                    "region": settings.META_ANDROMEDA_STORAGE_S3_REGION,
+                    "access_key_id": settings.META_ANDROMEDA_STORAGE_S3_ACCESS_KEY_ID,
+                    "secret_access_key": settings.META_ANDROMEDA_STORAGE_S3_SECRET_ACCESS_KEY,
+                }.items()
+                if not value
+            ]
+            try:
+                storage_adapter._build_s3_client()
+                client_ready = True
+            except Exception as exc:
+                client_ready = False
+                notes.append(f"s3_compatible client init failed: {exc}")
+            storage_check = {
+                "backend": "s3_compatible",
+                "bucket": settings.META_ANDROMEDA_STORAGE_S3_BUCKET,
+                "region": settings.META_ANDROMEDA_STORAGE_S3_REGION,
+                "endpoint_url": settings.META_ANDROMEDA_STORAGE_S3_ENDPOINT_URL,
+                "key_prefix": settings.META_ANDROMEDA_STORAGE_KEY_PREFIX,
+                "missing_required": missing,
+                "client_ready": client_ready,
+            }
+            if missing or not client_ready:
+                status = "degraded" if status == "healthy" else status
+                notes.append("shared object storage is configured but not fully verified on this host.")
+        else:
+            storage_check = f"unsupported backend: {storage_backend}"
+            status = "unhealthy"
+        checks["storage"] = storage_check
+
+        if queue_host in {"redis_stream", "database_queue"}:
+            try:
+                redis = get_redis_client()
+                if redis:
+                    redis.ping()
+                    checks["redis_runtime"] = "ok"
+                else:
+                    checks["redis_runtime"] = "not_configured"
+                    status = "degraded" if status == "healthy" else status
+            except Exception as exc:
+                checks["redis_runtime"] = f"error: {exc}"
+                status = "degraded" if status == "healthy" else status
+
+        if queue_host == "external_webhook":
+            callback_auth_configured = bool(
+                settings.META_ANDROMEDA_EXTERNAL_WORKER_SHARED_SECRET
+                or settings.META_ANDROMEDA_EXTERNAL_WORKER_TOKEN
+            )
+            checks["external_worker"] = {
+                "dispatch_endpoint": settings.META_ANDROMEDA_EXTERNAL_QUEUE_ENDPOINT,
+                "callback_auth_configured": callback_auth_configured,
+            }
+            if not settings.META_ANDROMEDA_EXTERNAL_QUEUE_ENDPOINT or not callback_auth_configured:
+                status = "degraded" if status == "healthy" else status
+                notes.append("external worker mode requires both dispatch endpoint and callback auth to be configured.")
+
+        if queue_host == "unavailable":
+            status = "degraded" if status == "healthy" else status
+            notes.append("queue host is unavailable on this host; scoring relies on another worker or environment-specific queue mode.")
+
+        if not notes:
+            notes.append("Meta Andromeda shared-runtime checks are configured for this host.")
+
+        return {
+            "status": status,
+            "queue_host": queue_host,
+            "checks": checks,
+            "notes": notes,
+        }
+
+    @staticmethod
+    def get_release_overview(db) -> dict:
+        return repository.get_release_overview(db)
+
+    @staticmethod
+    def upload_asset(
+        db,
+        file_bytes: bytes,
+        asset_type: str,
+        source_filename: str,
+        uploaded_by: str | None = None,
+        content_type: str | None = None,
+    ) -> dict:
+        asset_record = storage_adapter.store_asset(
+            file_bytes=file_bytes,
+            asset_type=asset_type,
+            source_filename=source_filename,
+            uploaded_by=uploaded_by,
+            content_type=content_type,
+        )
+        return repository.create_uploaded_asset(db, asset_record=asset_record)
+
+    @staticmethod
+    def create_score_event(db, payload: dict) -> dict:
+        score_payload = runtime_adapter.build_score_submission(payload)
+        return repository.create_score_event(db, score_payload)
+
+    @staticmethod
+    def assign_score_runtime_job(db, score_event_id: str, runtime_job_id: str) -> dict:
+        return repository.assign_runtime_job(db, score_event_id, runtime_job_id)
+
+    @staticmethod
+    def enqueue_score_event(
+        db,
+        score_event_id: str,
+        runtime_job_id: str,
+        delay_seconds: float = 1.0,
+        event_type: str = "dispatch_requested",
+    ) -> dict:
+        current = repository.get_review_queue_detail(db, score_event_id)
+        dispatch = queue_host_adapter.enqueue_score_event(score_event_id, delay_seconds=delay_seconds)
+        repository.log_worker_event(
+            db,
+            score_event_id=score_event_id,
+            event_type=event_type,
+            queue_host=dispatch["queue_host"],
+            runtime_job_id=runtime_job_id,
+            status="queued" if dispatch["accepted"] else "dispatch_failed",
+            attempt_count=current["attempt_count"],
+            message=dispatch["dispatch_mode"],
+            event_payload=dispatch,
+        )
+        if dispatch["accepted"]:
+            return repository.get_review_queue_detail(db, score_event_id)
+        return repository.get_review_queue_detail(db, score_event_id)
+
+    @staticmethod
+    def _build_external_worker_signature(raw_body: bytes) -> str | None:
+        secret = settings.META_ANDROMEDA_EXTERNAL_WORKER_SHARED_SECRET
+        if not secret:
+            return None
+        return hmac.new(secret.encode("utf-8"), raw_body, hashlib.sha256).hexdigest()
+
+    @staticmethod
+    def verify_external_worker_callback(
+        raw_body: bytes,
+        signature: str | None = None,
+        worker_token: str | None = None,
+    ) -> None:
+        expected_signature = MetaAndromedaService._build_external_worker_signature(raw_body)
+        expected_token = settings.META_ANDROMEDA_EXTERNAL_WORKER_TOKEN
+
+        if expected_signature:
+            if not signature or not hmac.compare_digest(signature, expected_signature):
+                raise PermissionError("invalid_worker_signature")
+            return
+
+        if expected_token:
+            if not worker_token or not hmac.compare_digest(worker_token, expected_token):
+                raise PermissionError("invalid_worker_token")
+            return
+
+        raise PermissionError("external_worker_callback_auth_not_configured")
+
+    @staticmethod
+    def _ensure_external_processing_state(db, score_event_id: str) -> dict:
+        current = repository.get_review_queue_detail(db, score_event_id)
+        if current["status"] == "queued":
+            return repository.mark_score_processing(db, score_event_id)
+        return current
+
+    @staticmethod
+    def _normalize_external_result_payload(result_payload: dict) -> dict:
+        normalized = dict(result_payload)
+        model_version = normalized.get("model_version")
+        registry_entry = model_registry.get_entry(model_version=model_version)
+        normalized.setdefault("status", "completed")
+        normalized.setdefault("prediction_mode", "diagnostic_plus_roas")
+        normalized.setdefault("feature_manifest_id", registry_entry.feature_manifest_id)
+        normalized.setdefault("error_message", None)
+        normalized.setdefault("diagnostic_breakdown", {})
+        normalized.setdefault("roas_prediction", {})
+        normalized.setdefault("risk_tags", [])
+        normalized.setdefault("top_positive_drivers", [])
+        normalized.setdefault("top_negative_drivers", [])
+        normalized.setdefault("explanations", {})
+        lineage = dict(normalized.get("lineage") or {})
+        lineage.setdefault("feature_manifest_id", registry_entry.feature_manifest_id)
+        lineage.setdefault("registry_model_version", registry_entry.model_version)
+        lineage.setdefault("registry_provider", registry_entry.provider)
+        lineage.setdefault("provider_model", registry_entry.provider_model)
+        lineage.setdefault("registry_profile", registry_entry.scoring_profile)
+        lineage.setdefault("registry_source", registry_entry.source_of_truth)
+        lineage.setdefault("scoring_mode", "external_worker")
+        normalized["lineage"] = lineage
+        normalized["model_version"] = registry_entry.model_version
+        return normalized
+
+    @staticmethod
+    def handle_external_worker_callback(db, score_event_id: str, payload: dict) -> dict:
+        current = repository.get_review_queue_detail(db, score_event_id)
+        queue_host = payload.get("queue_host") or "external_webhook"
+        runtime_job_id = payload.get("runtime_job_id") or current.get("runtime_job_id")
+        if runtime_job_id and current.get("runtime_job_id") != runtime_job_id:
+            current = repository.assign_runtime_job(db, score_event_id, runtime_job_id)
+
+        event_type = payload["event_type"]
+        attempt_count = payload.get("attempt_count") or current.get("attempt_count", 0)
+        worker_payload = {
+            "worker_id": payload.get("worker_id"),
+            "receipt_id": payload.get("receipt_id"),
+            "retryable": payload.get("retryable", False),
+            "retry_delay_seconds": payload.get("retry_delay_seconds"),
+            "callback_metadata": payload.get("callback_metadata") or {},
+        }
+
+        if event_type == "accepted":
+            repository.log_worker_event(
+                db,
+                score_event_id=score_event_id,
+                event_type="external_worker_accepted",
+                queue_host=queue_host,
+                runtime_job_id=runtime_job_id,
+                status=current["status"],
+                attempt_count=attempt_count,
+                message="external worker accepted dispatch",
+                event_payload=worker_payload,
+            )
+            return repository.get_review_queue_detail(db, score_event_id)
+
+        if event_type == "processing":
+            processing = MetaAndromedaService._ensure_external_processing_state(db, score_event_id)
+            repository.log_worker_event(
+                db,
+                score_event_id=score_event_id,
+                event_type="external_worker_processing",
+                queue_host=queue_host,
+                runtime_job_id=runtime_job_id,
+                status="processing",
+                attempt_count=processing["attempt_count"],
+                message="external worker started processing",
+                event_payload=worker_payload,
+            )
+            return processing
+
+        if event_type == "completed":
+            if not payload.get("result_payload"):
+                raise ValueError("completed callback requires result_payload")
+            MetaAndromedaService._ensure_external_processing_state(db, score_event_id)
+            normalized_result = MetaAndromedaService._normalize_external_result_payload(payload["result_payload"])
+            completed = repository.mark_score_completed(db, score_event_id, normalized_result)
+            repository.log_worker_event(
+                db,
+                score_event_id=score_event_id,
+                event_type="external_worker_completed",
+                queue_host=queue_host,
+                runtime_job_id=runtime_job_id,
+                status="completed",
+                attempt_count=completed["attempt_count"],
+                message="external worker completed scoring",
+                event_payload={**worker_payload, "model_version": completed["model_version"]},
+            )
+            return completed
+
+        if event_type == "failed":
+            processing = MetaAndromedaService._ensure_external_processing_state(db, score_event_id)
+            error_message = payload.get("error_message") or "external_worker_failed"
+            if payload.get("retryable") and processing["attempt_count"] < settings.META_ANDROMEDA_SCORE_MAX_ATTEMPTS:
+                queued = repository.requeue_score_event(db, score_event_id, error_message)
+                repository.log_worker_event(
+                    db,
+                    score_event_id=score_event_id,
+                    event_type="external_worker_retry_scheduled",
+                    queue_host=queue_host,
+                    runtime_job_id=runtime_job_id,
+                    status="queued",
+                    attempt_count=queued["attempt_count"],
+                    message=error_message,
+                    event_payload=worker_payload,
+                )
+                return MetaAndromedaService.enqueue_score_event(
+                    db,
+                    score_event_id=score_event_id,
+                    runtime_job_id=queued["runtime_job_id"],
+                    delay_seconds=payload.get("retry_delay_seconds")
+                    or settings.META_ANDROMEDA_SCORE_RETRY_DELAY_SECONDS,
+                    event_type="external_worker_retry_dispatch_requested",
+                )
+
+            failed = repository.mark_score_failed(db, score_event_id, error_message)
+            repository.log_worker_event(
+                db,
+                score_event_id=score_event_id,
+                event_type="external_worker_failed",
+                queue_host=queue_host,
+                runtime_job_id=runtime_job_id,
+                status="failed",
+                attempt_count=failed["attempt_count"],
+                message=error_message,
+                event_payload=worker_payload,
+            )
+            repository.create_dead_letter(
+                db,
+                score_event_id=score_event_id,
+                queue_host=queue_host,
+                runtime_job_id=runtime_job_id,
+                failure_stage="external_worker",
+                attempt_count=failed["attempt_count"],
+                final_error_message=error_message,
+                dead_letter_payload=worker_payload,
+            )
+            repository.log_worker_event(
+                db,
+                score_event_id=score_event_id,
+                event_type="external_worker_dead_lettered",
+                queue_host=queue_host,
+                runtime_job_id=runtime_job_id,
+                status="failed",
+                attempt_count=failed["attempt_count"],
+                message=error_message,
+                event_payload={"failure_stage": "external_worker", **worker_payload},
+            )
+            return failed
+
+        raise ValueError(f"Unsupported external worker event_type: {event_type}")
+
+    @staticmethod
+    async def process_score_event(score_event_id: str, queue_host: str = "unknown") -> dict:
+        db = SessionLocal()
+        try:
+            current = repository.mark_score_processing(db, score_event_id)
+            repository.log_worker_event(
+                db,
+                score_event_id=score_event_id,
+                event_type="processing_started",
+                queue_host=queue_host,
+                runtime_job_id=current["runtime_job_id"],
+                status="processing",
+                attempt_count=current["attempt_count"],
+                message="worker started",
+                event_payload={"queue_host": queue_host},
+            )
+            try:
+                result = await asyncio.wait_for(
+                    runtime_adapter.generate_score_result(current),
+                    timeout=settings.META_ANDROMEDA_SCORE_TIMEOUT_SECONDS,
+                )
+            except asyncio.TimeoutError as exc:
+                raise TimeoutError(
+                    f"score runtime timed out after {settings.META_ANDROMEDA_SCORE_TIMEOUT_SECONDS:.2f}s"
+                ) from exc
+            completed = repository.mark_score_completed(db, score_event_id, result)
+            repository.log_worker_event(
+                db,
+                score_event_id=score_event_id,
+                event_type="completed",
+                queue_host=queue_host,
+                runtime_job_id=completed["runtime_job_id"],
+                status="completed",
+                attempt_count=completed["attempt_count"],
+                message="worker completed",
+                event_payload={"queue_host": queue_host, "model_version": completed["model_version"]},
+            )
+            return completed
+        except Exception as exc:
+            latest = repository.get_review_queue_detail(db, score_event_id)
+            error_message = str(exc)
+            if latest["attempt_count"] < settings.META_ANDROMEDA_SCORE_MAX_ATTEMPTS:
+                queued = repository.requeue_score_event(db, score_event_id, error_message)
+                repository.log_worker_event(
+                    db,
+                    score_event_id=score_event_id,
+                    event_type="retry_scheduled",
+                    queue_host=queue_host,
+                    runtime_job_id=queued["runtime_job_id"],
+                    status="queued",
+                    attempt_count=queued["attempt_count"],
+                    message=error_message,
+                    event_payload={"retry_delay_seconds": settings.META_ANDROMEDA_SCORE_RETRY_DELAY_SECONDS},
+                )
+                self_dispatch = MetaAndromedaService.enqueue_score_event(
+                    db,
+                    score_event_id=score_event_id,
+                    runtime_job_id=queued["runtime_job_id"],
+                    delay_seconds=settings.META_ANDROMEDA_SCORE_RETRY_DELAY_SECONDS,
+                    event_type="retry_dispatch_requested",
+                )
+                return self_dispatch
+            failed = repository.mark_score_failed(db, score_event_id, error_message)
+            repository.log_worker_event(
+                db,
+                score_event_id=score_event_id,
+                event_type="failed",
+                queue_host=queue_host,
+                runtime_job_id=failed["runtime_job_id"],
+                status="failed",
+                attempt_count=failed["attempt_count"],
+                message=error_message,
+                event_payload={"queue_host": queue_host},
+            )
+            repository.create_dead_letter(
+                db,
+                score_event_id=score_event_id,
+                queue_host=queue_host,
+                runtime_job_id=failed["runtime_job_id"],
+                failure_stage="runtime",
+                attempt_count=failed["attempt_count"],
+                final_error_message=error_message,
+                dead_letter_payload={
+                    "queue_host": queue_host,
+                    "attempt_count": failed["attempt_count"],
+                    "runtime_job_id": failed["runtime_job_id"],
+                },
+            )
+            repository.log_worker_event(
+                db,
+                score_event_id=score_event_id,
+                event_type="dead_lettered",
+                queue_host=queue_host,
+                runtime_job_id=failed["runtime_job_id"],
+                status="failed",
+                attempt_count=failed["attempt_count"],
+                message=error_message,
+                event_payload={"failure_stage": "runtime"},
+            )
+            return failed
+        finally:
+            db.close()
+
+    @staticmethod
+    def get_score_detail(db, score_event_id: str) -> dict:
+        return repository.get_review_queue_detail(db, score_event_id)
+
+    @staticmethod
+    def list_feedback(db, score_event_id: str) -> dict:
+        return repository.list_feedback(db, score_event_id)
+
+    @staticmethod
+    def submit_feedback(
+        db,
+        score_event_id: str,
+        reviewer_id: str,
+        decision: str,
+        reason_codes: list[str] | None = None,
+        comment: str | None = None,
+    ) -> dict:
+        return repository.submit_feedback(
+            db,
+            score_event_id=score_event_id,
+            reviewer_id=reviewer_id,
+            decision=decision,
+            reason_codes=reason_codes,
+            comment=comment,
+        )
+
+    @staticmethod
+    def perform_release_action(
+        db,
+        action: str,
+        model_version: str,
+        actor: str,
+        note: str | None = None,
+    ) -> dict:
+        return repository.perform_release_action(
+            db,
+            action=action,
+            model_version=model_version,
+            actor=actor,
+            note=note,
+        )

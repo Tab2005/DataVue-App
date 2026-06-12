@@ -182,6 +182,7 @@ async def general_exception_handler(request: Request, exc: Exception):
 from routers import users, teams, invites, admin, ai, saved_views, gsc, permissions
 from routers import facebook, debug, ga4, auth, reports, line
 from routers.metrics import router as metrics_router
+from modules.meta_andromeda import router as meta_andromeda_router
 
 # Authentication & Users
 app.include_router(auth.router)
@@ -202,6 +203,7 @@ app.include_router(ai.router, prefix="/api/ai", tags=["ai"])
 app.include_router(saved_views.router)
 app.include_router(reports.router)
 app.include_router(line.router)
+app.include_router(meta_andromeda_router, prefix="/api/meta-andromeda", tags=["meta_andromeda"])
 
 # Metrics Registry (4.6)
 app.include_router(metrics_router)
@@ -274,6 +276,17 @@ async def health_check():
         health_status["checks"]["scheduler"] = get_scheduler_status()
     except Exception as e:
         health_status["checks"]["scheduler"] = f"error: {str(e)}"
+
+    try:
+        from modules.meta_andromeda.service import MetaAndromedaService
+
+        db = SessionLocal()
+        try:
+            health_status["checks"]["meta_andromeda"] = MetaAndromedaService.get_runtime_health(db)
+        finally:
+            db.close()
+    except Exception as e:
+        health_status["checks"]["meta_andromeda"] = f"error: {str(e)}"
 
     if health_status["status"] == "unhealthy":
         return JSONResponse(status_code=503, content=health_status)

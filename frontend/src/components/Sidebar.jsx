@@ -32,6 +32,11 @@ const Sidebar = ({ user, language, isCollapsed, setIsCollapsed, isMobile, select
         { icon: <FiActivity size={20} />, label: t('Metrics Manager', '指標管理'), path: '/metrics' },
         { icon: <FiSearch size={20} />, label: t('Search Console', '搜尋管理'), path: '/gsc' },
         { icon: <FiTrendingUp size={20} />, label: t('Traffic Analytics', '流量分析'), path: '/ga4' },
+        { icon: <FiActivity size={20} />, label: t('Meta Andromeda', 'Meta Andromeda'), path: '/meta-andromeda' },
+        { icon: <FiUsers size={20} />, label: t('MA Review Queue', 'MA 審核佇列'), path: '/meta-andromeda/review-queue' },
+        { icon: <FiBarChart2 size={20} />, label: t('MA Monitoring', 'MA 監控總覽'), path: '/meta-andromeda/monitoring' },
+        { icon: <FiShield size={20} />, label: t('MA Release', 'MA 版本總覽'), path: '/meta-andromeda/release' },
+        { icon: <FiPlus size={20} />, label: t('MA Score Lab', 'MA 評分工作台'), path: '/meta-andromeda/score-lab' },
         { icon: <FiFileText size={20} />, label: t('Weekly Reports', '週報管理'), path: '/reports' },
         // Grouped Team Settings
         {

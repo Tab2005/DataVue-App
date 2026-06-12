@@ -25,6 +25,11 @@ const GA4Analytics = lazy(() => import('./pages/GA4Analytics'));
 const Reports = lazy(() => import('./pages/Reports'));
 const ReportViewer = lazy(() => import('./pages/ReportViewer'));
 const SharedReport = lazy(() => import('./pages/SharedReport'));
+const MetaAndromeda = lazy(() => import('./pages/MetaAndromeda'));
+const MetaAndromedaReviewQueue = lazy(() => import('./pages/MetaAndromedaReviewQueue'));
+const MetaAndromedaMonitoring = lazy(() => import('./pages/MetaAndromedaMonitoring'));
+const MetaAndromedaRelease = lazy(() => import('./pages/MetaAndromedaRelease'));
+const MetaAndromedaScoreLab = lazy(() => import('./pages/MetaAndromedaScoreLab'));
 
 /**
  * 內層 App 元件（需在 Router 內部才能使用 useNavigate）
@@ -98,6 +103,41 @@ function AppInner() {
                   <ProtectedModule module="ga4">
                     <ErrorBoundary>
                       <GA4Analytics />
+                    </ErrorBoundary>
+                  </ProtectedModule>
+                } />
+                <Route path="/meta-andromeda" element={
+                  <ProtectedModule module="meta_andromeda">
+                    <ErrorBoundary>
+                      <MetaAndromeda />
+                    </ErrorBoundary>
+                  </ProtectedModule>
+                } />
+                <Route path="/meta-andromeda/review-queue" element={
+                  <ProtectedModule module="meta_andromeda">
+                    <ErrorBoundary>
+                      <MetaAndromedaReviewQueue />
+                    </ErrorBoundary>
+                  </ProtectedModule>
+                } />
+                <Route path="/meta-andromeda/monitoring" element={
+                  <ProtectedModule module="meta_andromeda">
+                    <ErrorBoundary>
+                      <MetaAndromedaMonitoring />
+                    </ErrorBoundary>
+                  </ProtectedModule>
+                } />
+                <Route path="/meta-andromeda/release" element={
+                  <ProtectedModule module="meta_andromeda">
+                    <ErrorBoundary>
+                      <MetaAndromedaRelease />
+                    </ErrorBoundary>
+                  </ProtectedModule>
+                } />
+                <Route path="/meta-andromeda/score-lab" element={
+                  <ProtectedModule module="meta_andromeda">
+                    <ErrorBoundary>
+                      <MetaAndromedaScoreLab />
                     </ErrorBoundary>
                   </ProtectedModule>
                 } />

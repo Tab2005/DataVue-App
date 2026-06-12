@@ -14,6 +14,7 @@ from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from apscheduler.triggers.cron import CronTrigger
 from sqlalchemy.orm import Session
 
+from core.config import settings
 from database import SessionLocal, ReportSchedule, Team, WeeklyReport, User
 from services.report_service import generate_report_content
 
@@ -28,6 +29,9 @@ _LISTENERS_REGISTERED = False
 
 # 全域 Scheduler 實例
 scheduler = AsyncIOScheduler(timezone=SCHEDULER_TIMEZONE)
+META_ANDROMEDA_QUEUE_SWEEP_JOB_ID = "ma_queue_sweeper"
+META_ANDROMEDA_REDIS_STREAM_CONSUMER_JOB_ID = "ma_redis_stream_consumer"
+META_ANDROMEDA_REDIS_STREAM_RECLAIM_JOB_ID = "ma_redis_stream_reclaim"
 
 
 def is_scheduler_enabled() -> bool:
@@ -43,6 +47,11 @@ def is_scheduler_enabled() -> bool:
 def get_job_id(schedule_id: str) -> str:
     """統一生成 APScheduler Job ID。"""
     return f"report_{schedule_id}"
+
+
+def get_meta_andromeda_score_job_id(score_event_id: str) -> str:
+    """Meta Andromeda score worker job id."""
+    return f"ma_score_{score_event_id}"
 
 
 def _now_local_aware() -> datetime:
@@ -330,6 +339,68 @@ async def process_scheduled_report(schedule_id: str):
         db.close()
 
 
+async def process_meta_andromeda_score_event(score_event_id: str, queue_host: str = "apscheduler"):
+    """Process a queued Meta Andromeda score event."""
+    from modules.meta_andromeda.service import MetaAndromedaService
+
+    await MetaAndromedaService.process_score_event(score_event_id, queue_host=queue_host)
+
+
+async def sweep_meta_andromeda_queue() -> None:
+    """Sweep queued Meta Andromeda records for database-backed queue hosting."""
+    from database.models.meta_andromeda import MetaAndromedaScoreEvent
+
+    db = SessionLocal()
+    try:
+        queued_score_events = (
+            db.query(MetaAndromedaScoreEvent)
+            .filter(MetaAndromedaScoreEvent.status == "queued")
+            .order_by(MetaAndromedaScoreEvent.created_at.asc())
+            .limit(50)
+            .all()
+        )
+        for score_event in queued_score_events:
+            job_id = get_meta_andromeda_score_job_id(score_event.id)
+            if scheduler.get_job(job_id):
+                continue
+            add_meta_andromeda_score_job(
+                score_event.id,
+                delay_seconds=0,
+                queue_host="database_queue",
+            )
+        if queued_score_events:
+            logger.info(
+                "⏰ [MetaAndromeda] Sweeper inspected %s queued score events.",
+                len(queued_score_events),
+            )
+    finally:
+        db.close()
+
+
+async def consume_meta_andromeda_redis_stream() -> None:
+    """Consume broker-style Redis stream entries and ack them after scheduling."""
+    from modules.meta_andromeda.queue_host import queue_host_adapter
+
+    summary = queue_host_adapter.consume_redis_stream_batch()
+    if summary.get("consumed_count"):
+        logger.info(
+            "⏰ [MetaAndromeda] Redis stream consumer handled %s message(s).",
+            summary["consumed_count"],
+        )
+
+
+async def reclaim_meta_andromeda_redis_stream_pending() -> None:
+    """Reclaim stale Redis-stream pending entries and reschedule them."""
+    from modules.meta_andromeda.queue_host import queue_host_adapter
+
+    summary = queue_host_adapter.reclaim_redis_stream_pending()
+    if summary.get("claimed_count"):
+        logger.info(
+            "⏰ [MetaAndromeda] Redis stream reclaim handled %s stale message(s).",
+            summary["claimed_count"],
+        )
+
+
 def add_report_job(
     schedule: ReportSchedule,
     db: Session | None = None,
@@ -376,6 +447,83 @@ def add_report_job(
     return job
 
 
+def add_meta_andromeda_score_job(score_event_id: str, delay_seconds: float = 1, queue_host: str = "apscheduler"):
+    """Enqueue an immediate Meta Andromeda score job on the shared scheduler."""
+    run_at = datetime.now(_LOCAL_TIMEZONE) + timedelta(seconds=delay_seconds)
+    job_id = get_meta_andromeda_score_job_id(score_event_id)
+    job = scheduler.add_job(
+        process_meta_andromeda_score_event,
+        trigger="date",
+        run_date=run_at,
+        args=[score_event_id, queue_host],
+        id=job_id,
+        replace_existing=True,
+        misfire_grace_time=DEFAULT_MISFIRE_GRACE_TIME,
+        coalesce=True,
+        max_instances=1,
+    )
+    logger.info("⏰ [MetaAndromeda] Score job added: %s for %s (delay=%ss)", job_id, score_event_id, delay_seconds)
+    return job
+
+
+def add_meta_andromeda_queue_sweeper_job():
+    """Register periodic queue sweep for database-backed queue host."""
+    job = scheduler.add_job(
+        sweep_meta_andromeda_queue,
+        trigger="interval",
+        seconds=settings.META_ANDROMEDA_QUEUE_SWEEP_INTERVAL_SECONDS,
+        id=META_ANDROMEDA_QUEUE_SWEEP_JOB_ID,
+        replace_existing=True,
+        misfire_grace_time=DEFAULT_MISFIRE_GRACE_TIME,
+        coalesce=True,
+        max_instances=1,
+    )
+    logger.info(
+        "⏰ [MetaAndromeda] Queue sweeper registered (interval=%ss).",
+        settings.META_ANDROMEDA_QUEUE_SWEEP_INTERVAL_SECONDS,
+    )
+    return job
+
+
+def add_meta_andromeda_redis_stream_consumer_job():
+    """Register periodic Redis-stream consumer for worker-style queue hosting."""
+    job = scheduler.add_job(
+        consume_meta_andromeda_redis_stream,
+        trigger="interval",
+        seconds=settings.META_ANDROMEDA_QUEUE_SWEEP_INTERVAL_SECONDS,
+        id=META_ANDROMEDA_REDIS_STREAM_CONSUMER_JOB_ID,
+        replace_existing=True,
+        misfire_grace_time=DEFAULT_MISFIRE_GRACE_TIME,
+        coalesce=True,
+        max_instances=1,
+    )
+    logger.info(
+        "⏰ [MetaAndromeda] Redis stream consumer registered (interval=%ss).",
+        settings.META_ANDROMEDA_QUEUE_SWEEP_INTERVAL_SECONDS,
+    )
+    return job
+
+
+def add_meta_andromeda_redis_stream_reclaim_job():
+    """Register periodic reclaim pass for stale Redis-stream pending entries."""
+    job = scheduler.add_job(
+        reclaim_meta_andromeda_redis_stream_pending,
+        trigger="interval",
+        seconds=settings.META_ANDROMEDA_QUEUE_SWEEP_INTERVAL_SECONDS,
+        id=META_ANDROMEDA_REDIS_STREAM_RECLAIM_JOB_ID,
+        replace_existing=True,
+        misfire_grace_time=DEFAULT_MISFIRE_GRACE_TIME,
+        coalesce=True,
+        max_instances=1,
+    )
+    logger.info(
+        "⏰ [MetaAndromeda] Redis stream reclaim registered (interval=%ss, idle=%sms).",
+        settings.META_ANDROMEDA_QUEUE_SWEEP_INTERVAL_SECONDS,
+        settings.META_ANDROMEDA_REDIS_STREAM_RECLAIM_IDLE_MS,
+    )
+    return job
+
+
 def remove_report_job(schedule_id: str):
     """移除排程。"""
     job_id = get_job_id(schedule_id)
@@ -409,15 +557,34 @@ async def start_scheduler() -> dict:
         if not scheduler.running:
             scheduler.start()
             logger.info("⏰ [Scheduler] AsyncIOScheduler started")
+        add_meta_andromeda_queue_sweeper_job()
+        add_meta_andromeda_redis_stream_consumer_job()
+        add_meta_andromeda_redis_stream_reclaim_job()
 
         for schedule in active_schedules:
             add_report_job(schedule, db=db, persist_next_run=True)
+
+        from database.models.meta_andromeda import MetaAndromedaScoreEvent
+
+        queued_score_events = (
+            db.query(MetaAndromedaScoreEvent)
+            .filter(MetaAndromedaScoreEvent.status.in_(["queued", "processing"]))
+            .all()
+        )
+        if settings.META_ANDROMEDA_QUEUE_HOST not in {"redis_stream", "external_webhook"}:
+            for score_event in queued_score_events:
+                add_meta_andromeda_score_job(score_event.id)
 
         db.commit()
         logger.info(
             "⏰ [Scheduler] Bootstrapped %s active schedules.",
             len(active_schedules),
         )
+        if queued_score_events:
+            logger.info(
+                "⏰ [MetaAndromeda] Bootstrapped %s queued score events.",
+                len(queued_score_events),
+            )
     except Exception:
         db.rollback()
         raise

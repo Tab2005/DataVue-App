@@ -15,6 +15,16 @@ from database.models.permission import (
 from database.models.integration import UserIntegration
 from database.models.report import WeeklyReport, ReportSchedule
 from database.models.line_binding import LineBinding
+from database.models.meta_andromeda import (
+    MetaAndromedaAsset,
+    MetaAndromedaScoreEvent,
+    MetaAndromedaFeedbackEvent,
+    MetaAndromedaReleaseRecord,
+    MetaAndromedaReleaseEvent,
+    MetaAndromedaWorkerEvent,
+    MetaAndromedaDeadLetter,
+    MetaAndromedaDriftReport,
+)
 
 __all__ = [
     "User", "UserRole", "UserStatus",
@@ -26,4 +36,12 @@ __all__ = [
     "WeeklyReport",
     "ReportSchedule",
     "LineBinding",
+    "MetaAndromedaAsset",
+    "MetaAndromedaScoreEvent",
+    "MetaAndromedaFeedbackEvent",
+    "MetaAndromedaReleaseRecord",
+    "MetaAndromedaReleaseEvent",
+    "MetaAndromedaWorkerEvent",
+    "MetaAndromedaDeadLetter",
+    "MetaAndromedaDriftReport",
 ]

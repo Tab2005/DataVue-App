@@ -1,0 +1,314 @@
+"""
+Meta Andromeda Module - Request / Response Schemas
+"""
+
+from datetime import datetime
+from typing import Literal
+
+from pydantic import BaseModel, Field
+
+
+class PingResponse(BaseModel):
+    status: str
+    module: str
+    message: str
+
+
+class OverviewModule(BaseModel):
+    key: str
+    name: str
+    status: str
+    phase: str
+
+
+class OverviewSummary(BaseModel):
+    integration_status: str
+    current_slice: str
+    next_slice: str
+
+
+class OverviewCapability(BaseModel):
+    key: str
+    label: str
+    status: str
+
+
+class OverviewResponse(BaseModel):
+    module: OverviewModule
+    summary: OverviewSummary
+    capabilities: list[OverviewCapability]
+    notes: list[str]
+
+
+class RuntimeHealthResponse(BaseModel):
+    status: str
+    queue_host: str
+    checks: dict
+    notes: list[str]
+
+
+class MonitoringWorkerEventResponse(BaseModel):
+    worker_event_id: str
+    score_event_id: str
+    event_type: str
+    queue_host: str
+    runtime_job_id: str | None = None
+    status: str
+    attempt_count: int
+    message: str | None = None
+    event_payload: dict = Field(default_factory=dict)
+    created_at: str | None = None
+
+
+class MonitoringDeadLetterResponse(BaseModel):
+    dead_letter_id: str
+    score_event_id: str
+    queue_host: str
+    runtime_job_id: str | None = None
+    final_error_message: str
+    failure_stage: str
+    attempt_count: int
+    dead_letter_payload: dict = Field(default_factory=dict)
+    created_at: str | None = None
+
+
+class DriftReportResponse(BaseModel):
+    drift_report_id: str
+    window_kind: str
+    drift_status: str
+    summary: str
+    severity: str
+    triggered_by: str | None = None
+    note: str | None = None
+    report_payload: dict = Field(default_factory=dict)
+    created_at: str | None = None
+
+
+class MonitoringTimelineResponse(BaseModel):
+    score_event: dict
+    worker_events: list[MonitoringWorkerEventResponse]
+    dead_letters: list[MonitoringDeadLetterResponse]
+    feedback: list[dict]
+
+
+class DriftTriggerRequest(BaseModel):
+    window_kind: Literal["last_24h", "last_7d", "last_30d"] = "last_24h"
+    note: str | None = None
+
+
+class ReviewQueueItemResponse(BaseModel):
+    score_event_id: str
+    status: str
+    runtime_job_id: str | None = None
+    created_at: datetime
+    queued_at: datetime | None = None
+    started_at: datetime | None = None
+    completed_at: datetime | None = None
+    failed_at: datetime | None = None
+    updated_at: datetime
+    asset_uri: str
+    asset_type: str
+    asset_id: str | None
+    preview_url: str | None
+    request_mode: str
+    objective: str
+    placement_family: str
+    market: str
+    prediction_mode: str | None
+    overall_score: int | None
+    roas_band: str | None
+    model_version: str | None
+    reviewed: bool
+    feedback_count: int
+    latest_feedback_decision: str | None
+    feature_manifest_id: str | None
+    error_message: str | None
+    attempt_count: int
+
+
+class ReviewQueueListSummaryResponse(BaseModel):
+    total: int
+    status_filter: str | None
+    reviewed_filter: bool | None
+
+
+class ReviewQueueListResponse(BaseModel):
+    items: list[ReviewQueueItemResponse]
+    summary: ReviewQueueListSummaryResponse
+
+
+class RoasPredictionResponse(BaseModel):
+    eligible: bool
+    band: str | None
+    confidence: float | None
+    reason_if_unavailable: str | None
+
+
+class ScoreExplanationResponse(BaseModel):
+    summary: str
+    top_positive_drivers: list[str]
+    top_risks: list[str]
+    diagnostic_evidence: dict[str, str]
+
+
+class ReviewQueueDetailResponse(BaseModel):
+    score_event_id: str
+    status: str
+    runtime_job_id: str | None = None
+    queued_at: datetime | None = None
+    started_at: datetime | None = None
+    completed_at: datetime | None = None
+    failed_at: datetime | None = None
+    asset_uri: str
+    asset_type: str
+    asset_id: str | None
+    preview_url: str | None
+    prediction_mode: str | None
+    overall_score: int | None
+    diagnostic_breakdown: dict[str, str]
+    roas_prediction: RoasPredictionResponse | None
+    risk_tags: list[str]
+    top_positive_drivers: list[str]
+    top_negative_drivers: list[str]
+    explanations: ScoreExplanationResponse | None
+    model_version: str | None
+    feature_manifest_id: str | None
+    lineage: dict[str, str | None]
+    error_message: str | None
+    attempt_count: int
+    created_at: datetime
+
+
+class AssetUploadResponse(BaseModel):
+    asset_uri: str
+    asset_id: str
+    storage_backend: str
+    storage_key: str
+    asset_type: str
+    checksum_sha256: str
+    upload_status: str
+    source_filename: str
+    file_size_bytes: int
+    public_url: str | None = None
+    uploaded_at: str
+
+
+class ScoreSubmitRequest(BaseModel):
+    asset_uri: str
+    asset_type: Literal["image", "video"]
+    asset_id: str | None = None
+    request_mode: str = "auto"
+    objective: str = "purchase"
+    placement_family: str = "all"
+    market: str = "TW"
+    primary_text: str | None = None
+    headline: str | None = None
+    cta: str | None = None
+
+
+class ExternalWorkerScoreResultRequest(BaseModel):
+    prediction_mode: str | None = None
+    overall_score: int | None = None
+    roas_band: str | None = None
+    model_version: str | None = None
+    feature_manifest_id: str | None = None
+    error_message: str | None = None
+    diagnostic_breakdown: dict[str, str] = Field(default_factory=dict)
+    roas_prediction: dict = Field(default_factory=dict)
+    risk_tags: list[str] = Field(default_factory=list)
+    top_positive_drivers: list[str] = Field(default_factory=list)
+    top_negative_drivers: list[str] = Field(default_factory=list)
+    explanations: dict = Field(default_factory=dict)
+    lineage: dict[str, str | None] = Field(default_factory=dict)
+
+
+class ExternalWorkerCallbackRequest(BaseModel):
+    event_type: Literal["accepted", "processing", "completed", "failed"]
+    queue_host: str = "external_webhook"
+    runtime_job_id: str | None = None
+    worker_id: str | None = None
+    receipt_id: str | None = None
+    attempt_count: int | None = None
+    error_message: str | None = None
+    retryable: bool = False
+    retry_delay_seconds: float | None = None
+    result_payload: ExternalWorkerScoreResultRequest | None = None
+    callback_metadata: dict = Field(default_factory=dict)
+
+
+class ExternalWorkerCallbackResponse(BaseModel):
+    accepted: bool
+    score_event_id: str
+    event_type: str
+    current_status: str
+    runtime_job_id: str | None = None
+
+
+class FeedbackEntryResponse(BaseModel):
+    feedback_event_id: str
+    score_event_id: str
+    reviewer_id: str
+    decision: str
+    reason_codes: list[str]
+    comment: str | None
+    created_at: str
+
+
+class FeedbackListResponse(BaseModel):
+    score_event_id: str
+    feedback: list[FeedbackEntryResponse]
+
+
+class FeedbackSubmitRequest(BaseModel):
+    reviewer_id: str | None = None
+    decision: Literal["approve", "revise", "reject"]
+    reason_codes: list[str] = Field(default_factory=list)
+    comment: str | None = None
+
+
+class ReleaseRecordResponse(BaseModel):
+    model_version: str
+    release_status: str
+    approved_by: str
+    approved_at: str
+    pairwise_ranking_accuracy: float
+    mean_band_error: float
+
+
+class ReleaseCandidateResponse(BaseModel):
+    model_version: str
+    release_status: str
+    created_at: str
+    pairwise_ranking_accuracy: float
+    mean_band_error: float
+    promotion_gate_summary: dict[str, bool]
+
+
+class ReleaseHistoryEntryResponse(BaseModel):
+    action: str
+    model_version: str
+    actor: str
+    created_at: str
+    note: str
+
+
+class ReleaseOverviewResponse(BaseModel):
+    current_production: ReleaseRecordResponse
+    previous_production: ReleaseRecordResponse
+    candidates: list[ReleaseCandidateResponse]
+    history: list[ReleaseHistoryEntryResponse]
+    notes: list[str]
+
+
+class ReleaseActionRequest(BaseModel):
+    model_version: str
+    note: str | None = None
+
+
+class ReleaseActionResponse(BaseModel):
+    status: str
+    action: str
+    model_version: str
+    actor: str
+    created_at: str
+    note: str | None = None
