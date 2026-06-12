@@ -12,9 +12,9 @@ export default function Navbar() {
       initial={{ y: -50, opacity: 0 }}
       animate={{ y: 0, opacity: 1 }}
       transition={{ duration: 0.8, ease: [0.16, 1, 0.3, 1] }}
-      className="fixed top-0 left-0 right-0 z-50 px-6 py-5"
+      className="fixed top-0 left-0 right-0 z-50 px-4 md:px-6 py-4"
     >
-      <div className="max-w-7xl mx-auto glass-panel rounded-2xl px-6 py-3.5 flex items-center justify-between border border-white/[0.08] bg-black/60 backdrop-blur-2xl">
+      <div className="max-w-7xl mx-auto flex items-center justify-between px-4 md:px-6 py-3 rounded-2xl border border-white/[0.08] bg-black/60 backdrop-blur-2xl">
         {/* Logo 區 */}
         <div className="flex items-center gap-3 group cursor-pointer" onClick={() => navigate('/')}>
           <div className="relative w-10 h-10">
@@ -80,7 +80,7 @@ export default function Navbar() {
           initial={{ opacity: 0, y: -20 }}
           animate={{ opacity: 1, y: 0 }}
           exit={{ opacity: 0, y: -20 }}
-          className="absolute top-full left-6 right-6 mt-3 glass-panel p-6 border border-white/[0.08] bg-black/90 backdrop-blur-2xl rounded-2xl flex flex-col gap-5 md:hidden"
+          className="absolute top-full left-4 right-4 mt-3 max-w-7xl mx-auto p-6 border border-white/[0.08] bg-black/90 backdrop-blur-2xl rounded-2xl flex flex-col gap-5 md:hidden"
         >
           <a href="#features" onClick={() => setMobileMenuOpen(false)} className="mobile-nav-link">核心引擎</a>
           <a href="#solutions" onClick={() => setMobileMenuOpen(false)} className="mobile-nav-link">痛點剖析</a>

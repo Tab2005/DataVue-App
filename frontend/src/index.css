@@ -259,6 +259,12 @@ a:hover {
   line-height: 1.2;
   color: white;
   letter-spacing: -0.02em;
+  display: block;
+}
+
+.section-title br {
+  display: block;
+  margin-top: 0.25em;
 }
 
 @media (min-width: 768px) {
@@ -345,7 +351,7 @@ a:hover {
 
 /* Hero Section */
 .hero-title {
-  font-size: 3rem;
+  font-size: 2.5rem;
   font-weight: 700;
   line-height: 1.1;
   color: white;
@@ -354,13 +360,13 @@ a:hover {
 
 @media (min-width: 768px) {
   .hero-title {
-    font-size: 4rem;
+    font-size: 3.5rem;
   }
 }
 
 @media (min-width: 1024px) {
   .hero-title {
-    font-size: 4.5rem;
+    font-size: 4rem;
   }
 }
 
