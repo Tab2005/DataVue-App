@@ -334,8 +334,17 @@ def run_startup_tasks():
         logger.critical(f"Database initialization failed: {e}")
         return False
     
-    # 4. Run migrations
-    run_migrations()
+    # 4. Run migrations unless deployment entrypoint already handled them.
+    skip_startup_migrations = os.getenv("DATAVUE_SKIP_STARTUP_MIGRATIONS", "").strip().lower() in {
+        "1",
+        "true",
+        "yes",
+        "on",
+    }
+    if skip_startup_migrations:
+        logger.info("Skipping startup migrations because DATAVUE_SKIP_STARTUP_MIGRATIONS is enabled.")
+    else:
+        run_migrations()
     
     # 5. Patch schema (Legacy fallback, should move to Alembic)
     patch_database_schema(engine)

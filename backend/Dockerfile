@@ -21,6 +21,8 @@ RUN pip install --no-cache-dir --upgrade pip \
 # 複製應用程式碼
 COPY . .
 
+RUN chmod +x /app/entrypoint.sh
+
 # 建立非 root 使用者（安全最佳實踐）
 RUN useradd --system --no-create-home appuser \
     && chown -R appuser:appuser /app
@@ -34,4 +36,4 @@ HEALTHCHECK --interval=30s --timeout=10s --start-period=10s --retries=3 \
     CMD curl -f http://localhost:8000/health || exit 1
 
 # 啟動命令
-CMD ["sh", "-c", "python main.py"]
+CMD ["sh", "/app/entrypoint.sh"]
