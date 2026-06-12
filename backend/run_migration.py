@@ -53,6 +53,35 @@ def _should_stamp_legacy_database() -> bool:
         return version in (None, "")
 
 
+def _ensure_alembic_version_column_capacity() -> None:
+    inspector = inspect(engine)
+    existing_tables = set(inspector.get_table_names())
+    if "alembic_version" not in existing_tables:
+        return
+
+    columns = inspector.get_columns("alembic_version")
+    version_col = next((col for col in columns if col["name"] == "version_num"), None)
+    if not version_col:
+        return
+
+    current_type = version_col["type"]
+    current_length = getattr(current_type, "length", None)
+    if current_length is not None and current_length >= 128:
+        return
+
+    dialect = engine.dialect.name
+    with engine.begin() as conn:
+        if dialect == "postgresql":
+            conn.execute(text("ALTER TABLE alembic_version ALTER COLUMN version_num TYPE VARCHAR(128)"))
+        elif dialect == "sqlite":
+            return
+        else:
+            try:
+                conn.execute(text("ALTER TABLE alembic_version ALTER COLUMN version_num TYPE VARCHAR(128)"))
+            except Exception:
+                pass
+
+
 def _stamp_legacy_database(alembic_cfg: Config) -> None:
     print(
         "Detected existing legacy DataVue schema without Alembic version metadata. "
@@ -63,6 +92,7 @@ def _stamp_legacy_database(alembic_cfg: Config) -> None:
 
 def run_upgrade():
     alembic_cfg = _build_alembic_config()
+    _ensure_alembic_version_column_capacity()
 
     if _should_stamp_legacy_database():
         _stamp_legacy_database(alembic_cfg)
