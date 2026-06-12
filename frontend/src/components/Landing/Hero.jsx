@@ -1,188 +1,307 @@
 import { motion } from 'framer-motion';
-import { ArrowRight, Sparkles, Activity, ShieldAlert, BarChart } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
+import { FaFacebook, FaGoogle } from 'react-icons/fa';
+import { SiGooglecloud } from 'react-icons/si';
+
+const containerVariants = {
+  hidden: { opacity: 0 },
+  visible: {
+    opacity: 1,
+    transition: { staggerChildren: 0.12, delayChildren: 0.3 }
+  }
+};
+
+const itemVariants = {
+  hidden: { y: 40, opacity: 0 },
+  visible: { y: 0, opacity: 1, transition: { duration: 0.8, ease: [0.16, 1, 0.3, 1] } }
+};
 
 export default function Hero() {
   const navigate = useNavigate();
 
-  // 定義動態效果的 Framer Motion 變數
-  const containerVariants = {
-    hidden: { opacity: 0 },
-    visible: {
-      opacity: 1,
-      transition: {
-        staggerChildren: 0.15,
-        delayChildren: 0.2
-      }
-    }
-  };
-
-  const itemVariants = {
-    hidden: { y: 30, opacity: 0 },
-    visible: {
-      y: 0,
-      opacity: 1,
-      transition: { duration: 0.8, ease: [0.16, 1, 0.3, 1] }
-    }
-  };
-
   return (
-    <section className="relative pt-40 pb-24 px-6 overflow-hidden min-h-screen flex flex-col items-center justify-center bg-mesh bg-grid">
-      {/* 背景透視流光與極薄光暈 */}
-      <div className="absolute top-1/4 left-1/2 -translate-x-1/2 w-[600px] h-[300px] bg-gradient-to-tr from-brand-blue/5 via-brand-purple/5 to-brand-cyan/5 rounded-full blur-[160px] -z-10 pointer-events-none" />
-      <div className="absolute -top-40 -left-40 w-96 h-96 bg-brand-cyan/[0.02] rounded-full blur-[100px] -z-10 pointer-events-none" />
-      <div className="absolute bottom-10 right-10 w-[500px] h-[500px] bg-brand-purple/[0.02] rounded-full blur-[120px] -z-10 pointer-events-none" />
+    <section className="relative min-h-screen flex items-center justify-center overflow-hidden pt-24 pb-16 px-6">
+      {/* 動態粒子背景 */}
+      <div className="absolute inset-0 overflow-hidden">
+        {/* 主要漸層光暈 */}
+        <div className="absolute top-1/4 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[800px] h-[800px]">
+          <div className="absolute inset-0 bg-gradient-radial from-cyan-500/10 via-purple-500/5 to-transparent rounded-full animate-pulse-slow" />
+        </div>
 
-      {/* 細微的對稱機械對焦裝飾線 */}
-      <div className="absolute left-10 top-1/2 -translate-y-1/2 w-[1px] h-32 bg-gradient-to-b from-transparent via-white/10 to-transparent hidden lg:block" />
-      <div className="absolute right-10 top-1/2 -translate-y-1/2 w-[1px] h-32 bg-gradient-to-b from-transparent via-white/10 to-transparent hidden lg:block" />
+        {/* 左側藍光 */}
+        <div className="absolute top-1/3 left-0 w-96 h-96 bg-blue-500/10 rounded-full blur-[150px] animate-float-left" />
 
-      <div className="max-w-7xl mx-auto w-full grid grid-cols-1 lg:grid-cols-12 gap-16 items-center">
-        {/* 左側：精美社論標題區 */}
-        <motion.div 
+        {/* 右側紫光 */}
+        <div className="absolute bottom-1/4 right-0 w-96 h-96 bg-purple-500/10 rounded-full blur-[150px] animate-float-right" />
+
+        {/* 底部青色光 */}
+        <div className="absolute bottom-0 left-1/3 w-80 h-80 bg-cyan-500/8 rounded-full blur-[120px] animate-float-center" />
+
+        {/* 旋轉粒子環 */}
+        <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[600px] h-[600px]">
+          <div className="absolute inset-0 border border-dashed border-cyan-500/10 rounded-full animate-spin-slow" />
+          <div className="absolute inset-8 border border-dashed border-purple-500/10 rounded-full animate-spin-reverse" />
+          <div className="absolute inset-16 border border-blue-500/10 rounded-full animate-spin-slow" />
+        </div>
+
+        {/* 漂浮數據節點 */}
+        <motion.div
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1, transition: { delay: 1.5, duration: 1 } }}
+          className="absolute top-20 left-[15%] w-3 h-3 bg-cyan-400/50 rounded-full animate-float-node-1"
+        />
+        <motion.div
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1, transition: { delay: 1.8, duration: 1 } }}
+          className="absolute top-40 right-[20%] w-2 h-2 bg-purple-400/50 rounded-full animate-float-node-2"
+        />
+        <motion.div
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1, transition: { delay: 2.1, duration: 1 } }}
+          className="absolute bottom-32 left-[25%] w-2.5 h-2.5 bg-blue-400/50 rounded-full animate-float-node-3"
+        />
+        <motion.div
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1, transition: { delay: 2.4, duration: 1 } }}
+          className="absolute bottom-48 right-[15%] w-2 h-2 bg-cyan-300/50 rounded-full animate-float-node-4"
+        />
+      </div>
+
+      <div className="max-w-7xl mx-auto w-full relative z-10">
+        <motion.div
           variants={containerVariants}
           initial="hidden"
           animate="visible"
-          className="lg:col-span-7 text-left flex flex-col items-start"
+          className="grid grid-cols-1 lg:grid-cols-12 gap-12 lg:gap-16 items-center"
         >
-          {/* 狀態標籤 - 極簡鋼鐵黑與微光 */}
-          <motion.div 
-            variants={itemVariants}
-            className="inline-flex items-center gap-2 px-3 py-1.5 rounded-full border border-white/5 bg-[#0a0c10]/60 backdrop-blur-md mb-8"
+          {/* 左側：文案區 */}
+          <div className="lg:col-span-6 flex flex-col items-start">
+            {/* 狀態標籤 */}
+            <motion.div variants={itemVariants} className="status-tag mb-8">
+              <span className="status-dot" />
+              <span>AI 核心引擎已就緒</span>
+            </motion.div>
+
+            {/* 主標題 */}
+            <motion.h1 variants={itemVariants} className="hero-title mb-6">
+              匯聚所有數據
+              <br />
+              <span className="gradient-text">洞察一觸即達</span>
+            </motion.h1>
+
+            {/* 副標題 */}
+            <motion.p variants={itemVariants} className="hero-subtitle mb-10">
+              Facebook Ads、Google Search Console、GA4 — 所有行銷數據在同一個宇宙中匯聚。
+              DataVue 以 AI 為核心，為您提煉出可付諸行動的商業洞察。
+            </motion.p>
+
+            {/* CTA 按鈕組 */}
+            <motion.div variants={itemVariants} className="flex flex-col sm:flex-row gap-4 w-full sm:w-auto">
+              <motion.button
+                whileHover={{ scale: 1.02, boxShadow: '0 0 40px rgba(6, 182, 212, 0.4)' }}
+                whileTap={{ scale: 0.98 }}
+                onClick={() => navigate('/login')}
+                className="cta-button-primary"
+              >
+                探索數據宇宙
+                <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 7l5 5m0 0l-5 5m5-5H6" />
+                </svg>
+              </motion.button>
+
+              <motion.a
+                href="#features"
+                whileHover={{ x: 4 }}
+                className="cta-button-secondary"
+              >
+                了解核心功能
+              </motion.a>
+            </motion.div>
+
+            {/* 數據來源標識 */}
+            <motion.div variants={itemVariants} className="mt-12 flex items-center gap-6">
+              <span className="text-xs text-slate-500 font-medium tracking-wider">整合來源</span>
+              <div className="flex items-center gap-4">
+                <div className="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-white/5 border border-white/5 hover:border-blue-500/30 transition-colors">
+                  <FaFacebook className="w-4 h-4 text-blue-400" />
+                  <span className="text-xs text-slate-400">Facebook</span>
+                </div>
+                <div className="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-white/5 border border-white/5 hover:border-green-500/30 transition-colors">
+                  <SiGooglecloud className="w-4 h-4 text-green-400" />
+                  <span className="text-xs text-slate-400">GSC</span>
+                </div>
+                <div className="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-white/5 border border-white/5 hover:border-yellow-500/30 transition-colors">
+                  <FaGoogle className="w-4 h-4 text-yellow-400" />
+                  <span className="text-xs text-slate-400">GA4</span>
+                </div>
+              </div>
+            </motion.div>
+          </div>
+
+          {/* 右側：動態數據星核視覺化 */}
+          <motion.div
+            initial={{ opacity: 0, scale: 0.9 }}
+            animate={{ opacity: 1, scale: 1 }}
+            transition={{ duration: 1, delay: 0.5, ease: [0.16, 1, 0.3, 1] }}
+            className="lg:col-span-6 flex items-center justify-center relative"
           >
-            <span className="w-1.5 h-1.5 rounded-full bg-brand-cyan animate-pulse shadow-[0_0_8px_#06b6d4]" />
-            <span className="text-[10px] font-display font-medium tracking-widest text-slate-400 uppercase">DataVue Engine v2.0 Live</span>
-          </motion.div>
-          
-          {/* 標題 - 混合 Outfit (現代幾何) 與 Fraunces (極致襯線/斜體) */}
-          <motion.h1 
-            variants={itemVariants}
-            className="text-4xl sm:text-5xl md:text-6xl lg:text-7xl font-bold tracking-tight text-white leading-[1.1] mb-8 font-sans"
-          >
-            結束數據迷航。<br />
-            讓決策，<br />
-            <span className="font-serif italic font-normal text-chrome-gradient">一目了然</span>。
-          </motion.h1>
-          
-          {/* 段落 - 極高可讀性與高雅的排版間距 */}
-          <motion.p 
-            variants={itemVariants}
-            className="text-base md:text-lg text-slate-400 mb-10 max-w-xl leading-relaxed font-light tracking-wide"
-          >
-            DataVue 將 Facebook Ads、GSC 與 GA4 的紛亂雜音，煉化為清晰的單一事實。
-            藉由反向工程行銷數據，AI 隨時為您指引具備「勝負感」的致勝策略。
-          </motion.p>
-          
-          {/* 按鈕組 */}
-          <motion.div 
-            variants={itemVariants}
-            className="flex flex-col sm:flex-row items-center gap-5 w-full sm:w-auto"
-          >
-            <motion.button 
-              whileHover={{ scale: 1.02, y: -2 }}
-              whileTap={{ scale: 0.98 }}
-              onClick={() => navigate('/login')}
-              className="w-full sm:w-auto px-8 py-4 rounded-full bg-white text-black font-display font-semibold text-sm tracking-wider uppercase transition-all duration-300 shadow-[0_10px_30px_rgba(255,255,255,0.08)] flex items-center justify-center gap-2 hover:shadow-[0_15px_40px_rgba(255,255,255,0.18)]"
-            >
-              即刻免費啟用 <ArrowRight className="w-4 h-4 stroke-[2.5px]" />
-            </motion.button>
-            
-            <motion.a 
-              href="#features"
-              whileHover={{ x: 3 }}
-              className="w-full sm:w-auto px-8 py-4 rounded-full border border-white/5 bg-white/[0.02] hover:bg-white/[0.06] text-slate-300 hover:text-white font-display text-sm tracking-wide transition-all duration-300 flex items-center justify-center gap-2"
-            >
-              探尋引擎機密
-            </motion.a>
+            {/* 外層光環 */}
+            <div className="absolute inset-0 bg-gradient-to-tr from-cyan-500/20 via-purple-500/20 to-blue-500/20 rounded-full blur-3xl animate-pulse" />
+
+            {/* 主體容器 */}
+            <div className="relative w-full max-w-lg aspect-square">
+              {/* 旋轉外環 */}
+              <div className="absolute inset-0 rounded-full border border-dashed border-cyan-500/20 animate-orbit-1" />
+              <div className="absolute inset-4 rounded-full border border-dashed border-purple-500/15 animate-orbit-2" />
+              <div className="absolute inset-8 rounded-full border border-blue-500/10 animate-orbit-1" />
+
+              {/* 核心球體 */}
+              <div className="absolute inset-16 rounded-full bg-gradient-to-br from-slate-900 via-slate-800 to-black border border-white/10 shadow-2xl flex items-center justify-center overflow-hidden">
+                {/* 核心光暈 */}
+                <div className="absolute inset-0 bg-gradient-to-br from-cyan-500/10 via-transparent to-purple-500/10" />
+
+                {/* 核心脈動 */}
+                <div className="absolute inset-8 rounded-full bg-gradient-to-br from-cyan-500/20 to-purple-500/20 animate-pulse-subtle" />
+
+                {/* 核心數據流 */}
+                <div className="relative z-10 w-20 h-20 rounded-full bg-gradient-to-br from-cyan-400 via-purple-500 to-blue-500 flex items-center justify-center">
+                  <div className="absolute inset-1 rounded-full bg-slate-900 flex items-center justify-center">
+                    <Database className="w-8 h-8 text-white" />
+                  </div>
+                </div>
+
+                {/* 內部光環 */}
+                <div className="absolute inset-0 rounded-full border border-white/5 animate-spin-slow" />
+              </div>
+
+              {/* 浮動數據卡 - Facebook */}
+              <motion.div
+                animate={{ y: [0, -8, 0] }}
+                transition={{ duration: 3, repeat: Infinity, ease: 'easeInOut' }}
+                className="absolute top-8 left-8 glass-card"
+              >
+                <div className="flex items-center gap-3">
+                  <div className="w-8 h-8 rounded-lg bg-blue-500/20 flex items-center justify-center">
+                    <FaFacebook className="w-4 h-4 text-blue-400" />
+                  </div>
+                  <div>
+                    <div className="text-[10px] text-slate-500 uppercase tracking-wider">ROAS</div>
+                    <div className="text-sm font-bold text-white">3.2x</div>
+                  </div>
+                </div>
+              </motion.div>
+
+              {/* 浮動數據卡 - GSC */}
+              <motion.div
+                animate={{ y: [0, 8, 0] }}
+                transition={{ duration: 4, repeat: Infinity, ease: 'easeInOut', delay: 0.5 }}
+                className="absolute top-20 right-4 glass-card"
+              >
+                <div className="flex items-center gap-3">
+                  <div className="w-8 h-8 rounded-lg bg-green-500/20 flex items-center justify-center">
+                    <SiGooglecloud className="w-4 h-4 text-green-400" />
+                  </div>
+                  <div>
+                    <div className="text-[10px] text-slate-500 uppercase tracking-wider">曝光</div>
+                    <div className="text-sm font-bold text-white">+142%</div>
+                  </div>
+                </div>
+              </motion.div>
+
+              {/* 浮動數據卡 - GA4 */}
+              <motion.div
+                animate={{ y: [0, -6, 0] }}
+                transition={{ duration: 3.5, repeat: Infinity, ease: 'easeInOut', delay: 1 }}
+                className="absolute bottom-16 left-12 glass-card"
+              >
+                <div className="flex items-center gap-3">
+                  <div className="w-8 h-8 rounded-lg bg-yellow-500/20 flex items-center justify-center">
+                    <FaGoogle className="w-4 h-4 text-yellow-400" />
+                  </div>
+                  <div>
+                    <div className="text-[10px] text-slate-500 uppercase tracking-wider">轉換率</div>
+                    <div className="text-sm font-bold text-white">4.28%</div>
+                  </div>
+                </div>
+              </motion.div>
+
+              {/* AI 洞察卡片 */}
+              <motion.div
+                animate={{ y: [0, 10, 0] }}
+                transition={{ duration: 4, repeat: Infinity, ease: 'easeInOut', delay: 1.5 }}
+                className="absolute bottom-8 right-8 glass-card border-cyan-500/20"
+              >
+                <div className="flex items-center gap-2 mb-2">
+                  <div className="w-2 h-2 rounded-full bg-cyan-400 animate-pulse" />
+                  <span className="text-[10px] text-cyan-400 font-semibold tracking-wider">AI 分析</span>
+                </div>
+                <p className="text-xs text-slate-400 leading-relaxed max-w-[180px]">
+                  檢測到高意圖關鍵字，建議將 20% 預算重新分配
+                </p>
+              </motion.div>
+
+              {/* 連接線 SVG */}
+              <svg className="absolute inset-0 w-full h-full pointer-events-none">
+                <defs>
+                  <linearGradient id="line-gradient-1" x1="0%" y1="0%" x2="100%" y2="100%">
+                    <stop offset="0%" stopColor="#06b6d4" stopOpacity="0.5" />
+                    <stop offset="100%" stopColor="#8b5cf6" stopOpacity="0" />
+                  </linearGradient>
+                  <linearGradient id="line-gradient-2" x1="100%" y1="0%" x2="0%" y2="100%">
+                    <stop offset="0%" stopColor="#8b5cf6" stopOpacity="0.5" />
+                    <stop offset="100%" stopColor="#06b6d4" stopOpacity="0" />
+                  </linearGradient>
+                </defs>
+                <motion.path
+                  d="M 80 80 Q 150 150 200 200"
+                  fill="none"
+                  stroke="url(#line-gradient-1)"
+                  strokeWidth="1"
+                  strokeDasharray="4,4"
+                  initial={{ pathLength: 0 }}
+                  animate={{ pathLength: 1 }}
+                  transition={{ duration: 2, delay: 1 }}
+                />
+                <motion.path
+                  d="M 320 100 Q 250 150 200 200"
+                  fill="none"
+                  stroke="url(#line-gradient-2)"
+                  strokeWidth="1"
+                  strokeDasharray="4,4"
+                  initial={{ pathLength: 0 }}
+                  animate={{ pathLength: 1 }}
+                  transition={{ duration: 2, delay: 1.2 }}
+                />
+              </svg>
+            </div>
           </motion.div>
         </motion.div>
 
-        {/* 右側：動態「數據熔爐 (The Data Fusion Nexus)」3D/CSS 動態雕塑 */}
-        <motion.div 
-          initial={{ opacity: 0, scale: 0.95, y: 30 }}
-          animate={{ opacity: 1, scale: 1, y: 0 }}
-          transition={{ duration: 1, delay: 0.5, ease: [0.16, 1, 0.3, 1] }}
-          className="lg:col-span-5 w-full aspect-square relative flex items-center justify-center"
+        {/* 滾動提示 */}
+        <motion.div
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
+          transition={{ delay: 2, duration: 1 }}
+          className="absolute bottom-8 left-1/2 -translate-x-1/2 flex flex-col items-center gap-2"
         >
-          {/* 數據熔爐主體 (The Reactor Hub) */}
-          <div className="w-full max-w-[400px] aspect-square rounded-full border border-white/[0.03] bg-gradient-to-b from-white/[0.02] to-transparent flex items-center justify-center relative p-8 group">
-            {/* 旋轉外環 */}
-            <div className="absolute inset-0 rounded-full border border-dashed border-white/10 animate-[spin_60s_linear_infinite]" />
-            {/* 逆向旋轉中環 */}
-            <div className="absolute inset-8 rounded-full border border-white/5 animate-[spin_30s_linear_infinite_reverse] flex items-center justify-center">
-              <div className="w-full h-[1px] bg-gradient-to-r from-transparent via-white/20 to-transparent" />
-            </div>
-            {/* 發光的偏心內環 */}
-            <div className="absolute inset-16 rounded-full border border-white/10 bg-[#090b0f]/80 backdrop-blur-md flex items-center justify-center shadow-[inset_0_1px_20px_rgba(255,255,255,0.02)]">
-              {/* 核心 AI 狀態圖示 */}
-              <div className="relative w-20 h-20 flex items-center justify-center">
-                <div className="absolute inset-0 bg-brand-purple/10 rounded-full blur-md animate-pulse" />
-                <Activity className="w-8 h-8 text-brand-cyan animate-pulse relative z-10" />
-              </div>
-            </div>
-
-            {/* 平台流光引線 (模擬 Facebook, GSC, GA4 流向核心的動態粒子軌跡) */}
-            
-            {/* 1. Facebook Ads 軌跡 */}
-            <div className="absolute -top-6 left-12 p-3 glass border-white/5 bg-[#090b0f]/60 backdrop-blur-md flex items-center gap-3 hover:border-brand-blue/30 transition-colors group/item">
-              <div className="w-6 h-6 rounded-full bg-brand-blue/20 flex items-center justify-center text-brand-blue text-xs font-semibold">F</div>
-              <div className="text-[10px] font-display">
-                <div className="text-slate-400 uppercase tracking-widest">FB Ads CTR</div>
-                <div className="text-white font-bold">4.28%</div>
-              </div>
-            </div>
-            {/* 2. GSC 軌跡 */}
-            <div className="absolute top-1/2 -right-8 -translate-y-1/2 p-3 glass border-white/5 bg-[#090b0f]/60 backdrop-blur-md flex items-center gap-3 hover:border-brand-cyan/30 transition-colors group/item">
-              <div className="w-6 h-6 rounded-full bg-brand-cyan/20 flex items-center justify-center text-brand-cyan text-xs font-semibold">G</div>
-              <div className="text-[10px] font-display">
-                <div className="text-slate-400 uppercase tracking-widest">GSC Impressions</div>
-                <div className="text-white font-bold">142.8K</div>
-              </div>
-            </div>
-            {/* 3. GA4 軌跡 */}
-            <div className="absolute -bottom-6 left-1/4 p-3 glass border-white/5 bg-[#090b0f]/60 backdrop-blur-md flex items-center gap-3 hover:border-brand-purple/30 transition-colors group/item">
-              <div className="w-6 h-6 rounded-full bg-brand-purple/20 flex items-center justify-center text-brand-purple text-xs font-semibold">A</div>
-              <div className="text-[10px] font-display">
-                <div className="text-slate-400 uppercase tracking-widest">GA4 Bounce Rate</div>
-                <div className="text-white font-bold">34.2%</div>
-              </div>
-            </div>
-
-            {/* 動態連線 (SVG Overlay) */}
-            <svg className="absolute inset-0 w-full h-full pointer-events-none -z-10" viewBox="0 0 400 400">
-              <defs>
-                <linearGradient id="blue-grad" x1="0%" y1="0%" x2="100%" y2="100%">
-                  <stop offset="0%" stopColor="#3b82f6" stopOpacity="0.8" />
-                  <stop offset="100%" stopColor="#8b5cf6" stopOpacity="0" />
-                </linearGradient>
-                <linearGradient id="cyan-grad" x1="100%" y1="50%" x2="50%" y2="50%">
-                  <stop offset="0%" stopColor="#06b6d4" stopOpacity="0.8" />
-                  <stop offset="100%" stopColor="#8b5cf6" stopOpacity="0" />
-                </linearGradient>
-                <linearGradient id="purple-grad" x1="25%" y1="100%" x2="50%" y2="50%">
-                  <stop offset="0%" stopColor="#8b5cf6" stopOpacity="0.8" />
-                  <stop offset="100%" stopColor="#3b82f6" stopOpacity="0" />
-                </linearGradient>
-              </defs>
-              {/* 繪製流光通道 */}
-              <path d="M 120 0 Q 150 150 200 200" fill="none" stroke="url(#blue-grad)" strokeWidth="1" strokeDasharray="5,5" className="animate-[dash_10s_linear_infinite]" />
-              <path d="M 400 200 Q 250 200 200 200" fill="none" stroke="url(#cyan-grad)" strokeWidth="1" strokeDasharray="5,5" className="animate-[dash_10s_linear_infinite]" />
-              <path d="M 100 400 Q 150 250 200 200" fill="none" stroke="url(#purple-grad)" strokeWidth="1" strokeDasharray="5,5" className="animate-[dash_10s_linear_infinite]" />
-            </svg>
-          </div>
-
-          {/* AI 實時解譯卡片浮動在下方 */}
-          <div className="absolute bottom-4 right-0 md:-right-8 p-4 glass border-white/5 bg-black/80 backdrop-blur-2xl max-w-[280px] shadow-[0_20px_50px_rgba(0,0,0,0.7)]">
-            <div className="flex items-center gap-2 mb-2">
-              <Sparkles className="w-3.5 h-3.5 text-brand-purple" />
-              <span className="text-[10px] font-display font-bold tracking-widest text-brand-purple uppercase">AI Synthesis Engine</span>
-            </div>
-            <p className="text-[11px] text-slate-300 leading-relaxed">
-              「偵測到 Facebook 廣告存在受眾重疊，而 GSC 指向高意圖關鍵字。建議將 15% 預算轉移至精準著陸頁。」
-            </p>
-          </div>
+          <span className="text-[10px] text-slate-500 tracking-widest uppercase">向下探索</span>
+          <motion.div
+            animate={{ y: [0, 8, 0] }}
+            transition={{ duration: 1.5, repeat: Infinity }}
+            className="w-5 h-8 rounded-full border border-slate-600 flex justify-center pt-2"
+          >
+            <div className="w-1 h-1.5 rounded-full bg-slate-500" />
+          </motion.div>
         </motion.div>
       </div>
     </section>
+  );
+}
+
+function Database({ className }) {
+  return (
+    <svg className={className} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
+      <path strokeLinecap="round" strokeLinejoin="round" d="M20.25 6.375c0 2.278-3.694 4.125-8.25 4.125S3.75 8.653 3.75 6.375m16.5 0c0-2.278-3.694-4.125-8.25-4.125S3.75 4.097 3.75 6.375m16.5 0v11.25c0 2.278-3.694 4.125-8.25 4.125s-8.25-1.847-8.25-4.125V6.375m16.5 0v3.75m-16.5-3.75v3.75m16.5 0v3.75C20.25 16.153 16.556 18 12 18s-8.25-1.847-8.25-4.125v-3.75m16.5 0c0 2.278-3.694 4.125-8.25 4.125s-8.25-1.847-8.25-4.125" />
+    </svg>
   );
 }

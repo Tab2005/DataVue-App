@@ -1,116 +1,120 @@
 import { motion } from 'framer-motion';
-import { User, Building, Rocket, Sparkles, TrendingUp, Cpu } from 'lucide-react';
+import { Users, TrendingUp, Zap, BarChart3 } from 'lucide-react';
 
-const targets = [
+const audiences = [
   {
-    icon: <User className="w-5 h-5 text-brand-blue" />,
-    title: "個人品牌創作者",
-    subTitle: "Solo Creators",
-    description: "精準鎖定高價值內容。不再盲目跟風熱點，而是用 GSC 意圖分析挖掘用戶真實痛點，將流量高效轉化為訂閱與變現。",
-    metric: "核心受眾黏著度",
-    value: "+58%",
-    glow: "group-hover:shadow-[0_0_40px_rgba(59,130,246,0.15)]"
+    icon: BarChart3,
+    title: '數據驅動行銷人',
+    description: '每日與 Facebook Ads、GSC、GA4 為伍，深知數據價值的行銷從業人員。',
+    highlight: '告別手動報表，專注策略制定',
+    color: 'cyan'
   },
   {
-    icon: <Building className="w-5 h-5 text-brand-purple" />,
-    title: "增長型電商與品牌",
-    subTitle: "Growth Brands",
-    description: "最大化跨平台廣告效能。一站式比對 FB Ads ROAS 與 GA4 下單轉化，即時預警受眾重疊，避免在重複的人群中相互競價浪費預算。",
-    metric: "行銷預算轉化效率",
-    value: "+34%",
-    glow: "group-hover:shadow-[0_0_40px_rgba(139,92,246,0.15)]"
+    icon: TrendingUp,
+    title: '成長型電商',
+    description: '同時營運多平台的電商賣家，需要統一視角掌握全局效率。',
+    highlight: '一站式掌握所有廣告與流量',
+    color: 'purple'
   },
   {
-    icon: <Rocket className="w-5 h-5 text-brand-cyan" />,
-    title: "敏捷決策團隊",
-    subTitle: "Agile Teams",
-    description: "建立數據驅動的團隊文化。去除人工手動整理 Excel 的低效，以 AI 虛擬分析師主動推送數據洞察，大幅縮短戰術調整的反應時間。",
-    metric: "報表彙整工時節省",
-    value: "-82%",
-    glow: "group-hover:shadow-[0_0_40px_rgba(6,118,246,0.15)]"
+    icon: Users,
+    title: '數位代理商',
+    description: '為客戶管理多個帳戶，需要快速產出洞察報告的專業團隊。',
+    highlight: 'AI 輔助，半小時完成日報告',
+    color: 'blue'
+  },
+  {
+    icon: Zap,
+    title: '獨立創作者',
+    description: '自媒體與創作者，利用數據優化內容策略，最大化觸及與轉換。',
+    highlight: '用數據指引創作方向',
+    color: 'green'
   }
 ];
 
+const colorMap = {
+  cyan: { from: 'from-cyan-500', to: 'to-blue-500', text: 'text-cyan-400', border: 'border-cyan-500/20', glow: 'hover:shadow-cyan-500/10' },
+  purple: { from: 'from-purple-500', to: 'to-pink-500', text: 'text-purple-400', border: 'border-purple-500/20', glow: 'hover:shadow-purple-500/10' },
+  blue: { from: 'from-blue-500', to: 'to-indigo-500', text: 'text-blue-400', border: 'border-blue-500/20', glow: 'hover:shadow-blue-500/10' },
+  green: { from: 'from-green-500', to: 'to-teal-500', text: 'text-green-400', border: 'border-green-500/20', glow: 'hover:shadow-green-500/10' }
+};
+
 export default function Audience() {
   return (
-    <section id="target" className="py-32 px-6 bg-black/30 border-b border-white/[0.02] relative">
-      <div className="absolute top-0 right-1/4 w-[1px] h-full bg-gradient-to-b from-white/5 via-transparent to-white/5 hidden lg:block" />
+    <section id="audience" className="relative py-32 px-6 overflow-hidden">
+      {/* 背景裝飾 */}
+      <div className="absolute inset-0 bg-gradient-to-b from-transparent via-slate-900/30 to-transparent" />
 
       <div className="max-w-7xl mx-auto relative z-10">
-        {/* 標題 */}
-        <div className="text-center mb-20">
-          <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full border border-white/5 bg-[#0a0c10]/40 backdrop-blur-md mb-6">
-            <Cpu className="w-3.5 h-3.5 text-brand-purple" />
-            <span className="text-[10px] font-display font-medium tracking-widest text-slate-400 uppercase">TARGET COHORT SYMBIOSIS</span>
+        {/* 標題區 */}
+        <motion.div
+          initial={{ opacity: 0, y: 30 }}
+          whileInView={{ opacity: 1, y: 0 }}
+          viewport={{ once: true }}
+          transition={{ duration: 0.8 }}
+          className="text-center mb-16"
+        >
+          <div className="status-tag mx-auto mb-6">
+            <Users className="w-3.5 h-3.5 text-purple-400" />
+            <span>適用場景</span>
           </div>
-          
-          <h2 className="text-3xl md:text-5xl font-sans font-bold mb-4 text-white">
-            與您共鳴的<span className="font-serif italic font-normal text-chrome-gradient">決策生態</span>
+          <h2 className="section-title mb-4">
+            為誰而生
+            <br />
+            <span className="gradient-text">為增長而設計</span>
           </h2>
-          <p className="text-slate-500 max-w-xl mx-auto text-sm font-light">
-            無論是個人耕耘還是團隊作戰，DataVue 都能為您找到行銷增長的專屬軌跡。
+          <p className="section-subtitle max-w-2xl mx-auto">
+            無論你是獨行俠還是團隊作戰，DataVue 都能成為你的數據作戰中心。
           </p>
-        </div>
+        </motion.div>
 
-        {/* 奢華精緻三欄卡片 */}
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
-          {targets.map((item, index) => (
-            <motion.div 
-              key={index}
-              initial={{ opacity: 0, y: 30 }}
-              whileInView={{ opacity: 1, y: 0 }}
-              viewport={{ once: true, margin: "-100px" }}
-              transition={{ duration: 0.8, delay: index * 0.15, ease: [0.16, 1, 0.3, 1] }}
-              className={`group relative rounded-3xl border border-white/[0.03] bg-[#07090d]/30 backdrop-blur-md p-8 flex flex-col justify-between transition-all duration-500 hover:bg-[#0b0e14]/50 hover:border-white/[0.08] ${item.glow}`}
-            >
-              {/* 卡片頂部 */}
-              <div>
-                <div className="flex items-center justify-between mb-8">
-                  <div className="w-10 h-10 rounded-xl bg-white/5 border border-white/5 flex items-center justify-center group-hover:scale-110 transition-transform duration-500">
-                    {item.icon}
-                  </div>
-                  <span className="text-[10px] font-display font-medium tracking-widest text-slate-500 uppercase">
-                    {item.subTitle}
-                  </span>
-                </div>
+        {/* 受眾卡片網格 */}
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+          {audiences.map((audience, index) => {
+            const colors = colorMap[audience.color];
+            return (
+              <motion.div
+                key={index}
+                initial={{ opacity: 0, y: 30 }}
+                whileInView={{ opacity: 1, y: 0 }}
+                viewport={{ once: true }}
+                transition={{ duration: 0.6, delay: index * 0.1 }}
+                whileHover={{ y: -8, transition: { duration: 0.3 } }}
+                className={`
+                  group relative rounded-2xl border border-white/5
+                  bg-slate-900/40 backdrop-blur-sm p-6
+                  hover:border-cyan-500/20 transition-all duration-500
+                  hover:shadow-2xl ${colors.glow}
+                `}
+              >
+                {/* 懸停光暈 */}
+                <div className={`absolute inset-0 bg-gradient-to-br ${colors.from} to-transparent rounded-2xl opacity-0 group-hover:opacity-10 transition-opacity duration-500`} />
 
-                <h3 className="text-lg font-semibold text-white mb-4 tracking-wide">
-                  {item.title}
-                </h3>
-                
-                <p className="text-xs text-slate-400 leading-relaxed font-light mb-12">
-                  {item.description}
-                </p>
-              </div>
-
-              {/* 卡片底部指標展示 (帶有微型動態圖表暗示) */}
-              <div className="border-t border-white/[0.04] pt-6 relative overflow-hidden">
-                <div className="flex justify-between items-end">
-                  <div>
-                    <span className="text-[9px] font-display text-slate-500 uppercase tracking-wider block mb-1">
-                      {item.metric}
-                    </span>
-                    <span className="text-3xl font-display font-extrabold text-white tracking-tight">
-                      {item.value}
-                    </span>
+                <div className="relative z-10">
+                  {/* 圖標 */}
+                  <div className={`w-12 h-12 rounded-xl bg-gradient-to-br ${colors.from} ${colors.to} border border-white/10 flex items-center justify-center mb-5 group-hover:scale-110 transition-transform duration-300`}>
+                    <audience.icon className="w-5 h-5 text-white" />
                   </div>
 
-                  {/* 迷你折線裝飾圖 */}
-                  <div className="w-20 h-8 opacity-20 group-hover:opacity-40 transition-opacity duration-500">
-                    <svg className="w-full h-full" viewBox="0 0 100 40">
-                      <path 
-                        d={index === 0 ? "M0,35 Q25,10 50,25 T100,5" : index === 1 ? "M0,30 Q25,25 50,15 T100,10" : "M0,38 Q25,30 50,12 T100,8"} 
-                        fill="none" 
-                        stroke="currentColor" 
-                        strokeWidth="2"
-                        className="text-white"
-                      />
-                    </svg>
+                  {/* 標題 */}
+                  <h3 className="text-base font-semibold text-white mb-3">
+                    {audience.title}
+                  </h3>
+
+                  {/* 描述 */}
+                  <p className="text-sm text-slate-500 leading-relaxed mb-4">
+                    {audience.description}
+                  </p>
+
+                  {/* 高亮標籤 */}
+                  <div className={`inline-flex items-center gap-2 px-3 py-1.5 rounded-full bg-gradient-to-r ${colors.from}/10 border ${colors.border}`}>
+                    <span className={`w-1.5 h-1.5 rounded-full ${colors.text} animate-pulse`} />
+                    <span className={`text-xs ${colors.text} font-medium`}>{audience.highlight}</span>
                   </div>
                 </div>
-              </div>
-            </motion.div>
-          ))}
+              </motion.div>
+            );
+          })}
         </div>
       </div>
     </section>
