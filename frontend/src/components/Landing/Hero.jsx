@@ -20,7 +20,7 @@ export default function Hero() {
   const navigate = useNavigate();
 
   return (
-    <section className="relative min-h-screen flex items-center justify-center overflow-hidden pt-24 pb-16 px-6">
+    <section className="relative min-h-screen flex items-center justify-center overflow-hidden pt-20 pb-16">
       {/* 動態粒子背景 */}
       <div className="absolute inset-0 overflow-hidden">
         {/* 主要漸層光暈 */}
@@ -67,7 +67,7 @@ export default function Hero() {
         />
       </div>
 
-      <div className="max-w-7xl mx-auto w-full relative z-10">
+      <div className="max-w-7xl mx-auto px-6 w-full relative z-10">
         <motion.div
           variants={containerVariants}
           initial="hidden"
