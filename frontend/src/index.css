@@ -2,34 +2,36 @@
 @import "tailwindcss";
 
 @theme {
-  --color-brand-blue: #3b82f6;
-  --color-brand-blue-hover: #2563eb;
+  --color-brand-blue: #2d88ff;
+  --color-brand-blue-hover: #1a6dd9;
   --color-brand-purple: #8b5cf6;
   --color-brand-cyan: #06b6d4;
   --color-brand-orange: #f97316;
   --color-brand-orange-hover: #ea580c;
-  --color-brand-slate: #0f172a;
-  --font-display: "Outfit", "Fira Code", monospace;
-  --font-sans: "Outfit", "Fira Sans", sans-serif;
+  --color-brand-slate: #18191a;
+  --font-display: "Inter", "Fira Code", monospace;
+  --font-sans: "Inter", "Fira Sans", sans-serif;
   --font-serif: "Fraunces", serif;
 }
 
 :root {
-  /* Colors - Premium Obsidian Chrome Theme */
-  --bg-primary: #040507;
-  --bg-secondary: #090b0f;
-  --bg-hover: #12161f;
+  /* Colors - Restore DataVue base theme */
+  --bg-primary: #18191a;
+  --bg-secondary: #242526;
+  --bg-hover: #3a3b3c;
+  --bg-gradient: linear-gradient(180deg, #18191a 0%, #18191a 100%);
   
-  --text-primary: #f8fafc;
-  --text-secondary: #94a3b8;
-  --text-muted: #475569;
+  --text-primary: #e4e6eb;
+  --text-secondary: #b0b3b8;
+  --text-muted: #8a8d91;
+  --text-error: #ef4444;
   
-  --accent-primary: #3b82f6;
-  --accent-hover: #2563eb;
+  --accent-primary: #2d88ff;
+  --accent-hover: #1a6dd9;
   
-  --glass-bg: rgba(6, 8, 12, 0.6);
-  --glass-border: rgba(255, 255, 255, 0.04);
-  --glass-border-hover: rgba(255, 255, 255, 0.08);
+  --glass-bg: rgba(36, 37, 38, 0.7);
+  --glass-border: rgba(255, 255, 255, 0.08);
+  --glass-border-hover: rgba(255, 255, 255, 0.12);
   
   /* Spacing */
   --spacing-xs: 4px;
@@ -53,8 +55,8 @@
   --radius-xl: 16px;
 
   /* Landing Page Variables */
-  --landing-bg: #040507;
-  --landing-fg: #f8fafc;
+  --landing-bg: #18191a;
+  --landing-fg: #e4e6eb;
 }
 
 * {
@@ -65,7 +67,7 @@
 
 /* Base Body Style - Default to System Theme */
 body {
-  font-family: 'Outfit', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, 'Open Sans', 'Helvetica Neue', sans-serif;
+  font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, 'Open Sans', 'Helvetica Neue', sans-serif;
   background-color: var(--bg-primary);
   color: var(--text-primary);
   line-height: 1.5;
@@ -109,10 +111,10 @@ a:hover {
 /* Glassmorphism Utility */
 .glass-panel {
   background: var(--glass-bg);
-  backdrop-filter: blur(16px);
-  -webkit-backdrop-filter: blur(16px);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
   border: 1px solid var(--glass-border);
-  box-shadow: var(--shadow-lg);
+  box-shadow: var(--shadow-md);
   transition: border-color var(--transition-fast), background var(--transition-fast);
 }
 
@@ -122,20 +124,20 @@ a:hover {
 
 /* Landing Specific Glass */
 .glass {
-  background: rgba(10, 12, 18, 0.4);
+  background: rgba(36, 37, 38, 0.6);
   backdrop-filter: blur(20px);
   -webkit-backdrop-filter: blur(20px);
-  border: 1px solid rgba(255, 255, 255, 0.03);
-  box-shadow: 0 20px 50px 0 rgba(0, 0, 0, 0.8), inset 0 1px 0 0 rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  box-shadow: 0 20px 50px 0 rgba(0, 0, 0, 0.35), inset 0 1px 0 0 rgba(255, 255, 255, 0.04);
   border-radius: 1.25rem;
 }
 
 .glass-morphism {
-  background: rgba(8, 10, 15, 0.6);
+  background: rgba(36, 37, 38, 0.7);
   backdrop-filter: blur(24px);
   -webkit-backdrop-filter: blur(24px);
-  border: 1px solid rgba(255, 255, 255, 0.05);
-  box-shadow: 0 30px 60px 0 rgba(0, 0, 0, 0.9), inset 0 1px 0 0 rgba(255, 255, 255, 0.08);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  box-shadow: 0 30px 60px 0 rgba(0, 0, 0, 0.4), inset 0 1px 0 0 rgba(255, 255, 255, 0.06);
   border-radius: 2rem;
 }
 
@@ -154,11 +156,11 @@ a:hover {
 }
 
 .bg-mesh {
-  background-color: #040507;
+  background-color: var(--bg-primary);
   background-image: 
-    radial-gradient(at 0% 0%, rgba(59, 130, 246, 0.08) 0px, transparent 50%),
-    radial-gradient(at 100% 0%, rgba(236, 72, 153, 0.05) 0px, transparent 50%),
-    radial-gradient(at 50% 50%, rgba(139, 92, 246, 0.06) 0px, transparent 60%);
+    radial-gradient(at 0% 0%, rgba(45, 136, 255, 0.05) 0px, transparent 50%),
+    radial-gradient(at 100% 0%, rgba(139, 92, 246, 0.04) 0px, transparent 50%),
+    radial-gradient(at 50% 50%, rgba(6, 182, 212, 0.04) 0px, transparent 60%);
 }
 
 /* Linear Grid Background */
@@ -228,5 +230,5 @@ a:hover {
 }
 
 ::-webkit-scrollbar-thumb:hover {
-  background: #2d2d44;
+  background: var(--text-secondary);
 }
