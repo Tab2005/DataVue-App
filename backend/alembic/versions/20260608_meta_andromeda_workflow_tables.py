@@ -58,7 +58,7 @@ def upgrade() -> None:
         sa.Column("overall_score", sa.Integer(), nullable=True),
         sa.Column("roas_band", sa.String(length=50), nullable=True),
         sa.Column("model_version", sa.String(length=100), nullable=True),
-        sa.Column("reviewed", sa.Boolean(), nullable=False, server_default=sa.text("0")),
+        sa.Column("reviewed", sa.Boolean(), nullable=False, server_default=sa.false()),
         sa.Column("feedback_count", sa.Integer(), nullable=False, server_default=sa.text("0")),
         sa.Column("latest_feedback_decision", sa.String(length=50), nullable=True),
         sa.Column("feature_manifest_id", sa.String(length=100), nullable=True),
