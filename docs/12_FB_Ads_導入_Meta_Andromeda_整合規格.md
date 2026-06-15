@@ -194,7 +194,6 @@
   |     - fb_ads module access
   |     - fb_ads:analytics:view
   |     - meta_andromeda module access
-  |     - meta_andromeda:operate
   |
   +--> 讀取 X-Team-ID
   |
@@ -276,7 +275,6 @@
 1. `fb_ads` module access
 2. `fb_ads:analytics:view`
 3. `meta_andromeda` module access
-4. `meta_andromeda:operate`
 
 原則：
 

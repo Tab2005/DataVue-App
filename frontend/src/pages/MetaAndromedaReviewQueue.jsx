@@ -1,7 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { useOutletContext } from 'react-router-dom';
 
-import { usePermission } from '../hooks/usePermission';
 import {
     fetchMetaAndromedaReviewDetail,
     fetchMetaAndromedaReviewFeedback,
@@ -23,7 +22,7 @@ const defaultFeedbackForm = {
 };
 
 const MetaAndromedaReviewQueue = () => {
-    const { isMobile, language, selectedTeamId } = useOutletContext();
+    const { isMobile, language } = useOutletContext();
     const [statusFilter, setStatusFilter] = useState('completed');
     const [reviewedFilter, setReviewedFilter] = useState('unreviewed');
     const [queueItems, setQueueItems] = useState([]);
@@ -35,7 +34,6 @@ const MetaAndromedaReviewQueue = () => {
     const [submittingFeedback, setSubmittingFeedback] = useState(false);
     const [error, setError] = useState(null);
     const [feedbackForm, setFeedbackForm] = useState(defaultFeedbackForm);
-    const { hasPermission: canSubmitFeedback, loading: loadingFeedbackPermission } = usePermission('meta_andromeda:feedback', selectedTeamId);
 
     const t = (en, zh) => (language === 'en' ? en : zh);
 
@@ -297,45 +295,36 @@ const MetaAndromedaReviewQueue = () => {
                                     ))}
                                 </div>
 
-                                {loadingFeedbackPermission ? null : canSubmitFeedback ? (
-                                    <form onSubmit={handleFeedbackSubmit} style={{ display: 'grid', gap: '12px' }}>
-                                        <div style={{ color: 'var(--text-primary)', fontWeight: 700 }}>
-                                            {t('Submit Feedback', '提交回饋')}
-                                        </div>
-                                        <select
-                                            value={feedbackForm.decision}
-                                            onChange={(e) => setFeedbackForm((current) => ({ ...current, decision: e.target.value }))}
-                                            style={selectStyle}
-                                        >
-                                            <option value="approve">{t('Approve', '通過')}</option>
-                                            <option value="revise">{t('Revise', '修改')}</option>
-                                            <option value="reject">{t('Reject', '退回')}</option>
-                                        </select>
-                                        <input
-                                            value={feedbackForm.reason_codes}
-                                            onChange={(e) => setFeedbackForm((current) => ({ ...current, reason_codes: e.target.value }))}
-                                            placeholder={t('reason codes, comma separated', '原因代碼，逗號分隔')}
-                                            style={inputStyle}
-                                        />
-                                        <textarea
-                                            value={feedbackForm.comment}
-                                            onChange={(e) => setFeedbackForm((current) => ({ ...current, comment: e.target.value }))}
-                                            rows={4}
-                                            placeholder={t('review notes', '審核備註')}
-                                            style={inputStyle}
-                                        />
-                                        <button type="submit" style={buttonPrimaryStyle} disabled={submittingFeedback}>
-                                            {submittingFeedback ? t('Submitting...', '提交中...') : t('Submit Feedback', '提交回饋')}
-                                        </button>
-                                    </form>
-                                ) : (
-                                    <div style={infoPanelStyle}>
-                                        {t(
-                                            'You can inspect the feedback timeline, but feedback submission requires meta_andromeda:feedback.',
-                                            '你可以查看回饋紀錄，但提交回饋需要 meta_andromeda:feedback 權限。'
-                                        )}
+                                <form onSubmit={handleFeedbackSubmit} style={{ display: 'grid', gap: '12px' }}>
+                                    <div style={{ color: 'var(--text-primary)', fontWeight: 700 }}>
+                                        {t('Submit Feedback', '提交回饋')}
                                     </div>
-                                )}
+                                    <select
+                                        value={feedbackForm.decision}
+                                        onChange={(e) => setFeedbackForm((current) => ({ ...current, decision: e.target.value }))}
+                                        style={selectStyle}
+                                    >
+                                        <option value="approve">{t('Approve', '通過')}</option>
+                                        <option value="revise">{t('Revise', '修改')}</option>
+                                        <option value="reject">{t('Reject', '退回')}</option>
+                                    </select>
+                                    <input
+                                        value={feedbackForm.reason_codes}
+                                        onChange={(e) => setFeedbackForm((current) => ({ ...current, reason_codes: e.target.value }))}
+                                        placeholder={t('reason codes, comma separated', '原因代碼，逗號分隔')}
+                                        style={inputStyle}
+                                    />
+                                    <textarea
+                                        value={feedbackForm.comment}
+                                        onChange={(e) => setFeedbackForm((current) => ({ ...current, comment: e.target.value }))}
+                                        rows={4}
+                                        placeholder={t('review notes', '審核備註')}
+                                        style={inputStyle}
+                                    />
+                                    <button type="submit" style={buttonPrimaryStyle} disabled={submittingFeedback}>
+                                        {submittingFeedback ? t('Submitting...', '提交中...') : t('Submit Feedback', '提交回饋')}
+                                    </button>
+                                </form>
                             </div>
                         </div>
                     )}
@@ -406,15 +395,6 @@ const errorPanelStyle = {
     background: 'rgba(239, 68, 68, 0.08)',
     border: '1px solid rgba(239, 68, 68, 0.18)',
     color: 'var(--text-primary)',
-};
-
-const infoPanelStyle = {
-    padding: '12px 14px',
-    borderRadius: '12px',
-    background: 'rgba(59, 130, 246, 0.08)',
-    border: '1px solid rgba(59, 130, 246, 0.18)',
-    color: 'var(--text-secondary)',
-    lineHeight: 1.7,
 };
 
 const listStyle = {

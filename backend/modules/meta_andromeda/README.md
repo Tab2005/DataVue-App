@@ -19,9 +19,7 @@ DataVue 內的 Meta Andromeda 模組整合入口。
 ## 目前狀態
 
 - 已接 DataVue 現有 auth / module permission
-- 權限語義採兩層：
-  - `meta_andromeda` module access：控制模組可見性與主入口存取
-  - `meta_andromeda:view / feedback / operate / release`：控制模組內功能語義，其中 `view` 代表唯讀檢視語義，不等於 module access 本身
+- `Meta Andromeda` 目前採 module-only access：只要具備 `meta_andromeda` module access，即可使用模組內功能
 - read / write workflow 已落到 DataVue DB
 - asset upload 已支援 `filesystem` 與 `s3_compatible` storage backend；可落檔到 `META_ANDROMEDA_STORAGE_ROOT`，或寫入 shared object storage bucket
 - score submit 已改成 APScheduler-backed queued processing
@@ -45,7 +43,7 @@ DataVue 內的 Meta Andromeda 模組整合入口。
 - `/api/meta-andromeda/runtime/health` 可提供更細的 shared-runtime readiness 摘要
 - `backend/scripts/meta_andromeda_shared_runtime_smoke.py` 可對共享環境執行最小 API smoke
 - frontend 已補頁面自動化測試：Monitoring / ScoreLab / ReviewQueue / Release
-- 權限切分已對齊 `view / feedback / operate / release`，目前主入口與大部分唯讀 API 仍以 module access 為主，`ScoreLab` 與 drift trigger 都有 action gate
+- 權限檢查已收斂為 `meta_andromeda` module access，不再對模組內 action 使用額外 feature gate
 - 已支援 shared object storage adapter，但尚未完成目標環境 bucket / credentials 的實際驗證紀錄
 - 已補外部 worker callback contract，但尚未完成共享環境 smoke / UAT / rollback 的實際執行紀錄
 

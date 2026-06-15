@@ -16,18 +16,14 @@ import modules.meta_andromeda.queue_host as meta_andromeda_queue_host_module
 import modules.meta_andromeda.storage as meta_andromeda_storage_module
 from modules.auth import dependencies as auth_dependencies
 import redis_cache as redis_cache_module
-from database import Module, Permission, Role, RolePermission, Team, TeamMember, UserModuleAccess, UserRole
-from seeds.permission_seeds import PERMISSIONS as SEEDED_PERMISSIONS, ROLE_PERMISSIONS as SEEDED_ROLE_PERMISSIONS
+from database import Module, Team, TeamMember, UserModuleAccess, UserRole
 from modules.meta_andromeda.repository import repository
 from modules.meta_andromeda.runtime import runtime_adapter
 from modules.meta_andromeda.service import MetaAndromedaService
 from main import app
 from modules.meta_andromeda.dependencies import (
     get_current_meta_andromeda_user,
-    require_meta_andromeda_feedback,
     require_meta_andromeda_module,
-    require_meta_andromeda_operate,
-    require_meta_andromeda_release,
 )
 
 
@@ -35,15 +31,9 @@ from modules.meta_andromeda.dependencies import (
 def meta_andromeda_access(client, sample_admin_user):
     app.dependency_overrides[get_current_meta_andromeda_user] = lambda: sample_admin_user
     app.dependency_overrides[require_meta_andromeda_module] = lambda: True
-    app.dependency_overrides[require_meta_andromeda_operate] = lambda: True
-    app.dependency_overrides[require_meta_andromeda_feedback] = lambda: True
-    app.dependency_overrides[require_meta_andromeda_release] = lambda: True
     yield client
     app.dependency_overrides.pop(get_current_meta_andromeda_user, None)
     app.dependency_overrides.pop(require_meta_andromeda_module, None)
-    app.dependency_overrides.pop(require_meta_andromeda_operate, None)
-    app.dependency_overrides.pop(require_meta_andromeda_feedback, None)
-    app.dependency_overrides.pop(require_meta_andromeda_release, None)
 
 
 @pytest.fixture
@@ -72,33 +62,6 @@ def _setup_meta_andromeda_team_access(
     module = Module(key="meta_andromeda", name="Meta Andromeda", enabled=True)
     db.add(module)
     db.flush()
-
-    permissions_by_key = {}
-    for permission_def in SEEDED_PERMISSIONS["meta_andromeda"]:
-        permission = Permission(
-            module_id=module.id,
-            key=permission_def["key"],
-            name=permission_def["name"],
-            category=permission_def["category"],
-        )
-        db.add(permission)
-        db.flush()
-        permissions_by_key[permission.key] = permission
-
-    role = Role(key=role_key, name=role_key, scope="team")
-    db.add(role)
-    db.flush()
-
-    granted_permission_keys = [
-        permission_key
-        for permission_key in SEEDED_ROLE_PERMISSIONS[role_key]
-        if permission_key == "*" or permission_key.startswith("meta_andromeda:")
-    ]
-    if "*" in granted_permission_keys:
-        granted_permission_keys = list(permissions_by_key.keys())
-
-    for permission_key in granted_permission_keys:
-        db.add(RolePermission(role_id=role.id, permission_id=permissions_by_key[permission_key].id))
 
     db.add(TeamMember(team_id=team.id, user_id=user.id, role=membership_role))
     if grant_module_access:
@@ -960,7 +923,7 @@ def test_meta_andromeda_team_member_can_submit_feedback_in_team_workspace(
 
 
 @pytest.mark.unit
-def test_meta_andromeda_team_member_cannot_trigger_drift_report(
+def test_meta_andromeda_team_member_can_trigger_drift_report_and_approve_release(
     meta_andromeda_permission_client,
     db,
 ):
@@ -970,63 +933,17 @@ def test_meta_andromeda_team_member_cannot_trigger_drift_report(
         user,
         membership_role=UserRole.MEMBER,
         role_key="team_member",
-    )
-
-    response = client.post(
-        "/api/meta-andromeda/drift:trigger",
-        headers={"X-Team-ID": team.id},
-        json={"window_kind": "last_7d", "note": "member should not operate"},
-    )
-
-    assert response.status_code == 403
-    assert "meta_andromeda:operate" in response.text
-
-
-@pytest.mark.unit
-def test_meta_andromeda_team_member_cannot_approve_release(
-    meta_andromeda_permission_client,
-    db,
-):
-    client, user = meta_andromeda_permission_client
-    team = _setup_meta_andromeda_team_access(
-        db,
-        user,
-        membership_role=UserRole.MEMBER,
-        role_key="team_member",
-    )
-
-    response = client.post(
-        "/api/meta-andromeda/release/approve",
-        headers={"X-Team-ID": team.id},
-        json={"model_version": "cand_v2026_06_05_a", "note": "member should not release"},
-    )
-
-    assert response.status_code == 403
-    assert "meta_andromeda:release" in response.text
-
-
-@pytest.mark.unit
-def test_meta_andromeda_team_admin_can_trigger_drift_report_and_approve_release(
-    meta_andromeda_permission_client,
-    db,
-):
-    client, user = meta_andromeda_permission_client
-    team = _setup_meta_andromeda_team_access(
-        db,
-        user,
-        membership_role=UserRole.ADMIN,
-        role_key="team_admin",
     )
 
     drift_response = client.post(
         "/api/meta-andromeda/drift:trigger",
         headers={"X-Team-ID": team.id},
-        json={"window_kind": "last_7d", "note": "admin can operate"},
+        json={"window_kind": "last_7d", "note": "member can operate with module access"},
     )
     release_response = client.post(
         "/api/meta-andromeda/release/approve",
         headers={"X-Team-ID": team.id},
-        json={"model_version": "cand_v2026_06_05_a", "note": "admin can release"},
+        json={"model_version": "cand_v2026_06_05_a", "note": "member can release with module access"},
     )
 
     assert drift_response.status_code == 201

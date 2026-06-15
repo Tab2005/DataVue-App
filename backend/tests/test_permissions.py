@@ -77,7 +77,7 @@ def _build_permission_test_app(db, user):
         return {"ok": True}
 
     @app.get("/test/permission")
-    def check_permission(_: bool = Depends(auth_dependencies.require_permission("meta_andromeda:feedback"))):
+    def check_permission(_: bool = Depends(auth_dependencies.require_permission("fb_ads:analytics:view"))):
         return {"ok": True}
 
     return app
@@ -121,22 +121,22 @@ def test_require_permission_uses_x_team_id_for_team_role_permissions(db, sample_
     db.flush()
 
     role = Role(key="team_member", name="團隊成員", scope="team")
-    module = Module(key="meta_andromeda", name="Meta Andromeda", enabled=True)
+    module = Module(key="fb_ads", name="FB Ads", enabled=True)
 
     db.add_all([role, module])
     db.flush()
     db.add(
         Permission(
             module_id=module.id,
-            key="meta_andromeda:feedback",
-            name="審核回饋",
+            key="fb_ads:analytics:view",
+            name="數據查看",
             category="feature",
         )
     )
     db.flush()
 
     db.add(TeamMember(team_id=team.id, user_id=sample_user.id, role=UserRole.MEMBER))
-    permission = db.query(Permission).filter(Permission.key == "meta_andromeda:feedback").one()
+    permission = db.query(Permission).filter(Permission.key == "fb_ads:analytics:view").one()
     db.add(RolePermission(role_id=role.id, permission_id=permission.id))
     db.commit()
 
@@ -158,8 +158,8 @@ def test_require_module_and_permission_allow_super_admin_without_team_context(db
     db.add(
         Permission(
             module_id=module.id,
-            key="meta_andromeda:feedback",
-            name="審核回饋",
+            key="fb_ads:analytics:view",
+            name="數據查看",
             category="feature",
         )
     )

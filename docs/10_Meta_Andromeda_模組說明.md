@@ -248,44 +248,26 @@ queue host adapter 位於 [backend/modules/meta_andromeda/queue_host.py](C:\User
 
 模組權限依賴 DataVue 既有 Google 登入與 permission mapping，不存在獨立帳密登入。
 
-### 權限語義
+### 目前權限策略
 
-`Meta Andromeda` 目前採用兩層語義：
-
-1. `module access`
+`Meta Andromeda` 目前已收斂為單一模組權限模型：
 
 - module key：`meta_andromeda`
-- 用途：控制模組是否可見、是否可進入 `/meta-andromeda*`、是否可通過模組級 API 保護
+- 用途：控制模組是否可見、是否可進入 `/meta-andromeda*`、以及是否可使用模組內所有功能
 
-2. `feature permissions`
+說明：
 
-- `meta_andromeda:view`
-- `meta_andromeda:feedback`
-- `meta_andromeda:operate`
-- `meta_andromeda:release`
-
-### 在新定位下的建議解釋
-
-- `meta_andromeda:view`
-  - 讀取 prediction / observation 相關唯讀資訊
-
-- `meta_andromeda:feedback`
-  - reviewer 針對結果做回饋與標記
-
-- `meta_andromeda:operate`
-  - 送分、匯入 observed creative、觸發工作流程操作
-
-- `meta_andromeda:release`
-  - 涉及版本 / release gate 的高權限操作
+- 目前不再區分 `view / feedback / operate / release` 的 feature-level gate
+- 只要使用者在當前工作區具備 `meta_andromeda` module access，即可使用模組內功能
+- 前端與後端的實際授權檢查都應以 `require_module("meta_andromeda")` 為準
 
 ### 與 FB Ads 匯入的聯動
 
-若從 `FB Ads` 導入 observed data，後端應同時檢查：
+若從 `FB Ads` 導入 observed data，後端應檢查：
 
 - `fb_ads` module access
 - `fb_ads:analytics:view`
 - `meta_andromeda` module access
-- `meta_andromeda:operate`
 
 ## 模組演進路線
 

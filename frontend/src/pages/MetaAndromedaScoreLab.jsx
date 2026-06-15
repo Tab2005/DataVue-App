@@ -1,7 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { useOutletContext } from 'react-router-dom';
 
-import { usePermission } from '../hooks/usePermission';
 import {
     fetchMetaAndromedaScore,
     submitMetaAndromedaScore,
@@ -21,8 +20,7 @@ const inferAssetType = (file) => {
 const terminalStatuses = new Set(['completed', 'failed']);
 
 const MetaAndromedaScoreLab = () => {
-    const { isMobile, language, selectedTeamId } = useOutletContext();
-    const { hasPermission: canOperate, loading: loadingOperatePermission } = usePermission('meta_andromeda:operate', selectedTeamId);
+    const { isMobile, language } = useOutletContext();
     const [selectedFile, setSelectedFile] = useState(null);
     const [uploadedAsset, setUploadedAsset] = useState(null);
     const [scoreResult, setScoreResult] = useState(null);
@@ -144,7 +142,7 @@ const MetaAndromedaScoreLab = () => {
                             type="button"
                             onClick={handleUpload}
                             style={buttonSecondaryStyle}
-                            disabled={!selectedFile || loadingUpload || !canOperate}
+                            disabled={!selectedFile || loadingUpload}
                         >
                             {loadingUpload ? t('Uploading...', '上傳中...') : t('Upload Asset', '上傳素材')}
                         </button>
@@ -169,19 +167,11 @@ const MetaAndromedaScoreLab = () => {
                         <button
                             type="submit"
                             style={buttonPrimaryStyle}
-                            disabled={!uploadedAsset || loadingSubmit || polling || !canOperate}
+                            disabled={!uploadedAsset || loadingSubmit || polling}
                         >
                             {loadingSubmit ? t('Submitting...', '送出中...') : t('Submit Score', '送出評分')}
                         </button>
                     </form>
-                    {!loadingOperatePermission && !canOperate ? (
-                        <div style={infoPanelStyle}>
-                            {t(
-                                'Score submission and asset upload require meta_andromeda:operate. You currently have read-only module access.',
-                                '送出評分與素材上傳需要 meta_andromeda:operate 權限，目前你只有模組唯讀權限。'
-                            )}
-                        </div>
-                    ) : null}
                 </section>
 
                 <section style={panelStyle}>
@@ -292,16 +282,6 @@ const errorPanelStyle = {
     background: 'rgba(239, 68, 68, 0.08)',
     border: '1px solid rgba(239, 68, 68, 0.18)',
     color: 'var(--text-primary)',
-};
-
-const infoPanelStyle = {
-    marginTop: '16px',
-    padding: '12px 14px',
-    borderRadius: '12px',
-    background: 'rgba(59, 130, 246, 0.08)',
-    border: '1px solid rgba(59, 130, 246, 0.18)',
-    color: 'var(--text-secondary)',
-    lineHeight: 1.7,
 };
 
 export default MetaAndromedaScoreLab;

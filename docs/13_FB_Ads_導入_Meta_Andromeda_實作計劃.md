@@ -134,7 +134,6 @@
   - `fb_ads` module access
   - `fb_ads:analytics:view`
   - `meta_andromeda` module access
-  - `meta_andromeda:operate`
 - 支援 `X-Team-ID`
 - 補 allow / deny 測試
 
