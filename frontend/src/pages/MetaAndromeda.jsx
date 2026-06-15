@@ -3,6 +3,70 @@ import { useOutletContext } from 'react-router-dom';
 
 import { fetchMetaAndromedaOverview } from '../services/metaAndromedaService';
 
+const OVERVIEW_LABELS = {
+    zh: {
+        module: '模組',
+        currentSlice: '目前階段',
+        nextSlice: '下一階段',
+        capabilities: '功能能力',
+        notes: '說明與備註',
+        loadFailed: '總覽載入失敗',
+        capabilityLabels: {
+            creative_scoring: '創意評分',
+            review_queue: '審核佇列',
+            monitoring: '監控總覽',
+            release_console: '版本控台',
+        },
+        statusLabels: {
+            active: '啟用中',
+            in_progress: '進行中',
+            registry_backed: '已接入模型登錄',
+            interactive: '可互動操作',
+            worker_observable: '可追蹤工作程序',
+            registry_aware: '已識別版本登錄',
+            phase_2_workflow_actions: '第二階段：工作流程操作',
+            queue_host_observability_enabled: '已啟用佇列主機觀測能力',
+            external_queue_host_and_shared_storage_rollout: '外部佇列主機與共享儲存佈署中',
+        },
+        notesMap: {
+            'Meta Andromeda is being integrated into DataVue incrementally.': 'Meta Andromeda 正逐步整合進 DataVue。',
+            'Overview, review queue, monitoring, and release paths are mounted in DataVue.': '模組總覽、審核佇列、監控總覽與版本路徑已掛載到 DataVue。',
+            'Feedback, release actions, filesystem storage, and queued scoring are active.': '回饋提交、版本操作、檔案系統儲存與排隊評分功能已啟用。',
+            'Scoring runtime now resolves provider/model metadata from the local Meta Andromeda registry.': '評分執行程序目前會從本地 Meta Andromeda registry 解析 provider 與模型中繼資料。',
+            'Queue host dispatch, worker audit, and dead-letter observability are now persisted in DataVue DB.': '佇列主機派送、工作程序稽核與死信觀測資料已寫入 DataVue 資料庫。',
+            'Shared object storage and external worker deployment are still pending host alignment.': '共享物件儲存與外部 worker 部署仍待主機環境對齊。',
+        },
+    },
+    en: {
+        module: 'Module',
+        currentSlice: 'Current Slice',
+        nextSlice: 'Next Slice',
+        capabilities: 'Capabilities',
+        notes: 'Notes',
+        loadFailed: 'Failed to load overview',
+    },
+};
+
+const getOverviewCopy = (language) => OVERVIEW_LABELS[language === 'en' ? 'en' : 'zh'];
+
+const translateOverviewValue = (value, language) => {
+    if (!value || language === 'en') return value || '-';
+    const copy = getOverviewCopy(language);
+    return copy.statusLabels?.[value] || value;
+};
+
+const translateCapabilityLabel = (item, language) => {
+    if (language === 'en') return item?.label || '-';
+    const copy = getOverviewCopy(language);
+    return copy.capabilityLabels?.[item?.key] || item?.label || '-';
+};
+
+const translateNote = (note, language) => {
+    if (!note || language === 'en') return note || '-';
+    const copy = getOverviewCopy(language);
+    return copy.notesMap?.[note] || note;
+};
+
 const MetaAndromeda = () => {
     const { language, isMobile } = useOutletContext();
     const [overview, setOverview] = useState(null);
@@ -31,7 +95,8 @@ const MetaAndromeda = () => {
         ? 'Current integration status and the next implementation slice.'
         : '目前整合狀態與下一個實作切片。';
     const loadingLabel = language === 'en' ? 'Loading module overview...' : '載入模組總覽中...';
-    const errorLabel = language === 'en' ? 'Failed to load overview' : '總覽載入失敗';
+    const copy = getOverviewCopy(language);
+    const errorLabel = language === 'en' ? copy.loadFailed : copy.loadFailed;
 
     return (
         <div style={{ padding: isMobile ? '16px' : '24px' }}>
@@ -81,19 +146,19 @@ const MetaAndromeda = () => {
                         marginBottom: '16px'
                     }}>
                         <OverviewCard
-                            label="Module"
+                            label={copy.module}
                             value={overview?.module?.name}
-                            detail={overview?.module?.status}
+                            detail={translateOverviewValue(overview?.module?.status, language)}
                         />
                         <OverviewCard
-                            label="Current Slice"
-                            value={overview?.summary?.current_slice}
-                            detail={overview?.summary?.integration_status}
+                            label={copy.currentSlice}
+                            value={translateOverviewValue(overview?.summary?.current_slice, language)}
+                            detail={translateOverviewValue(overview?.summary?.integration_status, language)}
                         />
                         <OverviewCard
-                            label="Next Slice"
-                            value={overview?.summary?.next_slice}
-                            detail={overview?.module?.phase}
+                            label={copy.nextSlice}
+                            value={translateOverviewValue(overview?.summary?.next_slice, language)}
+                            detail={translateOverviewValue(overview?.module?.phase, language)}
                         />
                     </div>
 
@@ -103,15 +168,15 @@ const MetaAndromeda = () => {
                         gap: '16px'
                     }}>
                         <section style={panelStyle}>
-                            <h2 style={sectionTitleStyle}>Capabilities</h2>
+                            <h2 style={sectionTitleStyle}>{copy.capabilities}</h2>
                             <div style={{ display: 'grid', gap: '12px' }}>
                                 {(overview?.capabilities || []).map((item) => (
                                     <div key={item.key} style={capabilityStyle}>
                                         <div style={{ color: 'var(--text-primary)', fontWeight: 600 }}>
-                                            {item.label}
+                                            {translateCapabilityLabel(item, language)}
                                         </div>
                                         <div style={{ color: 'var(--text-secondary)', fontSize: '0.9rem' }}>
-                                            {item.status}
+                                            {translateOverviewValue(item.status, language)}
                                         </div>
                                     </div>
                                 ))}
@@ -119,11 +184,11 @@ const MetaAndromeda = () => {
                         </section>
 
                         <section style={panelStyle}>
-                            <h2 style={sectionTitleStyle}>Notes</h2>
+                            <h2 style={sectionTitleStyle}>{copy.notes}</h2>
                             <div style={{ display: 'grid', gap: '10px' }}>
                                 {(overview?.notes || []).map((note, index) => (
                                     <div key={index} style={{ color: 'var(--text-secondary)', lineHeight: 1.7 }}>
-                                        {note}
+                                        {translateNote(note, language)}
                                     </div>
                                 ))}
                             </div>
