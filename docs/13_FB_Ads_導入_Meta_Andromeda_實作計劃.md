@@ -22,7 +22,8 @@
 3. observed creative 素材轉存
 4. observed creative record 建立
 5. lineage 與 performance snapshot 保存
-6. 權限與 team-aware 驗證
+6. observation window 標準化
+7. 權限與 team-aware 驗證
 
 第一階段不做：
 
@@ -30,6 +31,7 @@
 2. 完整 feature engineering pipeline
 3. 完整 calibration / drift product flow
 4. 完整 observed diagnostics UI
+5. `last_14d` 與 `custom` observation window
 
 ## 實作原則
 
@@ -56,12 +58,17 @@
   - `POST /api/meta-andromeda/evaluations/import/facebook-ads`
 - 在 `service.py` 新增：
   - `import_observed_facebook_ad(...)`
+- 固定第一階段 observation window contract：
+  - `last_7d`
+  - `last_30d`
+  - `lifetime`
 
 驗收：
 
 - endpoint 存在
 - request / response schema 固定
 - 錯誤語義明確
+- 不接受第一階段未開放的 window kind
 
 ### Checkpoint A
 
@@ -111,6 +118,9 @@
   - `campaign_id`
   - `adset_id`
   - `ad_id`
+  - `observation_window_kind`
+  - `observation_window_start`
+  - `observation_window_end`
   - `performance_snapshot`
 
 驗收：
@@ -193,6 +203,7 @@
 
 - [ ] Task 1: 建立 observation import schema 與 endpoint 骨架
   - Acceptance: `/api/meta-andromeda/evaluations/import/facebook-ads` 存在
+  - Acceptance: 第一階段僅接受 `last_7d / last_30d / lifetime`
   - Verify: backend schema / router 測試
 
 - [ ] Task 2: 建立 `facebook_ads_importer`

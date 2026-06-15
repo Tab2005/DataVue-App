@@ -179,6 +179,67 @@
 - 這是 observation 模型，不是 `ScoreSubmitRequest`
 - 它的用途是保存觀測事實，不是直接表示預估請求
 
+## Observation 時間窗策略
+
+`FB Ads` 的 observed performance 不能脫離時間區段理解。
+
+同一支素材在不同時間窗內，可能因為 learning phase、預算調整、受眾變更、素材疲勞或檔期因素，而呈現完全不同的表現。因此第一階段 observation import 必須把「觀測時間窗」視為核心欄位，而不是附帶資訊。
+
+### 必要欄位
+
+每筆 observed creative record 至少要保存：
+
+- `observation_window_kind`
+- `observation_window_start`
+- `observation_window_end`
+
+### 第一階段支援範圍
+
+第一階段只支援：
+
+- `last_7d`
+- `last_30d`
+- `lifetime`
+
+第一階段不支援：
+
+- `last_14d`
+- `custom`
+
+### 收斂理由
+
+`last_7d`
+
+- 用於最近表現判讀
+- 適合 reviewer / operator 快速查看近期素材狀態
+- 也適合後續做 early signal 類型的 calibration
+
+`last_30d`
+
+- 用於較穩定的近月觀測
+- 比 `last_7d` 更不容易被短期波動扭曲
+- 適合作為第一階段較通用的 observation 視角
+
+`lifetime`
+
+- 用於素材累積表現歸檔
+- 適合作為歷史樣本與長期比較基線
+
+### 為什麼第一階段先不做 `last_14d`
+
+`last_14d` 不是錯誤需求，但在第一階段它與 `last_7d` / `last_30d` 的產品價值高度重疊，先加入只會增加 API 與前端選項複雜度，對 observation fact layer 本身沒有關鍵增益。
+
+### 為什麼第一階段先不做 `custom`
+
+`custom` 雖然彈性最大，但會立刻帶入更多問題：
+
+- 前端日期選擇 UX
+- API 驗證與邊界處理
+- 不同使用者用不同區段造成樣本口徑不一致
+- 後續 calibration / comparison 更難標準化
+
+因此第一階段應優先建立標準化 observation dataset，再視實際使用情況決定第二階段是否開放 `custom`。
+
 ## 整體流程圖
 
 ```text
@@ -230,8 +291,7 @@
 {
   "account_id": "act_123456789",
   "ad_id": "120000000000012",
-  "since": "2026-06-01",
-  "until": "2026-06-15",
+  "observation_window_kind": "last_30d",
   "market": "TW",
   "placement_family": "feed",
   "primary_text": null,
@@ -251,6 +311,11 @@
     "platform": "facebook_ads",
     "account_id": "act_123456789",
     "ad_id": "120000000000012"
+  },
+  "observation_window": {
+    "kind": "last_30d",
+    "start": "2026-05-16",
+    "end": "2026-06-15"
   },
   "performance_snapshot": {
     "spend": 1200.5,
