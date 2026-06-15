@@ -2,82 +2,67 @@
 
 ## 文件目的
 
-本文件重新定義 `FB Ads` 與 `Meta Andromeda` 的整合方向，避免把兩種不同語義的流程混在一起：
+本文件定義 `FB Ads` 與 `Meta Andromeda` 的整合規格，但整合目標不是把 `FB Ads` 現有資料直接送入既有 `score submit`。
 
-- `Pre-score pipeline`
-  - 上傳素材
-  - 預估素材表現
-  - 適用於尚未投放或資料不足的創意
+本次整合的正確目標是：
 
-- `Post-launch evaluation pipeline`
-  - 匯入已投放素材與真實成效
-  - 做事後分析、校準、drift 檢查與 reviewer/operator 判讀
-  - 適用於已經有 `FB Ads` 真實數據的創意
+- 讓 `FB Ads` 已投放素材與真實成效，成為 `Meta Andromeda` 的 `Observation` 輸入
+- 讓 observation 資料能服務：
+  - reviewer / operator 判讀
+  - diagnostics
+  - calibration
+  - drift
+  - release evidence
+  - 強化未來 `Prediction` 能力
 
-本規格的第一階段只處理第二條：
+## 背景
 
-- `FB Ads observed data -> Meta Andromeda evaluation / feedback loop`
+### 原始 MVP 路徑
 
-不處理：
-
-- 把已投放素材直接送進既有 `Meta Andromeda score submit` 當成同一條流程
-
-## 問題釐清
-
-### Meta Andromeda 原始用途
-
-目前 `Meta Andromeda` 既有主流程是：
+`Meta Andromeda` 原始 MVP 路徑是：
 
 - 上傳素材
-- 補充 `objective / placement / market / copy`
-- 呼叫 `POST /api/meta-andromeda/scores`
+- 補充上下文欄位
+- 送入 `/api/meta-andromeda/scores`
 - 取得預估分數與診斷
 
-這條流程的本質是：
+這條路線的本質是：
 
-- 預測
-- 上線前評估
-- 低資料或無資料情境下的判斷輔助
+- 在沒有真實投放數據時，先做預估
 
-### FB Ads 現有資料的性質
+### DataVue 串接後的新現實
 
-`FB Ads` 模組現有抓回來的資料則是：
+`DataVue` 既有 `FB Ads` 模組已經有真實投放資料：
 
-- 素材已經投放過
-- 已經有 `spend / impressions / clicks / purchases / roas`
-- 屬於真實觀測結果，不是預估輸入
+- `campaign_id`
+- `adset_id`
+- `ad_id`
+- `objective`
+- `image_url`
+- `spend`
+- `impressions`
+- `clicks`
+- `purchases`
+- `roas`
 
-因此，若把這些資料直接送進現在的 `/scores`，會出現語義衝突：
+這代表：
 
-1. 這支素材已經有真實結果，不再只是「待預估樣本」
-2. `/scores` 產出的東西目前定義為預估或診斷結果
-3. 已投放資料更適合成為：
-   - calibration data
-   - drift data
-   - post-launch diagnostic sample
+- 有些素材在進入 `Meta Andromeda` 時，不再是「未知樣本」
+- 而是「已投放、已有 observed outcome 的樣本」
 
-## 本次修正後的整合方向
+因此：
 
-### 核心結論
+- 這類樣本不能再直接當成既有 `Prediction` 流程的同義輸入
 
-`FB Ads` 現有數據不應在第一階段直接導入既有 `score submit` 流程。
+## 模組內的新角色分工
 
-第一階段正確方向應是：
+本整合完成後，`Meta Andromeda` 內部應區分三條語義：
 
-- 將已投放素材與真實成效導入 `Meta Andromeda evaluation pipeline`
-- 用來做：
-  - 事後診斷
-  - reviewer/operator 判讀
-  - 預估結果驗證
-  - drift / release / calibration 依據
-
-### 功能邊界
-
-#### A. Pre-score pipeline
+### 1. Prediction
 
 用途：
 
-- 預估尚未投放素材的可能表現
+- 對尚未投放或無數據素材做預估
 
 輸入：
 
@@ -86,64 +71,78 @@
 - `objective`
 - `placement_family`
 - `market`
-- optional `primary_text / headline / cta`
+- optional copy fields
 
 輸出：
 
-- 預估分數
-- 風險標籤
-- 說明摘要
+- score
+- risk tags
+- diagnostics
 
-現況：
-
-- 已存在
-- 不在本次整合範圍內改動主語義
-
-#### B. Post-launch evaluation pipeline
+### 2. Observation
 
 用途：
 
-- 對已投放素材做事後分析
-- 比對真實表現與模型預估
-- 累積 calibration 與 drift 訊號
+- 對已投放素材保存真實資料與上下文
 
 輸入：
 
-- creative 素材識別
-- 真實成效快照
-- 來源 lineage
+- creative asset
+- source lineage
+- performance snapshot
 
 輸出：
 
 - observed creative record
-- evaluation summary
-- reviewer/operator 可用的事後診斷結果
-- calibration / drift 訊號
+- observed performance snapshot
+- reviewer / operator 可檢視資料
 
-現況：
+### 3. Learning
 
-- 本次整合第一階段應優先定義與建立
+用途：
 
-## 第一階段要做什麼
+- 用 observed data 反饋 prediction 能力
 
-第一階段不是「一鍵把 FB Ads ad row 送去 score」。
+第一階段不要求完整訓練系統，但 observation 資料結構必須足以支援：
 
-第一階段要做的是：
+- calibration
+- drift
+- release decision support
+- 特徵回饋
 
-1. 定義 observed creative 匯入模型
-2. 定義 observed performance 匯入 API
-3. 建立可追溯的素材與成效快照紀錄
-4. 保留未來接上：
-   - 診斷
-   - calibration
-   - drift
-   - release evaluation
+## 第一階段整合目標
+
+第一階段只做：
+
+- `FB Ads -> Meta Andromeda Observation`
+
+不做：
+
+- `FB Ads -> 直接進 /scores`
+- observed data 匯入後自動重跑 prediction
+- 完整 model retraining pipeline
+
+## 功能邊界
+
+### 本次要做
+
+1. 從 `FB Ads` 匯入單筆已投放 creative
+2. 取得素材與 observed performance snapshot
+3. 轉存素材到 Meta Andromeda storage
+4. 建立 observed creative record
+5. 保存 lineage
+6. 為第二階段 diagnostics / calibration 預留掛點
+
+### 本次不做
+
+1. observed creative 自動生成新的 `score_event`
+2. observed creative 自動寫回既有 review queue
+3. 完整訓練模型與特徵工程 pipeline
+4. release / drift 的完整 product UI
 
 ## 建議資料模型
 
 ### ObservedCreativeCandidate
-
-建議先引入一個中介模型，專門描述已投放素材樣本：
 
 ```json
 {
@@ -177,56 +176,54 @@
 
 ### 設計原則
 
-- 這個模型代表「已觀測樣本」
-- 不是既有 `ScoreSubmitRequest`
-- 不應直接假裝自己是 pre-score request
+- 這是 observation 模型，不是 `ScoreSubmitRequest`
+- 它的用途是保存觀測事實，不是直接表示預估請求
 
 ## 整體流程圖
 
 ```text
-[使用者在 FB Ads Analytics 畫面選取一筆已投放 ad row]
+[使用者在 FB Ads Analytics 選一筆已投放 ad row]
   |
   v
-[前端顯示「送至 Meta Andromeda 評估」操作]
+[前端顯示「送至 Meta Andromeda 評估」]
   |
   v
-[前端送出 POST /api/meta-andromeda/evaluations/import/facebook-ads]
+[POST /api/meta-andromeda/evaluations/import/facebook-ads]
   |
-  +--> [檢查權限]
-  |      - fb_ads module access
-  |      - meta_andromeda module access
-  |      - meta_andromeda:operate
+  +--> 檢查權限
+  |     - fb_ads module access
+  |     - fb_ads:analytics:view
+  |     - meta_andromeda module access
+  |     - meta_andromeda:operate
   |
-  +--> [讀取 X-Team-ID]
+  +--> 讀取 X-Team-ID
   |
-  +--> [呼叫 facebook_ads_importer]
-           |
-           +--> [讀取 ad row / creative metadata / observed metrics]
-           |
-           +--> [正規化為 ObservedCreativeCandidate]
+  +--> 呼叫 facebook_ads_importer
+  |      - 讀取 ad row
+  |      - 讀取 creative metadata
+  |      - 整理 observed performance snapshot
+  |      - 正規化成 ObservedCreativeCandidate
   |
-  +--> [素材轉存到 Meta Andromeda storage]
+  +--> 驗證 media_url 是否可轉存
   |
-  +--> [建立 observed creative record]
+  +--> 下載並轉存素材到 Meta Andromeda storage
   |
-  +--> [保存 lineage + performance snapshot]
+  +--> 建立 observed creative record
+  |      - asset_uri
+  |      - lineage
+  |      - performance_snapshot
   |
-  +--> [回傳 observed record id / evaluation status]
+  +--> 回傳 observed_creative_id
   |
   v
-[前端提示成功並導向 observed creative detail / evaluation queue]
+[前端提示成功，導向 observed detail 或後續 evaluation 工作區]
 ```
 
-## 建議 API 方向
+## 建議 API 契約
 
-### 第一階段建議 Endpoint
+### Endpoint
 
 `POST /api/meta-andromeda/evaluations/import/facebook-ads`
-
-用途：
-
-- 從既有 `FB Ads` 匯入一筆已投放創意樣本
-- 作為 observed creative / evaluation / calibration 的輸入
 
 ### Request
 
@@ -269,12 +266,12 @@
 - `400`: payload 不合法
 - `403`: 權限不足
 - `404`: ad 不存在
-- `422`: 找得到 ad，但缺少可匯入素材或必要成效欄位
+- `422`: ad 找得到，但缺少可匯入素材或必要觀測欄位
 - `500`: 匯入流程非預期錯誤
 
 ## 權限模型
 
-第一階段匯入 observed data 時，使用者應同時具備：
+觀測資料匯入時，使用者應同時具備：
 
 1. `fb_ads` module access
 2. `fb_ads:analytics:view`
@@ -286,50 +283,46 @@
 - 前端只做顯示控制
 - 後端做最終 team-aware 判定
 
-## 與既有 score pipeline 的關係
+## 與既有 Prediction 流程的關係
 
-### 明確分流
-
-第一階段要明確保留以下界線：
+### 保留分流
 
 - `/api/meta-andromeda/scores`
-  - 仍然只用於 pre-score / prediction flow
+  - 仍然只用於 prediction
 
 - `/api/meta-andromeda/evaluations/import/facebook-ads`
-  - 用於 post-launch observed data import
+  - 用於 observation import
 
-### 暫不做的事情
+### Observation 對 Prediction 的價值
 
-以下不在第一階段範圍：
+第一階段 observation import 的目的不是馬上替代 prediction，而是為 prediction 提供未來強化基礎：
 
-1. 匯入 observed data 後立即重跑同一套 `/scores`
-2. 用 observed ad 自動覆蓋既有 pre-score record
-3. 混用 `score_event_id` 與 observed record id
+- 哪些特徵與真實表現更相關
+- 哪些診斷規則需要修正
+- 哪些素材型別在實際投放中與預估有偏差
 
 ## 第一階段成功定義
 
-若第一階段完成，應達成：
+1. 使用者可從 `FB Ads` 匯入單筆已投放素材
+2. 匯入資料包含：
+   - 素材
+   - lineage
+   - observed performance snapshot
+3. 匯入流程與既有 `/scores` 語義清楚分離
+4. 第二階段可在此基礎上擴充 diagnostics / calibration / drift
 
-1. 使用者可從 `FB Ads` 現有 ad row 匯入一筆 observed creative
-2. 匯入資料會帶入真實成效快照，而不是只帶素材
-3. 匯入資料與既有 `/scores` 流程語義分離
-4. 後續可在此基礎上延伸：
-   - calibration
-   - drift
-   - post-launch diagnostics
+## 第二階段建議方向
 
-## 第二階段可能延伸
+在第一階段 observation import 建立後，再討論：
 
-在 observed data import 建立後，才適合討論：
-
-1. observed creative 是否要觸發事後診斷
-2. observed result 是否要和舊有 pre-score 結果做比對
-3. observed data 是否要納入 release gate / drift report
-4. 是否建立 evaluation queue / observed detail UI
+1. observed creative 是否產生 evaluation summary
+2. 是否與既有 pre-score record 做 matching
+3. 是否納入 release / drift evidence
+4. 是否建立 observed detail / evaluation queue UI
 
 ## Open Questions
 
-1. 第一階段 observed import 是否只支援 `image`？
-2. observed creative detail 要獨立頁面，還是先只做後端匯入？
-3. 若缺少 `primary_text / headline / cta`，是否允許空值直接匯入？
-4. observed import 完成後，是否需要立刻產生基本診斷摘要？
+1. 第一階段是否只支援 `image`？
+2. observed detail 頁面是否延後到第二階段？
+3. 若缺少 `primary_text / headline / cta`，是否允許空值匯入？
+4. 第二階段是否要建立 prediction vs observed 對照規則？

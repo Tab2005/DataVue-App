@@ -2,109 +2,106 @@
 
 ## 目的
 
-本文件依 [12_FB_Ads_導入_Meta_Andromeda_整合規格.md](C:\Users\BWM2\Documents\python\DataVue-App\docs\12_FB_Ads_導入_Meta_Andromeda_整合規格.md) 拆解第一階段實作工作。
+本文件依 [12_FB_Ads_導入_Meta_Andromeda_整合規格.md](C:\Users\BWM2\Documents\python\DataVue-App\docs\12_FB_Ads_導入_Meta_Andromeda_整合規格.md) 拆解第一階段的落地實作。
 
-修正後的實作目標不是：
+本計劃的目標是：
 
-- 把 `FB Ads` ad row 直接導入既有 `score pipeline`
+- 建立 `Observation` 路徑
+- 為未來 `Learning` 路徑保留資料結構與擴充點
 
-而是：
+不是：
 
-- 建立 `FB Ads observed data -> Meta Andromeda evaluation pipeline` 的第一階段基礎
+- 把 `FB Ads` 直接接進既有 `Prediction` score submit
 
 ## 第一階段範圍
 
 第一階段只做：
 
-1. observed creative 匯入契約
-2. Facebook ad observed data importer
-3. 素材轉存
+1. observed import API 契約
+2. facebook observed importer
+3. observed creative 素材轉存
 4. observed creative record 建立
 5. lineage 與 performance snapshot 保存
-6. 權限與基本驗證
+6. 權限與 team-aware 驗證
 
 第一階段不做：
 
-1. observed creative 自動重跑 `/scores`
-2. 觀測結果與既有 pre-score 自動配對
-3. release / drift 自動計算
+1. observed creative 自動重跑 prediction
+2. 完整 feature engineering pipeline
+3. 完整 calibration / drift product flow
 4. 完整 observed diagnostics UI
 
-## 架構決策
+## 實作原則
 
-- 既有 `/api/meta-andromeda/scores` 維持 pre-score 語義
-- observed data 匯入走獨立 endpoint
-- observed record 與 `score_event` 不混用同一主鍵語義
-- importer 封裝 Facebook 專屬欄位邏輯
-- 後端負責素材下載與 storage 轉存
+- `Prediction` 與 `Observation` 契約分開
+- importer 負責 Facebook 專屬邏輯
+- storage 轉存由後端負責
+- 第一階段先建立 observation 事實層
+- 第二階段再在 observation 之上建立 learning / calibration
 
 ## 實作階段
 
-### Phase 1. observed import 契約與 endpoint 骨架
+### Phase 1. Observation import 契約與 endpoint 骨架
 
 目標：
 
-- 建立 observed import API，而不是 score import API
+- 建立 observation import API
 
 任務：
 
-- 在 `meta_andromeda/schemas.py` 新增：
+- 在 `schemas.py` 新增：
   - `FacebookAdObservedImportRequest`
   - `FacebookAdObservedImportResponse`
-- 在 `meta_andromeda/router.py` 新增：
+- 在 `router.py` 新增：
   - `POST /api/meta-andromeda/evaluations/import/facebook-ads`
-- 在 `meta_andromeda/service.py` 新增：
+- 在 `service.py` 新增：
   - `import_observed_facebook_ad(...)`
 
 驗收：
 
 - endpoint 存在
 - request / response schema 固定
-- 測試可驗證基本 validation 與錯誤語義
+- 錯誤語義明確
 
 ### Checkpoint A
 
-- API 契約穩定
-- 已與既有 `/scores` 流程語義切開
+- observation API 已與既有 `/scores` 切開
 
 ### Phase 2. Facebook observed importer
 
 目標：
 
-- 從既有 FB Ads ad row 與 creative metadata 產生 observed candidate
+- 從 `FB Ads` ad row 產生 `ObservedCreativeCandidate`
 
 任務：
 
 - 新增 `backend/modules/meta_andromeda/importers/facebook_ads_importer.py`
-- importer 需負責：
+- 由 importer 負責：
   - 讀取 ad row
-  - 補足 creative metadata
+  - 讀取 creative metadata
   - 取得 observed performance snapshot
-  - 正規化成 `ObservedCreativeCandidate`
-- 明確規則：
-  - 先只支援 `image`
-  - 若缺少可用 media_url，回 `422`
+  - 正規化欄位
+  - 判斷 media type
 
 驗收：
 
 - importer 可獨立測試
-- 缺素材、找不到 ad、缺關鍵欄位時有穩定錯誤
+- 缺素材 / 找不到 ad / 缺 observed metrics 可穩定報錯
 
 ### Checkpoint B
 
-- Facebook 專屬資料映射已收斂到 importer
-- observed candidate 結構固定
+- Facebook 專屬資料映射收斂到 importer
 
-### Phase 3. 素材轉存與 observed record 建立
+### Phase 3. 素材轉存與 observed creative record
 
 目標：
 
-- 將 observed creative 轉成 Meta Andromeda 可追蹤素材與紀錄
+- 將 observed creative 轉成 Meta Andromeda 內部可追溯素材
 
 任務：
 
-- 下載遠端 `image_url`
-- 呼叫 Meta Andromeda storage adapter 轉存素材
+- 下載 `media_url`
+- 呼叫 storage adapter 寫入素材
 - 建立 observed creative record
 - 保存：
   - `asset_uri`
@@ -118,19 +115,18 @@
 
 驗收：
 
-- 匯入完成後能回傳 `observed_creative_id`
-- 資料可追溯來源與成效快照
+- 匯入後回傳 `observed_creative_id`
+- 資料可追溯來源與 observed metrics
 
 ### Checkpoint C
 
-- 後端已可完成完整 observed import
-- 尚未做 UI 也可驗證 end-to-end backend flow
+- 後端已完成完整 observation import flow
 
-### Phase 4. 權限與 team-aware 行為
+### Phase 4. 權限與 team-aware 驗證
 
 目標：
 
-- 將 observed import 接到既有權限系統
+- 將 observation import 接上 DataVue 共用權限系統
 
 任務：
 
@@ -150,54 +146,53 @@
 
 ### Checkpoint D
 
-- observed import 已正確接入 shared permission model
+- observation import 已正確接入 team-aware permission
 
 ### Phase 5. 前端入口
 
 目標：
 
-- 在 `FB Ads Analytics` 提供 observed import 入口
+- 在 `FB Ads Analytics` 提供 observation import 入口
 
 任務：
 
 - 在 ad row 增加：
   - `送至 Meta Andromeda 評估`
-- 呼叫 observed import endpoint
+- 呼叫 observation import endpoint
 - 顯示：
   - 匯入成功
   - `observed_creative_id`
-  - 後續可查看的位置
+  - 後續可查看位置
 
 驗收：
 
-- 使用者可從現有 FB Ads 畫面完成 observed import
-- 前端不自行處理素材下載與 storage
+- 使用者可從現有 `FB Ads` 畫面完成 observation import
 
 ### Checkpoint E
 
-- 使用者可操作完整 observed import flow
+- 使用者可完成 observed creative 匯入
 
-### Phase 6. 文件與後續掛點
+### Phase 6. 第二階段掛點整理
 
 目標：
 
-- 文件與現況一致
-- 為第二階段 diagnostics / calibration 保留掛點
+- 為 learning 路徑留下清楚的下一步
 
 任務：
 
-- 更新規格文件
-- 更新 Meta Andromeda 模組說明
-- 在文件明確標註：
-  - 第二階段才會討論 evaluation summary / diagnostics / drift linkage
+- 在文件中標註第二階段要接的能力：
+  - prediction vs observed matching
+  - calibration data generation
+  - drift signal generation
+  - evaluation summary
 
 驗收：
 
-- 文件狀態與實作一致
+- 文件可清楚銜接第二階段
 
 ## 任務清單
 
-- [ ] Task 1: 建立 observed import schema 與 endpoint 骨架
+- [ ] Task 1: 建立 observation import schema 與 endpoint 骨架
   - Acceptance: `/api/meta-andromeda/evaluations/import/facebook-ads` 存在
   - Verify: backend schema / router 測試
 
@@ -205,19 +200,19 @@
   - Acceptance: 可產生 `ObservedCreativeCandidate`
   - Verify: importer 單元測試
 
-- [ ] Task 3: 完成素材轉存與 observed record 建立
-  - Acceptance: 匯入成功後有 `observed_creative_id` 與 `asset_uri`
+- [ ] Task 3: 完成素材轉存與 observed creative record 建立
+  - Acceptance: 匯入後可取得 `observed_creative_id` 與 `asset_uri`
   - Verify: backend 整合測試
 
 - [ ] Task 4: 補齊權限與 team-aware 測試
   - Acceptance: 權限 allow / deny 行為正確
   - Verify: 權限測試
 
-- [ ] Task 5: 在 FB Ads 畫面加 observed import 按鈕
-  - Acceptance: 前端可觸發 observed import
+- [ ] Task 5: 在 `FB Ads` 畫面加 observed import 按鈕
+  - Acceptance: 前端可觸發 observation import
   - Verify: `npm run build`
 
-- [ ] Task 6: 更新文件並標定第二階段掛點
+- [ ] Task 6: 更新文件並整理第二階段掛點
   - Acceptance: 文件與實作同步
   - Verify: docs review
 
@@ -234,41 +229,51 @@ npm run build
 
 ## 風險與對策
 
-### 1. observed import 與 score import 混淆
+### 1. Observation 又被當成 Prediction
 
 風險：
 
-- 後續實作者又把 observed import 接回 `/scores`
+- 開發時又把 observed import 接回 `/scores`
 
 對策：
 
-- 在 schema / router / docs 明確使用 `evaluation` / `observed` 命名
+- API / schema / 文件全部使用 `observation` / `evaluation` 命名
 
 ### 2. Facebook creative 欄位不完整
 
 風險：
 
-- 文案與素材欄位有缺漏
+- 缺少文案或素材欄位
 
 對策：
 
 - 第一階段允許 copy fields 空值
-- 只要求可匯入素材與核心 observed metrics
+- 先以素材與 observed performance snapshot 為核心
 
-### 3. observed record 結構定太死
+### 3. 直接做 learning 過早複雜化
 
 風險：
 
-- 第二階段 diagnostics / calibration 擴充困難
+- 第一階段若直接做特徵訓練與 model update，會讓範圍爆炸
 
 對策：
 
-- 以 lineage + performance snapshot + asset metadata 為第一階段最小閉環
-- 不過早設計完整 evaluation 結果表
+- 第一階段先建立 observation fact layer
+- 第二階段再做 learning / calibration
+
+## 第二階段預留
+
+第二階段可在本計劃之後承接：
+
+1. observed creative 與既有 pre-score record matching
+2. 預估 vs 真實 outcome 對照
+3. calibration feature / label 生成
+4. drift evidence 聚合
+5. evaluation summary 與 reviewer/operator 工作流
 
 ## Open Questions
 
-1. 第一階段 observed import 是否只支援 `image`？
-2. observed creative detail 是否延後到第二階段？
-3. observed import 完成後，前端是顯示 toast 即可，還是要先提供 detail link？
-4. 第二階段是否需要把 observed data 與既有 pre-score record 做 matching？
+1. 第一階段是否只支援 `image`？
+2. observed detail 是否延後到第二階段？
+3. 匯入成功後前端先顯示 toast，還是直接提供 detail link？
+4. 第二階段要先做 calibration，還是先做 observed diagnostics？
