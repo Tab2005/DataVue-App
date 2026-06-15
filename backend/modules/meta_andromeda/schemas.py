@@ -206,6 +206,60 @@ class ScoreSubmitRequest(BaseModel):
     cta: str | None = None
 
 
+class FacebookAdObservedImportRequest(BaseModel):
+    account_id: str
+    ad_id: str
+    observation_window_kind: Literal["last_7d", "last_30d", "lifetime"]
+    market: str = "TW"
+    placement_family: str = "all"
+    primary_text: str | None = None
+    headline: str | None = None
+    cta: str | None = None
+
+
+class ObservationWindowResponse(BaseModel):
+    kind: str
+    start: str
+    end: str
+
+
+class ObservationSourceResponse(BaseModel):
+    platform: str
+    account_id: str
+    ad_id: str
+
+
+class FacebookAdObservedImportResponse(BaseModel):
+    observed_creative_id: str
+    status: str
+    asset_uri: str | None = None
+    source: ObservationSourceResponse
+    observation_window: ObservationWindowResponse
+    performance_snapshot: dict = Field(default_factory=dict)
+
+
+class ObservedCreativeCandidate(BaseModel):
+    source_platform: str
+    source_account_id: str
+    campaign_id: str | None = None
+    adset_id: str | None = None
+    ad_id: str
+    ad_name: str | None = None
+    objective: str | None = None
+    placement_family: str
+    market: str
+    primary_text: str | None = None
+    headline: str | None = None
+    cta: str | None = None
+    media_url: str | None = None
+    media_type: Literal["image", "video", "unknown"] = "unknown"
+    performance_snapshot: dict = Field(default_factory=dict)
+    observation_window_kind: str
+    observation_window_start: str
+    observation_window_end: str
+    source_fetched_at: str
+
+
 class ExternalWorkerScoreResultRequest(BaseModel):
     prediction_mode: str | None = None
     overall_score: int | None = None

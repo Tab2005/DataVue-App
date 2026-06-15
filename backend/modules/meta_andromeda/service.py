@@ -5,10 +5,17 @@ Meta Andromeda Module - Service
 import asyncio
 import hashlib
 import hmac
+from datetime import UTC, datetime
+from mimetypes import guess_extension
 from pathlib import Path
+from urllib.parse import urlparse
+
+import httpx
 
 from core.config import settings
 from database import SessionLocal
+from .schemas import ObservedCreativeCandidate
+from .importers.facebook_ads_importer import fetch_observed_creative_candidate
 from .model_registry import model_registry
 from .queue_host import queue_host_adapter
 from .repository import repository
@@ -252,6 +259,141 @@ class MetaAndromedaService:
             content_type=content_type,
         )
         return repository.create_uploaded_asset(db, asset_record=asset_record)
+
+    @staticmethod
+    async def _fetch_observed_facebook_ad_candidate(
+        *,
+        payload: dict,
+        user_id: str,
+        team_id: str | None = None,
+    ):
+        return await fetch_observed_creative_candidate(
+            account_id=payload["account_id"],
+            ad_id=payload["ad_id"],
+            user_id=user_id,
+            observation_window_kind=payload["observation_window_kind"],
+            market=payload["market"],
+            placement_family=payload["placement_family"],
+            primary_text=payload.get("primary_text"),
+            headline=payload.get("headline"),
+            cta=payload.get("cta"),
+            team_id=team_id,
+        )
+
+    @staticmethod
+    async def _download_observed_asset_snapshot(
+        *,
+        media_url: str,
+        ad_id: str,
+        media_type: str,
+    ) -> dict:
+        async with httpx.AsyncClient(timeout=30.0, follow_redirects=True) as client:
+            response = await client.get(media_url)
+            response.raise_for_status()
+
+        content_type = response.headers.get("content-type", "").split(";")[0].strip() or None
+        parsed = urlparse(media_url)
+        path_name = Path(parsed.path).name
+        if path_name:
+            source_filename = path_name
+        else:
+            extension = guess_extension(content_type or "") if content_type else None
+            if not extension:
+                extension = ".png" if media_type == "image" else ".mp4" if media_type == "video" else ".bin"
+            source_filename = f"{ad_id}{extension}"
+
+        asset_type = media_type if media_type in {"image", "video"} else "image"
+        return {
+            "file_bytes": response.content,
+            "source_filename": source_filename,
+            "content_type": content_type,
+            "asset_type": asset_type,
+        }
+
+    @staticmethod
+    async def import_observed_facebook_ad(
+        db,
+        payload: dict,
+        *,
+        user_id: str,
+        team_id: str | None = None,
+    ) -> dict:
+        candidate = await MetaAndromedaService._fetch_observed_facebook_ad_candidate(
+            payload=payload,
+            user_id=user_id,
+            team_id=team_id,
+        )
+        candidate = ObservedCreativeCandidate.model_validate(candidate)
+        today = datetime.now(UTC).date()
+        observed_creative_id = f"ma_obs_{today.strftime('%Y%m%d')}_{candidate.ad_id[-6:]}"
+        stored_asset = None
+
+        if candidate.media_url and candidate.media_type in {"image", "video"}:
+            snapshot = await MetaAndromedaService._download_observed_asset_snapshot(
+                media_url=candidate.media_url,
+                ad_id=candidate.ad_id,
+                media_type=candidate.media_type,
+            )
+            asset_record = storage_adapter.store_asset(
+                file_bytes=snapshot["file_bytes"],
+                asset_type=snapshot["asset_type"],
+                source_filename=snapshot["source_filename"],
+                uploaded_by=user_id,
+                content_type=snapshot["content_type"],
+            )
+            stored_asset = repository.create_uploaded_asset(db, asset_record=asset_record)
+
+        observed_record = repository.create_observed_creative(
+            db,
+            observed_record={
+                "id": observed_creative_id,
+                "asset_id": stored_asset["asset_id"] if stored_asset else None,
+                "asset_uri": stored_asset["asset_uri"] if stored_asset else None,
+                "source_platform": candidate.source_platform,
+                "source_account_id": candidate.source_account_id,
+                "campaign_id": candidate.campaign_id,
+                "adset_id": candidate.adset_id,
+                "ad_id": candidate.ad_id,
+                "ad_name": candidate.ad_name,
+                "objective": candidate.objective,
+                "placement_family": candidate.placement_family,
+                "market": candidate.market,
+                "primary_text": candidate.primary_text,
+                "headline": candidate.headline,
+                "cta": candidate.cta,
+                "media_url": candidate.media_url,
+                "media_type": candidate.media_type,
+                "performance_snapshot": candidate.performance_snapshot,
+                "observation_window_kind": candidate.observation_window_kind,
+                "observation_window_start": candidate.observation_window_start,
+                "observation_window_end": candidate.observation_window_end,
+                "source_fetched_at": candidate.source_fetched_at,
+                "lineage": {
+                    "source_platform": candidate.source_platform,
+                    "source_account_id": candidate.source_account_id,
+                    "campaign_id": candidate.campaign_id,
+                    "adset_id": candidate.adset_id,
+                    "ad_id": candidate.ad_id,
+                },
+            },
+        )
+
+        return {
+            "observed_creative_id": observed_record["observed_creative_id"],
+            "status": "accepted",
+            "asset_uri": observed_record["asset_uri"],
+            "source": {
+                "platform": candidate.source_platform,
+                "account_id": candidate.source_account_id,
+                "ad_id": candidate.ad_id,
+            },
+            "observation_window": {
+                "kind": candidate.observation_window_kind,
+                "start": candidate.observation_window_start,
+                "end": candidate.observation_window_end,
+            },
+            "performance_snapshot": candidate.performance_snapshot,
+        }
 
     @staticmethod
     def create_score_event(db, payload: dict) -> dict:

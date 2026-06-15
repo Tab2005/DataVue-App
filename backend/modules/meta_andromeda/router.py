@@ -19,6 +19,8 @@ from .schemas import (
     DriftTriggerRequest,
     ExternalWorkerCallbackRequest,
     ExternalWorkerCallbackResponse,
+    FacebookAdObservedImportRequest,
+    FacebookAdObservedImportResponse,
     FeedbackEntryResponse,
     FeedbackListResponse,
     FeedbackSubmitRequest,
@@ -151,6 +153,26 @@ async def release_overview(
 ):
     """Read-only release overview endpoint for the fifth integration slice."""
     return MetaAndromedaService.get_release_overview(db)
+
+
+@router.post(
+    "/evaluations/import/facebook-ads",
+    response_model=FacebookAdObservedImportResponse,
+    status_code=status.HTTP_202_ACCEPTED,
+)
+async def import_facebook_ad_observation(
+    payload: FacebookAdObservedImportRequest,
+    user=Depends(get_current_meta_andromeda_user),
+    _access: bool = Depends(require_meta_andromeda_module),
+    x_team_id: str | None = Header(default=None, alias="X-Team-ID"),
+    db=Depends(get_db),
+):
+    return await MetaAndromedaService.import_observed_facebook_ad(
+        db,
+        payload.model_dump(),
+        user_id=getattr(user, "google_id", None) or getattr(user, "id", None),
+        team_id=x_team_id,
+    )
 
 
 @router.post("/assets:upload", response_model=AssetUploadResponse, status_code=status.HTTP_201_CREATED)

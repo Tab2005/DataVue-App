@@ -45,6 +45,7 @@ from database.models.report import WeeklyReport, ReportSchedule
 from database.models.line_binding import LineBinding
 from database.models.meta_andromeda import (
     MetaAndromedaAsset,
+    MetaAndromedaObservedCreative,
     MetaAndromedaScoreEvent,
     MetaAndromedaFeedbackEvent,
     MetaAndromedaReleaseRecord,
@@ -71,6 +72,7 @@ __all__ = [
     "ReportSchedule",
     "LineBinding",
     "MetaAndromedaAsset",
+    "MetaAndromedaObservedCreative",
     "MetaAndromedaScoreEvent",
     "MetaAndromedaFeedbackEvent",
     "MetaAndromedaReleaseRecord",

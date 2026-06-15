@@ -11,6 +11,7 @@ from database.models.meta_andromeda import (
     MetaAndromedaDeadLetter,
     MetaAndromedaDriftReport,
     MetaAndromedaFeedbackEvent,
+    MetaAndromedaObservedCreative,
     MetaAndromedaReleaseEvent,
     MetaAndromedaReleaseRecord,
     MetaAndromedaScoreEvent,
@@ -676,6 +677,38 @@ class MetaAndromedaRepository:
             "file_size_bytes": asset.file_size_bytes,
             "public_url": asset.public_url,
             "uploaded_at": asset.uploaded_at.isoformat(),
+        }
+
+    def create_observed_creative(self, db: Session, observed_record: dict):
+        observed = MetaAndromedaObservedCreative(**observed_record)
+        db.add(observed)
+        db.commit()
+        db.refresh(observed)
+        return {
+            "observed_creative_id": observed.id,
+            "asset_id": observed.asset_id,
+            "asset_uri": observed.asset_uri,
+            "source_platform": observed.source_platform,
+            "source_account_id": observed.source_account_id,
+            "campaign_id": observed.campaign_id,
+            "adset_id": observed.adset_id,
+            "ad_id": observed.ad_id,
+            "ad_name": observed.ad_name,
+            "objective": observed.objective,
+            "placement_family": observed.placement_family,
+            "market": observed.market,
+            "primary_text": observed.primary_text,
+            "headline": observed.headline,
+            "cta": observed.cta,
+            "media_url": observed.media_url,
+            "media_type": observed.media_type,
+            "performance_snapshot": deepcopy(observed.performance_snapshot or {}),
+            "observation_window_kind": observed.observation_window_kind,
+            "observation_window_start": observed.observation_window_start,
+            "observation_window_end": observed.observation_window_end,
+            "source_fetched_at": observed.source_fetched_at,
+            "lineage": deepcopy(observed.lineage or {}),
+            "created_at": observed.created_at.isoformat() if observed.created_at else None,
         }
 
     def create_score_event(self, db: Session, score_payload: dict):

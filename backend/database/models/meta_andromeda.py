@@ -27,6 +27,37 @@ class MetaAndromedaAsset(Base):
     uploader = relationship("User")
 
 
+class MetaAndromedaObservedCreative(Base):
+    __tablename__ = "meta_andromeda_observed_creatives"
+
+    id = Column(String, primary_key=True, default=lambda: f"ma_obs_{uuid.uuid4().hex[:12]}")
+    asset_id = Column(String, ForeignKey("meta_andromeda_assets.id"), nullable=True)
+    asset_uri = Column(String, nullable=True, index=True)
+    source_platform = Column(String(50), nullable=False, index=True)
+    source_account_id = Column(String(120), nullable=False, index=True)
+    campaign_id = Column(String(120), nullable=True, index=True)
+    adset_id = Column(String(120), nullable=True, index=True)
+    ad_id = Column(String(120), nullable=False, index=True)
+    ad_name = Column(String, nullable=True)
+    objective = Column(String(50), nullable=True)
+    placement_family = Column(String(50), nullable=False)
+    market = Column(String(20), nullable=False)
+    primary_text = Column(Text, nullable=True)
+    headline = Column(Text, nullable=True)
+    cta = Column(String(100), nullable=True)
+    media_url = Column(String, nullable=True)
+    media_type = Column(String(20), nullable=False, default="unknown")
+    performance_snapshot = Column(JSON, nullable=False, default=dict)
+    observation_window_kind = Column(String(50), nullable=False, index=True)
+    observation_window_start = Column(String(40), nullable=False)
+    observation_window_end = Column(String(40), nullable=False)
+    source_fetched_at = Column(String(40), nullable=False)
+    lineage = Column(JSON, nullable=False, default=dict)
+    created_at = Column(DateTime, default=text("CURRENT_TIMESTAMP"))
+
+    asset = relationship("MetaAndromedaAsset", backref="observed_creatives")
+
+
 class MetaAndromedaScoreEvent(Base):
     __tablename__ = "meta_andromeda_score_events"
 

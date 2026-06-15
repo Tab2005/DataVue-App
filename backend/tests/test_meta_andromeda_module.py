@@ -857,6 +857,314 @@ def test_meta_andromeda_release_approve_updates_history(meta_andromeda_access):
 
 
 @pytest.mark.unit
+def test_meta_andromeda_observation_import_accepts_supported_window_contract(meta_andromeda_access, monkeypatch):
+    from modules.meta_andromeda.schemas import ObservedCreativeCandidate
+
+    async def fake_fetch_observed_creative_candidate(**kwargs):
+        payload = kwargs["payload"]
+        return ObservedCreativeCandidate(
+            source_platform="facebook_ads",
+            source_account_id=payload["account_id"],
+            campaign_id="120000000000010",
+            adset_id="120000000000011",
+            ad_id=payload["ad_id"],
+            ad_name="Contract Ad",
+            objective="OUTCOME_SALES",
+            placement_family=payload["placement_family"],
+            market=payload["market"],
+            primary_text=payload.get("primary_text"),
+            headline=payload.get("headline"),
+            cta=payload.get("cta"),
+            media_url="https://cdn.example.com/contract-ad.png",
+            media_type="image",
+            performance_snapshot={},
+            observation_window_kind="last_30d",
+            observation_window_start="2026-05-17",
+            observation_window_end="2026-06-15",
+            source_fetched_at="2026-06-15T00:00:00Z",
+        )
+
+    async def fake_download_observed_asset_snapshot(*, media_url: str, ad_id: str, media_type: str):
+        return {
+            "file_bytes": b"contract-image-bytes",
+            "source_filename": f"{ad_id}.png",
+            "content_type": "image/png",
+            "asset_type": media_type,
+        }
+
+    monkeypatch.setattr(
+        meta_andromeda_service_module.MetaAndromedaService,
+        "_fetch_observed_facebook_ad_candidate",
+        staticmethod(fake_fetch_observed_creative_candidate),
+    )
+    monkeypatch.setattr(
+        meta_andromeda_service_module.MetaAndromedaService,
+        "_download_observed_asset_snapshot",
+        staticmethod(fake_download_observed_asset_snapshot),
+    )
+
+    response = meta_andromeda_access.post(
+        "/api/meta-andromeda/evaluations/import/facebook-ads",
+        json={
+            "account_id": "act_123456789",
+            "ad_id": "120000000000012",
+            "observation_window_kind": "last_30d",
+            "market": "TW",
+            "placement_family": "feed",
+        },
+    )
+
+    assert response.status_code == 202
+    payload = response.json()
+    assert payload["status"] == "accepted"
+    assert payload["source"]["platform"] == "facebook_ads"
+    assert payload["source"]["account_id"] == "act_123456789"
+    assert payload["source"]["ad_id"] == "120000000000012"
+    assert payload["asset_uri"].startswith("storage://meta-andromeda/")
+    assert payload["observation_window"]["kind"] == "last_30d"
+    assert payload["observation_window"]["start"]
+    assert payload["observation_window"]["end"]
+    assert payload["observed_creative_id"].startswith("ma_obs_")
+
+
+@pytest.mark.unit
+def test_meta_andromeda_observation_import_rejects_unsupported_window_kind(meta_andromeda_access):
+    response = meta_andromeda_access.post(
+        "/api/meta-andromeda/evaluations/import/facebook-ads",
+        json={
+            "account_id": "act_123456789",
+            "ad_id": "120000000000012",
+            "observation_window_kind": "last_14d",
+            "market": "TW",
+            "placement_family": "feed",
+        },
+    )
+
+    assert response.status_code == 422
+
+
+@pytest.mark.unit
+def test_meta_andromeda_facebook_importer_normalizes_ad_row():
+    from modules.meta_andromeda.importers.facebook_ads_importer import normalize_facebook_ad_row
+
+    candidate = normalize_facebook_ad_row(
+        row={
+            "campaign_id": "120000000000010",
+            "adset_id": "120000000000011",
+            "ad_id": "120000000000012",
+            "name": "Summer Promo Ad 01",
+            "objective": "OUTCOME_SALES",
+            "image_url": "https://cdn.example.com/creative.png",
+            "spend": 1200.5,
+            "impressions": 18234,
+            "clicks": 321,
+            "purchases": 14,
+            "purchase_value": 4800,
+            "roas": 2.85,
+            "ctr": 1.76,
+            "cpc": 3.74,
+        },
+        account_id="act_123456789",
+        market="TW",
+        placement_family="feed",
+        primary_text="Primary copy",
+        headline="Headline copy",
+        cta="SHOP_NOW",
+        observation_window_kind="last_30d",
+        observation_window_start="2026-05-17",
+        observation_window_end="2026-06-15",
+        source_fetched_at="2026-06-15T00:00:00Z",
+    )
+
+    assert candidate.source_platform == "facebook_ads"
+    assert candidate.source_account_id == "act_123456789"
+    assert candidate.campaign_id == "120000000000010"
+    assert candidate.adset_id == "120000000000011"
+    assert candidate.ad_id == "120000000000012"
+    assert candidate.ad_name == "Summer Promo Ad 01"
+    assert candidate.media_url == "https://cdn.example.com/creative.png"
+    assert candidate.media_type == "image"
+    assert candidate.performance_snapshot["purchases"] == 14
+    assert candidate.performance_snapshot["roas"] == 2.85
+    assert candidate.observation_window_kind == "last_30d"
+    assert candidate.observation_window_start == "2026-05-17"
+    assert candidate.observation_window_end == "2026-06-15"
+
+
+@pytest.mark.unit
+def test_meta_andromeda_observation_import_uses_facebook_importer(meta_andromeda_access, monkeypatch):
+    from modules.meta_andromeda.schemas import ObservedCreativeCandidate
+
+    async def fake_fetch_observed_creative_candidate(**kwargs):
+        payload = kwargs["payload"]
+        return ObservedCreativeCandidate(
+            source_platform="facebook_ads",
+            source_account_id=payload["account_id"],
+            campaign_id="120000000000010",
+            adset_id="120000000000011",
+            ad_id=payload["ad_id"],
+            ad_name="Imported Ad",
+            objective="OUTCOME_SALES",
+            placement_family=payload["placement_family"],
+            market=payload["market"],
+            primary_text=payload["primary_text"],
+            headline=payload["headline"],
+            cta=payload["cta"],
+            media_url="https://cdn.example.com/imported-ad.png",
+            media_type="image",
+            performance_snapshot={
+                "spend": 1200.5,
+                "impressions": 18234,
+                "clicks": 321,
+                "purchases": 14,
+                "purchase_value": 4800,
+                "roas": 2.85,
+                "ctr": 1.76,
+                "cpc": 3.74,
+            },
+            observation_window_kind="last_30d",
+            observation_window_start="2026-05-17",
+            observation_window_end="2026-06-15",
+            source_fetched_at="2026-06-15T00:00:00Z",
+        )
+
+    async def fake_download_observed_asset_snapshot(*, media_url: str, ad_id: str, media_type: str):
+        return {
+            "file_bytes": b"imported-image-bytes",
+            "source_filename": f"{ad_id}.png",
+            "content_type": "image/png",
+            "asset_type": media_type,
+        }
+
+    monkeypatch.setattr(
+        meta_andromeda_service_module.MetaAndromedaService,
+        "_fetch_observed_facebook_ad_candidate",
+        staticmethod(fake_fetch_observed_creative_candidate),
+    )
+    monkeypatch.setattr(
+        meta_andromeda_service_module.MetaAndromedaService,
+        "_download_observed_asset_snapshot",
+        staticmethod(fake_download_observed_asset_snapshot),
+    )
+
+    response = meta_andromeda_access.post(
+        "/api/meta-andromeda/evaluations/import/facebook-ads",
+        json={
+            "account_id": "act_123456789",
+            "ad_id": "120000000000012",
+            "observation_window_kind": "last_30d",
+            "market": "TW",
+            "placement_family": "feed",
+            "primary_text": "Primary copy",
+            "headline": "Headline copy",
+            "cta": "SHOP_NOW",
+        },
+    )
+
+    assert response.status_code == 202
+    payload = response.json()
+    assert payload["source"]["ad_id"] == "120000000000012"
+    assert payload["asset_uri"].startswith("storage://meta-andromeda/")
+    assert payload["performance_snapshot"]["purchases"] == 14
+    assert payload["performance_snapshot"]["roas"] == 2.85
+    assert payload["observation_window"]["kind"] == "last_30d"
+
+
+@pytest.mark.unit
+def test_meta_andromeda_observation_import_persists_asset_and_observed_record(
+    meta_andromeda_access,
+    db,
+    monkeypatch,
+):
+    from database import MetaAndromedaAsset, MetaAndromedaObservedCreative
+    from modules.meta_andromeda.schemas import ObservedCreativeCandidate
+
+    async def fake_fetch_observed_creative_candidate(**kwargs):
+        payload = kwargs["payload"]
+        return ObservedCreativeCandidate(
+            source_platform="facebook_ads",
+            source_account_id=payload["account_id"],
+            campaign_id="120000000000010",
+            adset_id="120000000000011",
+            ad_id=payload["ad_id"],
+            ad_name="Persisted Ad",
+            objective="OUTCOME_SALES",
+            placement_family=payload["placement_family"],
+            market=payload["market"],
+            primary_text=payload["primary_text"],
+            headline=payload["headline"],
+            cta=payload["cta"],
+            media_url="https://cdn.example.com/persisted-ad.png",
+            media_type="image",
+            performance_snapshot={
+                "spend": 1200.5,
+                "impressions": 18234,
+                "clicks": 321,
+                "purchases": 14,
+                "purchase_value": 4800,
+                "roas": 2.85,
+                "ctr": 1.76,
+                "cpc": 3.74,
+            },
+            observation_window_kind="last_30d",
+            observation_window_start="2026-05-17",
+            observation_window_end="2026-06-15",
+            source_fetched_at="2026-06-15T00:00:00Z",
+        )
+
+    async def fake_download_observed_asset_snapshot(*, media_url: str, ad_id: str, media_type: str):
+        return {
+            "file_bytes": b"persisted-image-bytes",
+            "source_filename": f"{ad_id}.png",
+            "content_type": "image/png",
+            "asset_type": media_type,
+        }
+
+    monkeypatch.setattr(
+        meta_andromeda_service_module.MetaAndromedaService,
+        "_fetch_observed_facebook_ad_candidate",
+        staticmethod(fake_fetch_observed_creative_candidate),
+    )
+    monkeypatch.setattr(
+        meta_andromeda_service_module.MetaAndromedaService,
+        "_download_observed_asset_snapshot",
+        staticmethod(fake_download_observed_asset_snapshot),
+    )
+
+    response = meta_andromeda_access.post(
+        "/api/meta-andromeda/evaluations/import/facebook-ads",
+        json={
+            "account_id": "act_123456789",
+            "ad_id": "120000000000012",
+            "observation_window_kind": "last_30d",
+            "market": "TW",
+            "placement_family": "feed",
+            "primary_text": "Primary copy",
+            "headline": "Headline copy",
+            "cta": "SHOP_NOW",
+        },
+    )
+
+    assert response.status_code == 202
+    payload = response.json()
+
+    stored_asset = db.query(MetaAndromedaAsset).filter(MetaAndromedaAsset.asset_uri == payload["asset_uri"]).one()
+    observed = (
+        db.query(MetaAndromedaObservedCreative)
+        .filter(MetaAndromedaObservedCreative.id == payload["observed_creative_id"])
+        .one()
+    )
+
+    assert stored_asset.asset_type == "image"
+    assert stored_asset.source_filename == "120000000000012.png"
+    assert observed.asset_id == stored_asset.id
+    assert observed.ad_id == "120000000000012"
+    assert observed.source_platform == "facebook_ads"
+    assert observed.performance_snapshot["purchases"] == 14
+    assert observed.observation_window_kind == "last_30d"
+
+
+@pytest.mark.unit
 def test_meta_andromeda_team_user_without_module_access_is_denied_read_only_endpoint(
     meta_andromeda_permission_client,
     db,
