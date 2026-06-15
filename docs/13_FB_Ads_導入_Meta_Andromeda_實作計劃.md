@@ -2,286 +2,224 @@
 
 ## 目的
 
-本文件依 [12_FB_Ads_導入_Meta_Andromeda_整合規格.md](C:\Users\BWM2\Documents\python\DataVue-App\docs\12_FB_Ads_導入_Meta_Andromeda_整合規格.md) 拆解實作順序、任務切分、驗收方式與風險控制。
+本文件依 [12_FB_Ads_導入_Meta_Andromeda_整合規格.md](C:\Users\BWM2\Documents\python\DataVue-App\docs\12_FB_Ads_導入_Meta_Andromeda_整合規格.md) 拆解第一階段實作工作。
 
-此文件的用途是：
+修正後的實作目標不是：
 
-- 作為開發前的執行計劃
-- 控制 `FB Ads -> Meta Andromeda` 整合的實作範圍
-- 確保每一階段都能獨立驗證
+- 把 `FB Ads` ad row 直接導入既有 `score pipeline`
 
-## 總覽
+而是：
 
-本次實作要達成的核心成果：
+- 建立 `FB Ads observed data -> Meta Andromeda evaluation pipeline` 的第一階段基礎
 
-1. 建立 `facebook_ads_importer`
-2. 新增 `POST /api/meta-andromeda/import/facebook-ads`
-3. 讓後端可把 Facebook creative 轉存到 Meta Andromeda storage
-4. 重用既有 Meta Andromeda score event 流程
-5. 在 `FB Ads Analytics` UI 上提供單筆導入入口
-6. 補齊權限、錯誤、lineage 與測試
+## 第一階段範圍
+
+第一階段只做：
+
+1. observed creative 匯入契約
+2. Facebook ad observed data importer
+3. 素材轉存
+4. observed creative record 建立
+5. lineage 與 performance snapshot 保存
+6. 權限與基本驗證
+
+第一階段不做：
+
+1. observed creative 自動重跑 `/scores`
+2. 觀測結果與既有 pre-score 自動配對
+3. release / drift 自動計算
+4. 完整 observed diagnostics UI
 
 ## 架構決策
 
-- 既有 `POST /api/meta-andromeda/scores` 不改為 FB Ads 匯入入口
-- 新增 import 型 endpoint，避免前端負責資料轉型與素材下載
-- Facebook 專屬欄位映射收斂到 importer，不散落在 router / page / service 多處
-- `Meta Andromeda` 只吃標準化後的 request，不直接依賴 Facebook 回應格式
-- 權限必須同時檢查 `fb_ads` 與 `meta_andromeda`
+- 既有 `/api/meta-andromeda/scores` 維持 pre-score 語義
+- observed data 匯入走獨立 endpoint
+- observed record 與 `score_event` 不混用同一主鍵語義
+- importer 封裝 Facebook 專屬欄位邏輯
+- 後端負責素材下載與 storage 轉存
 
 ## 實作階段
 
-### Phase 1. 契約與匯入骨架
+### Phase 1. observed import 契約與 endpoint 骨架
 
 目標：
 
-- 把 import API 契約與 service 骨架建立起來
-- 不先碰前端
+- 建立 observed import API，而不是 score import API
 
 任務：
 
 - 在 `meta_andromeda/schemas.py` 新增：
-  - `FacebookAdImportRequest`
-  - `FacebookAdImportResponse`
-- 在 `meta_andromeda/service.py` 新增：
-  - `import_from_facebook_ad(...)`
+  - `FacebookAdObservedImportRequest`
+  - `FacebookAdObservedImportResponse`
 - 在 `meta_andromeda/router.py` 新增：
-  - `POST /api/meta-andromeda/import/facebook-ads`
-- 明確定義錯誤語義：
-  - `403` 權限不足
-  - `404` ad 不存在
-  - `422` 無可評分素材
+  - `POST /api/meta-andromeda/evaluations/import/facebook-ads`
+- 在 `meta_andromeda/service.py` 新增：
+  - `import_observed_facebook_ad(...)`
 
 驗收：
 
-- API endpoint 可被呼叫
-- payload 驗證正常
-- 尚未接完整 importer 前，可先回固定 stub 或明確未完成錯誤
-
-主要檔案：
-
-- [backend/modules/meta_andromeda/schemas.py](C:\Users\BWM2\Documents\python\DataVue-App\backend\modules\meta_andromeda\schemas.py)
-- [backend/modules/meta_andromeda/router.py](C:\Users\BWM2\Documents\python\DataVue-App\backend\modules\meta_andromeda\router.py)
-- [backend/modules/meta_andromeda/service.py](C:\Users\BWM2\Documents\python\DataVue-App\backend\modules\meta_andromeda\service.py)
+- endpoint 存在
+- request / response schema 固定
+- 測試可驗證基本 validation 與錯誤語義
 
 ### Checkpoint A
 
-- API 契約已固定
-- 不需動前端即可用測試驗證 request / response shape
+- API 契約穩定
+- 已與既有 `/scores` 流程語義切開
 
-### Phase 2. Facebook importer 與資料正規化
+### Phase 2. Facebook observed importer
 
 目標：
 
-- 從既有 FB Ads service 抓出單筆 ad 可用素材與欄位
-- 正規化為 `CreativeCandidate`
+- 從既有 FB Ads ad row 與 creative metadata 產生 observed candidate
 
 任務：
 
 - 新增 `backend/modules/meta_andromeda/importers/facebook_ads_importer.py`
-- 定義 importer 內部職責：
-  - 依 `account_id + ad_id + since + until` 抓取資料
-  - 從 ad row 與 creative metadata 整理：
-    - `campaign_id`
-    - `adset_id`
-    - `ad_id`
-    - `objective`
-    - `media_url`
-    - `media_type`
-    - `performance_snapshot`
-  - 產出 `CreativeCandidate`
+- importer 需負責：
+  - 讀取 ad row
+  - 補足 creative metadata
+  - 取得 observed performance snapshot
+  - 正規化成 `ObservedCreativeCandidate`
 - 明確規則：
-  - `image_url` 可用時視為 `image`
-  - 若只有 `thumbnail_url`，定義是否接受
-  - 無法判定可評分素材時回 `422`
+  - 先只支援 `image`
+  - 若缺少可用 media_url，回 `422`
 
 驗收：
 
 - importer 可獨立測試
-- 對 ad row 缺欄位與缺素材時有穩定錯誤
-
-主要檔案：
-
-- `backend/modules/meta_andromeda/importers/facebook_ads_importer.py`
-- [backend/modules/fb_ads/analytics_service.py](C:\Users\BWM2\Documents\python\DataVue-App\backend\modules\fb_ads\analytics_service.py)
-- 視需要新增 importer 專用測試檔
+- 缺素材、找不到 ad、缺關鍵欄位時有穩定錯誤
 
 ### Checkpoint B
 
-- `CreativeCandidate` 轉換規則固定
-- Facebook 專屬邏輯已封裝，不外漏到 router / 前端
+- Facebook 專屬資料映射已收斂到 importer
+- observed candidate 結構固定
 
-### Phase 3. 素材轉存與 score event 建立
+### Phase 3. 素材轉存與 observed record 建立
 
 目標：
 
-- 將 Facebook 遠端素材變成 Meta Andromeda 自有 asset
-- 導入既有 `score_event` 流程
+- 將 observed creative 轉成 Meta Andromeda 可追蹤素材與紀錄
 
 任務：
 
-- 在 import service 中新增：
-  - 遠端素材下載
-  - `asset_type` 判定
-  - `storage_adapter.store_asset(...)`
-- 取得：
+- 下載遠端 `image_url`
+- 呼叫 Meta Andromeda storage adapter 轉存素材
+- 建立 observed creative record
+- 保存：
   - `asset_uri`
   - `asset_id`
-  - `storage_key`
-- 將 importer 產出的 candidate 轉為標準 `ScoreSubmitRequest`
-- 呼叫既有：
-  - `create_score_event`
-  - `assign_score_runtime_job`
-  - `enqueue_score_event`
+  - `source_platform`
+  - `source_account_id`
+  - `campaign_id`
+  - `adset_id`
+  - `ad_id`
+  - `performance_snapshot`
 
 驗收：
 
-- 匯入一筆 Facebook ad 後，能得到 `queued` 的 `score_event`
-- Meta Andromeda review queue 可查到新資料
-
-主要檔案：
-
-- [backend/modules/meta_andromeda/service.py](C:\Users\BWM2\Documents\python\DataVue-App\backend\modules\meta_andromeda\service.py)
-- [backend/modules/meta_andromeda/storage.py](C:\Users\BWM2\Documents\python\DataVue-App\backend\modules\meta_andromeda\storage.py)
-- 視需要擴充 repository / lineage 欄位
+- 匯入完成後能回傳 `observed_creative_id`
+- 資料可追溯來源與成效快照
 
 ### Checkpoint C
 
-- 後端單獨已能完成完整匯入
-- 前端尚未接按鈕也不影響 end-to-end API 驗證
+- 後端已可完成完整 observed import
+- 尚未做 UI 也可驗證 end-to-end backend flow
 
-### Phase 4. 權限與 lineage
+### Phase 4. 權限與 team-aware 行為
 
 目標：
 
-- 把匯入流程納入 team-aware 權限模型
-- 保留來源追溯能力
+- 將 observed import 接到既有權限系統
 
 任務：
 
-- 在 import endpoint 中檢查：
+- 檢查：
   - `fb_ads` module access
+  - `fb_ads:analytics:view`
   - `meta_andromeda` module access
   - `meta_andromeda:operate`
-- 視需要補：
-  - `fb_ads:analytics:view`
-- 在 score event 或 lineage 結構中保留：
-  - `source_platform`
-  - `source_account_id`
-  - `source_campaign_id`
-  - `source_adset_id`
-  - `source_ad_id`
+- 支援 `X-Team-ID`
+- 補 allow / deny 測試
 
 驗收：
 
-- `viewer` 不可導入
-- `member` 無 operate 不可導入
-- `admin/owner` 可導入
-- review queue / detail 可回查來源
-
-主要檔案：
-
-- [backend/modules/meta_andromeda/router.py](C:\Users\BWM2\Documents\python\DataVue-App\backend\modules\meta_andromeda\router.py)
-- [backend/modules/meta_andromeda/service.py](C:\Users\BWM2\Documents\python\DataVue-App\backend\modules\meta_andromeda\service.py)
-- repository / schema / tests
+- 權限不足時回 `403`
+- `viewer` 不可匯入
+- `team_admin / team_owner` 可匯入
 
 ### Checkpoint D
 
-- 匯入功能與既有權限系統整合完成
-- 權限 allow / deny 行為可測
+- observed import 已正確接入 shared permission model
 
-### Phase 5. 前端入口整合
+### Phase 5. 前端入口
 
 目標：
 
-- 在 `FB Ads Analytics` 畫面新增單筆導入入口
+- 在 `FB Ads Analytics` 提供 observed import 入口
 
 任務：
 
-- 在 `Analytics.jsx` 或對應 row component 加入：
-  - `送至 Meta Andromeda`
-- 點擊後呼叫：
-  - `POST /api/meta-andromeda/import/facebook-ads`
-- 成功後顯示：
-  - `score_event_id`
-  - `queued`
-  - 導向 review queue 或 detail 的入口
-- 沒有權限時不顯示，或顯示 disabled 狀態與提示
+- 在 ad row 增加：
+  - `送至 Meta Andromeda 評估`
+- 呼叫 observed import endpoint
+- 顯示：
+  - 匯入成功
+  - `observed_creative_id`
+  - 後續可查看的位置
 
 驗收：
 
-- 使用者可從 ad row 成功觸發導入
-- UI 不需手動下載或重新上傳素材
-
-主要檔案：
-
-- [frontend/src/pages/Analytics.jsx](C:\Users\BWM2\Documents\python\DataVue-App\frontend\src\pages\Analytics.jsx)
-- 前端 service 檔案
-- 視需要新增 toast / modal / action button component
+- 使用者可從現有 FB Ads 畫面完成 observed import
+- 前端不自行處理素材下載與 storage
 
 ### Checkpoint E
 
-- 使用者端流程完整
-- 可從 FB Ads 直接進入 Meta Andromeda 工作流
+- 使用者可操作完整 observed import flow
 
-### Phase 6. 測試與文件回填
+### Phase 6. 文件與後續掛點
 
 目標：
 
-- 補齊後端與前端的核心驗證
-- 更新相關文件
+- 文件與現況一致
+- 為第二階段 diagnostics / calibration 保留掛點
 
 任務：
 
-- 後端測試：
-  - request validation
-  - 權限 allow / deny
-  - importer 成功 / 缺素材 / 找不到 ad
-  - score event 建立成功
-- 前端測試：
-  - button 顯示條件
-  - 成功匯入的 action flow
-- 文件更新：
-  - 規格文件
-  - Meta Andromeda 模組說明
-  - 權限調整紀錄
+- 更新規格文件
+- 更新 Meta Andromeda 模組說明
+- 在文件明確標註：
+  - 第二階段才會討論 evaluation summary / diagnostics / drift linkage
 
 驗收：
 
-- 測試通過
 - 文件狀態與實作一致
 
 ## 任務清單
 
-- [ ] Task 1: 建立 import API schema 與 router 骨架
-  - Acceptance: 新 endpoint 存在，request / response schema 固定
-  - Verify: `backend\\.venv311\\Scripts\\python.exe -m pytest tests\\test_meta_andromeda_module.py -q`
-  - Files: `schemas.py`, `router.py`, `service.py`
+- [ ] Task 1: 建立 observed import schema 與 endpoint 骨架
+  - Acceptance: `/api/meta-andromeda/evaluations/import/facebook-ads` 存在
+  - Verify: backend schema / router 測試
 
 - [ ] Task 2: 建立 `facebook_ads_importer`
-  - Acceptance: 可將 Facebook ad 資料轉為 `CreativeCandidate`
-  - Verify: importer 單元測試通過
-  - Files: `importers/facebook_ads_importer.py`, 測試檔
+  - Acceptance: 可產生 `ObservedCreativeCandidate`
+  - Verify: importer 單元測試
 
-- [ ] Task 3: 完成遠端素材轉存與 score event 建立
-  - Acceptance: 匯入後可得到 `queued` 的 `score_event`
-  - Verify: 後端整合測試通過
-  - Files: `service.py`, `storage.py`, tests
+- [ ] Task 3: 完成素材轉存與 observed record 建立
+  - Acceptance: 匯入成功後有 `observed_creative_id` 與 `asset_uri`
+  - Verify: backend 整合測試
 
-- [ ] Task 4: 補齊匯入權限與 lineage
-  - Acceptance: 權限與來源追溯都能驗證
-  - Verify: 權限測試與 detail 檢查通過
-  - Files: `router.py`, `service.py`, repository/tests
+- [ ] Task 4: 補齊權限與 team-aware 測試
+  - Acceptance: 權限 allow / deny 行為正確
+  - Verify: 權限測試
 
-- [ ] Task 5: 在 FB Ads 畫面加「送至 Meta Andromeda」
-  - Acceptance: 前端可觸發匯入並顯示成功結果
+- [ ] Task 5: 在 FB Ads 畫面加 observed import 按鈕
+  - Acceptance: 前端可觸發 observed import
   - Verify: `npm run build`
-  - Files: `Analytics.jsx`, frontend service
 
-- [ ] Task 6: 補測試與文件回填
-  - Acceptance: 測試與文件同步完成
-  - Verify: pytest + frontend build + docs 更新
-  - Files: tests + docs
+- [ ] Task 6: 更新文件並標定第二階段掛點
+  - Acceptance: 文件與實作同步
+  - Verify: docs review
 
 ## 驗證指令
 
@@ -296,44 +234,41 @@ npm run build
 
 ## 風險與對策
 
-### 1. Facebook 資料欄位不足
+### 1. observed import 與 score import 混淆
 
 風險：
 
-- 現有 ad row 未必有完整 copy fields
+- 後續實作者又把 observed import 接回 `/scores`
 
 對策：
 
-- 第一階段允許 `primary_text / headline / cta` 為空
-- importer 只保證素材與核心識別欄位
+- 在 schema / router / docs 明確使用 `evaluation` / `observed` 命名
 
-### 2. 素材 URL 失效或不可下載
+### 2. Facebook creative 欄位不完整
 
 風險：
 
-- Facebook 回傳的 URL 可能有時效性或權限限制
+- 文案與素材欄位有缺漏
 
 對策：
 
-- 將下載失敗定義為明確的 import failure
-- 先支援 image，影片延後
+- 第一階段允許 copy fields 空值
+- 只要求可匯入素材與核心 observed metrics
 
-### 3. 匯入入口過早綁死 UI
+### 3. observed record 結構定太死
 
 風險：
 
-- 若先做畫面按鈕，後端契約尚未穩定，會反覆修改
+- 第二階段 diagnostics / calibration 擴充困難
 
 對策：
 
-- 先完成 Phase 1~4 再接前端
+- 以 lineage + performance snapshot + asset metadata 為第一階段最小閉環
+- 不過早設計完整 evaluation 結果表
 
 ## Open Questions
 
-1. 第一階段是否只支援 `image`，暫不支援 `video`？
-2. 匯入成功後預設導向：
-   - `review queue`
-   - `score detail`
-   - 還是留在原頁顯示 toast？
-3. 是否要在第一階段做「同 ad 避免重複匯入」？
-4. 若 `headline / primary_text / cta` 缺失，是否需要前端先補填再送？
+1. 第一階段 observed import 是否只支援 `image`？
+2. observed creative detail 是否延後到第二階段？
+3. observed import 完成後，前端是顯示 toast 即可，還是要先提供 detail link？
+4. 第二階段是否需要把 observed data 與既有 pre-score record 做 matching？
