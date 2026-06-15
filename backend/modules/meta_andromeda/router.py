@@ -8,6 +8,8 @@ from core.scheduler import get_meta_andromeda_score_job_id
 from database import get_db
 from .dependencies import (
     get_current_meta_andromeda_user,
+    require_fb_ads_analytics_view,
+    require_fb_ads_module,
     require_meta_andromeda_feedback,
     require_meta_andromeda_module,
     require_meta_andromeda_operate,
@@ -164,6 +166,8 @@ async def import_facebook_ad_observation(
     payload: FacebookAdObservedImportRequest,
     user=Depends(get_current_meta_andromeda_user),
     _access: bool = Depends(require_meta_andromeda_module),
+    _fb_ads_access: bool = Depends(require_fb_ads_module),
+    _fb_ads_permission: bool = Depends(require_fb_ads_analytics_view),
     x_team_id: str | None = Header(default=None, alias="X-Team-ID"),
     db=Depends(get_db),
 ):

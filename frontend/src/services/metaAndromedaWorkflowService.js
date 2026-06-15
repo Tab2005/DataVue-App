@@ -43,10 +43,15 @@ export const submitMetaAndromedaFeedback = async (scoreEventId, payload) => {
     return apiClient.post(`/api/meta-andromeda/scores/${scoreEventId}/feedback`, payload);
 };
 
+export const importMetaAndromedaObservedFacebookAd = async (payload) => {
+    return apiClient.post('/api/meta-andromeda/evaluations/import/facebook-ads', payload);
+};
+
 export default {
     uploadMetaAndromedaAsset,
     submitMetaAndromedaScore,
     fetchMetaAndromedaScore,
     fetchMetaAndromedaFeedback,
     submitMetaAndromedaFeedback,
+    importMetaAndromedaObservedFacebookAd,
 };

@@ -16,13 +16,15 @@ import modules.meta_andromeda.queue_host as meta_andromeda_queue_host_module
 import modules.meta_andromeda.storage as meta_andromeda_storage_module
 from modules.auth import dependencies as auth_dependencies
 import redis_cache as redis_cache_module
-from database import Module, Team, TeamMember, UserModuleAccess, UserRole
+from database import Module, Permission, Role, RolePermission, Team, TeamMember, UserModuleAccess, UserRole
 from modules.meta_andromeda.repository import repository
 from modules.meta_andromeda.runtime import runtime_adapter
 from modules.meta_andromeda.service import MetaAndromedaService
 from main import app
 from modules.meta_andromeda.dependencies import (
     get_current_meta_andromeda_user,
+    require_fb_ads_analytics_view,
+    require_fb_ads_module,
     require_meta_andromeda_module,
 )
 
@@ -31,9 +33,13 @@ from modules.meta_andromeda.dependencies import (
 def meta_andromeda_access(client, sample_admin_user):
     app.dependency_overrides[get_current_meta_andromeda_user] = lambda: sample_admin_user
     app.dependency_overrides[require_meta_andromeda_module] = lambda: True
+    app.dependency_overrides[require_fb_ads_module] = lambda: True
+    app.dependency_overrides[require_fb_ads_analytics_view] = lambda: True
     yield client
     app.dependency_overrides.pop(get_current_meta_andromeda_user, None)
     app.dependency_overrides.pop(require_meta_andromeda_module, None)
+    app.dependency_overrides.pop(require_fb_ads_module, None)
+    app.dependency_overrides.pop(require_fb_ads_analytics_view, None)
 
 
 @pytest.fixture
@@ -76,6 +82,68 @@ def _setup_meta_andromeda_team_access(
 
     db.commit()
     return team
+
+
+def _ensure_module(db, *, module_key: str, module_name: str) -> Module:
+    module = db.query(Module).filter(Module.key == module_key).first()
+    if module is None:
+        module = Module(key=module_key, name=module_name, enabled=True)
+        db.add(module)
+        db.flush()
+    return module
+
+
+def _grant_team_module_access(db, *, user_id: str, team_id: str, module_key: str, module_name: str) -> None:
+    module = _ensure_module(db, module_key=module_key, module_name=module_name)
+    access = db.query(UserModuleAccess).filter(
+        UserModuleAccess.user_id == user_id,
+        UserModuleAccess.team_id == team_id,
+        UserModuleAccess.module_id == module.id,
+    ).first()
+    if access is None:
+        db.add(
+            UserModuleAccess(
+                user_id=user_id,
+                team_id=team_id,
+                module_id=module.id,
+                enabled=True,
+            )
+        )
+
+
+def _grant_team_role_permission(
+    db,
+    *,
+    role_key: str,
+    permission_key: str,
+    permission_name: str,
+    module_key: str,
+    module_name: str,
+) -> None:
+    role = db.query(Role).filter(Role.key == role_key).first()
+    if role is None:
+        role = Role(key=role_key, name=role_key, scope="team")
+        db.add(role)
+        db.flush()
+
+    module = _ensure_module(db, module_key=module_key, module_name=module_name)
+    permission = db.query(Permission).filter(Permission.key == permission_key).first()
+    if permission is None:
+        permission = Permission(
+            module_id=module.id,
+            key=permission_key,
+            name=permission_name,
+            category="feature",
+        )
+        db.add(permission)
+        db.flush()
+
+    role_permission = db.query(RolePermission).filter(
+        RolePermission.role_id == role.id,
+        RolePermission.permission_id == permission.id,
+    ).first()
+    if role_permission is None:
+        db.add(RolePermission(role_id=role.id, permission_id=permission.id))
 
 
 @pytest.mark.unit
@@ -1162,6 +1230,264 @@ def test_meta_andromeda_observation_import_persists_asset_and_observed_record(
     assert observed.source_platform == "facebook_ads"
     assert observed.performance_snapshot["purchases"] == 14
     assert observed.observation_window_kind == "last_30d"
+
+
+@pytest.mark.unit
+def test_meta_andromeda_observation_import_denies_without_fb_ads_module_access(
+    meta_andromeda_permission_client,
+    db,
+    monkeypatch,
+):
+    from modules.meta_andromeda.schemas import ObservedCreativeCandidate
+
+    async def fake_fetch_observed_creative_candidate(**kwargs):
+        payload = kwargs["payload"]
+        return ObservedCreativeCandidate(
+            source_platform="facebook_ads",
+            source_account_id=payload["account_id"],
+            campaign_id="120000000000010",
+            adset_id="120000000000011",
+            ad_id=payload["ad_id"],
+            ad_name="Denied Ad",
+            objective="OUTCOME_SALES",
+            placement_family=payload["placement_family"],
+            market=payload["market"],
+            primary_text=None,
+            headline=None,
+            cta=None,
+            media_url="https://cdn.example.com/denied-ad.png",
+            media_type="image",
+            performance_snapshot={},
+            observation_window_kind="last_30d",
+            observation_window_start="2026-05-17",
+            observation_window_end="2026-06-15",
+            source_fetched_at="2026-06-15T00:00:00Z",
+        )
+
+    async def fake_download_observed_asset_snapshot(*, media_url: str, ad_id: str, media_type: str):
+        return {
+            "file_bytes": b"denied-image-bytes",
+            "source_filename": f"{ad_id}.png",
+            "content_type": "image/png",
+            "asset_type": media_type,
+        }
+
+    monkeypatch.setattr(
+        meta_andromeda_service_module.MetaAndromedaService,
+        "_fetch_observed_facebook_ad_candidate",
+        staticmethod(fake_fetch_observed_creative_candidate),
+    )
+    monkeypatch.setattr(
+        meta_andromeda_service_module.MetaAndromedaService,
+        "_download_observed_asset_snapshot",
+        staticmethod(fake_download_observed_asset_snapshot),
+    )
+
+    client, user = meta_andromeda_permission_client
+    team = _setup_meta_andromeda_team_access(
+        db,
+        user,
+        membership_role=UserRole.MEMBER,
+        role_key="team_member",
+    )
+    _grant_team_role_permission(
+        db,
+        role_key="team_member",
+        permission_key="fb_ads:analytics:view",
+        permission_name="數據查看",
+        module_key="fb_ads",
+        module_name="FB Ads",
+    )
+    db.commit()
+
+    response = client.post(
+        "/api/meta-andromeda/evaluations/import/facebook-ads",
+        headers={"X-Team-ID": team.id},
+        json={
+            "account_id": "act_123456789",
+            "ad_id": "120000000000012",
+            "observation_window_kind": "last_30d",
+            "market": "TW",
+            "placement_family": "feed",
+        },
+    )
+
+    assert response.status_code == 403
+    assert "fb_ads" in response.text
+
+
+@pytest.mark.unit
+def test_meta_andromeda_observation_import_denies_without_fb_ads_analytics_permission(
+    meta_andromeda_permission_client,
+    db,
+    monkeypatch,
+):
+    from modules.meta_andromeda.schemas import ObservedCreativeCandidate
+
+    async def fake_fetch_observed_creative_candidate(**kwargs):
+        payload = kwargs["payload"]
+        return ObservedCreativeCandidate(
+            source_platform="facebook_ads",
+            source_account_id=payload["account_id"],
+            campaign_id="120000000000010",
+            adset_id="120000000000011",
+            ad_id=payload["ad_id"],
+            ad_name="Denied Ad",
+            objective="OUTCOME_SALES",
+            placement_family=payload["placement_family"],
+            market=payload["market"],
+            primary_text=None,
+            headline=None,
+            cta=None,
+            media_url="https://cdn.example.com/denied-ad.png",
+            media_type="image",
+            performance_snapshot={},
+            observation_window_kind="last_30d",
+            observation_window_start="2026-05-17",
+            observation_window_end="2026-06-15",
+            source_fetched_at="2026-06-15T00:00:00Z",
+        )
+
+    async def fake_download_observed_asset_snapshot(*, media_url: str, ad_id: str, media_type: str):
+        return {
+            "file_bytes": b"denied-image-bytes",
+            "source_filename": f"{ad_id}.png",
+            "content_type": "image/png",
+            "asset_type": media_type,
+        }
+
+    monkeypatch.setattr(
+        meta_andromeda_service_module.MetaAndromedaService,
+        "_fetch_observed_facebook_ad_candidate",
+        staticmethod(fake_fetch_observed_creative_candidate),
+    )
+    monkeypatch.setattr(
+        meta_andromeda_service_module.MetaAndromedaService,
+        "_download_observed_asset_snapshot",
+        staticmethod(fake_download_observed_asset_snapshot),
+    )
+
+    client, user = meta_andromeda_permission_client
+    team = _setup_meta_andromeda_team_access(
+        db,
+        user,
+        membership_role=UserRole.MEMBER,
+        role_key="team_member",
+    )
+    _grant_team_module_access(
+        db,
+        user_id=user.id,
+        team_id=team.id,
+        module_key="fb_ads",
+        module_name="FB Ads",
+    )
+    db.commit()
+
+    response = client.post(
+        "/api/meta-andromeda/evaluations/import/facebook-ads",
+        headers={"X-Team-ID": team.id},
+        json={
+            "account_id": "act_123456789",
+            "ad_id": "120000000000012",
+            "observation_window_kind": "last_30d",
+            "market": "TW",
+            "placement_family": "feed",
+        },
+    )
+
+    assert response.status_code == 403
+    assert "fb_ads:analytics:view" in response.text
+
+
+@pytest.mark.unit
+def test_meta_andromeda_observation_import_allows_with_fb_ads_module_and_permission(
+    meta_andromeda_permission_client,
+    db,
+    monkeypatch,
+):
+    from modules.meta_andromeda.schemas import ObservedCreativeCandidate
+
+    async def fake_fetch_observed_creative_candidate(**kwargs):
+        payload = kwargs["payload"]
+        return ObservedCreativeCandidate(
+            source_platform="facebook_ads",
+            source_account_id=payload["account_id"],
+            campaign_id="120000000000010",
+            adset_id="120000000000011",
+            ad_id=payload["ad_id"],
+            ad_name="Allowed Ad",
+            objective="OUTCOME_SALES",
+            placement_family=payload["placement_family"],
+            market=payload["market"],
+            primary_text=None,
+            headline=None,
+            cta=None,
+            media_url="https://cdn.example.com/allowed-ad.png",
+            media_type="image",
+            performance_snapshot={"purchases": 14, "roas": 2.85},
+            observation_window_kind="last_30d",
+            observation_window_start="2026-05-17",
+            observation_window_end="2026-06-15",
+            source_fetched_at="2026-06-15T00:00:00Z",
+        )
+
+    async def fake_download_observed_asset_snapshot(*, media_url: str, ad_id: str, media_type: str):
+        return {
+            "file_bytes": b"allowed-image-bytes",
+            "source_filename": f"{ad_id}.png",
+            "content_type": "image/png",
+            "asset_type": media_type,
+        }
+
+    monkeypatch.setattr(
+        meta_andromeda_service_module.MetaAndromedaService,
+        "_fetch_observed_facebook_ad_candidate",
+        staticmethod(fake_fetch_observed_creative_candidate),
+    )
+    monkeypatch.setattr(
+        meta_andromeda_service_module.MetaAndromedaService,
+        "_download_observed_asset_snapshot",
+        staticmethod(fake_download_observed_asset_snapshot),
+    )
+
+    client, user = meta_andromeda_permission_client
+    team = _setup_meta_andromeda_team_access(
+        db,
+        user,
+        membership_role=UserRole.MEMBER,
+        role_key="team_member",
+    )
+    _grant_team_module_access(
+        db,
+        user_id=user.id,
+        team_id=team.id,
+        module_key="fb_ads",
+        module_name="FB Ads",
+    )
+    _grant_team_role_permission(
+        db,
+        role_key="team_member",
+        permission_key="fb_ads:analytics:view",
+        permission_name="數據查看",
+        module_key="fb_ads",
+        module_name="FB Ads",
+    )
+    db.commit()
+
+    response = client.post(
+        "/api/meta-andromeda/evaluations/import/facebook-ads",
+        headers={"X-Team-ID": team.id},
+        json={
+            "account_id": "act_123456789",
+            "ad_id": "120000000000012",
+            "observation_window_kind": "last_30d",
+            "market": "TW",
+            "placement_family": "feed",
+        },
+    )
+
+    assert response.status_code == 202
+    assert response.json()["source"]["ad_id"] == "120000000000012"
 
 
 @pytest.mark.unit

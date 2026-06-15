@@ -11,6 +11,8 @@ import { AnalyticsKPISection, MetricSelector } from '../components/Analytics';
 import ReportModal from '../components/Analytics/ReportModal';
 // Import Metrics Registry for extended metrics support
 import { METRICS_REGISTRY, METRIC_CATEGORIES } from '../constants/metricsRegistry';
+import { useModuleAccess, usePermission } from '../hooks/usePermission';
+import { importMetaAndromedaObservedFacebookAd } from '../services/metaAndromedaWorkflowService';
 
 // API constants
 const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:8000';
@@ -167,10 +169,22 @@ const buildUnifiedMetricGroups = () => {
 
 const ALL_METRIC_GROUPS = buildUnifiedMetricGroups();
 
+const resolveObservationWindowKind = (datePreset) => {
+    if (datePreset === 'last_7d') {
+        return 'last_7d';
+    }
+    if (datePreset === 'last_30d') {
+        return 'last_30d';
+    }
+    return 'lifetime';
+};
+
 const Analytics = () => {
     // 1. Get shared context
     const { selectedAccountId, user, language, isSidebarCollapsed, selectedTeamId } = useOutletContext();
     const [showReportModal, setShowReportModal] = useState(false);
+    const { hasAccess: hasMetaAndromedaAccess } = useModuleAccess('meta_andromeda', selectedTeamId);
+    const { hasPermission: hasFbAnalyticsPermission } = usePermission('fb_ads:analytics:view', selectedTeamId);
 
     // 2. Translations
     const t = {
@@ -348,6 +362,7 @@ const Analytics = () => {
 
     // Table Row Selection State
     const [selectedRowIds, setSelectedRowIds] = useState(new Set()); // IDs of selected rows
+    const [observationImportState, setObservationImportState] = useState({});
 
     // UI: Toggle Metric Panel
     const [showMetricPanel, setShowMetricPanel] = useState(false);
@@ -536,6 +551,47 @@ const Analytics = () => {
     const [prevReportData, setPrevReportData] = useState(null);
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState(null);
+    const observationWindowKind = resolveObservationWindowKind(datePreset);
+
+    const handleObservationImport = useCallback(async (row) => {
+        if (!selectedAccountId || !row?.ad_id) {
+            return;
+        }
+
+        setObservationImportState((prev) => ({
+            ...prev,
+            [row.id]: {
+                status: 'loading',
+                message: language === 'zh' ? '匯入中...' : 'Importing...',
+            },
+        }));
+
+        try {
+            const response = await importMetaAndromedaObservedFacebookAd({
+                account_id: selectedAccountId,
+                ad_id: row.ad_id,
+                observation_window_kind: observationWindowKind,
+                market: 'TW',
+                placement_family: 'feed',
+            });
+
+            setObservationImportState((prev) => ({
+                ...prev,
+                [row.id]: {
+                    status: 'success',
+                    message: `${language === 'zh' ? '已匯入' : 'Imported'}: ${response.observed_creative_id}`,
+                },
+            }));
+        } catch (err) {
+            setObservationImportState((prev) => ({
+                ...prev,
+                [row.id]: {
+                    status: 'error',
+                    message: err?.message || (language === 'zh' ? '匯入失敗' : 'Import failed'),
+                },
+            }));
+        }
+    }, [language, observationWindowKind, selectedAccountId]);
 
     // 4. Fetch Function
     // 4. Fetch Function
@@ -1851,6 +1907,50 @@ const Analytics = () => {
                                                     {row.name}
                                                 </div>
                                             </div>
+                                            {level === 'ad' && row.ad_id && hasMetaAndromedaAccess && hasFbAnalyticsPermission && (
+                                                <div style={{ marginTop: '8px', paddingLeft: row.image_url ? '48px' : '24px' }}>
+                                                    <button
+                                                        type="button"
+                                                        onClick={() => handleObservationImport(row)}
+                                                        disabled={observationImportState[row.id]?.status === 'loading'}
+                                                        title={
+                                                            observationWindowKind === 'lifetime'
+                                                                ? (language === 'zh'
+                                                                    ? '目前日期區段會以 lifetime 匯入 observation。'
+                                                                    : 'Current date preset will import observation as lifetime.')
+                                                                : undefined
+                                                        }
+                                                        style={{
+                                                            background: 'transparent',
+                                                            border: 'none',
+                                                            padding: 0,
+                                                            cursor: observationImportState[row.id]?.status === 'loading' ? 'wait' : 'pointer',
+                                                            color: 'var(--accent-primary)',
+                                                            fontSize: '0.8rem',
+                                                            fontWeight: 600,
+                                                        }}
+                                                    >
+                                                        {observationImportState[row.id]?.status === 'loading'
+                                                            ? (language === 'zh' ? '匯入中...' : 'Importing...')
+                                                            : (language === 'zh' ? '送至 Meta Andromeda' : 'Send to Meta Andromeda')}
+                                                    </button>
+                                                    {observationImportState[row.id]?.message && (
+                                                        <div style={{
+                                                            marginTop: '4px',
+                                                            fontSize: '0.76rem',
+                                                            color: observationImportState[row.id]?.status === 'error'
+                                                                ? '#f87171'
+                                                                : observationImportState[row.id]?.status === 'success'
+                                                                    ? '#34d399'
+                                                                    : 'var(--text-secondary)',
+                                                            lineHeight: 1.4,
+                                                            wordBreak: 'break-word',
+                                                        }}>
+                                                            {observationImportState[row.id].message}
+                                                        </div>
+                                                    )}
+                                                </div>
+                                            )}
                                         </td>
 
                                         {/* Data Columns */}
