@@ -14,7 +14,10 @@ import pytest
 import modules.meta_andromeda.service as meta_andromeda_service_module
 import modules.meta_andromeda.queue_host as meta_andromeda_queue_host_module
 import modules.meta_andromeda.storage as meta_andromeda_storage_module
+from modules.auth import dependencies as auth_dependencies
 import redis_cache as redis_cache_module
+from database import Module, Permission, Role, RolePermission, Team, TeamMember, UserModuleAccess, UserRole
+from seeds.permission_seeds import PERMISSIONS as SEEDED_PERMISSIONS, ROLE_PERMISSIONS as SEEDED_ROLE_PERMISSIONS
 from modules.meta_andromeda.repository import repository
 from modules.meta_andromeda.runtime import runtime_adapter
 from modules.meta_andromeda.service import MetaAndromedaService
@@ -41,6 +44,75 @@ def meta_andromeda_access(client, sample_admin_user):
     app.dependency_overrides.pop(require_meta_andromeda_operate, None)
     app.dependency_overrides.pop(require_meta_andromeda_feedback, None)
     app.dependency_overrides.pop(require_meta_andromeda_release, None)
+
+
+@pytest.fixture
+def meta_andromeda_permission_client(client, db, sample_user):
+    app.dependency_overrides[get_current_meta_andromeda_user] = lambda: sample_user
+    app.dependency_overrides[auth_dependencies.get_current_user] = lambda: sample_user
+    app.dependency_overrides[auth_dependencies.get_db] = lambda: db
+    yield client, sample_user
+    app.dependency_overrides.pop(get_current_meta_andromeda_user, None)
+    app.dependency_overrides.pop(auth_dependencies.get_current_user, None)
+    app.dependency_overrides.pop(auth_dependencies.get_db, None)
+
+
+def _setup_meta_andromeda_team_access(
+    db,
+    user,
+    *,
+    membership_role: UserRole,
+    role_key: str,
+    grant_module_access: bool = True,
+):
+    team = Team(name=f"Meta Team {role_key}", owner_id=user.id)
+    db.add(team)
+    db.flush()
+
+    module = Module(key="meta_andromeda", name="Meta Andromeda", enabled=True)
+    db.add(module)
+    db.flush()
+
+    permissions_by_key = {}
+    for permission_def in SEEDED_PERMISSIONS["meta_andromeda"]:
+        permission = Permission(
+            module_id=module.id,
+            key=permission_def["key"],
+            name=permission_def["name"],
+            category=permission_def["category"],
+        )
+        db.add(permission)
+        db.flush()
+        permissions_by_key[permission.key] = permission
+
+    role = Role(key=role_key, name=role_key, scope="team")
+    db.add(role)
+    db.flush()
+
+    granted_permission_keys = [
+        permission_key
+        for permission_key in SEEDED_ROLE_PERMISSIONS[role_key]
+        if permission_key == "*" or permission_key.startswith("meta_andromeda:")
+    ]
+    if "*" in granted_permission_keys:
+        granted_permission_keys = list(permissions_by_key.keys())
+
+    for permission_key in granted_permission_keys:
+        db.add(RolePermission(role_id=role.id, permission_id=permissions_by_key[permission_key].id))
+
+    db.add(TeamMember(team_id=team.id, user_id=user.id, role=membership_role))
+    if grant_module_access:
+        db.add(
+            UserModuleAccess(
+                user_id=user.id,
+                team_id=team.id,
+                module_id=module.id,
+                enabled=True,
+            )
+        )
+
+    db.commit()
+    return team
 
 
 @pytest.mark.unit
@@ -819,3 +891,145 @@ def test_meta_andromeda_release_approve_updates_history(meta_andromeda_access):
     assert overview.status_code == 200
     overview_payload = overview.json()
     assert overview_payload["history"][0]["action"] == "approve"
+
+
+@pytest.mark.unit
+def test_meta_andromeda_team_user_without_module_access_is_denied_read_only_endpoint(
+    meta_andromeda_permission_client,
+    db,
+):
+    client, user = meta_andromeda_permission_client
+    team = _setup_meta_andromeda_team_access(
+        db,
+        user,
+        membership_role=UserRole.VIEWER,
+        role_key="team_viewer",
+        grant_module_access=False,
+    )
+
+    response = client.get("/api/meta-andromeda/overview", headers={"X-Team-ID": team.id})
+
+    assert response.status_code == 403
+    assert "meta_andromeda" in response.text
+
+
+@pytest.mark.unit
+def test_meta_andromeda_team_viewer_can_read_overview_with_team_module_access(
+    meta_andromeda_permission_client,
+    db,
+):
+    client, user = meta_andromeda_permission_client
+    team = _setup_meta_andromeda_team_access(
+        db,
+        user,
+        membership_role=UserRole.VIEWER,
+        role_key="team_viewer",
+    )
+
+    response = client.get("/api/meta-andromeda/overview", headers={"X-Team-ID": team.id})
+
+    assert response.status_code == 200
+    assert response.json()["module"]["key"] == "meta_andromeda"
+
+
+@pytest.mark.unit
+def test_meta_andromeda_team_member_can_submit_feedback_in_team_workspace(
+    meta_andromeda_permission_client,
+    db,
+):
+    client, user = meta_andromeda_permission_client
+    team = _setup_meta_andromeda_team_access(
+        db,
+        user,
+        membership_role=UserRole.MEMBER,
+        role_key="team_member",
+    )
+
+    response = client.post(
+        "/api/meta-andromeda/scores/ma_evt_20260605_001/feedback",
+        headers={"X-Team-ID": team.id},
+        json={
+            "decision": "approve",
+            "reason_codes": ["team_member_feedback"],
+            "comment": "Feedback is allowed for team members.",
+        },
+    )
+
+    assert response.status_code == 201
+    assert response.json()["decision"] == "approve"
+
+
+@pytest.mark.unit
+def test_meta_andromeda_team_member_cannot_trigger_drift_report(
+    meta_andromeda_permission_client,
+    db,
+):
+    client, user = meta_andromeda_permission_client
+    team = _setup_meta_andromeda_team_access(
+        db,
+        user,
+        membership_role=UserRole.MEMBER,
+        role_key="team_member",
+    )
+
+    response = client.post(
+        "/api/meta-andromeda/drift:trigger",
+        headers={"X-Team-ID": team.id},
+        json={"window_kind": "last_7d", "note": "member should not operate"},
+    )
+
+    assert response.status_code == 403
+    assert "meta_andromeda:operate" in response.text
+
+
+@pytest.mark.unit
+def test_meta_andromeda_team_member_cannot_approve_release(
+    meta_andromeda_permission_client,
+    db,
+):
+    client, user = meta_andromeda_permission_client
+    team = _setup_meta_andromeda_team_access(
+        db,
+        user,
+        membership_role=UserRole.MEMBER,
+        role_key="team_member",
+    )
+
+    response = client.post(
+        "/api/meta-andromeda/release/approve",
+        headers={"X-Team-ID": team.id},
+        json={"model_version": "cand_v2026_06_05_a", "note": "member should not release"},
+    )
+
+    assert response.status_code == 403
+    assert "meta_andromeda:release" in response.text
+
+
+@pytest.mark.unit
+def test_meta_andromeda_team_admin_can_trigger_drift_report_and_approve_release(
+    meta_andromeda_permission_client,
+    db,
+):
+    client, user = meta_andromeda_permission_client
+    team = _setup_meta_andromeda_team_access(
+        db,
+        user,
+        membership_role=UserRole.ADMIN,
+        role_key="team_admin",
+    )
+
+    drift_response = client.post(
+        "/api/meta-andromeda/drift:trigger",
+        headers={"X-Team-ID": team.id},
+        json={"window_kind": "last_7d", "note": "admin can operate"},
+    )
+    release_response = client.post(
+        "/api/meta-andromeda/release/approve",
+        headers={"X-Team-ID": team.id},
+        json={"model_version": "cand_v2026_06_05_a", "note": "admin can release"},
+    )
+
+    assert drift_response.status_code == 201
+    assert drift_response.json()["window_kind"] == "last_7d"
+    assert release_response.status_code == 200
+    assert release_response.json()["action"] == "approve"

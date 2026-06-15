@@ -203,5 +203,15 @@
 - [x] 修正後端 `require_module()` / `require_permission()` 的 team-aware 行為
 - [x] 修正前端 route guard 與 page-level permission hook 的 team 同步
 - [x] 修正側欄模組顯示過濾
-- [ ] 補齊後端權限測試
+- [x] 補齊後端權限測試
 - [ ] 更新模組說明文件與驗收結果
+
+### 2026-06-15
+
+- 補齊 Meta Andromeda API 層權限測試，覆蓋下列情境：
+  - 無 `module access` 時不得讀取 `overview`
+  - `team_viewer` 可讀取唯讀入口
+  - `team_member` 可提交 feedback，但不可執行 `operate` 與 `release`
+  - `team_admin` 可執行 `drift:trigger` 與 `release:approve`
+- 補齊共用授權 dependency 測試，確認 `super_admin` 可繞過 module / permission 檢查
+- 已使用 `backend\\.venv311\\Scripts\\python.exe -m pytest` 驗證新增案例通過

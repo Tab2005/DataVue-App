@@ -147,3 +147,28 @@ def test_require_permission_uses_x_team_id_for_team_role_permissions(db, sample_
 
     assert response_without_team.status_code == 403
     assert response_with_team.status_code == 200
+
+
+@pytest.mark.unit
+def test_require_module_and_permission_allow_super_admin_without_team_context(db, sample_admin_user):
+    """super admin 應可繞過 module 與 permission 檢查"""
+    module = Module(key="meta_andromeda", name="Meta Andromeda", enabled=True)
+    db.add(module)
+    db.flush()
+    db.add(
+        Permission(
+            module_id=module.id,
+            key="meta_andromeda:feedback",
+            name="審核回饋",
+            category="feature",
+        )
+    )
+    db.commit()
+
+    app = _build_permission_test_app(db, sample_admin_user)
+    with TestClient(app) as client:
+        module_response = client.get("/test/module")
+        permission_response = client.get("/test/permission")
+
+    assert module_response.status_code == 200
+    assert permission_response.status_code == 200
