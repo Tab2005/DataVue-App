@@ -87,6 +87,115 @@
    - `meta_andromeda` 可操作
 5. 未來可沿用相同模式支援其他廣告來源
 
+## 整體流程圖
+
+以下流程描述第一階段預計實作的單筆創意導入路徑。
+
+```text
+[使用者在 FB Ads Analytics 畫面選取一筆 ad row]
+  |
+  v
+[前端顯示「送至 Meta Andromeda」操作]
+  |
+  v
+[前端送出 POST /api/meta-andromeda/import/facebook-ads]
+  |
+  | request:
+  | - account_id
+  | - ad_id
+  | - since / until
+  | - market / placement_family / request_mode
+  | - optional primary_text / headline / cta
+  v
+[Meta Andromeda import endpoint]
+  |
+  +--> [檢查權限]
+  |      - fb_ads module access
+  |      - meta_andromeda module access
+  |      - meta_andromeda:operate
+  |
+  +--> [讀取 X-Team-ID]
+  |
+  +--> [呼叫 Facebook Ads importer]
+           |
+           +--> [從 FB Ads service 取得 ad row / creative metadata]
+           |
+           +--> [正規化成 CreativeCandidate]
+                    - source_platform
+                    - account_id / campaign_id / adset_id / ad_id
+                    - objective
+                    - media_url / media_type
+                    - optional copy fields
+                    - performance_snapshot
+  |
+  v
+[素材處理]
+  |
+  +--> [驗證是否有可評分 media_url]
+  |
+  +--> [下載遠端素材]
+  |
+  +--> [寫入 Meta Andromeda storage]
+  |
+  +--> [取得 asset_uri / asset_id / asset_type]
+  v
+[Meta Andromeda score request 組裝]
+  |
+  +--> [建立標準 ScoreSubmitRequest]
+           - asset_uri
+           - asset_type
+           - asset_id
+           - objective
+           - placement_family
+           - market
+           - primary_text / headline / cta
+  |
+  v
+[Meta Andromeda 既有流程]
+  |
+  +--> create_score_event
+  +--> assign_score_runtime_job
+  +--> enqueue_score_event
+  |
+  v
+[回傳 import response]
+  |
+  | response:
+  | - score_event_id
+  | - status=queued
+  | - runtime_job_id
+  | - asset_uri
+  | - source lineage
+  v
+[前端提示成功並導向 Review Queue / Score Detail]
+```
+
+### 流程分層
+
+為避免模組耦合失控，流程責任應明確分層：
+
+1. `FB Ads` 模組
+
+- 提供 ad row / creative metadata 的來源能力
+- 不負責 Meta Andromeda 的 storage 與 score event 建立
+
+2. `facebook_ads_importer`
+
+- 將 Facebook 專屬資料正規化為 `CreativeCandidate`
+- 封裝欄位對應與素材型別判斷
+
+3. `Meta Andromeda import service`
+
+- 驗證權限
+- 下載與轉存素材
+- 組裝標準 `ScoreSubmitRequest`
+- 建立 `score_event`
+
+4. 前端
+
+- 只負責觸發匯入與顯示結果
+- 不負責素材下載、storage 寫入或 lineage 拼裝
+
 ## 核心設計決策
 
 ### 1. 不直接重用 `/api/meta-andromeda/scores` 作為 FB Ads 原始匯入接口
