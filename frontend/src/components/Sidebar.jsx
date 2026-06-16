@@ -9,7 +9,7 @@ const Sidebar = ({ user, language, isCollapsed, setIsCollapsed, isMobile, select
 
     const [isSettingsOpen, setIsSettingsOpen] = useState(false);
     // Track expanded submenus by label key
-    const [expandedMenus, setExpandedMenus] = useState({ 'Meta Andromeda': true });
+    const [expandedMenus, setExpandedMenus] = useState({ 'Meta Andromeda': false });
     const location = useLocation();
     const { modules: accessibleModules } = useUserModules(selectedTeamId || null);
 

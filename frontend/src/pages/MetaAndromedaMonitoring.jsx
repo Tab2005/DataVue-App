@@ -802,7 +802,7 @@ const inputStyle = {
     padding: '12px 14px',
     borderRadius: '12px',
     border: '1px solid var(--glass-border)',
-    background: 'rgba(255,255,255,0.03)',
+    background: 'var(--bg-secondary)',
     color: 'var(--text-primary)',
     outline: 'none',
 };
