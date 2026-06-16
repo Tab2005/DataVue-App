@@ -13,7 +13,7 @@ from urllib.parse import urlparse
 import httpx
 
 from core.config import settings
-from database import SessionLocal
+from database import SessionLocal, User
 from .schemas import ObservedCreativeCandidate
 from .importers.facebook_ads_importer import fetch_observed_creative_candidate
 from .model_registry import model_registry
@@ -324,6 +324,11 @@ class MetaAndromedaService:
             team_id=team_id,
         )
         candidate = ObservedCreativeCandidate.model_validate(candidate)
+        
+        # 查詢 User 資料表，將外部 google_id 轉換為內部 User.id (UUID)，防止外鍵約束衝突
+        db_user = db.query(User).filter(User.google_id == user_id).first()
+        user_db_id = db_user.id if db_user else user_id
+
         today = datetime.now(UTC).date()
         observed_creative_id = f"ma_obs_{today.strftime('%Y%m%d')}_{candidate.ad_id[-6:]}"
         stored_asset = None
@@ -339,7 +344,7 @@ class MetaAndromedaService:
                     file_bytes=snapshot["file_bytes"],
                     asset_type=snapshot["asset_type"],
                     source_filename=snapshot["source_filename"],
-                    uploaded_by=user_id,
+                    uploaded_by=user_db_id,
                     content_type=snapshot["content_type"],
                 )
                 stored_asset = repository.create_uploaded_asset(db, asset_record=asset_record)
