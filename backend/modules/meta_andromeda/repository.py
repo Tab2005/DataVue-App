@@ -591,6 +591,7 @@ class MetaAndromedaRepository:
                 # 測試與展示友善機制：如果總匯入廣告大於等於 5 筆，但缺少預估評分紀錄，我們在此為其動態模擬一個 Completed ScoreEvent
                 if len(observed_list) >= 5:
                     import random
+                    import uuid
                     from datetime import timezone
                     real_roas = obs.performance_snapshot.get("roas", 0.0) if obs.performance_snapshot else 0.0
                     if real_roas < 1.5:
