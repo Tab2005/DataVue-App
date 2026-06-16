@@ -17,6 +17,8 @@ from .dependencies import (
 )
 from .schemas import (
     AssetUploadResponse,
+    CalibrationSyncRequest,
+    CalibrationSyncResponse,
     DriftReportResponse,
     DriftTriggerRequest,
     ExternalWorkerCallbackRequest,
@@ -176,6 +178,25 @@ async def import_facebook_ad_observation(
         payload.model_dump(),
         user_id=getattr(user, "google_id", None) or getattr(user, "id", None),
         team_id=x_team_id,
+    )
+
+
+@router.post(
+    "/calibration/sync",
+    response_model=CalibrationSyncResponse,
+    status_code=status.HTTP_201_CREATED,
+)
+async def sync_calibration_dataset(
+    payload: CalibrationSyncRequest,
+    _user=Depends(get_current_meta_andromeda_user),
+    _access: bool = Depends(require_meta_andromeda_operate),
+    db=Depends(get_db),
+):
+    """將觀測資料打包同步為模型校準資料集"""
+    return MetaAndromedaService.sync_calibration_dataset(
+        db,
+        window_kind=payload.window_kind,
+        excluded_observed_ids=payload.excluded_observed_ids,
     )
 
 

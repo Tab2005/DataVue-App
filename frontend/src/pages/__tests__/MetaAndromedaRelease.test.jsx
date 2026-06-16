@@ -7,6 +7,7 @@ import {
     approveMetaAndromedaRelease,
     fetchMetaAndromedaReleaseOverview,
 } from '../../services/metaAndromedaReleaseService';
+import { fetchMetaAndromedaMonitoringSummary } from '../../services/metaAndromedaMonitoringService';
 
 vi.mock('../../hooks/usePermission', () => ({
     usePermission: vi.fn(() => ({ hasPermission: true, loading: false })),
@@ -17,6 +18,13 @@ vi.mock('../../services/metaAndromedaReleaseService', () => ({
     approveMetaAndromedaRelease: vi.fn(),
     rejectMetaAndromedaRelease: vi.fn(),
     rollbackMetaAndromedaRelease: vi.fn(),
+}));
+
+vi.mock('../../services/metaAndromedaMonitoringService', () => ({
+    fetchMetaAndromedaMonitoringSummary: vi.fn(() => Promise.resolve({ latest_drift_reports: [] })),
+    fetchMetaAndromedaMonitoringTimeline: vi.fn(),
+    triggerMetaAndromedaDriftReport: vi.fn(),
+    syncMetaAndromedaCalibrationDataset: vi.fn(),
 }));
 
 describe('MetaAndromedaRelease', () => {
@@ -71,5 +79,38 @@ describe('MetaAndromedaRelease', () => {
             note: 'Ship it',
         }));
         expect(fetchMetaAndromedaReleaseOverview).toHaveBeenCalledTimes(2);
+    });
+
+    it('disables Approve button and shows warning if online model is drifted', async () => {
+        fetchMetaAndromedaMonitoringSummary.mockResolvedValue({
+            latest_drift_reports: [
+                {
+                    drift_report_id: 'dr_001',
+                    window_kind: 'last_7d',
+                    drift_status: 'drifted',
+                    summary: 'Significant prediction accuracy drop detected',
+                    severity: 'critical',
+                    triggered_by: 'system',
+                    created_at: '2026-06-16T12:00:00Z',
+                    report_payload: { accuracy: 0.4, mae: 0.8 }
+                }
+            ]
+        });
+
+        renderWithOutlet(<MetaAndromedaRelease />, {
+            outletContext: { language: 'zh', isMobile: false }
+        });
+
+        await screen.findByText('cand_v2');
+
+        // 線上實測對照證據面板應該顯示 DRIFTED 狀態
+        expect(await screen.findByText('DRIFTED')).toBeInTheDocument();
+
+        // 批准 (Approve) 按鈕應該被 disabled
+        const approveButton = screen.getByRole('button', { name: '批准' });
+        expect(approveButton).toBeDisabled();
+
+        // 應該顯示警告訊息
+        expect(screen.getByText(/再行核准新模型/)).toBeInTheDocument();
     });
 });

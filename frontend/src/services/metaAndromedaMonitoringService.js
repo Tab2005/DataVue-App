@@ -12,8 +12,13 @@ export const triggerMetaAndromedaDriftReport = async (payload) => {
     return apiClient.post('/api/meta-andromeda/drift:trigger', payload);
 };
 
+export const syncMetaAndromedaCalibrationDataset = async (payload) => {
+    return apiClient.post('/api/meta-andromeda/calibration/sync', payload);
+};
+
 export default {
     fetchMetaAndromedaMonitoringSummary,
     fetchMetaAndromedaMonitoringTimeline,
     triggerMetaAndromedaDriftReport,
+    syncMetaAndromedaCalibrationDataset,
 };

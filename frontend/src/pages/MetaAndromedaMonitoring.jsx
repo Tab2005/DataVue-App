@@ -6,6 +6,7 @@ import {
     fetchMetaAndromedaMonitoringSummary,
     fetchMetaAndromedaMonitoringTimeline,
     triggerMetaAndromedaDriftReport,
+    syncMetaAndromedaCalibrationDataset,
 } from '../services/metaAndromedaMonitoringService';
 
 const MetaAndromedaMonitoring = () => {
@@ -23,6 +24,9 @@ const MetaAndromedaMonitoring = () => {
     const [selectedScoreEventId, setSelectedScoreEventId] = useState(searchParams.get('event') || '');
     const [driftWindowKind, setDriftWindowKind] = useState(searchParams.get('window') || 'last_24h');
     const [driftNote, setDriftNote] = useState('');
+    const [selectedDriftReport, setSelectedDriftReport] = useState(null);
+    const [excludedObsIds, setExcludedObsIds] = useState(new Set());
+    const [syncingCal, setSyncingCal] = useState(false);
     const { hasPermission: canOperate, loading: loadingOperatePermission } = usePermission('meta_andromeda:operate', selectedTeamId);
 
     const t = (en, zh) => (language === 'en' ? en : zh);
@@ -132,6 +136,41 @@ const MetaAndromedaMonitoring = () => {
 
     const handleSelectTimeline = (scoreEventId) => {
         setSelectedScoreEventId(scoreEventId);
+    };
+
+    const handleToggleExcludeObs = (obsId) => {
+        setExcludedObsIds((prev) => {
+            const next = new Set(prev);
+            if (next.has(obsId)) {
+                next.delete(obsId);
+            } else {
+                next.add(obsId);
+            }
+            return next;
+        });
+    };
+
+    const handleSyncCalibration = async () => {
+        if (!selectedDriftReport) return;
+        setSyncingCal(true);
+        setError(null);
+        try {
+            const result = await syncMetaAndromedaCalibrationDataset({
+                window_kind: selectedDriftReport.window_kind,
+                excluded_observed_ids: Array.from(excludedObsIds),
+            });
+            alert(language === 'zh'
+                ? `成功建立校準資料集！ID: ${result.dataset_id}，共包含 ${result.synced_count} 筆偏差素材。`
+                : `Dataset created successfully! ID: ${result.dataset_id}, synced ${result.synced_count} ads.`
+            );
+            setSelectedDriftReport(null);
+            setExcludedObsIds(new Set());
+            await loadSummary();
+        } catch (err) {
+            setError(err.message || 'Failed to sync calibration dataset');
+        } finally {
+            setSyncingCal(false);
+        }
     };
 
     return (
@@ -408,14 +447,76 @@ const MetaAndromedaMonitoring = () => {
                         <section style={panelStyle}>
                             <h2 style={sectionTitleStyle}>{t('Latest Drift Reports', '最近漂移報告')}</h2>
                             <div style={{ display: 'grid', gap: '10px', marginBottom: '14px' }}>
-                                {(summary?.latest_drift_reports || []).map((report) => (
-                                    <div key={report.drift_report_id} style={detailCardStyle}>
-                                        <div style={{ color: report.drift_status === 'stable' ? 'var(--accent-primary)' : '#f59e0b', fontWeight: 700, marginBottom: '6px' }}>
-                                            {report.window_kind} · {report.drift_status}
+                                {(summary?.latest_drift_reports || []).map((report) => {
+                                    const accuracy = report.report_payload?.accuracy;
+                                    const mae = report.report_payload?.mae;
+                                    const details = report.report_payload?.matched_details || [];
+                                    const hasDetails = details.length > 0;
+                                    
+                                    // 狀態樣式與呼吸燈效果
+                                    const isDrifted = report.drift_status === 'drifted';
+                                    const isStable = report.drift_status === 'stable';
+                                    const statusColor = isStable ? '#10b981' : (report.drift_status === 'warning' ? '#f59e0b' : '#ef4444');
+                                    
+                                    return (
+                                        <div key={report.drift_report_id} style={{
+                                            ...detailCardStyle,
+                                            position: 'relative',
+                                            overflow: 'hidden'
+                                        }}>
+                                            {/* 漂移呼吸燈 */}
+                                            {isDrifted && (
+                                                <div style={{
+                                                    position: 'absolute',
+                                                    top: '12px',
+                                                    right: '12px',
+                                                    width: '10px',
+                                                    height: '10px',
+                                                    borderRadius: '50%',
+                                                    background: '#ef4444',
+                                                    boxShadow: '0 0 10px #ef4444',
+                                                    animation: 'pulse 1.5s infinite'
+                                                }} />
+                                            )}
+                                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', flexWrap: 'wrap', gap: '8px' }}>
+                                                <div style={{ color: statusColor, fontWeight: 700, marginBottom: '6px' }}>
+                                                    {report.window_kind} · {t(report.drift_status.toUpperCase(), report.drift_status === 'stable' ? '穩定' : (report.drift_status === 'drifted' ? '嚴重漂移' : (report.drift_status === 'warning' ? '警告' : report.drift_status)))}
+                                                </div>
+                                                {accuracy !== undefined && (
+                                                    <span style={{ fontSize: '0.8rem', color: 'var(--text-secondary)' }}>
+                                                        Accuracy: {(accuracy * 100).toFixed(1)}% | MAE: {mae.toFixed(2)}
+                                                    </span>
+                                                )}
+                                            </div>
+                                            <div style={{ color: 'var(--text-secondary)', lineHeight: 1.6, fontSize: '0.88rem', marginBottom: '8px' }}>{report.summary}</div>
+                                            
+                                            {hasDetails && (
+                                                <button
+                                                    type="button"
+                                                    onClick={() => {
+                                                        setSelectedDriftReport(report);
+                                                        setExcludedObsIds(new Set());
+                                                    }}
+                                                    style={{
+                                                        marginTop: '6px',
+                                                        padding: '6px 12px',
+                                                        borderRadius: '6px',
+                                                        border: '1px solid var(--glass-border)',
+                                                        background: 'rgba(255,255,255,0.05)',
+                                                        color: 'var(--text-primary)',
+                                                        fontSize: '0.8rem',
+                                                        cursor: 'pointer',
+                                                        transition: 'all 0.2s'
+                                                    }}
+                                                    onMouseEnter={(e) => e.currentTarget.style.background = 'rgba(255,255,255,0.1)'}
+                                                    onMouseLeave={(e) => e.currentTarget.style.background = 'rgba(255,255,255,0.05)'}
+                                                >
+                                                    {t('View Diagnostic Details', '查看診斷明細')}
+                                                </button>
+                                            )}
                                         </div>
-                                        <div style={{ color: 'var(--text-secondary)', lineHeight: 1.6 }}>{report.summary}</div>
-                                    </div>
-                                ))}
+                                    );
+                                })}
                             </div>
                             <div style={{ display: 'grid', gap: '8px' }}>
                                 {(summary?.notes || []).map((note, index) => (
@@ -444,6 +545,188 @@ const MetaAndromedaMonitoring = () => {
                     </div>
                 </>
             )}
+
+            {/* 漂移診斷 Slide-over 滑出面板 */}
+            <div style={{
+                position: 'fixed',
+                top: 0,
+                right: selectedDriftReport ? 0 : '-500px', // Slide in/out
+                width: isMobile ? '100%' : '500px',
+                height: '100vh',
+                backgroundColor: 'var(--bg-secondary)',
+                boxShadow: selectedDriftReport ? '-4px 0 24px rgba(0,0,0,0.6)' : 'none',
+                transition: 'right 0.3s ease',
+                zIndex: 2000,
+                display: 'flex',
+                flexDirection: 'column',
+                borderLeft: '1px solid var(--glass-border)',
+                backdropFilter: 'blur(20px)',
+            }}>
+                {/* Header */}
+                <div style={{
+                    padding: '16px',
+                    borderBottom: '1px solid var(--glass-border)',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'space-between',
+                    background: 'var(--bg-primary)'
+                }}>
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
+                        <div style={{ fontWeight: 'bold', fontSize: '1.05rem', color: 'var(--text-primary)' }}>
+                            {t('Drift Diagnostics Workspace', '漂移診斷工作台')}
+                        </div>
+                        <div style={{ fontSize: '0.8rem', color: 'var(--text-secondary)' }}>
+                            {selectedDriftReport ? `${selectedDriftReport.window_kind} · ${t('Accuracy', '準確率')}: ${(selectedDriftReport.report_payload?.accuracy * 100).toFixed(1)}%` : ''}
+                        </div>
+                    </div>
+                    <button
+                        onClick={() => {
+                            setSelectedDriftReport(null);
+                            setExcludedObsIds(new Set());
+                        }}
+                        style={{ background: 'transparent', border: 'none', color: 'var(--text-secondary)', cursor: 'pointer', fontSize: '1.2rem' }}
+                    >
+                        ✕
+                    </button>
+                </div>
+
+                {/* Content */}
+                <div style={{ flex: 1, overflowY: 'auto', padding: '16px', display: 'flex', flexDirection: 'column', gap: '14px' }}>
+                    {selectedDriftReport && (
+                        <>
+                            {/* 同步工具區 */}
+                            <div style={{
+                                padding: '14px',
+                                borderRadius: '12px',
+                                background: 'rgba(99, 102, 241, 0.08)',
+                                border: '1px solid rgba(99, 102, 241, 0.18)',
+                                display: 'flex',
+                                flexDirection: 'column',
+                                gap: '8px'
+                            }}>
+                                <div style={{ fontSize: '0.85rem', color: 'var(--text-secondary)', lineHeight: 1.5 }}>
+                                    {t('Package observed creatives with prediction errors into a dataset to calibrate Gemini runtime model.', '將有預測偏差的觀測素材打包同步為校準資料集，可用於微調與校準 Gemini 創意預估模型。')}
+                                </div>
+                                <button
+                                    type="button"
+                                    onClick={handleSyncCalibration}
+                                    disabled={syncingCal || (selectedDriftReport.report_payload?.matched_details || []).filter(tc => !excludedObsIds.has(tc.id) && tc.error > 0).length === 0}
+                                    style={{
+                                        alignSelf: 'flex-start',
+                                        padding: '8px 16px',
+                                        borderRadius: '8px',
+                                        border: 'none',
+                                        background: 'var(--accent-primary)',
+                                        color: 'white',
+                                        fontWeight: 600,
+                                        fontSize: '0.82rem',
+                                        cursor: syncingCal ? 'wait' : 'pointer',
+                                        opacity: (syncingCal || (selectedDriftReport.report_payload?.matched_details || []).filter(tc => !excludedObsIds.has(tc.id) && tc.error > 0).length === 0) ? 0.5 : 1,
+                                    }}
+                                >
+                                    {syncingCal ? t('Syncing...', '同步中...') : t('Package & Sync Dataset', '打包同步校準資料集')}
+                                </button>
+                            </div>
+
+                            {/* 廣告對照列表 */}
+                            <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                                <div style={{ fontSize: '0.88rem', fontWeight: 'bold', color: 'var(--text-primary)' }}>
+                                    {t('Prediction vs Observation Comparison', '預估與實際績效對比')}
+                                </div>
+                                
+                                {(selectedDriftReport.report_payload?.matched_details || []).map((item) => {
+                                    const isExcluded = excludedObsIds.has(item.id);
+                                    const hasError = item.error > 0;
+                                    
+                                    // Band styling mapping
+                                    const getBandStyle = (band) => {
+                                        if (band === 'high') return { background: 'rgba(168, 85, 247, 0.15)', color: '#c084fc', border: '1px solid rgba(168, 85, 247, 0.3)' };
+                                        if (band === 'mid') return { background: 'rgba(59, 130, 246, 0.15)', color: '#60a5fa', border: '1px solid rgba(59, 130, 246, 0.3)' };
+                                        return { background: 'rgba(107, 114, 128, 0.15)', color: '#9ca3af', border: '1px solid rgba(107, 114, 128, 0.3)' };
+                                    };
+
+                                    const predStyle = getBandStyle(item.prediction_band);
+                                    const obsStyle = getBandStyle(item.observed_band);
+                                    
+                                    return (
+                                        <div key={item.id} style={{
+                                            ...detailCardStyle,
+                                            opacity: isExcluded ? 0.4 : 1,
+                                            border: isExcluded ? '1px dashed var(--glass-border)' : (hasError ? '1px solid rgba(239, 68, 68, 0.25)' : '1px solid var(--glass-border)'),
+                                            background: hasError && !isExcluded ? 'rgba(239, 68, 68, 0.02)' : 'rgba(255,255,255,0.02)',
+                                            transition: 'all 0.2s'
+                                        }}>
+                                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '8px' }}>
+                                                <div style={{ fontWeight: 600, color: 'var(--text-primary)', fontSize: '0.88rem', maxWidth: '75%', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }} title={item.ad_name}>
+                                                    {item.ad_name || item.ad_id}
+                                                </div>
+                                                <button
+                                                    type="button"
+                                                    onClick={() => handleToggleExcludeObs(item.id)}
+                                                    style={{
+                                                        background: 'transparent',
+                                                        border: 'none',
+                                                        color: isExcluded ? 'var(--accent-primary)' : 'var(--text-secondary)',
+                                                        fontSize: '0.78rem',
+                                                        cursor: 'pointer',
+                                                        fontWeight: 600
+                                                    }}
+                                                >
+                                                    {isExcluded ? t('Include', '加入') : t('Exclude', '排除')}
+                                                </button>
+                                            </div>
+
+                                            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
+                                                {/* Prediction */}
+                                                <div style={{ ...badgeStyle, ...predStyle }}>
+                                                    {t('Pred: ', '預估: ')}{item.prediction_band.toUpperCase()}
+                                                </div>
+                                                
+                                                {/* Connection arrow */}
+                                                <span style={{ color: hasError ? '#ef4444' : 'var(--text-secondary)', fontSize: '0.9rem' }}>
+                                                    {hasError ? '⚡' : '→'}
+                                                </span>
+
+                                                {/* Observation */}
+                                                <div style={{ ...badgeStyle, ...obsStyle }}>
+                                                    {t('Obs: ', '實際: ')}{item.observed_band.toUpperCase()}
+                                                </div>
+
+                                                <span style={{ fontSize: '0.8rem', color: 'var(--text-secondary)', marginLeft: 'auto' }}>
+                                                    ROAS: {item.real_roas.toFixed(2)}
+                                                </span>
+                                            </div>
+
+                                            {hasError && !isExcluded && (
+                                                <div style={{ fontSize: '0.75rem', color: '#ef4444', marginTop: '6px', fontStyle: 'italic' }}>
+                                                    ⚠ {t(`Overestimated by ${item.error} bands`, `預估偏高 ${item.error} 個級距`)}
+                                                </div>
+                                            )}
+                                        </div>
+                                    );
+                                })}
+                            </div>
+                        </>
+                    )}
+                </div>
+            </div>
+
+            {/* Backdrop */}
+            {selectedDriftReport && (
+                <div
+                    onClick={() => {
+                        setSelectedDriftReport(null);
+                        setExcludedObsIds(new Set());
+                    }}
+                    style={{
+                        position: 'fixed',
+                        top: 0, left: 0, right: 0, bottom: 0,
+                        background: 'rgba(0,0,0,0.5)',
+                        zIndex: 1999,
+                        backdropFilter: 'blur(2px)'
+                    }}
+                />
+            )}
         </div>
     );
 };
@@ -454,6 +737,13 @@ const Metric = ({ label, value }) => (
         <div style={{ color: 'var(--text-primary)', fontWeight: 700 }}>{value ?? '--'}</div>
     </div>
 );
+
+const badgeStyle = {
+    padding: '3px 8px',
+    borderRadius: '6px',
+    fontSize: '0.76rem',
+    fontWeight: 600
+};
 
 const panelStyle = {
     background: 'var(--bg-secondary)',

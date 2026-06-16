@@ -8,10 +8,12 @@ import {
     rejectMetaAndromedaRelease,
     rollbackMetaAndromedaRelease,
 } from '../services/metaAndromedaReleaseService';
+import { fetchMetaAndromedaMonitoringSummary } from '../services/metaAndromedaMonitoringService';
 
 const MetaAndromedaRelease = () => {
     const { isMobile, language, selectedTeamId } = useOutletContext();
     const [overview, setOverview] = useState(null);
+    const [driftReport, setDriftReport] = useState(null);
     const [loading, setLoading] = useState(true);
     const [submitting, setSubmitting] = useState(false);
     const [error, setError] = useState(null);
@@ -26,6 +28,16 @@ const MetaAndromedaRelease = () => {
         try {
             const data = await fetchMetaAndromedaReleaseOverview();
             setOverview(data);
+            try {
+                const monitoringData = await fetchMetaAndromedaMonitoringSummary();
+                if (monitoringData && monitoringData.latest_drift_reports && monitoringData.latest_drift_reports.length > 0) {
+                    setDriftReport(monitoringData.latest_drift_reports[0]);
+                } else {
+                    setDriftReport(null);
+                }
+            } catch (monErr) {
+                console.error('Failed to load monitoring summary', monErr);
+            }
         } catch (err) {
             setError(err.message || 'Failed to load release overview');
         } finally {
@@ -111,53 +123,150 @@ const MetaAndromedaRelease = () => {
                         gridTemplateColumns: isMobile ? '1fr' : '1.1fr 0.9fr',
                         gap: '16px'
                     }}>
-                        <section style={panelStyle}>
-                            <h2 style={sectionTitleStyle}>{t('Candidates', '候選版本')}</h2>
-                            <div style={{ display: 'grid', gap: '12px' }}>
-                                {(overview?.candidates || []).map((candidate) => (
-                                    <div key={candidate.model_version} style={detailCardStyle}>
-                                        <div style={{ color: 'var(--text-primary)', fontWeight: 700, marginBottom: '8px' }}>
-                                            {candidate.model_version}
-                                        </div>
-                                        <div style={{ display: 'grid', gap: '8px', color: 'var(--text-secondary)' }}>
-                                            <div>status: {candidate.release_status}</div>
-                                            <div>pairwise_ranking_accuracy: {candidate.pairwise_ranking_accuracy}</div>
-                                            <div>mean_band_error: {candidate.mean_band_error}</div>
-                                        </div>
-                                        <div style={{ display: 'grid', gap: '6px', marginTop: '12px', fontSize: '0.9rem' }}>
-                                            {Object.entries(candidate.promotion_gate_summary || {}).map(([key, value]) => (
-                                                <div key={key} style={gateRowStyle}>
-                                                    <span style={{ color: 'var(--text-secondary)' }}>{key}</span>
-                                                    <strong style={{ color: value ? '#10b981' : '#ef4444' }}>
-                                                        {String(value)}
-                                                    </strong>
-                                                </div>
-                                            ))}
-                                        </div>
-                                        {!loadingReleasePermission && canRelease ? (
-                                            <div style={{ display: 'flex', gap: '10px', marginTop: '16px', flexWrap: 'wrap' }}>
-                                                <button
-                                                    type="button"
-                                                    style={buttonPrimaryStyle}
-                                                    disabled={submitting}
-                                                    onClick={() => handleReleaseAction('approve', candidate.model_version)}
-                                                >
-                                                    {t('Approve', '批准')}
-                                                </button>
-                                                <button
-                                                    type="button"
-                                                    style={buttonSecondaryStyle}
-                                                    disabled={submitting}
-                                                    onClick={() => handleReleaseAction('reject', candidate.model_version)}
-                                                >
-                                                    {t('Reject', '退回')}
-                                                </button>
-                                            </div>
-                                        ) : null}
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+                            {/* 線上實測對照證據面板 */}
+                            <section style={panelStyle}>
+                                <h2 style={sectionTitleStyle}>{t('Online Performance Evidence', '線上實測對照證據')}</h2>
+                                {!driftReport ? (
+                                    <div style={emptyStateStyle}>
+                                        {t('No recent drift reports found.', '目前無最新漂移報告。')}
                                     </div>
-                                ))}
-                            </div>
-                        </section>
+                                ) : (
+                                    <div style={{ display: 'grid', gap: '12px' }}>
+                                        <div style={{
+                                            ...detailCardStyle,
+                                            border: driftReport.drift_status === 'drifted' ? '1px solid rgba(239, 68, 68, 0.3)' : '1px solid var(--glass-border)',
+                                            background: driftReport.drift_status === 'drifted' ? 'rgba(239, 68, 68, 0.02)' : 'rgba(255, 255, 255, 0.02)',
+                                        }}>
+                                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '10px' }}>
+                                                <div style={{ fontWeight: 'bold', fontSize: '0.95rem', color: 'var(--text-primary)' }}>
+                                                    {t('Status: ', '報告狀態: ')}
+                                                    <span style={{
+                                                        color: driftReport.drift_status === 'drifted' ? '#ef4444' : driftReport.drift_status === 'warning' ? '#f59e0b' : '#10b981',
+                                                        marginLeft: '6px'
+                                                    }}>
+                                                        {driftReport.drift_status.toUpperCase()}
+                                                    </span>
+                                                </div>
+                                                <div style={{ fontSize: '0.8rem', color: 'var(--text-secondary)' }}>
+                                                    {driftReport.window_kind}
+                                                </div>
+                                            </div>
+
+                                            <div style={metricGridStyle}>
+                                                <Metric
+                                                    label={t('Accuracy', '預測準確率')}
+                                                    value={driftReport.report_payload?.accuracy !== undefined ? `${(driftReport.report_payload.accuracy * 100).toFixed(1)}%` : '--'}
+                                                />
+                                                <Metric
+                                                    label={t('MAE', '平均絕對偏差')}
+                                                    value={driftReport.report_payload?.mae !== undefined ? driftReport.report_payload.mae.toFixed(2) : '--'}
+                                                />
+                                            </div>
+
+                                            <div style={{ marginTop: '10px', fontSize: '0.8rem', color: 'var(--text-secondary)' }}>
+                                                {t('Triggered by: ', '觸發人員: ')}{driftReport.triggered_by} · {new Date(driftReport.created_at).toLocaleString()}
+                                            </div>
+
+                                            {driftReport.drift_status === 'drifted' && (
+                                                <div style={{
+                                                    marginTop: '10px',
+                                                    color: '#ef4444',
+                                                    fontSize: '0.85rem',
+                                                    lineHeight: 1.5,
+                                                    background: 'rgba(239, 68, 68, 0.08)',
+                                                    padding: '10px',
+                                                    borderRadius: '8px',
+                                                    border: '1px solid rgba(239, 68, 68, 0.15)'
+                                                }}>
+                                                    ⚠️ {t(
+                                                        'Online model detected significant drift. Release functionality is locked to prevent degraded inference quality. Please perform calibration inside the Monitoring Console first.',
+                                                        '線上模型已檢測出顯著漂移。為了避免劣質預估，已自動鎖定發佈。請先進入監控工作台執行「資料校準」。'
+                                                    )}
+                                                </div>
+                                            )}
+                                        </div>
+                                    </div>
+                                )}
+                            </section>
+
+                            {/* 候選版本 */}
+                            <section style={panelStyle}>
+                                <h2 style={sectionTitleStyle}>{t('Candidates', '候選版本')}</h2>
+                                <div style={{ display: 'grid', gap: '12px' }}>
+                                    {(overview?.candidates || []).map((candidate) => {
+                                        const isDrifted = driftReport?.drift_status === 'drifted';
+                                        return (
+                                            <div key={candidate.model_version} style={detailCardStyle}>
+                                                <div style={{ color: 'var(--text-primary)', fontWeight: 700, marginBottom: '8px' }}>
+                                                    {candidate.model_version}
+                                                </div>
+                                                <div style={{ display: 'grid', gap: '8px', color: 'var(--text-secondary)' }}>
+                                                    <div>status: {candidate.release_status}</div>
+                                                    <div>pairwise_ranking_accuracy: {candidate.pairwise_ranking_accuracy}</div>
+                                                    <div>mean_band_error: {candidate.mean_band_error}</div>
+                                                </div>
+                                                <div style={{ display: 'grid', gap: '6px', marginTop: '12px', fontSize: '0.9rem' }}>
+                                                    {Object.entries(candidate.promotion_gate_summary || {}).map(([key, value]) => (
+                                                        <div key={key} style={gateRowStyle}>
+                                                            <span style={{ color: 'var(--text-secondary)' }}>{key}</span>
+                                                            <strong style={{ color: value ? '#10b981' : '#ef4444' }}>
+                                                                {String(value)}
+                                                            </strong>
+                                                        </div>
+                                                    ))}
+                                                </div>
+                                                {!loadingReleasePermission && canRelease ? (
+                                                    <div style={{ display: 'flex', gap: '10px', marginTop: '16px', flexWrap: 'wrap', flexDirection: 'column' }}>
+                                                        <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap' }}>
+                                                            <button
+                                                                type="button"
+                                                                style={{
+                                                                    ...buttonPrimaryStyle,
+                                                                    opacity: isDrifted ? 0.4 : 1,
+                                                                    cursor: isDrifted ? 'not-allowed' : 'pointer'
+                                                                }}
+                                                                disabled={submitting || isDrifted}
+                                                                onClick={() => handleReleaseAction('approve', candidate.model_version)}
+                                                                title={isDrifted ? t('Locked due to online model drift', '因線上模型漂移而鎖定發佈') : ''}
+                                                            >
+                                                                {t('Approve', '批准')}
+                                                            </button>
+                                                            <button
+                                                                type="button"
+                                                                style={buttonSecondaryStyle}
+                                                                disabled={submitting}
+                                                                onClick={() => handleReleaseAction('reject', candidate.model_version)}
+                                                            >
+                                                                {t('Reject', '退回')}
+                                                            </button>
+                                                        </div>
+                                                        {isDrifted && (
+                                                            <div style={{
+                                                                color: '#ef4444',
+                                                                fontSize: '0.82rem',
+                                                                lineHeight: 1.5,
+                                                                background: 'rgba(239, 68, 68, 0.08)',
+                                                                padding: '10px',
+                                                                borderRadius: '8px',
+                                                                border: '1px solid rgba(239, 68, 68, 0.2)',
+                                                                marginTop: '8px',
+                                                                alignSelf: 'stretch'
+                                                            }}>
+                                                                ⚠️ {t(
+                                                                    `Online model detected significant drift (Accuracy: ${(driftReport?.report_payload?.accuracy * 100).toFixed(1)}% < 60%). Release has been automatically locked to prevent poor predictions. Please run "Data Calibration" in the monitoring workshop before approving new models.`,
+                                                                    `線上模型已檢測出顯著漂移 (Accuracy: ${(driftReport?.report_payload?.accuracy * 100).toFixed(1)}% < 60%)。為了避免劣質預估，已自動鎖定發佈。請先進入監控工作台執行「資料校準」，再行核准新模型。`
+                                                                )}
+                                                            </div>
+                                                        )}
+                                                    </div>
+                                                ) : null}
+                                            </div>
+                                        );
+                                    })}
+                                </div>
+                            </section>
+                        </div>
 
                         <section style={panelStyle}>
                             <h2 style={sectionTitleStyle}>{t('Release History', '版本歷史')}</h2>
@@ -303,6 +412,14 @@ const infoPanelStyle = {
     border: '1px solid rgba(59, 130, 246, 0.18)',
     color: 'var(--text-secondary)',
     lineHeight: 1.7,
+};
+
+const emptyStateStyle = {
+    padding: '14px',
+    borderRadius: '12px',
+    border: '1px dashed var(--glass-border)',
+    color: 'var(--text-secondary)',
+    textAlign: 'center',
 };
 
 export default MetaAndromedaRelease;

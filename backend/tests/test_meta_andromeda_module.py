@@ -1665,3 +1665,61 @@ def test_meta_andromeda_team_member_can_trigger_drift_report_and_approve_release
     assert drift_response.json()["window_kind"] == "last_7d"
     assert release_response.status_code == 200
     assert release_response.json()["action"] == "approve"
+
+
+@pytest.mark.unit
+def test_sync_calibration_dataset_endpoint(meta_andromeda_access, db):
+    from database.models.meta_andromeda import MetaAndromedaObservedCreative, MetaAndromedaScoreEvent
+    
+    # 確保資料庫純淨
+    db.query(MetaAndromedaObservedCreative).delete()
+    db.query(MetaAndromedaScoreEvent).delete()
+    db.commit()
+
+    # 建立一個有偏差的配對 (pred: high vs real: low)
+    obs = MetaAndromedaObservedCreative(
+        id="obs_to_calibrate",
+        asset_uri="cal_uri_1",
+        source_platform="facebook_ads",
+        source_account_id="act_12345",
+        ad_id="ad_cal_1",
+        placement_family="feed",
+        market="TW",
+        media_type="image",
+        observation_window_kind="last_7d",
+        observation_window_start="2026-06-09",
+        observation_window_end="2026-06-16",
+        source_fetched_at="2026-06-16T12:00:00Z",
+        performance_snapshot={"roas": 0.5}  # low (1)
+    )
+    db.add(obs)
+
+    score_evt = MetaAndromedaScoreEvent(
+        id="score_to_calibrate",
+        status="completed",
+        asset_uri="cal_uri_1",
+        asset_type="image",
+        request_mode="manual",
+        objective="CONVERSIONS",
+        placement_family="feed",
+        market="TW",
+        roas_band="high"  # high (3), err = abs(3 - 1) = 2 > 0
+    )
+    db.add(score_evt)
+    db.commit()
+
+    # 呼叫 API 同步
+    response = meta_andromeda_access.post(
+        "/api/meta-andromeda/calibration/sync",
+        json={"window_kind": "last_7d", "excluded_observed_ids": []}
+    )
+    assert response.status_code == 201
+    payload = response.json()
+    assert "dataset_id" in payload
+    assert payload["synced_count"] == 1
+    assert payload["status"] == "queued_for_calibration"
+
+    # 檢查資料庫中 Observed Creative 的 lineage["calibration"] 是否被寫入
+    obs_db = db.query(MetaAndromedaObservedCreative).filter(MetaAndromedaObservedCreative.id == "obs_to_calibrate").first()
+    assert obs_db.lineage["calibration"]["dataset_id"] == payload["dataset_id"]
+    assert obs_db.lineage["calibration"]["error"] == 2

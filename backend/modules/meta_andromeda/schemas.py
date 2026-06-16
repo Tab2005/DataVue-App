@@ -96,6 +96,17 @@ class DriftTriggerRequest(BaseModel):
     note: str | None = None
 
 
+class CalibrationSyncRequest(BaseModel):
+    window_kind: str
+    excluded_observed_ids: list[str] = Field(default_factory=list)
+
+
+class CalibrationSyncResponse(BaseModel):
+    dataset_id: str
+    synced_count: int
+    status: str
+
+
 class ReviewQueueItemResponse(BaseModel):
     score_event_id: str
     status: str

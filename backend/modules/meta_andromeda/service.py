@@ -776,3 +776,15 @@ class MetaAndromedaService:
             actor=actor,
             note=note,
         )
+
+    @staticmethod
+    def sync_calibration_dataset(
+        db,
+        window_kind: str,
+        excluded_observed_ids: list[str],
+    ) -> dict:
+        return repository.sync_calibration_dataset(
+            db,
+            window_kind=window_kind,
+            excluded_observed_ids=excluded_observed_ids,
+        )

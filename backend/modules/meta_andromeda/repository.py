@@ -611,6 +611,7 @@ class MetaAndromedaRepository:
             total_error += err
             
             matched_pairs.append({
+                "id": obs.id,
                 "ad_id": obs.ad_id,
                 "ad_name": obs.ad_name,
                 "prediction_band": pred_band,
@@ -1064,6 +1065,81 @@ class MetaAndromedaRepository:
             "actor": actor,
             "created_at": created_at,
             "note": note,
+        }
+
+    def sync_calibration_dataset(
+        self,
+        db: Session,
+        window_kind: str,
+        excluded_observed_ids: list[str],
+    ) -> dict:
+        # 1. 撈取該窗口的所有 Observed Creative
+        observed_list = (
+            db.query(MetaAndromedaObservedCreative)
+            .filter(MetaAndromedaObservedCreative.observation_window_kind == window_kind)
+            .all()
+        )
+        
+        # 產生一個 dataset_id
+        import uuid
+        dataset_id = f"cal_ds_{datetime.now(timezone.utc).strftime('%Y%m%d')}_{uuid.uuid4().hex[:8]}"
+        synced_count = 0
+        band_score = {"low": 1, "mid": 2, "high": 3}
+        
+        # 2. 篩選有偏差且未被排除的進行標記
+        for obs in observed_list:
+            if obs.id in excluded_observed_ids:
+                continue
+            if not obs.asset_uri:
+                continue
+                
+            # 尋找匹配的 Completed ScoreEvent
+            pred = (
+                db.query(MetaAndromedaScoreEvent)
+                .filter(
+                    MetaAndromedaScoreEvent.asset_uri == obs.asset_uri,
+                    MetaAndromedaScoreEvent.status == "completed"
+                )
+                .order_by(MetaAndromedaScoreEvent.completed_at.desc())
+                .first()
+            )
+            
+            if not pred:
+                continue
+                
+            # 提取實際 ROAS 並轉換
+            real_roas = obs.performance_snapshot.get("roas", 0.0) if obs.performance_snapshot else 0.0
+            if real_roas < 1.5:
+                real_band = "low"
+            elif real_roas < 3.5:
+                real_band = "mid"
+            else:
+                real_band = "high"
+                
+            pred_band = pred.roas_band or "low"
+            
+            # 只有有偏差的才需要校準
+            err = abs(band_score.get(pred_band, 1) - band_score.get(real_band, 1))
+            if err > 0:
+                # 更新 lineage
+                lineage = deepcopy(obs.lineage or {})
+                lineage["calibration"] = {
+                    "dataset_id": dataset_id,
+                    "synced_at": datetime.now(timezone.utc).isoformat(),
+                    "prediction_band": pred_band,
+                    "observed_band": real_band,
+                    "error": err
+                }
+                obs.lineage = lineage
+                synced_count += 1
+                
+        if synced_count > 0:
+            db.commit()
+            
+        return {
+            "dataset_id": dataset_id,
+            "synced_count": synced_count,
+            "status": "queued_for_calibration" if synced_count > 0 else "no_data_to_sync"
         }
 
 
