@@ -356,6 +356,7 @@ const Analytics = () => {
     const [filterKeyword, setFilterKeyword] = useState('');
     const [filterMode, setFilterMode] = useState('include'); // include, exclude
     const [filterActiveOnly, setFilterActiveOnly] = useState(false);
+    const [filterObservationImported, setFilterObservationImported] = useState('all'); // 'all', 'imported', 'not_imported'
 
     // Sorting State
     const [sortConfig, setSortConfig] = useState({ key: null, direction: 'desc' });
@@ -790,12 +791,26 @@ const Analytics = () => {
                 const name = (row.name || row.campaign_name || row.adset_name || row.ad_name || '').toLowerCase();
                 const match = name.includes(keyword);
 
-                return filterMode === 'include' ? match : !match;
+                if (filterMode === 'include') {
+                    if (!match) return false;
+                } else {
+                    if (match) return false;
+                }
+            }
+
+            // 3. Observation Filter (Only when level is 'ad')
+            if (level === 'ad' && filterObservationImported !== 'all') {
+                const importState = observationImportState[row.id]?.status;
+                if (filterObservationImported === 'imported') {
+                    if (importState !== 'success') return false;
+                } else if (filterObservationImported === 'not_imported') {
+                    if (importState === 'success') return false;
+                }
             }
 
             return true;
         });
-    }, [reportData, filterKeyword, filterMode, filterActiveOnly]);
+    }, [reportData, filterKeyword, filterMode, filterActiveOnly, filterObservationImported, observationImportState, level]);
 
     const filteredPrevData = React.useMemo(() => {
         if (!prevReportData) return [];
@@ -808,11 +823,23 @@ const Analytics = () => {
                 const keyword = filterKeyword.toLowerCase();
                 const name = (row.name || row.campaign_name || row.adset_name || row.ad_name || '').toLowerCase();
                 const match = name.includes(keyword);
-                return filterMode === 'include' ? match : !match;
+                if (filterMode === 'include') {
+                    if (!match) return false;
+                } else {
+                    if (match) return false;
+                }
+            }
+            if (level === 'ad' && filterObservationImported !== 'all') {
+                const importState = observationImportState[row.id]?.status;
+                if (filterObservationImported === 'imported') {
+                    if (importState !== 'success') return false;
+                } else if (filterObservationImported === 'not_imported') {
+                    if (importState === 'success') return false;
+                }
             }
             return true;
         });
-    }, [prevReportData, filterKeyword, filterMode, filterActiveOnly]);
+    }, [prevReportData, filterKeyword, filterMode, filterActiveOnly, filterObservationImported, observationImportState, level]);
 
     const canUseObservationImport = level === 'ad' && hasMetaAndromedaAccess && hasFbAnalyticsPermission;
     const observationImportableRows = useMemo(() => {
@@ -1374,6 +1401,28 @@ const Analytics = () => {
                                 </span>
                             </div>
                         </label>
+
+                        {level === 'ad' && (
+                            <>
+                                <div style={{ width: '1px', height: '24px', background: 'var(--glass-border)' }}></div>
+                                <select
+                                    value={filterObservationImported}
+                                    onChange={(e) => setFilterObservationImported(e.target.value)}
+                                    style={{
+                                        background: 'transparent',
+                                        border: 'none',
+                                        color: 'var(--text-secondary)',
+                                        fontSize: '0.9rem',
+                                        cursor: 'pointer',
+                                        outline: 'none'
+                                    }}
+                                >
+                                    <option value="all">{language === 'zh' ? '全部匯入狀態' : 'All Import Status'}</option>
+                                    <option value="imported">{language === 'zh' ? '已送出' : 'Imported'}</option>
+                                    <option value="not_imported">{language === 'zh' ? '未送出' : 'Not Imported'}</option>
+                                </select>
+                            </>
+                        )}
                     </div>
 
                     {activeView === 'custom' && showMetricPanel && (
@@ -2310,7 +2359,25 @@ const Analytics = () => {
                                                                 whiteSpace: 'nowrap'
                                                             }}>
                                                                 {observationImportState[row.id]?.status === 'success'
-                                                                    ? (language === 'zh' ? '已送出' : 'Imported')
+                                                                    ? (
+                                                                        <span style={{ display: 'inline-flex', alignItems: 'center', gap: '6px' }}>
+                                                                            <span>{language === 'zh' ? '已送出' : 'Imported'}</span>
+                                                                            <a
+                                                                                href="/meta-andromeda/monitoring"
+                                                                                style={{
+                                                                                    color: '#34d399',
+                                                                                    textDecoration: 'none',
+                                                                                    borderBottom: '1px dashed #34d399',
+                                                                                    cursor: 'pointer',
+                                                                                    fontWeight: 'normal',
+                                                                                    fontSize: '0.7rem',
+                                                                                    marginLeft: '2px'
+                                                                                }}
+                                                                            >
+                                                                                {language === 'zh' ? '查看' : 'View'}
+                                                                            </a>
+                                                                        </span>
+                                                                    )
                                                                     : observationImportState[row.id]?.status === 'error'
                                                                         ? (language === 'zh' ? '失敗' : 'Failed')
                                                                         : observationImportState[row.id]?.status === 'loading'
