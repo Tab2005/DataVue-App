@@ -329,19 +329,27 @@ class MetaAndromedaService:
         stored_asset = None
 
         if candidate.media_url and candidate.media_type in {"image", "video"}:
-            snapshot = await MetaAndromedaService._download_observed_asset_snapshot(
-                media_url=candidate.media_url,
-                ad_id=candidate.ad_id,
-                media_type=candidate.media_type,
-            )
-            asset_record = storage_adapter.store_asset(
-                file_bytes=snapshot["file_bytes"],
-                asset_type=snapshot["asset_type"],
-                source_filename=snapshot["source_filename"],
-                uploaded_by=user_id,
-                content_type=snapshot["content_type"],
-            )
-            stored_asset = repository.create_uploaded_asset(db, asset_record=asset_record)
+            try:
+                snapshot = await MetaAndromedaService._download_observed_asset_snapshot(
+                    media_url=candidate.media_url,
+                    ad_id=candidate.ad_id,
+                    media_type=candidate.media_type,
+                )
+                asset_record = storage_adapter.store_asset(
+                    file_bytes=snapshot["file_bytes"],
+                    asset_type=snapshot["asset_type"],
+                    source_filename=snapshot["source_filename"],
+                    uploaded_by=user_id,
+                    content_type=snapshot["content_type"],
+                )
+                stored_asset = repository.create_uploaded_asset(db, asset_record=asset_record)
+            except Exception as e:
+                import logging
+                logger = logging.getLogger(__name__)
+                logger.warning(
+                    f"[Observation Import] Failed to download or store asset from {candidate.media_url} for ad_id {candidate.ad_id}: {e}",
+                    exc_info=True
+                )
 
         observed_record = repository.create_observed_creative(
             db,

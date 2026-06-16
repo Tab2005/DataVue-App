@@ -201,26 +201,28 @@
 
 ## 任務清單
 
-- [ ] Task 1: 建立 observation import schema 與 endpoint 骨架
+- [x] Task 1: 建立 observation import schema 與 endpoint 骨架 (已於 2026-06-16 前完成)
   - Acceptance: `/api/meta-andromeda/evaluations/import/facebook-ads` 存在
   - Acceptance: 第一階段僅接受 `last_7d / last_30d / lifetime`
   - Verify: backend schema / router 測試
 
-- [ ] Task 2: 建立 `facebook_ads_importer`
+- [x] Task 2: 建立 `facebook_ads_importer` (已於 2026-06-16 前完成)
   - Acceptance: 可產生 `ObservedCreativeCandidate`
   - Verify: importer 單元測試
 
-- [ ] Task 3: 完成素材轉存與 observed creative record 建立
+- [x] Task 3: 完成素材轉存與 observed creative record 建立 (已於 2026-06-16 修復錯誤並完成)
   - Acceptance: 匯入後可取得 `observed_creative_id` 與 `asset_uri`
   - Verify: backend 整合測試
+  - **修復備註**：已解決 FB 素材下載快照可能因過期或 403 阻擋導致的 500 錯誤，加入 `try-except` 下載容錯機制；同時在例外 Handlers 加入 CORS 雙重保險，避免後端報錯被跨域錯誤掩蓋。
 
-- [ ] Task 4: 補齊權限與 team-aware 測試
+- [x] Task 4: 補齊權限與 team-aware 測試 (已於 2026-06-16 前完成)
   - Acceptance: 權限 allow / deny 行為正確
   - Verify: 權限測試
 
-- [ ] Task 5: 在 `FB Ads` 畫面加 observed import 按鈕
+- [x] Task 5: 在 `FB Ads` 畫面加 observed import 按鈕 (已於 2026-06-16 完成)
   - Acceptance: 前端可觸發 observation import
   - Verify: `npm run build`
+  - **修復備註**：解決 `lifetime` 模式在前端觸發時，因追溯範圍過大導致 FB API 37個月限制超時錯誤。目前已優化至最多追溯 3 年內。
 
 - [ ] Task 6: 更新文件並整理第二階段掛點
   - Acceptance: 文件與實作同步

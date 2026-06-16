@@ -123,9 +123,23 @@ app.add_middleware(GZipMiddleware, minimum_size=1000)
 # Exception Handlers
 # ============================================================
 
+import re
+
+def _add_cors_headers_to_response(request: Request, response: JSONResponse) -> JSONResponse:
+    origin = request.headers.get("origin")
+    if not origin:
+        return response
+    if re.match(allow_origin_regex, origin):
+        response.headers["Access-Control-Allow-Origin"] = origin
+        response.headers["Access-Control-Allow-Credentials"] = "true"
+        response.headers["Access-Control-Allow-Methods"] = "*"
+        response.headers["Access-Control-Allow-Headers"] = "*"
+    return response
+
+
 @app.exception_handler(RateLimitExceeded)
 async def rate_limit_handler(request: Request, exc: RateLimitExceeded):
-    return JSONResponse(
+    response = JSONResponse(
         status_code=429,
         content={
             "error": "請求過於頻繁",
@@ -134,11 +148,12 @@ async def rate_limit_handler(request: Request, exc: RateLimitExceeded):
         },
         headers={"Retry-After": str(getattr(exc, "retry_after", 60))},
     )
+    return _add_cors_headers_to_response(request, response)
 
 
 @app.exception_handler(AppException)
 async def app_exception_handler(request: Request, exc: AppException):
-    return JSONResponse(
+    response = JSONResponse(
         status_code=exc.status_code,
         content={
             "error": exc.message,
@@ -147,11 +162,12 @@ async def app_exception_handler(request: Request, exc: AppException):
             "error_type": "app_error"
         }
     )
+    return _add_cors_headers_to_response(request, response)
 
 
 @app.exception_handler(HTTPException)
 async def http_exception_handler(request: Request, exc: HTTPException):
-    return JSONResponse(
+    response = JSONResponse(
         status_code=exc.status_code,
         content={
             "error": str(exc.detail),
@@ -159,13 +175,14 @@ async def http_exception_handler(request: Request, exc: HTTPException):
             "error_type": "http_error"
         }
     )
+    return _add_cors_headers_to_response(request, response)
 
 
 @app.exception_handler(Exception)
 async def general_exception_handler(request: Request, exc: Exception):
     logger.error(f"Unhandled exception: {exc}")
     logger.error(traceback.format_exc())
-    return JSONResponse(
+    response = JSONResponse(
         status_code=500,
         content={
             "error": "Internal server error",
@@ -173,6 +190,7 @@ async def general_exception_handler(request: Request, exc: Exception):
             "error_type": "unhandled_exception"
         }
     )
+    return _add_cors_headers_to_response(request, response)
 
 
 # ============================================================

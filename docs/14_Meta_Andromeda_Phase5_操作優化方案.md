@@ -173,15 +173,52 @@
 
 ## 建議實作範圍
 
-### Phase 5.1
+### Phase 5.1（已完成）
 
-先完成最小高價值優化：
+已完成最小高價值優化，實作細節如下：
 
-1. 新增固定 `操作` 欄
-2. 將單筆匯入按鈕移入 `操作` 欄
-3. 新增列選取 checkbox
-4. 新增批次匯入工具列
-5. 批次結果顯示為摘要 + 列內 badge
+1. **新增固定 `操作` 欄**：在 `ad-level` 表格右側新增了固定的操作列，不再干擾 ad 名稱的閱讀。
+2. **單筆匯入按鈕移入 `操作` 欄**：使用者點擊「送出」按鈕即可針對單筆進行匯入，並在列內直接看見結果。
+3. **新增列選取 checkbox**：僅在符合 `canUseObservationImport` 條件（例如有 `ad_id`）的列上顯示批次 checkbox，並提供「全選可匯入項目」與「清除選取」的輔助功能。
+4. **新增批次匯入工具列**：在表格上方新增「Meta Andromeda 匯入操作」工具列，顯示當前選取筆數與可匯入筆數，並提供「批次送出」按鈕。
+5. **分層狀態回饋**：
+   - **全域摘要**：批次匯入完成後，在工具列顯示成功、失敗與總筆數摘要。
+   - **列內 badge**：各列顯示「未送出 / 匯入中 / 已送出 / 失敗」的精簡標籤，若有錯誤訊息，亦以副標形式收納於操作欄內。
+
+#### 核心前端實作程式碼片段 (於 [Analytics.jsx](file:///C:/Users/BWM2/Documents/python/DataVue-App/frontend/src/pages/Analytics.jsx))
+
+```javascript
+// 批次匯入處理邏輯
+const handleBatchObservationImport = useCallback(async () => {
+    if (!selectedObservationRows.length) return;
+
+    setObservationBatchSummary({
+        status: 'loading',
+        message: language === 'zh'
+            ? `批次匯入中，共 ${selectedObservationRows.length} 筆。`
+            : `Batch import in progress for ${selectedObservationRows.length} ads.`,
+    });
+
+    let successCount = 0;
+    let failureCount = 0;
+
+    for (const row of selectedObservationRows) {
+        const result = await importObservationRow(row);
+        if (result.ok) {
+            successCount += 1;
+        } else {
+            failureCount += 1;
+        }
+    }
+
+    setObservationBatchSummary({
+        status: failureCount === 0 ? 'success' : 'warning',
+        message: language === 'zh'
+            ? `批次匯入完成，成功 ${successCount} 筆，失敗 ${failureCount} 筆。`
+            : `Batch import completed: ${successCount} succeeded, ${failureCount} failed.`,
+    });
+}, [importObservationRow, language, selectedObservationRows]);
+```
 
 ### Phase 5.2
 

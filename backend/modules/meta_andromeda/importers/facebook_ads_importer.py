@@ -20,7 +20,9 @@ def resolve_observation_window(
     elif window_kind == "last_30d":
         start = current_day - timedelta(days=29)
     elif window_kind == "lifetime":
-        start = _LIFETIME_START
+        # 限制 lifetime start 最多追溯到 3 年前 (約 1095 天)，以防 FB Graph API 報錯或 timeout (37個月限制)
+        three_years_ago = current_day - timedelta(days=3 * 365)
+        start = max(_LIFETIME_START, three_years_ago)
     else:
         raise ValueError(f"Unsupported observation window kind: {window_kind}")
 
