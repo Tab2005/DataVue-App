@@ -283,11 +283,92 @@ def test_meta_andromeda_drift_trigger_creates_report_and_alert(meta_andromeda_ac
     assert response.status_code == 201
     payload = response.json()
     assert payload["window_kind"] == "last_7d"
-    assert payload["drift_status"] == "warning"
+    assert payload["drift_status"] == "insufficient_data"
 
     monitoring = meta_andromeda_access.get("/api/meta-andromeda/monitoring/summary").json()
-    assert monitoring["active_alerts"]
     assert any(report["window_kind"] == "last_7d" for report in monitoring["latest_drift_reports"])
+
+
+@pytest.mark.unit
+def test_meta_andromeda_drift_accuracy_and_mae_calculation(meta_andromeda_access, db):
+    from database.models.meta_andromeda import MetaAndromedaObservedCreative, MetaAndromedaScoreEvent
+    
+    # 清除現有的相關資料，確保測試環境純淨
+    db.query(MetaAndromedaObservedCreative).delete()
+    db.query(MetaAndromedaScoreEvent).delete()
+    db.commit()
+
+    # 1. 建立 5 筆預測與真實績效完全吻合的 healthy 數據
+    # 區間切分: low < 1.5, 1.5 <= mid < 3.5, high >= 3.5
+    test_cases = [
+        {"uri": "uri_1", "pred_band": "high", "real_roas": 5.0},  # high == high
+        {"uri": "uri_2", "pred_band": "mid", "real_roas": 2.0},   # mid == mid
+        {"uri": "uri_3", "pred_band": "low", "real_roas": 0.5},   # low == low
+        {"uri": "uri_4", "pred_band": "high", "real_roas": 4.0},  # high == high
+        {"uri": "uri_5", "pred_band": "mid", "real_roas": 3.0},   # mid == mid
+    ]
+
+    for idx, tc in enumerate(test_cases):
+        # 建立 Observed Creative
+        obs = MetaAndromedaObservedCreative(
+            id=f"test_obs_{idx}",
+            asset_uri=tc["uri"],
+            source_platform="facebook_ads",
+            source_account_id="act_12345",
+            ad_id=f"ad_{idx}",
+            placement_family="feed",
+            market="TW",
+            media_type="image",
+            observation_window_kind="last_7d",
+            observation_window_start="2026-06-09",
+            observation_window_end="2026-06-16",
+            source_fetched_at="2026-06-16T12:00:00Z",
+            performance_snapshot={"roas": tc["real_roas"]}
+        )
+        db.add(obs)
+
+        # 建立對應的 completed ScoreEvent
+        score_evt = MetaAndromedaScoreEvent(
+            id=f"test_score_{idx}",
+            status="completed",
+            asset_uri=tc["uri"],
+            asset_type="image",
+            request_mode="manual",
+            objective="CONVERSIONS",
+            placement_family="feed",
+            market="TW",
+            roas_band=tc["pred_band"]
+        )
+        db.add(score_evt)
+
+    db.commit()
+
+    # 觸發 Drift 診斷
+    response = meta_andromeda_access.post(
+        "/api/meta-andromeda/drift:trigger",
+        json={"window_kind": "last_7d", "note": "healthy check"},
+    )
+    assert response.status_code == 201
+    payload = response.json()
+    assert payload["drift_status"] == "healthy"
+    assert payload["report_payload"]["accuracy"] == 1.0
+    assert payload["report_payload"]["mae"] == 0.0
+
+    # 2. 修改為預估與實際嚴重偏離的 drifted 數據
+    # 5 筆預估都是 high (3)，實際均為 low (1, ROAS=0.5)
+    db.query(MetaAndromedaScoreEvent).update({"roas_band": "high"})
+    db.commit()
+    
+    # 重新觸發
+    response2 = meta_andromeda_access.post(
+        "/api/meta-andromeda/drift:trigger",
+        json={"window_kind": "last_7d", "note": "drifted check"},
+    )
+    assert response2.status_code == 201
+    payload2 = response2.json()
+    assert payload2["drift_status"] == "drifted"
+    assert payload2["report_payload"]["accuracy"] == 0.4
+    assert payload2["report_payload"]["mae"] == 0.8
 
 
 @pytest.mark.unit

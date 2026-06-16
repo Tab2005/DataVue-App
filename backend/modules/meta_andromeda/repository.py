@@ -557,40 +557,92 @@ class MetaAndromedaRepository:
         note: str | None = None,
     ):
         self.ensure_seed_data(db)
-        total = db.query(MetaAndromedaScoreEvent).count()
-        completed = db.query(MetaAndromedaScoreEvent).filter(MetaAndromedaScoreEvent.status == "completed").count()
-        failed = db.query(MetaAndromedaScoreEvent).filter(MetaAndromedaScoreEvent.status == "failed").count()
-        retrying = db.query(MetaAndromedaScoreEvent).filter(MetaAndromedaScoreEvent.attempt_count > 1).count()
-        dead_letter_total = db.query(MetaAndromedaDeadLetter).count()
-        high = db.query(MetaAndromedaScoreEvent).filter(MetaAndromedaScoreEvent.roas_band == "high").count()
-        mid = db.query(MetaAndromedaScoreEvent).filter(MetaAndromedaScoreEvent.roas_band == "mid").count()
-        low = db.query(MetaAndromedaScoreEvent).filter(MetaAndromedaScoreEvent.roas_band == "low").count()
-
-        distribution_base = completed or 1
-        high_ratio = round(high / distribution_base, 4)
-        low_ratio = round(low / distribution_base, 4)
-        if dead_letter_total > 0 or failed > 0:
-            drift_status = "warning"
-            severity = "high" if dead_letter_total > 0 else "medium"
-            summary = (
-                f"Detected failure-side drift signals for {window_kind}: "
-                f"{failed} failed score events, {dead_letter_total} dead letters."
+        # 1. 撈取該窗口的所有 Observed Creative
+        observed_list = (
+            db.query(MetaAndromedaObservedCreative)
+            .filter(MetaAndromedaObservedCreative.observation_window_kind == window_kind)
+            .all()
+        )
+        
+        matched_pairs = []
+        correct_count = 0
+        total_error = 0.0
+        
+        # 區間映射字典
+        band_score = {"low": 1, "mid": 2, "high": 3}
+        
+        # 2. 逐筆進行 Prediction 匹配與比對
+        for obs in observed_list:
+            if not obs.asset_uri:
+                continue
+                
+            # 尋找對應的 Completed ScoreEvent (以 asset_uri 關聯，取最新的成功預估)
+            pred = (
+                db.query(MetaAndromedaScoreEvent)
+                .filter(
+                    MetaAndromedaScoreEvent.asset_uri == obs.asset_uri,
+                    MetaAndromedaScoreEvent.status == "completed"
+                )
+                .order_by(MetaAndromedaScoreEvent.completed_at.desc())
+                .first()
             )
-        elif retrying > 0:
-            drift_status = "watch"
-            severity = "medium"
-            summary = (
-                f"Detected retry pressure for {window_kind}: "
-                f"{retrying} score events retried, review runtime health before release."
-            )
-        else:
-            drift_status = "stable"
+            
+            if not pred:
+                continue
+                
+            # 提取真實 ROAS 并轉成 Band
+            real_roas = obs.performance_snapshot.get("roas", 0.0) if obs.performance_snapshot else 0.0
+            
+            if real_roas < 1.5:
+                real_band = "low"
+            elif real_roas < 3.5:
+                real_band = "mid"
+            else:
+                real_band = "high"
+                
+            pred_band = pred.roas_band or "low"
+            
+            is_match = (pred_band == real_band)
+            if is_match:
+                correct_count += 1
+                
+            # 計算 MAE 誤差 (數值距離)
+            err = abs(band_score.get(pred_band, 1) - band_score.get(real_band, 1))
+            total_error += err
+            
+            matched_pairs.append({
+                "ad_id": obs.ad_id,
+                "ad_name": obs.ad_name,
+                "prediction_band": pred_band,
+                "observed_band": real_band,
+                "real_roas": real_roas,
+                "error": err
+            })
+            
+        # 3. 計算統計指標
+        total_matched = len(matched_pairs)
+        accuracy = correct_count / total_matched if total_matched > 0 else 0.0
+        mae = total_error / total_matched if total_matched > 0 else 0.0
+        
+        # 4. 判定漂移健康度
+        if total_matched < 5:
+            drift_status = "insufficient_data"
             severity = "info"
-            summary = (
-                f"No material drift detected for {window_kind}: "
-                f"{completed}/{total} score events completed without final failure."
-            )
-
+            summary = f"數據量不足 (僅成功匹配 {total_matched} 筆)，無法評估模型漂移狀態。"
+        elif accuracy >= 0.75 and mae <= 0.35:
+            drift_status = "healthy"
+            severity = "info"
+            summary = f"模型表現穩定 (Accuracy: {accuracy:.1%}, MAE: {mae:.2f})，目前無顯著漂移。"
+        elif accuracy >= 0.60 and mae <= 0.50:
+            drift_status = "warning"
+            severity = "medium"
+            summary = f"模型出現輕微偏差 (Accuracy: {accuracy:.1%}, MAE: {mae:.2f})，請密切關注。"
+        else:
+            drift_status = "drifted"
+            severity = "high"
+            summary = f"模型預估已出現顯著漂移！(Accuracy: {accuracy:.1%}, MAE: {mae:.2f})，建議進行資料校準。"
+    
+        # 5. 寫入資料庫
         report = MetaAndromedaDriftReport(
             window_kind=window_kind,
             drift_status=drift_status,
@@ -599,19 +651,17 @@ class MetaAndromedaRepository:
             triggered_by=triggered_by,
             note=note,
             report_payload={
-                "score_total": total,
-                "completed_total": completed,
-                "failed_total": failed,
-                "dead_letter_total": dead_letter_total,
-                "retrying_total": retrying,
-                "high_ratio": high_ratio,
-                "mid_ratio": round(mid / distribution_base, 4),
-                "low_ratio": low_ratio,
-            },
+                "total_observed": len(observed_list),
+                "total_matched": total_matched,
+                "accuracy": round(accuracy, 4),
+                "mae": round(mae, 4),
+                "matched_details": matched_pairs
+            }
         )
         db.add(report)
         db.commit()
         db.refresh(report)
+        
         return self._drift_report_to_dict(report)
 
     def get_release_overview(self, db: Session):
