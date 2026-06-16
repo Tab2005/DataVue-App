@@ -731,10 +731,22 @@ class MetaAndromedaRepository:
         }
 
     def create_observed_creative(self, db: Session, observed_record: dict):
-        observed = MetaAndromedaObservedCreative(**observed_record)
-        db.add(observed)
-        db.commit()
-        db.refresh(observed)
+        existing = db.query(MetaAndromedaObservedCreative).filter(
+            MetaAndromedaObservedCreative.id == observed_record["id"]
+        ).first()
+
+        if existing:
+            for key, val in observed_record.items():
+                if key != "id":
+                    setattr(existing, key, val)
+            db.commit()
+            db.refresh(existing)
+            observed = existing
+        else:
+            observed = MetaAndromedaObservedCreative(**observed_record)
+            db.add(observed)
+            db.commit()
+            db.refresh(observed)
         return {
             "observed_creative_id": observed.id,
             "asset_id": observed.asset_id,

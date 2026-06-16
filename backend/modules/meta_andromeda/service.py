@@ -330,7 +330,7 @@ class MetaAndromedaService:
         user_db_id = db_user.id if db_user else user_id
 
         today = datetime.now(UTC).date()
-        observed_creative_id = f"ma_obs_{today.strftime('%Y%m%d')}_{candidate.ad_id[-6:]}"
+        observed_creative_id = f"ma_obs_{today.strftime('%Y%m%d')}_{candidate.ad_id[-6:]}_{candidate.observation_window_kind}"
         stored_asset = None
 
         if candidate.media_url and candidate.media_type in {"image", "video"}:
