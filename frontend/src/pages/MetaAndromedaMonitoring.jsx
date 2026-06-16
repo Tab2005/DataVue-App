@@ -409,8 +409,13 @@ const MetaAndromedaMonitoring = () => {
                                                     : 'var(--glass-border)',
                                             }}
                                         >
-                                            <div style={{ color: 'var(--accent-primary)', fontWeight: 700, marginBottom: '6px' }}>
-                                                {getTranslation(event.event_type)} · {event.queue_host}
+                                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '6px' }}>
+                                                <div style={{ color: 'var(--accent-primary)', fontWeight: 700 }}>
+                                                    {getTranslation(event.event_type)} · {event.queue_host}
+                                                </div>
+                                                <span style={{ fontSize: '0.8rem', color: 'var(--text-secondary)' }}>
+                                                    {event.created_at || '--'}
+                                                </span>
                                             </div>
                                             <div style={{ color: 'var(--text-secondary)', lineHeight: 1.6, fontSize: '0.9rem' }}>
                                                 {t('status', '狀態')}: {getTranslation(event.status)} / {t('attempt', '嘗試次數')}: {event.attempt_count}
@@ -446,8 +451,13 @@ const MetaAndromedaMonitoring = () => {
                                                     : 'var(--glass-border)',
                                             }}
                                         >
-                                            <div style={{ color: '#f59e0b', fontWeight: 700, marginBottom: '6px' }}>
-                                                {getTranslation(item.failure_stage)} · {item.queue_host}
+                                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '6px' }}>
+                                                <div style={{ color: '#f59e0b', fontWeight: 700 }}>
+                                                    {getTranslation(item.failure_stage)} · {item.queue_host}
+                                                </div>
+                                                <span style={{ fontSize: '0.8rem', color: 'var(--text-secondary)' }}>
+                                                    {item.created_at || '--'}
+                                                </span>
                                             </div>
                                             <div style={{ color: 'var(--text-secondary)', lineHeight: 1.6, fontSize: '0.9rem' }}>
                                                 {item.score_event_id}
