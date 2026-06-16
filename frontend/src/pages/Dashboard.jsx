@@ -222,8 +222,8 @@ function Dashboard() {
                                 value={selectedMetric}
                                 onChange={(e) => setSelectedMetric(e.target.value)}
                                 style={{
-                                    background: 'rgba(255, 255, 255, 0.05)',
-                                    color: 'var(--text-primary)',
+                                    background: '#ffffff',
+                                    color: '#000000',
                                     border: '1px solid var(--glass-border)',
                                     padding: '8px 12px',
                                     borderRadius: '8px',
@@ -233,7 +233,7 @@ function Dashboard() {
                                 }}
                             >
                                 {kpiList.map(opt => (
-                                    <option key={opt.key} value={opt.key} style={{ background: '#1a1d21' }}>
+                                    <option key={opt.key} value={opt.key}>
                                         {opt.title}
                                     </option>
                                 ))}

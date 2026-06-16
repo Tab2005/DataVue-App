@@ -1661,8 +1661,8 @@ const GA4Stats = ({ language, isMobile }) => {
                                 padding: '10px 12px',
                                 border: '1px solid var(--glass-border)',
                                 borderRadius: '8px',
-                                background: 'rgba(255, 255, 255, 0.05)',
-                                color: 'var(--text-primary)',
+                                background: '#ffffff',
+                                color: '#000000',
                                 fontSize: '14px'
                             }}
                         >
@@ -1694,8 +1694,8 @@ const GA4Stats = ({ language, isMobile }) => {
                                 padding: '10px 12px',
                                 border: '1px solid var(--glass-border)',
                                 borderRadius: '8px',
-                                background: 'rgba(255, 255, 255, 0.05)',
-                                color: 'var(--text-primary)',
+                                background: '#ffffff',
+                                color: '#000000',
                                 fontSize: '14px'
                             }}
                         >
@@ -1726,8 +1726,8 @@ const GA4Stats = ({ language, isMobile }) => {
                                 padding: '10px 12px',
                                 border: '1px solid var(--glass-border)',
                                 borderRadius: '8px',
-                                background: 'rgba(255, 255, 255, 0.05)',
-                                color: 'var(--text-primary)',
+                                background: '#ffffff',
+                                color: '#000000',
                                 fontSize: '14px'
                             }}
                         >
@@ -1748,8 +1748,8 @@ const GA4Stats = ({ language, isMobile }) => {
                                 padding: '10px 20px',
                                 border: '1px solid var(--glass-border)',
                                 borderRadius: '8px',
-                                background: 'rgba(255, 255, 255, 0.05)',
-                                color: 'var(--text-primary)',
+                                background: '#ffffff',
+                                color: '#000000',
                                 fontSize: '14px',
                                 cursor: loading || !selectedProperty ? 'not-allowed' : 'pointer',
                                 opacity: loading || !selectedProperty ? 0.5 : 1,
@@ -1799,10 +1799,10 @@ const GA4Stats = ({ language, isMobile }) => {
                                         padding: '10px 12px',
                                         border: '1px solid var(--glass-border)',
                                         borderRadius: '8px',
-                                        background: 'rgba(255, 255, 255, 0.05)',
-                                        color: 'var(--text-primary)',
+                                        background: '#ffffff',
+                                        color: '#000000',
                                         fontSize: '14px',
-                                        colorScheme: 'dark'
+                                        colorScheme: 'light'
                                     }}
                                 />
                             </div>
@@ -1829,10 +1829,10 @@ const GA4Stats = ({ language, isMobile }) => {
                                         padding: '10px 12px',
                                         border: '1px solid var(--glass-border)',
                                         borderRadius: '8px',
-                                        background: 'rgba(255, 255, 255, 0.05)',
-                                        color: 'var(--text-primary)',
+                                        background: '#ffffff',
+                                        color: '#000000',
                                         fontSize: '14px',
-                                        colorScheme: 'dark'
+                                        colorScheme: 'light'
                                     }}
                                 />
                             </div>
@@ -2064,8 +2064,8 @@ const GA4Stats = ({ language, isMobile }) => {
                                     padding: '10px 12px',
                                     border: '1px solid var(--glass-border)',
                                     borderRadius: '8px',
-                                    background: 'rgba(255, 255, 255, 0.05)',
-                                    color: 'var(--text-primary)',
+                                    background: '#ffffff',
+                                    color: '#000000',
                                     fontSize: '14px'
                                 }}
                             >
@@ -2116,8 +2116,8 @@ const GA4Stats = ({ language, isMobile }) => {
                                         padding: '10px 12px',
                                         border: '1px solid var(--glass-border)',
                                         borderRadius: '8px',
-                                        background: 'rgba(255, 255, 255, 0.05)',
-                                        color: 'var(--text-primary)',
+                                        background: '#ffffff',
+                                        color: '#000000',
                                         fontSize: '14px'
                                     }}
                                 >
@@ -2216,8 +2216,8 @@ const GA4Stats = ({ language, isMobile }) => {
                                     padding: '10px 12px',
                                     border: '1px solid var(--glass-border)',
                                     borderRadius: '8px',
-                                    background: 'rgba(255, 255, 255, 0.05)',
-                                    color: 'var(--text-primary)',
+                                    background: '#ffffff',
+                                    color: '#000000',
                                     fontSize: '14px'
                                 }}
                             >
@@ -2250,8 +2250,8 @@ const GA4Stats = ({ language, isMobile }) => {
                                     padding: '10px 12px',
                                     border: '1px solid var(--glass-border)',
                                     borderRadius: '8px',
-                                    background: 'rgba(255, 255, 255, 0.05)',
-                                    color: 'var(--text-primary)',
+                                    background: '#ffffff',
+                                    color: '#000000',
                                     fontSize: '14px'
                                 }}
                             >
@@ -2311,8 +2311,8 @@ const GA4Stats = ({ language, isMobile }) => {
                                         padding: '10px 12px',
                                         border: '1px solid var(--glass-border)',
                                         borderRadius: '8px',
-                                        background: 'rgba(255, 255, 255, 0.05)',
-                                        color: 'var(--text-primary)',
+                                        background: '#ffffff',
+                                        color: '#000000',
                                         fontSize: '14px'
                                     }}
                                 >
@@ -2343,8 +2343,8 @@ const GA4Stats = ({ language, isMobile }) => {
                                         padding: '10px 12px',
                                         border: '1px solid var(--glass-border)',
                                         borderRadius: '8px',
-                                        background: 'rgba(255, 255, 255, 0.05)',
-                                        color: 'var(--text-primary)',
+                                        background: '#ffffff',
+                                        color: '#000000',
                                         fontSize: '14px'
                                     }}
                                 >
@@ -2382,8 +2382,8 @@ const GA4Stats = ({ language, isMobile }) => {
                                         padding: '10px 12px',
                                         border: '1px solid var(--glass-border)',
                                         borderRadius: '8px',
-                                        background: 'rgba(255, 255, 255, 0.05)',
-                                        color: 'var(--text-primary)',
+                                        background: '#ffffff',
+                                        color: '#000000',
                                         fontSize: '14px'
                                     }}
                                 >
@@ -2442,8 +2442,8 @@ const GA4Stats = ({ language, isMobile }) => {
                                                 padding: '10px 12px',
                                                 border: '1px solid var(--glass-border)',
                                                 borderRadius: '8px',
-                                                background: 'rgba(255, 255, 255, 0.05)',
-                                                color: 'var(--text-primary)',
+                                                background: '#ffffff',
+                                                color: '#000000',
                                                 fontSize: '14px'
                                             }}
                                         >
@@ -2547,8 +2547,8 @@ const GA4Stats = ({ language, isMobile }) => {
                                         padding: '10px 12px',
                                         border: '1px solid var(--glass-border)',
                                         borderRadius: '8px',
-                                        background: 'rgba(255, 255, 255, 0.05)',
-                                        color: 'var(--text-primary)',
+                                        background: '#ffffff',
+                                        color: '#000000',
                                         fontSize: '14px'
                                     }}
                                 >
@@ -2587,8 +2587,8 @@ const GA4Stats = ({ language, isMobile }) => {
                                             padding: '10px 12px',
                                             border: '1px solid var(--glass-border)',
                                             borderRadius: '8px',
-                                            background: 'rgba(255, 255, 255, 0.05)',
-                                            color: 'var(--text-primary)',
+                                            background: '#ffffff',
+                                            color: '#000000',
                                             fontSize: '14px'
                                         }}
                                     >

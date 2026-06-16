@@ -712,17 +712,17 @@ const SettingsModal = ({ isOpen, onClose, language, teamId, teamName, onSuccess 
                                 <div>
                                     <label style={{ display: 'block', marginBottom: '8px', color: 'var(--text-secondary)' }}>{t.fb.appId}</label>
                                     <input type="text" required value={fbData.appId} onChange={(e) => setFbData({ ...fbData, appId: e.target.value })}
-                                        style={{ width: '100%', padding: '12px', borderRadius: '8px', border: '1px solid var(--glass-border)', background: 'rgba(255,255,255,0.05)', color: 'white' }} />
+                                        style={{ width: '100%', padding: '12px', borderRadius: '8px', border: '1px solid var(--glass-border)', background: '#ffffff', color: '#000000' }} />
                                 </div>
                                 <div>
                                     <label style={{ display: 'block', marginBottom: '8px', color: 'var(--text-secondary)' }}>{t.fb.appSecret}</label>
                                     <input type="password" required value={fbData.appSecret} onChange={(e) => setFbData({ ...fbData, appSecret: e.target.value })}
-                                        style={{ width: '100%', padding: '12px', borderRadius: '8px', border: '1px solid var(--glass-border)', background: 'rgba(255,255,255,0.05)', color: 'white' }} />
+                                        style={{ width: '100%', padding: '12px', borderRadius: '8px', border: '1px solid var(--glass-border)', background: '#ffffff', color: '#000000' }} />
                                 </div>
                                 <div>
                                     <label style={{ display: 'block', marginBottom: '8px', color: 'var(--text-secondary)' }}>{t.fb.shortToken}</label>
                                     <input type="password" required value={fbData.shortToken} onChange={(e) => setFbData({ ...fbData, shortToken: e.target.value })}
-                                        style={{ width: '100%', padding: '12px', borderRadius: '8px', border: '1px solid var(--glass-border)', background: 'rgba(255,255,255,0.05)', color: 'white' }} />
+                                        style={{ width: '100%', padding: '12px', borderRadius: '8px', border: '1px solid var(--glass-border)', background: '#ffffff', color: '#000000' }} />
                                 </div>
 
                                 <div style={{ display: 'flex', gap: '12px', marginTop: '16px', justifyContent: 'flex-end' }}>
@@ -792,19 +792,19 @@ const SettingsModal = ({ isOpen, onClose, language, teamId, teamName, onSuccess 
                                                 padding: '12px',
                                                 borderRadius: '8px',
                                                 border: '1px solid var(--glass-border)',
-                                                background: '#1a1a1a',
-                                                color: 'white'
+                                                background: '#ffffff',
+                                                color: '#000000'
                                             }}
                                         >
                                             {Object.entries(zeaburModels).length > 0 ? (
                                                 <>
                                                     {/* Grouped by provider */}
                                                     {Array.from(new Set(Object.values(zeaburModels).map(m => m.provider))).map(provider => (
-                                                        <optgroup key={provider} label={provider.toUpperCase()} style={{ background: '#2a2a2a' }}>
+                                                        <optgroup key={provider} label={provider.toUpperCase()} style={{ background: '#ffffff', color: '#000000' }}>
                                                             {Object.entries(zeaburModels)
                                                                 .filter(([_, config]) => config.provider === provider)
                                                                 .map(([id, config]) => (
-                                                                    <option key={id} value={id} style={{ background: '#1a1a1a' }}>
+                                                                    <option key={id} value={id} style={{ background: '#ffffff', color: '#000000' }}>
                                                                         {config.description || id}
                                                                     </option>
                                                                 ))
@@ -825,7 +825,7 @@ const SettingsModal = ({ isOpen, onClose, language, teamId, teamName, onSuccess 
                                             placeholder="sk-..."
                                             value={aiData.apiKey}
                                             onChange={(e) => setAiData({ ...aiData, apiKey: e.target.value })}
-                                            style={{ width: '100%', padding: '12px', borderRadius: '8px', border: '1px solid var(--glass-border)', background: 'rgba(255,255,255,0.05)', color: 'white' }}
+                                            style={{ width: '100%', padding: '12px', borderRadius: '8px', border: '1px solid var(--glass-border)', background: '#ffffff', color: '#000000' }}
                                         />
                                     </div>
 
@@ -916,8 +916,8 @@ const SettingsModal = ({ isOpen, onClose, language, teamId, teamName, onSuccess 
                                         padding: '12px',
                                         borderRadius: '8px',
                                         border: '1px solid var(--glass-border)',
-                                        background: '#1a1a1a',
-                                        color: 'white'
+                                        background: '#ffffff',
+                                        color: '#000000'
                                     }}
                                 >
                                     {Object.entries(googleModels).length > 0 ? (
@@ -951,8 +951,8 @@ const SettingsModal = ({ isOpen, onClose, language, teamId, teamName, onSuccess 
                                         padding: '12px',
                                         borderRadius: '8px',
                                         border: '1px solid var(--glass-border)',
-                                        background: '#1a1a1a',
-                                        color: 'white'
+                                        background: '#ffffff',
+                                        color: '#000000'
                                     }}
                                 />
                             </div>

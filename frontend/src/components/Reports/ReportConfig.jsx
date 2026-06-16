@@ -299,7 +299,7 @@ const ReportConfig = ({ onSave, onCancel, initialData = {}, initialEditData = nu
                       type="date"
                       value={formData.date_since}
                       onChange={(e) => updateField('date_since', e.target.value)}
-                      style={{ padding: '10px', backgroundColor: 'var(--bg-primary)', border: '1px solid var(--glass-border)', borderRadius: '8px', color: 'white' }}
+                      style={{ padding: '10px', backgroundColor: '#ffffff', border: '1px solid var(--glass-border)', borderRadius: '8px', color: '#000000' }}
                     />
                   </div>
                   <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: '8px' }}>
@@ -308,7 +308,7 @@ const ReportConfig = ({ onSave, onCancel, initialData = {}, initialEditData = nu
                       type="date"
                       value={formData.date_until}
                       onChange={(e) => updateField('date_until', e.target.value)}
-                      style={{ padding: '10px', backgroundColor: 'var(--bg-primary)', border: '1px solid var(--glass-border)', borderRadius: '8px', color: 'white' }}
+                      style={{ padding: '10px', backgroundColor: '#ffffff', border: '1px solid var(--glass-border)', borderRadius: '8px', color: '#000000' }}
                     />
                   </div>
                 </div>
@@ -320,7 +320,7 @@ const ReportConfig = ({ onSave, onCancel, initialData = {}, initialEditData = nu
                   <select
                     value={formData.frequency}
                     onChange={(e) => updateField('frequency', e.target.value)}
-                    style={{ padding: '12px', backgroundColor: 'var(--bg-primary)', border: '1px solid var(--glass-border)', borderRadius: '8px', color: 'white' }}
+                    style={{ padding: '12px', backgroundColor: '#ffffff', border: '1px solid var(--glass-border)', borderRadius: '8px', color: '#000000' }}
                   >
                     <option value="daily">{t('Daily', '每日')}</option>
                     <option value="weekly">{t('Weekly', '每週')}</option>
@@ -334,7 +334,7 @@ const ReportConfig = ({ onSave, onCancel, initialData = {}, initialEditData = nu
                     <select
                       value={formData.day_of_week}
                       onChange={(e) => updateField('day_of_week', e.target.value)}
-                      style={{ padding: '12px', backgroundColor: 'var(--bg-primary)', border: '1px solid var(--glass-border)', borderRadius: '8px', color: 'white' }}
+                      style={{ padding: '12px', backgroundColor: '#ffffff', border: '1px solid var(--glass-border)', borderRadius: '8px', color: '#000000' }}
                     >
                       <option value="1">{t('Monday', '週一')}</option>
                       <option value="2">{t('Tuesday', '週二')}</option>
@@ -356,7 +356,7 @@ const ReportConfig = ({ onSave, onCancel, initialData = {}, initialEditData = nu
                       max="28"
                       value={formData.day_of_month}
                       onChange={(e) => updateField('day_of_month', e.target.value)}
-                      style={{ padding: '12px', backgroundColor: 'var(--bg-primary)', border: '1px solid var(--glass-border)', borderRadius: '8px', color: 'white' }}
+                      style={{ padding: '12px', backgroundColor: '#ffffff', border: '1px solid var(--glass-border)', borderRadius: '8px', color: '#000000' }}
                     />
                   </div>
                 )}
@@ -367,7 +367,7 @@ const ReportConfig = ({ onSave, onCancel, initialData = {}, initialEditData = nu
                     type="time"
                     value={formData.time_of_day}
                     onChange={(e) => updateField('time_of_day', e.target.value)}
-                    style={{ padding: '12px', backgroundColor: 'var(--bg-primary)', border: '1px solid var(--glass-border)', borderRadius: '8px', color: 'white' }}
+                    style={{ padding: '12px', backgroundColor: '#ffffff', border: '1px solid var(--glass-border)', borderRadius: '8px', color: '#000000' }}
                   />
                 </div>
 
@@ -420,7 +420,7 @@ const ReportConfig = ({ onSave, onCancel, initialData = {}, initialEditData = nu
               <select
                 value={formData.breakdown}
                 onChange={(e) => updateField('breakdown', e.target.value)}
-                style={{ padding: '12px', backgroundColor: 'var(--bg-primary)', border: '1px solid var(--glass-border)', borderRadius: '8px', color: 'white' }}
+                style={{ padding: '12px', backgroundColor: '#ffffff', border: '1px solid var(--glass-border)', borderRadius: '8px', color: '#000000' }}
               >
                 {formData.module_type === 'ga4' ? (
                   <>

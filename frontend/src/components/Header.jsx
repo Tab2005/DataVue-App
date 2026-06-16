@@ -127,9 +127,9 @@ const Header = ({ language, setLanguage, accounts = [], selectedAccountId, setSe
             value={selectedAccountId || ''}
             onChange={(e) => setSelectedAccountId(e.target.value)}
             style={{
-              background: 'rgba(255,255,255,0.05)',
+              background: '#ffffff',
               border: '1px solid var(--glass-border)',
-              color: 'white',
+              color: '#000000',
               padding: '6px 12px',
               borderRadius: '6px',
               outline: 'none',

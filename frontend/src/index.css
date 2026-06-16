@@ -235,16 +235,16 @@ a:hover {
 
 /* ========== Global Form Controls ========== */
 select, input, textarea {
-  background: var(--bg-secondary);
-  color: var(--text-primary);
+  background: #ffffff;
+  color: #000000;
   border: 1px solid var(--glass-border);
   border-radius: 12px;
   padding: 12px 14px;
   outline: none;
 }
 select option {
-  background: var(--bg-secondary);
-  color: var(--text-primary);
+  background: #ffffff;
+  color: #000000;
 }
 
 /* ========================================

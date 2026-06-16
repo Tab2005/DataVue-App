@@ -367,16 +367,16 @@ const selectStyle = {
     padding: '10px 12px',
     borderRadius: '10px',
     border: '1px solid var(--glass-border)',
-    background: 'var(--bg-secondary)',
-    color: 'var(--text-primary)',
+    background: '#ffffff',
+    color: '#000000',
 };
 
 const inputStyle = {
     padding: '10px 12px',
     borderRadius: '10px',
     border: '1px solid var(--glass-border)',
-    background: 'var(--bg-secondary)',
-    color: 'var(--text-primary)',
+    background: '#ffffff',
+    color: '#000000',
 };
 
 const buttonPrimaryStyle = {
