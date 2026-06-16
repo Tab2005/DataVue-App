@@ -31,6 +31,95 @@ const MetaAndromedaMonitoring = () => {
 
     const t = (en, zh) => (language === 'en' ? en : zh);
 
+    const getTranslation = (key) => {
+        if (!key) return '--';
+        const keyLower = String(key).toLowerCase();
+        switch (keyLower) {
+            // 指標標籤
+            case 'queued_total':
+                return t('Queued Total', '累計佇列數');
+            case 'completed_total':
+                return t('Completed Total', '累計完成數');
+            case 'failure_total':
+                return t('Failure Total', '累計失敗數');
+            case 'queue_depth.current':
+                return t('Current Queue Depth', '當前佇列深度');
+            case 'queue_depth.peak':
+                return t('Peak Queue Depth', '佇列深度峰值');
+            case 'latency.avg(ms)':
+                return t('Avg Latency (ms)', '平均延遲 (ms)');
+            case 'latency.p95(ms)':
+                return t('P95 Latency (ms)', 'P95 延遲 (ms)');
+            case 'latency.max(ms)':
+                return t('Max Latency (ms)', '最大延遲 (ms)');
+
+            // 策略與佇列
+            case 'database_queue':
+                return t('Database Queue', '資料庫排程佇列');
+            case 'redis_stream':
+                return t('Redis Stream', 'Redis 串流佇列');
+            case 'apscheduler':
+                return t('APScheduler', '背景排程器');
+
+            // 狀態與事件狀態
+            case 'processing_started':
+                return t('Processing Started', '已啟動處理');
+            case 'completed':
+                return t('Completed', '處理完成');
+            case 'failed':
+                return t('Failed', '處理失敗');
+            case 'queued':
+                return t('Queued', '已入佇列');
+            case 'dead_letter':
+                return t('Dead Letter', '已入死信佇列');
+            case 'drifted':
+                return t('Drifted', '嚴重漂移');
+            case 'warning':
+                return t('Warning', '警告');
+            case 'stable':
+                return t('Stable', '穩定');
+
+            // 時間窗口
+            case 'last_24h':
+                return t('Last 24 Hours', '最近 24 小時');
+            case 'last_7d':
+                return t('Last 7 Days', '最近 7 天');
+            case 'last_30d':
+                return t('Last 30 Days', '最近 30 天');
+
+            // 級距
+            case 'high':
+                return t('High', '高 (High)');
+            case 'mid':
+                return t('Mid', '中 (Mid)');
+            case 'low':
+                return t('Low', '低 (Low)');
+
+            // 任務與事件類型
+            case 'score_request_received':
+                return t('Score Request Received', '收到評分請求');
+            case 'dataset_calibration':
+                return t('Dataset Calibration', '資料集校準');
+            case 'drift_diagnostics':
+                return t('Drift Diagnostics', '漂移診斷');
+            case 'prediction_inference':
+                return t('Prediction Inference', '預測推論');
+            case 'model_sync':
+                return t('Model Sync', '模型同步');
+
+            // 告警層級
+            case 'info':
+                return t('Info', '資訊');
+            case 'error':
+                return t('Error', '錯誤');
+            case 'critical':
+                return t('Critical', '嚴重');
+
+            default:
+                return key;
+        }
+    };
+
     const loadSummary = async () => {
         setLoading(true);
         setError(null);
@@ -245,16 +334,16 @@ const MetaAndromedaMonitoring = () => {
                     }}>
                         {Object.entries(summary?.jobs || {}).map(([jobKey, job]) => (
                             <section key={jobKey} style={panelStyle}>
-                                <h2 style={sectionTitleStyle}>{jobKey}</h2>
+                                <h2 style={sectionTitleStyle}>{getTranslation(jobKey)}</h2>
                                 <div style={metricGridStyle}>
-                                    <Metric label="queued_total" value={job.queued_total} />
-                                    <Metric label="completed_total" value={job.completed_total} />
-                                    <Metric label="failure_total" value={job.failure_total} />
-                                    <Metric label="queue_depth.current" value={job.queue_depth?.current} />
-                                    <Metric label="queue_depth.peak" value={job.queue_depth?.peak} />
-                                    <Metric label="latency.avg(ms)" value={job.latency_ms?.avg} />
-                                    <Metric label="latency.p95(ms)" value={job.latency_ms?.p95} />
-                                    <Metric label="latency.max(ms)" value={job.latency_ms?.max} />
+                                    <Metric label={getTranslation("queued_total")} value={job.queued_total} />
+                                    <Metric label={getTranslation("completed_total")} value={job.completed_total} />
+                                    <Metric label={getTranslation("failure_total")} value={job.failure_total} />
+                                    <Metric label={getTranslation("queue_depth.current")} value={job.queue_depth?.current} />
+                                    <Metric label={getTranslation("queue_depth.peak")} value={job.queue_depth?.peak} />
+                                    <Metric label={getTranslation("latency.avg(ms)")} value={job.latency_ms?.avg} />
+                                    <Metric label={getTranslation("latency.p95(ms)")} value={job.latency_ms?.p95} />
+                                    <Metric label={getTranslation("latency.max(ms)")} value={job.latency_ms?.max} />
                                 </div>
                             </section>
                         ))}
@@ -299,7 +388,7 @@ const MetaAndromedaMonitoring = () => {
                             <h2 style={sectionTitleStyle}>{t('Worker Host', 'Worker 主機')}</h2>
                             <div style={{ display: 'grid', gap: '12px', marginBottom: '16px' }}>
                                 <Metric label={t('active_host', '目前主機')} value={summary?.worker_host?.active_host} />
-                                <Metric label={t('host_strategy', '主機策略')} value={summary?.worker_host?.host_strategy} />
+                                <Metric label={t('host_strategy', '主機策略')} value={getTranslation(summary?.worker_host?.host_strategy)} />
                                 <Metric label={t('dead_letter_count', '死信數量')} value={summary?.worker_host?.dead_letter_count} />
                             </div>
 
@@ -321,10 +410,10 @@ const MetaAndromedaMonitoring = () => {
                                             }}
                                         >
                                             <div style={{ color: 'var(--accent-primary)', fontWeight: 700, marginBottom: '6px' }}>
-                                                {event.event_type} · {event.queue_host}
+                                                {getTranslation(event.event_type)} · {event.queue_host}
                                             </div>
                                             <div style={{ color: 'var(--text-secondary)', lineHeight: 1.6, fontSize: '0.9rem' }}>
-                                                {t('status', '狀態')}: {event.status} / {t('attempt', '嘗試次數')}: {event.attempt_count}
+                                                {t('status', '狀態')}: {getTranslation(event.status)} / {t('attempt', '嘗試次數')}: {event.attempt_count}
                                             </div>
                                             <div style={{ color: 'var(--text-secondary)', lineHeight: 1.6, fontSize: '0.9rem' }}>
                                                 {event.score_event_id}
@@ -358,7 +447,7 @@ const MetaAndromedaMonitoring = () => {
                                             }}
                                         >
                                             <div style={{ color: '#f59e0b', fontWeight: 700, marginBottom: '6px' }}>
-                                                {item.failure_stage} · {item.queue_host}
+                                                {getTranslation(item.failure_stage)} · {item.queue_host}
                                             </div>
                                             <div style={{ color: 'var(--text-secondary)', lineHeight: 1.6, fontSize: '0.9rem' }}>
                                                 {item.score_event_id}
@@ -389,7 +478,7 @@ const MetaAndromedaMonitoring = () => {
                                         <div style={{ color: 'var(--text-secondary)', marginBottom: '6px' }}>{t('Score Event ID', '評分事件 ID')}</div>
                                         <div style={{ color: 'var(--text-primary)', fontWeight: 700 }}>{timeline.score_event.score_event_id}</div>
                                         <div style={{ color: 'var(--text-secondary)', marginTop: '8px' }}>
-                                            {timeline.score_event.status} · {t('attempt', '嘗試')} {timeline.score_event.attempt_count}
+                                            {getTranslation(timeline.score_event.status)} · {t('attempt', '嘗試')} {timeline.score_event.attempt_count}
                                         </div>
                                     </div>
                                     <div style={detailCardStyle}>
@@ -397,9 +486,9 @@ const MetaAndromedaMonitoring = () => {
                                         <div style={{ display: 'grid', gap: '10px' }}>
                                             {(timeline.worker_events || []).map((event) => (
                                                 <div key={event.worker_event_id} style={timelineItemStyle}>
-                                                    <strong style={{ color: 'var(--text-primary)' }}>{event.event_type}</strong>
+                                                    <strong style={{ color: 'var(--text-primary)' }}>{getTranslation(event.event_type)}</strong>
                                                     <div style={{ color: 'var(--text-secondary)', lineHeight: 1.6 }}>
-                                                        {event.queue_host} · {event.status} · {event.created_at || '--'}
+                                                        {event.queue_host} · {getTranslation(event.status)} · {event.created_at || '--'}
                                                     </div>
                                                     <div style={{ color: 'var(--text-secondary)', lineHeight: 1.6 }}>
                                                         {event.message || '--'}
@@ -416,7 +505,7 @@ const MetaAndromedaMonitoring = () => {
                                             <div style={{ display: 'grid', gap: '10px' }}>
                                                 {timeline.dead_letters.map((item) => (
                                                     <div key={item.dead_letter_id} style={timelineItemStyle}>
-                                                        <strong style={{ color: '#f59e0b' }}>{item.failure_stage}</strong>
+                                                        <strong style={{ color: '#f59e0b' }}>{getTranslation(item.failure_stage)}</strong>
                                                         <div style={{ color: 'var(--text-secondary)', lineHeight: 1.6 }}>
                                                             {item.final_error_message}
                                                         </div>
@@ -437,7 +526,7 @@ const MetaAndromedaMonitoring = () => {
                             <div style={{ display: 'grid', gap: '10px' }}>
                                 {Object.entries(summary?.prediction_distribution || {}).map(([band, count]) => (
                                     <div key={band} style={rowStyle}>
-                                        <span style={{ color: 'var(--text-secondary)' }}>{band}</span>
+                                        <span style={{ color: 'var(--text-secondary)' }}>{getTranslation(band)}</span>
                                         <strong style={{ color: 'var(--text-primary)' }}>{count}</strong>
                                     </div>
                                 ))}
@@ -480,7 +569,7 @@ const MetaAndromedaMonitoring = () => {
                                             )}
                                             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', flexWrap: 'wrap', gap: '8px' }}>
                                                 <div style={{ color: statusColor, fontWeight: 700, marginBottom: '6px' }}>
-                                                    {report.window_kind} · {t(report.drift_status.toUpperCase(), report.drift_status === 'stable' ? '穩定' : (report.drift_status === 'drifted' ? '嚴重漂移' : (report.drift_status === 'warning' ? '警告' : report.drift_status)))}
+                                                    {getTranslation(report.window_kind)} · {getTranslation(report.drift_status)}
                                                 </div>
                                                 {accuracy !== undefined && (
                                                     <span style={{ fontSize: '0.8rem', color: 'var(--text-secondary)' }}>
@@ -535,7 +624,7 @@ const MetaAndromedaMonitoring = () => {
                                 ) : (summary?.active_alerts || []).map((alert, index) => (
                                     <div key={index} style={detailCardStyle}>
                                         <div style={{ color: 'var(--accent-primary)', fontWeight: 700, marginBottom: '6px' }}>
-                                            {alert.severity} · {alert.code}
+                                            {getTranslation(alert.severity)} · {alert.code}
                                         </div>
                                         <div style={{ color: 'var(--text-secondary)', lineHeight: 1.6 }}>{alert.message}</div>
                                     </div>
@@ -576,7 +665,7 @@ const MetaAndromedaMonitoring = () => {
                             {t('Drift Diagnostics Workspace', '漂移診斷工作台')}
                         </div>
                         <div style={{ fontSize: '0.8rem', color: 'var(--text-secondary)' }}>
-                            {selectedDriftReport ? `${selectedDriftReport.window_kind} · ${t('Accuracy', '準確率')}: ${(selectedDriftReport.report_payload?.accuracy * 100).toFixed(1)}%` : ''}
+                            {selectedDriftReport ? `${getTranslation(selectedDriftReport.window_kind)} · ${t('Accuracy', '準確率')}: ${(selectedDriftReport.report_payload?.accuracy * 100).toFixed(1)}%` : ''}
                         </div>
                     </div>
                     <button
@@ -679,7 +768,7 @@ const MetaAndromedaMonitoring = () => {
                                             <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
                                                 {/* Prediction */}
                                                 <div style={{ ...badgeStyle, ...predStyle }}>
-                                                    {t('Pred: ', '預估: ')}{item.prediction_band.toUpperCase()}
+                                                    {t('Pred: ', '預估: ')}{getTranslation(item.prediction_band)}
                                                 </div>
                                                 
                                                 {/* Connection arrow */}
@@ -689,7 +778,7 @@ const MetaAndromedaMonitoring = () => {
 
                                                 {/* Observation */}
                                                 <div style={{ ...badgeStyle, ...obsStyle }}>
-                                                    {t('Obs: ', '實際: ')}{item.observed_band.toUpperCase()}
+                                                    {t('Obs: ', '實際: ')}{getTranslation(item.observed_band)}
                                                 </div>
 
                                                 <span style={{ fontSize: '0.8rem', color: 'var(--text-secondary)', marginLeft: 'auto' }}>
