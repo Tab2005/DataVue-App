@@ -1,5 +1,6 @@
 from datetime import UTC, date, datetime, timedelta
 
+from exceptions import ValidationError
 from modules.fb_ads.analytics_service import get_custom_report
 
 from ..schemas import ObservedCreativeCandidate
@@ -109,7 +110,7 @@ async def fetch_observed_creative_candidate(
 
     target_row = next((row for row in rows if str(row.get("ad_id")) == str(ad_id)), None)
     if target_row is None:
-        raise KeyError(f"FB Ads ad row not found: {ad_id}")
+        raise ValidationError(f"該廣告目前在 Facebook 尚未產生任何投放數據，無法匯入漂移診斷。")
 
     source_fetched_at = datetime.now(UTC).replace(microsecond=0).isoformat().replace("+00:00", "Z")
     return normalize_facebook_ad_row(
