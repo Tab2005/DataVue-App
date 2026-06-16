@@ -5,5 +5,5 @@ dir = "backend"
 [[services]]
 name = "frontend"
 dir = "frontend"
-buildCommand = "npm install && npm run build"
+buildCommand = "npm ci && npm run build"
 outputDir = "dist"
