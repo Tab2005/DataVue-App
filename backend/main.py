@@ -187,7 +187,8 @@ async def general_exception_handler(request: Request, exc: Exception):
         content={
             "error": "Internal server error",
             "error_code": "INTERNAL_SERVER_ERROR",
-            "error_type": "unhandled_exception"
+            "error_type": "unhandled_exception",
+            "details": str(exc)
         }
     )
     return _add_cors_headers_to_response(request, response)
