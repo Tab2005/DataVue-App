@@ -98,13 +98,26 @@ def init_db():
         return
 
     # 生產環境：先檢查核心新表是否存在 (e.g. weekly_reports)
-    # 若缺失則嘗試補足，確保功能不中斷
     try:
         from sqlalchemy import inspect, text
         inspector = inspect(engine)
         existing_tables = inspector.get_table_names()
         
-        required_tables = ["user_integrations", "weekly_reports", "report_schedules", "line_bindings"]
+        required_tables = [
+            "user_integrations",
+            "weekly_reports",
+            "report_schedules",
+            "line_bindings",
+            "meta_andromeda_assets",
+            "meta_andromeda_observed_creatives",
+            "meta_andromeda_score_events",
+            "meta_andromeda_feedback_events",
+            "meta_andromeda_release_records",
+            "meta_andromeda_release_events",
+            "meta_andromeda_worker_events",
+            "meta_andromeda_dead_letters",
+            "meta_andromeda_drift_reports",
+        ]
         missing = [t for t in required_tables if t not in existing_tables]
         
         if missing:
