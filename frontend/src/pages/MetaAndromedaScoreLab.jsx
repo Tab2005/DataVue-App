@@ -253,8 +253,8 @@ const inputStyle = {
     padding: '10px 12px',
     borderRadius: '10px',
     border: '1px solid var(--glass-border)',
-    background: '#ffffff',
-    color: '#000000',
+    background: 'rgba(255, 255, 255, 0.05)',
+    color: 'var(--text-primary)',
 };
 
 const buttonPrimaryStyle = {

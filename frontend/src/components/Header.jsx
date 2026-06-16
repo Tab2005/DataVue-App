@@ -127,9 +127,9 @@ const Header = ({ language, setLanguage, accounts = [], selectedAccountId, setSe
             value={selectedAccountId || ''}
             onChange={(e) => setSelectedAccountId(e.target.value)}
             style={{
-              background: '#ffffff',
+              background: 'rgba(255,255,255,0.05)',
               border: '1px solid var(--glass-border)',
-              color: '#000000',
+              color: 'var(--text-primary)',
               padding: '6px 12px',
               borderRadius: '6px',
               outline: 'none',
@@ -140,7 +140,7 @@ const Header = ({ language, setLanguage, accounts = [], selectedAccountId, setSe
             {accounts.length === 0 && <option value="">{language === 'zh' ? '載入中...' : 'Loading...'}</option>}
             {accounts.length > 0 && <option value="" disabled>{language === 'zh' ? '選擇帳號' : 'Select Account'}</option>}
             {accounts.map(acc => (
-              <option key={acc.id} value={acc.id} style={{ color: 'black' }}>
+              <option key={acc.id} value={acc.id}>
                 {acc.name}
               </option>
             ))}

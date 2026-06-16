@@ -1184,9 +1184,9 @@ const Analytics = () => {
                                 style={{
                                     padding: '10px',
                                     borderRadius: '8px',
-                                    background: '#ffffff',
+                                    background: 'rgba(255,255,255,0.05)',
                                     border: '1px solid var(--glass-border)',
-                                    color: '#000000',
+                                    color: 'var(--text-primary)',
                                     width: '100%'
                                 }}
                             >
@@ -1206,9 +1206,9 @@ const Analytics = () => {
                                 style={{
                                     padding: '10px',
                                     borderRadius: '8px',
-                                    background: '#ffffff',
+                                    background: 'rgba(255,255,255,0.05)',
                                     border: '1px solid var(--glass-border)',
-                                    color: '#000000',
+                                    color: 'var(--text-primary)',
                                     width: '100%'
                                 }}
                             >
@@ -1227,12 +1227,12 @@ const Analytics = () => {
                             <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', flex: 1 }}>
                                 <label style={{ fontSize: '0.85rem', color: 'var(--text-secondary)', fontWeight: 600 }}>{txt.customStart}</label>
                                 <input type="date" value={dateRange.since} onChange={(e) => setDateRange({ ...dateRange, since: e.target.value })}
-                                    style={{ padding: '10px', borderRadius: '8px', background: '#ffffff', border: '1px solid var(--glass-border)', color: '#000000', colorScheme: 'light', width: '100%' }} />
+                                    style={{ padding: '10px', borderRadius: '8px', background: 'rgba(255,255,255,0.05)', border: '1px solid var(--glass-border)', color: 'var(--text-primary)', colorScheme: 'dark', width: '100%' }} />
                             </div>
                             <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', flex: 1 }}>
                                 <label style={{ fontSize: '0.85rem', color: 'var(--text-secondary)', fontWeight: 600 }}>{txt.customEnd}</label>
                                 <input type="date" value={dateRange.until} onChange={(e) => setDateRange({ ...dateRange, until: e.target.value })}
-                                    style={{ padding: '10px', borderRadius: '8px', background: '#ffffff', border: '1px solid var(--glass-border)', color: '#000000', colorScheme: 'light', width: '100%' }} />
+                                    style={{ padding: '10px', borderRadius: '8px', background: 'rgba(255,255,255,0.05)', border: '1px solid var(--glass-border)', color: 'var(--text-primary)', colorScheme: 'dark', width: '100%' }} />
                             </div>
                         </div>
                     )}
@@ -1368,9 +1368,9 @@ const Analytics = () => {
                             value={filterMode}
                             onChange={(e) => setFilterMode(e.target.value)}
                             style={{
-                                background: '#ffffff',
+                                background: 'rgba(255,255,255,0.05)',
                                 border: '1px solid var(--glass-border)',
-                                color: '#000000',
+                                color: 'var(--text-primary)',
                                 fontSize: '0.9rem',
                                 cursor: 'pointer',
                                 outline: 'none',
@@ -1411,9 +1411,9 @@ const Analytics = () => {
                                     value={filterObservationImported}
                                     onChange={(e) => setFilterObservationImported(e.target.value)}
                                     style={{
-                                        background: '#ffffff',
+                                        background: 'rgba(255,255,255,0.05)',
                                         border: '1px solid var(--glass-border)',
-                                        color: '#000000',
+                                        color: 'var(--text-primary)',
                                         fontSize: '0.9rem',
                                         cursor: 'pointer',
                                         outline: 'none',
@@ -1540,9 +1540,9 @@ const Analytics = () => {
                                     style={{
                                         padding: '10px',
                                         borderRadius: '8px',
-                                        background: '#ffffff',
+                                        background: 'rgba(255,255,255,0.05)',
                                         border: '1px solid var(--glass-border)',
-                                        color: '#000000',
+                                        color: 'var(--text-primary)',
                                         width: '100%'
                                     }}
                                 >
@@ -1567,10 +1567,10 @@ const Analytics = () => {
                                                 style={{ 
                                                     padding: '10px', 
                                                     borderRadius: '8px', 
-                                                    background: '#ffffff',
+                                                    background: 'rgba(255,255,255,0.05)',
                                                     border: '1px solid var(--glass-border)',
-                                                    color: '#000000',
-                                                    colorScheme: 'light',
+                                                    color: 'var(--text-primary)',
+                                                    colorScheme: 'dark',
                                                     width: '100%' 
                                                 }} 
                                             />
@@ -1586,10 +1586,10 @@ const Analytics = () => {
                                                 style={{ 
                                                     padding: '10px', 
                                                     borderRadius: '8px', 
-                                                    background: '#ffffff',
+                                                    background: 'rgba(255,255,255,0.05)',
                                                     border: '1px solid var(--glass-border)',
-                                                    color: '#000000',
-                                                    colorScheme: 'light',
+                                                    color: 'var(--text-primary)',
+                                                    colorScheme: 'dark',
                                                     width: '100%' 
                                                 }} 
                                             />

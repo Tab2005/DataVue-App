@@ -222,8 +222,8 @@ function Dashboard() {
                                 value={selectedMetric}
                                 onChange={(e) => setSelectedMetric(e.target.value)}
                                 style={{
-                                    background: '#ffffff',
-                                    color: '#000000',
+                                    background: 'rgba(255, 255, 255, 0.05)',
+                                    color: 'var(--text-primary)',
                                     border: '1px solid var(--glass-border)',
                                     padding: '8px 12px',
                                     borderRadius: '8px',

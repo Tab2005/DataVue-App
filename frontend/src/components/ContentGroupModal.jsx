@@ -238,8 +238,8 @@ const ContentGroupModal = ({
                                     padding: '10px 8px',
                                     border: '1px solid var(--glass-border)',
                                     borderRadius: '8px',
-                                    background: '#ffffff',
-                                    color: '#000000',
+                                    background: 'rgba(255, 255, 255, 0.05)',
+                                    color: 'var(--text-primary)',
                                     fontSize: '13px'
                                 }}
                             >

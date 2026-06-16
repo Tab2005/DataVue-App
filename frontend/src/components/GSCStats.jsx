@@ -1395,8 +1395,8 @@ const GSCStats = ({ language, isMobile = false }) => {
         padding: isMobile ? '10px 12px' : '8px 12px',
         borderRadius: '8px',
         border: '1px solid var(--glass-border)',
-        background: '#ffffff',
-        color: '#000000',
+        background: 'rgba(255, 255, 255, 0.05)',
+        color: 'var(--text-primary)',
         outline: 'none',
         fontSize: isMobile ? '0.9rem' : '1rem',
         width: isMobile ? '100%' : 'auto'
@@ -1511,8 +1511,8 @@ const GSCStats = ({ language, isMobile = false }) => {
         padding: '8px 12px',
         borderRadius: '8px',
         border: '1px solid var(--glass-border)',
-        background: '#ffffff',
-        color: '#000000',
+        background: 'rgba(255, 255, 255, 0.05)',
+        color: 'var(--text-primary)',
         outline: 'none',
         fontSize: '14px',
         width: isMobile ? '100%' : '200px'
@@ -1656,8 +1656,8 @@ const GSCStats = ({ language, isMobile = false }) => {
                                 padding: '10px 12px',
                                 border: '1px solid var(--glass-border)',
                                 borderRadius: '8px',
-                                background: '#ffffff',
-                                color: '#000000',
+                                background: 'rgba(255, 255, 255, 0.05)',
+                                color: 'var(--text-primary)',
                                 fontSize: '14px'
                             }}
                         >
@@ -1688,8 +1688,8 @@ const GSCStats = ({ language, isMobile = false }) => {
                                 padding: '10px 12px',
                                 border: '1px solid var(--glass-border)',
                                 borderRadius: '8px',
-                                background: '#ffffff',
-                                color: '#000000',
+                                background: 'rgba(255, 255, 255, 0.05)',
+                                color: 'var(--text-primary)',
                                 fontSize: '14px'
                             }}
                         >
@@ -1720,8 +1720,8 @@ const GSCStats = ({ language, isMobile = false }) => {
                                 padding: '10px 12px',
                                 border: '1px solid var(--glass-border)',
                                 borderRadius: '8px',
-                                background: '#ffffff',
-                                color: '#000000',
+                                background: 'rgba(255, 255, 255, 0.05)',
+                                color: 'var(--text-primary)',
                                 fontSize: '14px'
                             }}
                         >
@@ -1806,10 +1806,10 @@ const GSCStats = ({ language, isMobile = false }) => {
                                         padding: '10px 12px',
                                         border: '1px solid var(--glass-border)',
                                         borderRadius: '8px',
-                                        background: '#ffffff',
-                                        color: '#000000',
+                                        background: 'rgba(255, 255, 255, 0.05)',
+                                        color: 'var(--text-primary)',
                                         fontSize: '14px',
-                                        colorScheme: 'light'
+                                        colorScheme: 'dark'
                                     }}
                                 />
                             </div>
@@ -1836,10 +1836,10 @@ const GSCStats = ({ language, isMobile = false }) => {
                                         padding: '10px 12px',
                                         border: '1px solid var(--glass-border)',
                                         borderRadius: '8px',
-                                        background: '#ffffff',
-                                        color: '#000000',
+                                        background: 'rgba(255, 255, 255, 0.05)',
+                                        color: 'var(--text-primary)',
                                         fontSize: '14px',
-                                        colorScheme: 'light'
+                                        colorScheme: 'dark'
                                     }}
                                 />
                             </div>

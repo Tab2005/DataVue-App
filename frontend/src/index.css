@@ -235,8 +235,8 @@ a:hover {
 
 /* ========== Global Form Controls ========== */
 select, input, textarea {
-  background: #ffffff;
-  color: #000000;
+  background: rgba(255, 255, 255, 0.05);
+  color: var(--text-primary);
   border: 1px solid var(--glass-border);
   border-radius: 12px;
   padding: 12px 14px;
