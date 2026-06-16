@@ -12,7 +12,7 @@
 | **Phase 1. Workflow** | 審核佇列、版本控台與運行健康度 | `GET /review-queue`, `/release/overview`, `/runtime/health` | 審核工作流 `/review-queue`, `/release` | **100% 已完成** |
 | **Phase 2. Observation** | FB Ads 實際投放數據匯入與關聯 | `POST /evaluations/import/facebook-ads` | 數據分析表格 `Analytics.jsx` 固定操作列 | **100% 已完成** |
 | **Phase 3. Learning** | 預測與實際 ROAS 對比、漂移警報與打包同步校準資料 | `POST /calibration/sync` (偏差寫入 `lineage` 欄位) | 監控總覽右側診斷對照滑出工作台、排除噪聲、發佈安全閘門鎖 | **100% 已完成** |
-| **Phase 5. UX Optimize** | 操作欄固定、批次匯入、跳轉連結與快速過濾 | 支援 lifetime 窗口合約匯入 | 1. 成功匯入後提供「查看」跳轉入口<br>2. 支援「全部/已送出/未送出」快速篩選下拉選單 | **100% 已完成** |
+| **Phase 5. UX Optimize** | 操作欄固定、批次匯入、與快速過濾 | 支援 lifetime 窗口合約匯入 | 支援「全部/已送出/未送出」快速篩選下拉選單 | **100% 已完成** |
 
 ---
 
@@ -36,7 +36,6 @@
 
 ### 3. 操作優化實現 (Phase 5.2 - 新增)
 為最大化日常營運便利性，我們在 `Analytics.jsx` 進一步完成了以下優化：
-* **「查看」監控快捷轉跳**：當廣告被單筆或批次成功匯入 `Meta Andromeda` 後，已送出標籤旁會顯示綠色的 **「查看」** 連結，方便營運人員一鍵點擊轉跳至監控頁面的漂移診斷工作台。
 * **快速篩選器**：在表格上方新增「全部匯入狀態 / 已送出 / 未送出」的下拉篩選選單，營運人員可快速過濾未送出的素材，避免重複上傳。
 
 ---

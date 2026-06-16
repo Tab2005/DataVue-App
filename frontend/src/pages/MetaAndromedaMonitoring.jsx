@@ -160,7 +160,7 @@ const MetaAndromedaMonitoring = () => {
                 excluded_observed_ids: Array.from(excludedObsIds),
             });
             alert(language === 'zh'
-                ? `成功建立校準資料集！ID: ${result.dataset_id}，共包含 ${result.synced_count} 筆偏差素材。`
+                ? `校準資料集建立成功！ID: ${result.dataset_id}，共 ${result.synced_count} 筆偏移素材。`
                 : `Dataset created successfully! ID: ${result.dataset_id}, synced ${result.synced_count} ads.`
             );
             setSelectedDriftReport(null);
@@ -208,11 +208,11 @@ const MetaAndromedaMonitoring = () => {
                     type="text"
                     value={eventQuery}
                     onChange={(event) => setEventQuery(event.target.value)}
-                    placeholder={t('Search score event, runtime job, or message', '搜尋 score event、runtime job 或訊息')}
+                    placeholder={t('Search score event, runtime job, or message', '搜尋評分事件、執行任務或訊息')}
                     style={inputStyle}
                 />
                 <select value={hostFilter} onChange={(event) => setHostFilter(event.target.value)} style={inputStyle}>
-                    <option value="all">{t('All Hosts', '全部宿主')}</option>
+                    <option value="all">{t('All Hosts', '所有主機')}</option>
                     {Array.from(new Set([
                         summary?.worker_host?.active_host,
                         ...(summary?.worker_host?.recent_events || []).map((event) => event.queue_host),
@@ -234,7 +234,7 @@ const MetaAndromedaMonitoring = () => {
             {error ? <div style={errorPanelStyle}>{error}</div> : null}
 
             {loading ? (
-                <div style={panelStyle}>{t('Loading monitoring summary...', '載入監控總覽中...')}</div>
+                <div style={panelStyle}>{t('Loading monitoring summary...', '正在載入監控資料...')}</div>
             ) : (
                 <>
                     <div style={{
@@ -296,10 +296,10 @@ const MetaAndromedaMonitoring = () => {
                         gap: '16px'
                     }}>
                         <section style={panelStyle}>
-                            <h2 style={sectionTitleStyle}>{t('Worker Host', 'Worker 宿主')}</h2>
+                            <h2 style={sectionTitleStyle}>{t('Worker Host', 'Worker 主機')}</h2>
                             <div style={{ display: 'grid', gap: '12px', marginBottom: '16px' }}>
-                                <Metric label={t('active_host', '目前宿主')} value={summary?.worker_host?.active_host} />
-                                <Metric label={t('host_strategy', '宿主策略')} value={summary?.worker_host?.host_strategy} />
+                                <Metric label={t('active_host', '目前主機')} value={summary?.worker_host?.active_host} />
+                                <Metric label={t('host_strategy', '主機策略')} value={summary?.worker_host?.host_strategy} />
                                 <Metric label={t('dead_letter_count', '死信數量')} value={summary?.worker_host?.dead_letter_count} />
                             </div>
 
@@ -376,24 +376,24 @@ const MetaAndromedaMonitoring = () => {
                         </section>
 
                         <section style={panelStyle}>
-                            <h2 style={sectionTitleStyle}>{t('Event Timeline', '事件時間線')}</h2>
+                            <h2 style={sectionTitleStyle}>{t('Event Timeline', '事件時間軸')}</h2>
                             {!selectedScoreEventId ? (
-                                <div style={emptyStateStyle}>{t('Select a worker event or dead letter to inspect the full timeline.', '請先選擇一筆 worker event 或死信事件以查看完整時間線。')}</div>
+                                <div style={emptyStateStyle}>{t('Select a worker event or dead letter to inspect the full timeline.', '請先選擇一筆 worker event 或死信事件以查看完整時間軸。')}</div>
                             ) : loadingTimeline ? (
-                                <div style={emptyStateStyle}>{t('Loading event timeline...', '載入事件時間線中...')}</div>
+                                <div style={emptyStateStyle}>{t('Loading event timeline...', '載入事件時間軸中...')}</div>
                             ) : !timeline ? (
-                                <div style={emptyStateStyle}>{t('Timeline is unavailable.', '目前無法取得時間線。')}</div>
+                                <div style={emptyStateStyle}>{t('Timeline is unavailable.', '目前無法取得時間軸。')}</div>
                             ) : (
                                 <div style={{ display: 'grid', gap: '12px' }}>
                                     <div style={detailCardStyle}>
-                                        <div style={{ color: 'var(--text-secondary)', marginBottom: '6px' }}>score_event_id</div>
+                                        <div style={{ color: 'var(--text-secondary)', marginBottom: '6px' }}>{t('Score Event ID', '評分事件 ID')}</div>
                                         <div style={{ color: 'var(--text-primary)', fontWeight: 700 }}>{timeline.score_event.score_event_id}</div>
                                         <div style={{ color: 'var(--text-secondary)', marginTop: '8px' }}>
-                                            {timeline.score_event.status} · attempt {timeline.score_event.attempt_count}
+                                            {timeline.score_event.status} · {t('attempt', '嘗試')} {timeline.score_event.attempt_count}
                                         </div>
                                     </div>
                                     <div style={detailCardStyle}>
-                                        <div style={subTitleStyle}>{t('Worker Timeline', 'Worker 時間線')}</div>
+                                        <div style={subTitleStyle}>{t('Worker Timeline', 'Worker 時間軸')}</div>
                                         <div style={{ display: 'grid', gap: '10px' }}>
                                             {(timeline.worker_events || []).map((event) => (
                                                 <div key={event.worker_event_id} style={timelineItemStyle}>
@@ -484,7 +484,7 @@ const MetaAndromedaMonitoring = () => {
                                                 </div>
                                                 {accuracy !== undefined && (
                                                     <span style={{ fontSize: '0.8rem', color: 'var(--text-secondary)' }}>
-                                                        Accuracy: {(accuracy * 100).toFixed(1)}% | MAE: {mae.toFixed(2)}
+                                                        {t('Accuracy', '準確率')}: {(accuracy * 100).toFixed(1)}% | MAE: {mae.toFixed(2)}
                                                     </span>
                                                 )}
                                             </div>
@@ -624,7 +624,7 @@ const MetaAndromedaMonitoring = () => {
                                         opacity: (syncingCal || (selectedDriftReport.report_payload?.matched_details || []).filter(tc => !excludedObsIds.has(tc.id) && tc.error > 0).length === 0) ? 0.5 : 1,
                                     }}
                                 >
-                                    {syncingCal ? t('Syncing...', '同步中...') : t('Package & Sync Dataset', '打包同步校準資料集')}
+                                    {syncingCal ? t('Syncing...', '同步中...') : t('Package & Sync Dataset', '打包並同步校準資料集')}
                                 </button>
                             </div>
 

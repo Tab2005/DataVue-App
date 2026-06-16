@@ -2359,25 +2359,7 @@ const Analytics = () => {
                                                                 whiteSpace: 'nowrap'
                                                             }}>
                                                                 {observationImportState[row.id]?.status === 'success'
-                                                                    ? (
-                                                                        <span style={{ display: 'inline-flex', alignItems: 'center', gap: '6px' }}>
-                                                                            <span>{language === 'zh' ? '已送出' : 'Imported'}</span>
-                                                                            <a
-                                                                                href="/meta-andromeda/monitoring"
-                                                                                style={{
-                                                                                    color: '#34d399',
-                                                                                    textDecoration: 'none',
-                                                                                    borderBottom: '1px dashed #34d399',
-                                                                                    cursor: 'pointer',
-                                                                                    fontWeight: 'normal',
-                                                                                    fontSize: '0.7rem',
-                                                                                    marginLeft: '2px'
-                                                                                }}
-                                                                            >
-                                                                                {language === 'zh' ? '查看' : 'View'}
-                                                                            </a>
-                                                                        </span>
-                                                                    )
+                                                                    ? (language === 'zh' ? '已送出' : 'Imported')
                                                                     : observationImportState[row.id]?.status === 'error'
                                                                         ? (language === 'zh' ? '失敗' : 'Failed')
                                                                         : observationImportState[row.id]?.status === 'loading'
