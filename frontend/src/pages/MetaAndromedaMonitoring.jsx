@@ -115,8 +115,29 @@ const MetaAndromedaMonitoring = () => {
             case 'critical':
                 return t('Critical', '嚴重');
 
-            default:
-                return key;
+        }
+    };
+
+    const formatDateTime = (isoString) => {
+        if (!isoString) return '--';
+        try {
+            let dateStr = isoString;
+            if (!dateStr.endsWith('Z') && !dateStr.includes('+')) {
+                dateStr = dateStr.includes('T') ? `${dateStr}Z` : dateStr;
+            }
+            const date = new Date(dateStr);
+            if (isNaN(date.getTime())) return isoString;
+
+            const y = date.getFullYear();
+            const m = String(date.getMonth() + 1).padStart(2, '0');
+            const d = String(date.getDate()).padStart(2, '0');
+            const hh = String(date.getHours()).padStart(2, '0');
+            const mm = String(date.getMinutes()).padStart(2, '0');
+            const ss = String(date.getSeconds()).padStart(2, '0');
+
+            return `${y}-${m}-${d} ${hh}:${mm}:${ss}`;
+        } catch (e) {
+            return isoString;
         }
     };
 
@@ -414,7 +435,7 @@ const MetaAndromedaMonitoring = () => {
                                                     {getTranslation(event.event_type)} · {event.queue_host}
                                                 </div>
                                                 <span style={{ fontSize: '0.8rem', color: 'var(--text-secondary)' }}>
-                                                    {event.created_at || '--'}
+                                                    {formatDateTime(event.created_at)}
                                                 </span>
                                             </div>
                                             <div style={{ color: 'var(--text-secondary)', lineHeight: 1.6, fontSize: '0.9rem' }}>
@@ -456,7 +477,7 @@ const MetaAndromedaMonitoring = () => {
                                                     {getTranslation(item.failure_stage)} · {item.queue_host}
                                                 </div>
                                                 <span style={{ fontSize: '0.8rem', color: 'var(--text-secondary)' }}>
-                                                    {item.created_at || '--'}
+                                                    {formatDateTime(item.created_at)}
                                                 </span>
                                             </div>
                                             <div style={{ color: 'var(--text-secondary)', lineHeight: 1.6, fontSize: '0.9rem' }}>
@@ -498,7 +519,7 @@ const MetaAndromedaMonitoring = () => {
                                                 <div key={event.worker_event_id} style={timelineItemStyle}>
                                                     <strong style={{ color: 'var(--text-primary)' }}>{getTranslation(event.event_type)}</strong>
                                                     <div style={{ color: 'var(--text-secondary)', lineHeight: 1.6 }}>
-                                                        {event.queue_host} · {getTranslation(event.status)} · {event.created_at || '--'}
+                                                        {event.queue_host} · {getTranslation(event.status)} · {formatDateTime(event.created_at)}
                                                     </div>
                                                     <div style={{ color: 'var(--text-secondary)', lineHeight: 1.6 }}>
                                                         {event.message || '--'}
@@ -520,7 +541,7 @@ const MetaAndromedaMonitoring = () => {
                                                             {item.final_error_message}
                                                         </div>
                                                         <div style={{ color: 'var(--text-secondary)', lineHeight: 1.6 }}>
-                                                            {item.created_at || '--'}
+                                                            {formatDateTime(item.created_at)}
                                                         </div>
                                                     </div>
                                                 ))}
