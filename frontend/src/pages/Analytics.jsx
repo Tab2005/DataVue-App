@@ -1870,7 +1870,7 @@ const Analytics = () => {
                         >
                             {observationBatchSummary?.status === 'loading'
                                 ? (language === 'zh' ? '批次匯入中...' : 'Batch importing...')
-                                : (language === 'zh' ? '批次送至 Meta Andromeda' : 'Batch send to Meta Andromeda')}
+                                : (language === 'zh' ? '批次送出' : 'Batch send')}
                         </button>
                     </div>
                 </div>
@@ -1961,7 +1961,7 @@ const Analytics = () => {
                                             {canUseObservationImport && (
                                                 <th rowSpan={2} style={{
                                                     padding: '12px',
-                                                    minWidth: '170px',
+                                                    minWidth: '150px',
                                                     position: 'sticky',
                                                     top: 0,
                                                     zIndex: 40,
@@ -2048,7 +2048,7 @@ const Analytics = () => {
                                         {canUseObservationImport && (
                                             <th style={{
                                                 padding: '12px',
-                                                minWidth: '170px',
+                                                minWidth: '150px',
                                                 position: 'sticky',
                                                 top: 0,
                                                 zIndex: 40,
@@ -2227,87 +2227,96 @@ const Analytics = () => {
                                                 padding: '12px',
                                                 borderLeft: '1px solid rgba(255,255,255,0.05)',
                                                 verticalAlign: 'top',
-                                                minWidth: '170px'
+                                                minWidth: '150px'
                                             }}>
                                                 {row.ad_id ? (
-                                                    <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-                                                        <label style={{
+                                                    <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                                                        <div style={{
                                                             display: 'flex',
                                                             alignItems: 'center',
                                                             gap: '8px',
-                                                            fontSize: '0.8rem',
-                                                            color: 'var(--text-secondary)',
-                                                            cursor: 'pointer'
+                                                            flexWrap: 'wrap'
                                                         }}>
+                                                            <label style={{
+                                                                display: 'inline-flex',
+                                                                alignItems: 'center',
+                                                                gap: '6px',
+                                                                fontSize: '0.78rem',
+                                                                color: 'var(--text-secondary)',
+                                                                cursor: 'pointer',
+                                                                whiteSpace: 'nowrap'
+                                                            }}>
                                                             <input
                                                                 type="checkbox"
                                                                 checked={selectedObservationIds.has(row.id)}
                                                                 onChange={(e) => handleToggleObservationRow(row.id, e.target.checked)}
                                                                 style={{ cursor: 'pointer' }}
                                                             />
-                                                            {language === 'zh' ? '加入批次' : 'Select for batch'}
-                                                        </label>
-                                                        <button
-                                                            type="button"
-                                                            onClick={() => handleObservationImport(row)}
-                                                            disabled={observationImportState[row.id]?.status === 'loading'}
-                                                            title={
-                                                                observationWindowKind === 'lifetime'
-                                                                    ? (language === 'zh'
-                                                                        ? '目前日期區段會以 lifetime 匯入 observation。'
-                                                                        : 'Current date preset will import observation as lifetime.')
-                                                                    : undefined
-                                                            }
-                                                            style={{
+                                                                {language === 'zh' ? '批次' : 'Batch'}
+                                                            </label>
+                                                            <button
+                                                                type="button"
+                                                                onClick={() => handleObservationImport(row)}
+                                                                disabled={observationImportState[row.id]?.status === 'loading'}
+                                                                title={
+                                                                    observationWindowKind === 'lifetime'
+                                                                        ? (language === 'zh'
+                                                                            ? '目前日期區段會以 lifetime 匯入 observation。'
+                                                                            : 'Current date preset will import observation as lifetime.')
+                                                                        : undefined
+                                                                }
+                                                                style={{
+                                                                    display: 'inline-flex',
+                                                                    alignItems: 'center',
+                                                                    justifyContent: 'center',
+                                                                    padding: '6px 10px',
+                                                                    borderRadius: '8px',
+                                                                    border: '1px solid var(--glass-border)',
+                                                                    background: 'rgba(255,255,255,0.04)',
+                                                                    color: 'var(--accent-primary)',
+                                                                    fontSize: '0.78rem',
+                                                                    fontWeight: 600,
+                                                                    cursor: observationImportState[row.id]?.status === 'loading' ? 'wait' : 'pointer',
+                                                                    whiteSpace: 'nowrap'
+                                                                }}
+                                                            >
+                                                                {observationImportState[row.id]?.status === 'loading'
+                                                                    ? (language === 'zh' ? '匯入中' : 'Importing')
+                                                                    : (language === 'zh' ? '送出' : 'Send')}
+                                                            </button>
+                                                            <div style={{
                                                                 display: 'inline-flex',
                                                                 alignItems: 'center',
-                                                                justifyContent: 'center',
-                                                                width: '100%',
-                                                                padding: '8px 10px',
-                                                                borderRadius: '8px',
-                                                                border: '1px solid var(--glass-border)',
-                                                                background: 'rgba(255,255,255,0.04)',
-                                                                color: 'var(--accent-primary)',
-                                                                fontSize: '0.8rem',
+                                                                width: 'fit-content',
+                                                                maxWidth: '100%',
+                                                                padding: '4px 8px',
+                                                                borderRadius: '999px',
+                                                                fontSize: '0.72rem',
                                                                 fontWeight: 600,
-                                                                cursor: observationImportState[row.id]?.status === 'loading' ? 'wait' : 'pointer',
-                                                            }}
-                                                        >
-                                                            {observationImportState[row.id]?.status === 'loading'
-                                                                ? (language === 'zh' ? '匯入中...' : 'Importing...')
-                                                                : (language === 'zh' ? '送至 Meta Andromeda' : 'Send to Meta Andromeda')}
-                                                        </button>
-                                                        <div style={{
-                                                            display: 'inline-flex',
-                                                            alignItems: 'center',
-                                                            width: 'fit-content',
-                                                            maxWidth: '100%',
-                                                            padding: '4px 8px',
-                                                            borderRadius: '999px',
-                                                            fontSize: '0.74rem',
-                                                            fontWeight: 600,
-                                                            background: observationImportState[row.id]?.status === 'success'
-                                                                ? 'rgba(52, 211, 153, 0.12)'
-                                                                : observationImportState[row.id]?.status === 'error'
-                                                                    ? 'rgba(248, 113, 113, 0.12)'
-                                                                    : observationImportState[row.id]?.status === 'loading'
-                                                                        ? 'rgba(96, 165, 250, 0.12)'
-                                                                        : 'rgba(255,255,255,0.06)',
-                                                            color: observationImportState[row.id]?.status === 'success'
-                                                                ? '#34d399'
-                                                                : observationImportState[row.id]?.status === 'error'
-                                                                    ? '#f87171'
-                                                                    : observationImportState[row.id]?.status === 'loading'
-                                                                        ? '#60a5fa'
-                                                                        : 'var(--text-secondary)',
-                                                        }}>
-                                                            {observationImportState[row.id]?.status === 'success'
-                                                                ? (language === 'zh' ? '已送出' : 'Imported')
-                                                                : observationImportState[row.id]?.status === 'error'
-                                                                    ? (language === 'zh' ? '失敗' : 'Failed')
-                                                                    : observationImportState[row.id]?.status === 'loading'
-                                                                        ? (language === 'zh' ? '匯入中' : 'Importing')
-                                                                        : (language === 'zh' ? '未送出' : 'Not imported')}
+                                                                background: observationImportState[row.id]?.status === 'success'
+                                                                    ? 'rgba(52, 211, 153, 0.12)'
+                                                                    : observationImportState[row.id]?.status === 'error'
+                                                                        ? 'rgba(248, 113, 113, 0.12)'
+                                                                        : observationImportState[row.id]?.status === 'loading'
+                                                                            ? 'rgba(96, 165, 250, 0.12)'
+                                                                            : 'rgba(255,255,255,0.06)',
+                                                                color: observationImportState[row.id]?.status === 'success'
+                                                                    ? '#34d399'
+                                                                    : observationImportState[row.id]?.status === 'error'
+                                                                        ? '#f87171'
+                                                                        : observationImportState[row.id]?.status === 'loading'
+                                                                            ? '#60a5fa'
+                                                                            : 'var(--text-secondary)',
+                                                                whiteSpace: 'nowrap'
+                                                            }}>
+                                                                {observationImportState[row.id]?.status === 'success'
+                                                                    ? (language === 'zh' ? '已送出' : 'Imported')
+                                                                    : observationImportState[row.id]?.status === 'error'
+                                                                        ? (language === 'zh' ? '失敗' : 'Failed')
+                                                                        : observationImportState[row.id]?.status === 'loading'
+                                                                            ? (language === 'zh' ? '匯入中' : 'Importing')
+                                                                            : (language === 'zh' ? '未送出' : 'Not imported')}
+                                                            </div>
                                                         </div>
                                                         {observationImportState[row.id]?.message && (
                                                             <div style={{
