@@ -86,14 +86,33 @@ class GeminiScoringProvider(BaseScoringProvider):
             "Prefer stable judgments over hype. "
             "All explanations, summaries, and drivers MUST be written in Traditional Chinese (繁體中文)."
         )
-        raw = await asyncio.to_thread(
-            client.generate_content,
-            prompt,
-            registry_entry.provider_model,
-            system_prompt,
-            0.2,
-            600,
-        )
+        raw = None
+        max_retries = 3
+        backoff = 2.0
+        for attempt in range(max_retries):
+            try:
+                raw = await asyncio.to_thread(
+                    client.generate_content,
+                    prompt,
+                    registry_entry.provider_model,
+                    system_prompt,
+                    0.2,
+                    600,
+                )
+                break
+            except Exception as e:
+                is_rate_limit = "429" in str(e) or "resource_exhausted" in str(e).lower() or "exhausted" in str(e).lower()
+                if is_rate_limit and attempt < max_retries - 1:
+                    sleep_time = backoff * (2 ** attempt)
+                    logger.warning(
+                        "[MetaAndromeda] Gemini 429 Rate Limit hit. Retrying in %.1fs... (Attempt %d/%d)",
+                        sleep_time,
+                        attempt + 1,
+                        max_retries
+                    )
+                    await asyncio.sleep(sleep_time)
+                else:
+                    raise
         parsed = _extract_json_payload(raw)
 
         prediction_mode = "diagnostic_only" if request_mode == "diagnostic_only" else "diagnostic_plus_roas"
