@@ -52,10 +52,13 @@ class HeuristicScoringProvider(BaseScoringProvider):
 
 
 class GeminiScoringProvider(BaseScoringProvider):
+    def __init__(self, api_key: str | None = None):
+        self.api_key = api_key
+
     async def score(self, score_payload: dict, registry_entry: MetaAndromedaModelEntry) -> dict:
         from services.ai.gemini_client import GoogleGeminiClient
 
-        client = GoogleGeminiClient()
+        client = GoogleGeminiClient(api_key=self.api_key)
         if client.client is None:
             raise RuntimeError("Gemini client is not configured")
 
@@ -302,21 +305,46 @@ class MetaAndromedaRuntimeAdapter:
         registry_entry = model_registry.get_entry()
         provider_name = registry_entry.provider
         import os
-        google_key = os.getenv("GOOGLE_AI_API_KEY")
+
+        # 嘗試從資料庫讀取該素材上傳者的 API 金鑰
+        db_key = None
+        asset_id = score_payload.get("asset_id")
+        if asset_id:
+            try:
+                from database import SessionLocal
+                from database.models.meta_andromeda import MetaAndromedaAsset
+                from database.models.user import User
+                from modules.auth.service import TokenManager
+
+                db_session = SessionLocal()
+                try:
+                    asset = db_session.query(MetaAndromedaAsset).filter(MetaAndromedaAsset.id == asset_id).first()
+                    if asset and asset.uploaded_by:
+                        user = db_session.query(User).filter(User.id == asset.uploaded_by).first()
+                        if user and user.google_id:
+                            db_key = TokenManager.get_ai_api_key(user.google_id, provider="gemini")
+                finally:
+                    db_session.close()
+            except Exception as e:
+                logger.error(f"[MetaAndromeda] Failed to retrieve DB API key for asset {asset_id}: {e}")
+
+        google_key = db_key or os.getenv("GOOGLE_AI_API_KEY") or os.getenv("GOOGLE_API_KEY")
         zeabur_key = os.getenv("ZEABUR_AI_HUB_API_KEY")
+
         logger.warning(
-            "[MetaAndromeda] generate_score_result. GOOGLE_AI_API_KEY len: %s, ZEABUR_AI_HUB_API_KEY len: %s, provider_override: %s",
+            "[MetaAndromeda] generate_score_result. DB Key present: %s, GOOGLE_AI_API_KEY len: %s, provider_override: %s",
+            bool(db_key),
             len(google_key) if google_key else 0,
-            len(zeabur_key) if zeabur_key else 0,
             settings.META_ANDROMEDA_SCORING_PROVIDER
         )
 
-        if settings.META_ANDROMEDA_SCORING_PROVIDER == "auto" and provider_name == "gemini" and not settings.GOOGLE_AI_API_KEY:
+        has_any_google_key = bool(google_key) or bool(settings.GOOGLE_AI_API_KEY)
+        if settings.META_ANDROMEDA_SCORING_PROVIDER == "auto" and provider_name == "gemini" and not has_any_google_key:
             provider_name = "heuristic"
 
         provider: BaseScoringProvider
         if provider_name == "gemini":
-            provider = GeminiScoringProvider()
+            provider = GeminiScoringProvider(api_key=google_key)
         else:
             provider = HeuristicScoringProvider()
 
@@ -324,7 +352,7 @@ class MetaAndromedaRuntimeAdapter:
             return await provider.score(score_payload, registry_entry)
         except Exception as exc:
             logger.warning("Meta Andromeda scoring provider failed: %s", exc)
-            if not settings.META_ANDROMEDA_SCORING_ALLOW_FALLBACK:
+            if not settings.META_ANDROMENS_SCORING_ALLOW_FALLBACK if hasattr(settings, "META_ANDROMENS_SCORING_ALLOW_FALLBACK") else not settings.META_ANDROMEDA_SCORING_ALLOW_FALLBACK:
                 raise
             fallback_entry = model_registry.get_entry("candidate_v0")
             return build_heuristic_score_result(

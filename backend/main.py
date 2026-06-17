@@ -271,13 +271,28 @@ async def health_check():
     zeabur_key = os.getenv("ZEABUR_AI_HUB_API_KEY") or ""
     from core.config import settings
 
+    # 統計資料庫中有金鑰的用戶數
+    db_users_with_gemini_key_count = 0
+    try:
+        temp_session = SessionLocal()
+        try:
+            from database.models.user import User
+            db_users_with_gemini_key_count = temp_session.query(User).filter(
+                User.gemini_api_key.isnot(None),
+                User.gemini_api_key != ""
+            ).count()
+        finally:
+            temp_session.close()
+    except Exception:
+        pass
+
     health_status = {
         "status": "healthy",
         "timestamp": datetime.now(timezone.utc).isoformat(),
         "uptime_seconds": int(time.time() - START_TIME),
         "version": "2.1.0",
         "git_info": {
-            "deployed_via_agent_at": "2026-06-17T13:23:00+08:00",
+            "deployed_via_agent_at": "2026-06-17T13:25:00+08:00",
             "dynamic_commit": git_commit_dynamic,
             "target_branch": "dev-saas"
         },
@@ -286,6 +301,7 @@ async def health_check():
             "GOOGLE_API_KEY_len": len(google_key_alt),
             "ZEABUR_AI_HUB_API_KEY_len": len(zeabur_key),
             "settings_GOOGLE_AI_API_KEY_len": len(settings.GOOGLE_AI_API_KEY or "") if settings.GOOGLE_AI_API_KEY else 0,
+            "db_users_with_gemini_key_count": db_users_with_gemini_key_count,
             "META_ANDROMEDA_SCORING_PROVIDER": settings.META_ANDROMEDA_SCORING_PROVIDER
         },
         "checks": {}
