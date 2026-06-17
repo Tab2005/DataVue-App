@@ -83,6 +83,25 @@ const MetaAndromedaScoreLab = () => {
         return () => window.clearInterval(intervalId);
     }, [scoreResult?.score_event_id, scoreResult?.status]);
 
+    const autoUpload = async (file) => {
+        if (!file) return;
+        const assetType = inferAssetType(file);
+        if (!assetType) {
+            setError(t('Unsupported file type.', '不支援的檔案格式。'));
+            return;
+        }
+        setLoadingUpload(true);
+        setError(null);
+        try {
+            const uploaded = await uploadMetaAndromedaAsset(file, assetType);
+            setUploadedAsset(uploaded);
+        } catch (err) {
+            setError(err.message || t('Upload failed', '素材上傳失敗'));
+        } finally {
+            setLoadingUpload(false);
+        }
+    };
+
     const handleDrag = (e) => {
         e.preventDefault();
         e.stopPropagation();
@@ -93,37 +112,20 @@ const MetaAndromedaScoreLab = () => {
         }
     };
 
-    const handleDrop = (e) => {
+    const handleDrop = async (e) => {
         e.preventDefault();
         e.stopPropagation();
         setIsDragActive(false);
         if (e.dataTransfer.files && e.dataTransfer.files[0]) {
-            setSelectedFile(e.dataTransfer.files[0]);
-            setUploadedAsset(null); // 重設已上傳的素材
+            const file = e.dataTransfer.files[0];
+            setSelectedFile(file);
+            setUploadedAsset(null);
+            await autoUpload(file);
         }
     };
 
     const handleButtonClick = () => {
         document.getElementById('file-upload-input').click();
-    };
-
-    const handleUpload = async () => {
-        if (!selectedFile) return;
-        const assetType = inferAssetType(selectedFile);
-        if (!assetType) {
-            setError(t('Unsupported file type.', '不支援的檔案格式。'));
-            return;
-        }
-        setLoadingUpload(true);
-        setError(null);
-        try {
-            const uploaded = await uploadMetaAndromedaAsset(selectedFile, assetType);
-            setUploadedAsset(uploaded);
-        } catch (err) {
-            setError(err.message || t('Upload failed', '素材上傳失敗'));
-        } finally {
-            setLoadingUpload(false);
-        }
     };
 
     const handleSubmit = async (event) => {
@@ -174,7 +176,7 @@ const MetaAndromedaScoreLab = () => {
                 <section style={panelStyle}>
                     <h2 style={sectionTitleStyle}>{t('Upload and Submit', '上傳與送出評分')}</h2>
                     <form onSubmit={handleSubmit} style={{ display: 'grid', gap: '14px' }}>
-                        {/* 拖放上傳區域 */}
+                        {/* 拖放與自動上傳區域 */}
                         <div
                             onDragEnter={handleDrag}
                             onDragOver={handleDrag}
@@ -188,38 +190,44 @@ const MetaAndromedaScoreLab = () => {
                                 type="file"
                                 style={{ display: 'none' }}
                                 accept=".png,.jpg,.jpeg,.webp,.mp4,.mov"
-                                onChange={(e) => {
-                                    setSelectedFile(e.target.files?.[0] || null);
+                                onChange={async (e) => {
+                                    const file = e.target.files?.[0] || null;
+                                    setSelectedFile(file);
                                     setUploadedAsset(null);
+                                    if (file) {
+                                        await autoUpload(file);
+                                    }
                                 }}
                             />
                             {selectedFile ? (
                                 <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '8px', width: '100%' }}>
                                     <span style={{ fontSize: '2rem' }}>
-                                        {inferAssetType(selectedFile) === 'video' ? '🎥' : '🖼️'}
+                                        {loadingUpload ? '⏳' : (inferAssetType(selectedFile) === 'video' ? '🎥' : '🖼️')}
                                     </span>
                                     <div style={{ color: 'var(--text-primary)', fontWeight: 'bold', wordBreak: 'break-all' }}>
                                         {selectedFile.name}
                                     </div>
                                     <div style={{ color: 'var(--text-secondary)', fontSize: '0.85rem' }}>
-                                        {(selectedFile.size / (1024 * 1024)).toFixed(2)} MB
+                                        {loadingUpload ? t('Uploading asset...', '素材上傳中...') : `${(selectedFile.size / (1024 * 1024)).toFixed(2)} MB`}
                                     </div>
-                                    <button
-                                        type="button"
-                                        style={{
-                                            ...buttonSecondaryStyle,
-                                            padding: '4px 12px',
-                                            fontSize: '0.85rem',
-                                            marginTop: '6px'
-                                        }}
-                                        onClick={(e) => {
-                                            e.stopPropagation(); // 避免點擊清除時觸發彈出視窗
-                                            setSelectedFile(null);
-                                            setUploadedAsset(null);
-                                        }}
-                                    >
-                                        {t('Clear', '清除重新選擇')}
-                                    </button>
+                                    {!loadingUpload && (
+                                        <button
+                                            type="button"
+                                            style={{
+                                                ...buttonSecondaryStyle,
+                                                padding: '4px 12px',
+                                                fontSize: '0.85rem',
+                                                marginTop: '6px'
+                                            }}
+                                            onClick={(e) => {
+                                                e.stopPropagation(); // 避免點擊清除時觸發彈出視窗
+                                                setSelectedFile(null);
+                                                setUploadedAsset(null);
+                                            }}
+                                        >
+                                            {t('Clear', '清除重新選擇')}
+                                        </button>
+                                    )}
                                 </div>
                             ) : (
                                 <>
@@ -234,14 +242,19 @@ const MetaAndromedaScoreLab = () => {
                             )}
                         </div>
 
-                        {selectedFile && !uploadedAsset && (
+                        {selectedFile && !uploadedAsset && !loadingUpload && (
                             <button
                                 type="button"
-                                onClick={handleUpload}
-                                style={buttonSecondaryStyle}
-                                disabled={loadingUpload}
+                                onClick={() => autoUpload(selectedFile)}
+                                style={{
+                                    ...buttonSecondaryStyle,
+                                    borderColor: '#ef4444',
+                                    color: '#ef4444',
+                                    background: 'rgba(239, 68, 68, 0.05)',
+                                    marginTop: '8px'
+                                }}
                             >
-                                {loadingUpload ? t('Uploading...', '上傳中...') : t('Upload Asset', '上傳素材')}
+                                ⚠️ {t('Upload failed. Click here to retry', '素材上傳失敗。點擊此處重試上傳')}
                             </button>
                         )}
 
@@ -276,10 +289,19 @@ const MetaAndromedaScoreLab = () => {
 
                         <button
                             type="submit"
-                            style={buttonPrimaryStyle}
-                            disabled={!uploadedAsset || loadingSubmit || polling}
+                            style={{
+                                ...buttonPrimaryStyle,
+                                opacity: (!uploadedAsset || loadingSubmit || polling || loadingUpload) ? 0.6 : 1,
+                                cursor: (!uploadedAsset || loadingSubmit || polling || loadingUpload) ? 'not-allowed' : 'pointer'
+                            }}
+                            disabled={!uploadedAsset || loadingSubmit || polling || loadingUpload}
                         >
-                            {loadingSubmit ? t('Submitting...', '送出中...') : t('Submit Score', '送出評分')}
+                            {loadingUpload
+                                ? t('Uploading asset...', '素材上傳中，請稍候...')
+                                : loadingSubmit
+                                    ? t('Submitting...', '送出中...')
+                                    : t('Submit Score', '送出評分')
+                            }
                         </button>
                     </form>
                 </section>
