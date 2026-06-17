@@ -301,6 +301,15 @@ class MetaAndromedaRuntimeAdapter:
         await asyncio.sleep(0.05)
         registry_entry = model_registry.get_entry()
         provider_name = registry_entry.provider
+        import os
+        google_key = os.getenv("GOOGLE_AI_API_KEY")
+        zeabur_key = os.getenv("ZEABUR_AI_HUB_API_KEY")
+        logger.info(
+            "[MetaAndromeda] generate_score_result. GOOGLE_AI_API_KEY len: %s, ZEABUR_AI_HUB_API_KEY len: %s, provider_override: %s",
+            len(google_key) if google_key else 0,
+            len(zeabur_key) if zeabur_key else 0,
+            settings.META_ANDROMEDA_SCORING_PROVIDER
+        )
 
         if settings.META_ANDROMEDA_SCORING_PROVIDER == "auto" and provider_name == "gemini" and not settings.GOOGLE_AI_API_KEY:
             provider_name = "heuristic"
