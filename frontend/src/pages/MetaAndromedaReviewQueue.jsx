@@ -244,53 +244,100 @@ const MetaAndromedaReviewQueue = () => {
                                 paddingRight: '4px'
                             }}
                         >
-                            {filteredItems.map((item) => (
-                                <button
-                                    key={item.score_event_id}
-                                    type="button"
-                                    onClick={() => setSelectedId(item.score_event_id)}
-                                    style={{
-                                        ...queueItemStyle,
-                                        borderColor: selectedId === item.score_event_id
-                                            ? 'var(--accent-primary)'
-                                            : 'var(--glass-border)',
-                                        background: selectedId === item.score_event_id
-                                            ? 'rgba(255, 255, 255, 0.05)'
-                                            : 'rgba(255,255,255,0.01)',
-                                    }}
-                                >
-                                    <div style={{ display: 'flex', justifyContent: 'space-between', gap: '12px', alignItems: 'center', marginBottom: '8px' }}>
-                                        <strong style={{ color: 'var(--text-primary)', fontSize: '0.9rem' }}>{item.score_event_id}</strong>
-                                        <span style={{
-                                            padding: '2px 8px',
-                                            borderRadius: '999px',
-                                            background: statusToneMap[item.status] || 'rgba(255,255,255,0.08)',
-                                            color: 'var(--text-primary)',
-                                            fontSize: '0.75rem',
-                                            fontWeight: 600
+                            {filteredItems.map((item) => {
+                                const previewUrl = item.preview_url;
+                                const isVideo = item.asset_type === 'video';
+                                const hasRealPreview = previewUrl && (previewUrl.startsWith('http') || previewUrl.startsWith('/'));
+                                
+                                return (
+                                    <button
+                                        key={item.score_event_id}
+                                        type="button"
+                                        onClick={() => setSelectedId(item.score_event_id)}
+                                        style={{
+                                            ...queueItemStyle,
+                                            display: 'flex',
+                                            gap: '12px',
+                                            alignItems: 'center',
+                                            borderColor: selectedId === item.score_event_id
+                                                ? 'var(--accent-primary)'
+                                                : 'var(--glass-border)',
+                                            background: selectedId === item.score_event_id
+                                                ? 'rgba(255, 255, 255, 0.05)'
+                                                : 'rgba(255,255,255,0.01)',
+                                        }}
+                                    >
+                                        {/* 素材縮圖/占位符 */}
+                                        <div style={{
+                                            width: '60px',
+                                            height: '60px',
+                                            borderRadius: '8px',
+                                            overflow: 'hidden',
+                                            background: 'rgba(255, 255, 255, 0.03)',
+                                            border: '1px solid var(--glass-border)',
+                                            display: 'flex',
+                                            alignItems: 'center',
+                                            justifyContent: 'center',
+                                            flexShrink: 0
                                         }}>
-                                            {getTranslation(item.status)}
-                                        </span>
-                                    </div>
-                                    <div style={{ color: 'var(--text-secondary)', marginBottom: '8px', fontSize: '0.85rem' }}>
-                                        {item.objective} / {item.placement_family} / {item.market}
-                                    </div>
-                                    <div style={{ display: 'flex', justifyContent: 'space-between', color: 'var(--text-secondary)', fontSize: '0.8rem' }}>
-                                        <span>{t('Score: ', '得分: ')}<strong>{item.overall_score ?? '--'}</strong></span>
-                                        <span style={{
-                                            color: item.reviewed ? '#10b981' : 'var(--text-secondary)',
-                                            fontWeight: item.reviewed ? 600 : 'normal'
-                                        }}>
-                                            {item.reviewed ? t('Reviewed', '已審核') : t('Unreviewed', '未審核')}
-                                        </span>
-                                        {item.latest_feedback_decision ? (
-                                            <span style={{ color: 'var(--accent-primary)', fontWeight: 600 }}>
-                                                {getTranslation(item.latest_feedback_decision)}
-                                            </span>
-                                        ) : null}
-                                    </div>
-                                </button>
-                            ))}
+                                            {hasRealPreview ? (
+                                                isVideo ? (
+                                                    <video src={previewUrl} style={{ width: '100%', height: '100%', objectFit: 'cover' }} muted playsInline />
+                                                ) : (
+                                                    <img src={previewUrl} style={{ width: '100%', height: '100%', objectFit: 'cover' }} alt="creative thumbnail" />
+                                                )
+                                            ) : (
+                                                <span style={{ fontSize: '1.4rem' }}>
+                                                    {isVideo ? '📹' : '🖼️'}
+                                                </span>
+                                            )}
+                                        </div>
+
+                                        {/* 資訊區 */}
+                                        <div style={{ flex: 1, minWidth: 0 }}>
+                                            <div style={{ display: 'flex', justifyContent: 'space-between', gap: '12px', alignItems: 'center', marginBottom: '6px' }}>
+                                                <strong style={{ 
+                                                    color: 'var(--text-primary)', 
+                                                    fontSize: '0.85rem',
+                                                    whiteSpace: 'nowrap',
+                                                    overflow: 'hidden',
+                                                    textOverflow: 'ellipsis'
+                                                }}>
+                                                    {item.score_event_id}
+                                                </strong>
+                                                <span style={{
+                                                    padding: '2px 8px',
+                                                    borderRadius: '999px',
+                                                    background: statusToneMap[item.status] || 'rgba(255,255,255,0.08)',
+                                                    color: 'var(--text-primary)',
+                                                    fontSize: '0.72rem',
+                                                    fontWeight: 600,
+                                                    flexShrink: 0
+                                                }}>
+                                                    {getTranslation(item.status)}
+                                                </span>
+                                            </div>
+                                            <div style={{ color: 'var(--text-secondary)', marginBottom: '6px', fontSize: '0.8rem', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                                                {item.objective} / {item.placement_family} / {item.market}
+                                            </div>
+                                            <div style={{ display: 'flex', justifyContent: 'space-between', color: 'var(--text-secondary)', fontSize: '0.75rem' }}>
+                                                <span>{t('Score: ', '得分: ')}<strong style={{ color: 'var(--text-primary)' }}>{item.overall_score ?? '--'}</strong></span>
+                                                <span style={{
+                                                    color: item.reviewed ? '#10b981' : 'var(--text-secondary)',
+                                                    fontWeight: item.reviewed ? 600 : 'normal'
+                                                }}>
+                                                    {item.reviewed ? t('Reviewed', '已審核') : t('Unreviewed', '未審核')}
+                                                </span>
+                                                {item.latest_feedback_decision ? (
+                                                    <span style={{ color: 'var(--accent-primary)', fontWeight: 600 }}>
+                                                        {getTranslation(item.latest_feedback_decision)}
+                                                    </span>
+                                                ) : null}
+                                            </div>
+                                        </div>
+                                    </button>
+                                );
+                            })}
                         </div>
                     )}
                 </section>
@@ -314,6 +361,44 @@ const MetaAndromedaReviewQueue = () => {
                                 paddingRight: '4px'
                             }}
                         >
+                            {/* 素材預覽 */}
+                            <div style={{
+                                ...detailCardStyle,
+                                display: 'flex',
+                                flexDirection: 'column',
+                                alignItems: 'center',
+                                justifyContent: 'center',
+                                minHeight: '180px',
+                                background: 'rgba(0,0,0,0.2)',
+                                border: '1px solid var(--glass-border)',
+                                borderRadius: '12px',
+                                overflow: 'hidden'
+                            }}>
+                                {detail.preview_url && (detail.preview_url.startsWith('http') || detail.preview_url.startsWith('/')) ? (
+                                    detail.asset_type === 'video' ? (
+                                        <video 
+                                            src={detail.preview_url} 
+                                            controls 
+                                            style={{ maxWidth: '100%', maxHeight: '300px', borderRadius: '8px' }} 
+                                        />
+                                    ) : (
+                                        <img 
+                                            src={detail.preview_url} 
+                                            style={{ maxWidth: '100%', maxHeight: '300px', objectFit: 'contain', borderRadius: '8px' }} 
+                                            alt="creative preview" 
+                                        />
+                                    )
+                                ) : (
+                                    <div style={{ color: 'var(--text-secondary)', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '8px' }}>
+                                        <span style={{ fontSize: '2.5rem' }}>{detail.asset_type === 'video' ? '📹' : '🖼️'}</span>
+                                        <span style={{ fontSize: '0.82rem' }}>
+                                            {t('No online preview URL (asset_uri: ', '無線上預覽網址 (素材 URI: ')}
+                                            {detail.asset_uri ? detail.asset_uri.split('/').pop() : '--'})
+                                        </span>
+                                    </div>
+                                )}
+                            </div>
+
                             <div style={detailCardStyle}>
                                 <div style={{ color: 'var(--text-secondary)', marginBottom: '8px', fontSize: '0.85rem' }}>score_event_id</div>
                                 <div style={{ color: 'var(--text-primary)', fontWeight: 700 }}>{detail.score_event_id}</div>
