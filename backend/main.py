@@ -339,14 +339,9 @@ async def health_check():
 
 
 @app.get("/api/health", tags=["system"])
-def health_check_legacy():
+async def health_check_legacy():
     """健康檢查端點（舊路徑，向後相容）。"""
-    return {
-        "status": "ok",
-        "version": "2.1.0",
-        "timestamp": datetime.now(timezone.utc).isoformat(),
-        "message": "DataVue Backend is healthy"
-    }
+    return await health_check()
 
 
 # ============================================================
