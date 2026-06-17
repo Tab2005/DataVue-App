@@ -34,8 +34,31 @@ const MetaAndromedaReviewQueue = () => {
     const [submittingFeedback, setSubmittingFeedback] = useState(false);
     const [error, setError] = useState(null);
     const [feedbackForm, setFeedbackForm] = useState(defaultFeedbackForm);
+    const [searchTerm, setSearchTerm] = useState('');
 
     const t = (en, zh) => (language === 'en' ? en : zh);
+
+    const getTranslation = (key) => {
+        if (!key) return '--';
+        const keyLower = String(key).toLowerCase();
+        switch (keyLower) {
+            case 'status': return t('Status', '狀態');
+            case 'attempts': return t('Attempts', '處理次數');
+            case 'overall_score': return t('Overall Score', '總評分');
+            case 'summary': return t('Summary', '評分摘要說明');
+            case 'completed': return t('Completed', '已完成');
+            case 'failed': return t('Failed', '失敗');
+            case 'pending': return t('Pending', '待處理');
+            case 'processing': return t('Processing', '處理中');
+            case 'queued': return t('Queued', '排隊中');
+            case 'unreviewed': return t('Unreviewed', '未審核');
+            case 'reviewed': return t('Reviewed', '已審核');
+            case 'approve': return t('Approve', '通過');
+            case 'revise': return t('Revise', '修改');
+            case 'reject': return t('Reject', '退回');
+            default: return key;
+        }
+    };
 
     const loadQueue = async ({ preserveSelection = true } = {}) => {
         setLoadingQueue(true);
@@ -45,7 +68,7 @@ const MetaAndromedaReviewQueue = () => {
             const data = await fetchMetaAndromedaReviewQueue({
                 status: statusFilter === 'all' ? null : statusFilter,
                 reviewed,
-                limit: 30,
+                limit: 50, // 稍微擴大載入筆數，配合滾動條與搜尋
             });
             const items = data.items || [];
             setQueueItems(items);
@@ -56,7 +79,7 @@ const MetaAndromedaReviewQueue = () => {
                 return items[0]?.score_event_id ?? null;
             });
         } catch (err) {
-            setError(err.message || 'Failed to load review queue');
+            setError(err.message || t('Failed to load review queue', '載入審核佇列失敗'));
         } finally {
             setLoadingQueue(false);
         }
@@ -79,7 +102,7 @@ const MetaAndromedaReviewQueue = () => {
             setDetail(detailData);
             setFeedback(feedbackData.feedback || []);
         } catch (err) {
-            setError(err.message || 'Failed to load review detail');
+            setError(err.message || t('Failed to load review detail', '載入審核明細失敗'));
         } finally {
             setLoadingDetail(false);
         }
@@ -114,14 +137,44 @@ const MetaAndromedaReviewQueue = () => {
                 loadDetail(selectedId),
             ]);
         } catch (err) {
-            setError(err.message || 'Failed to submit feedback');
+            setError(err.message || t('Failed to submit feedback', '提交回饋失敗'));
         } finally {
             setSubmittingFeedback(false);
         }
     };
 
+    // 前端動態篩選
+    const filteredItems = queueItems.filter((item) => {
+        const term = searchTerm.toLowerCase().strip ? searchTerm.toLowerCase().trim() : searchTerm.toLowerCase();
+        return (
+            item.score_event_id.toLowerCase().includes(term) ||
+            item.objective.toLowerCase().includes(term) ||
+            item.placement_family.toLowerCase().includes(term) ||
+            item.market.toLowerCase().includes(term)
+        );
+    });
+
     return (
         <div style={{ padding: isMobile ? '16px' : '24px' }}>
+            {/* 注入精美磨砂玻璃滾動條樣式 */}
+            <style>{`
+                .queue-scroll-box::-webkit-scrollbar {
+                    width: 6px;
+                }
+                .queue-scroll-box::-webkit-scrollbar-track {
+                    background: rgba(255, 255, 255, 0.01);
+                    border-radius: 999px;
+                }
+                .queue-scroll-box::-webkit-scrollbar-thumb {
+                    background: var(--glass-border);
+                    border-radius: 999px;
+                    transition: all 0.2s;
+                }
+                .queue-scroll-box::-webkit-scrollbar-thumb:hover {
+                    background: var(--accent-primary);
+                }
+            `}</style>
+
             <div style={{
                 display: 'flex',
                 justifyContent: 'space-between',
@@ -158,18 +211,40 @@ const MetaAndromedaReviewQueue = () => {
 
             <div style={{
                 display: 'grid',
-                gridTemplateColumns: isMobile ? '1fr' : '0.95fr 1.05fr',
+                gridTemplateColumns: isMobile ? '1fr' : '0.9fr 1.1fr', // 微調比例，給右側詳情多一點空間
                 gap: '16px'
             }}>
+                {/* 左側清單面板 */}
                 <section style={panelStyle}>
                     <h2 style={sectionTitleStyle}>{t('Queue Items', '佇列項目')}</h2>
+                    
+                    {/* 新增動態搜尋欄位 */}
+                    <input
+                        type="text"
+                        placeholder={t('Search by ID, objective, placement...', '搜尋 ID、目標、版位...')}
+                        value={searchTerm}
+                        onChange={(e) => setSearchTerm(e.target.value)}
+                        style={searchInputStyle}
+                    />
+
                     {loadingQueue ? (
                         <div style={{ color: 'var(--text-secondary)' }}>{t('Loading queue...', '載入佇列中...')}</div>
-                    ) : queueItems.length === 0 ? (
+                    ) : filteredItems.length === 0 ? (
                         <div style={{ color: 'var(--text-secondary)' }}>{t('No queue items found.', '目前沒有符合條件的項目。')}</div>
                     ) : (
-                        <div style={{ display: 'grid', gap: '12px' }}>
-                            {queueItems.map((item) => (
+                        /* 鎖定高度並具備精美滾動條的容器 */
+                        <div 
+                            className="queue-scroll-box"
+                            style={{ 
+                                display: 'grid', 
+                                gap: '10px',
+                                maxHeight: 'calc(100vh - 290px)', // 動態扣除頂部高度，完美適配螢幕
+                                minHeight: '300px',
+                                overflowY: 'auto',
+                                paddingRight: '4px'
+                            }}
+                        >
+                            {filteredItems.map((item) => (
                                 <button
                                     key={item.score_event_id}
                                     type="button"
@@ -179,27 +254,40 @@ const MetaAndromedaReviewQueue = () => {
                                         borderColor: selectedId === item.score_event_id
                                             ? 'var(--accent-primary)'
                                             : 'var(--glass-border)',
+                                        background: selectedId === item.score_event_id
+                                            ? 'rgba(255, 255, 255, 0.05)'
+                                            : 'rgba(255,255,255,0.01)',
                                     }}
                                 >
-                                    <div style={{ display: 'flex', justifyContent: 'space-between', gap: '12px', marginBottom: '10px' }}>
-                                        <strong style={{ color: 'var(--text-primary)' }}>{item.score_event_id}</strong>
+                                    <div style={{ display: 'flex', justifyContent: 'space-between', gap: '12px', alignItems: 'center', marginBottom: '8px' }}>
+                                        <strong style={{ color: 'var(--text-primary)', fontSize: '0.9rem' }}>{item.score_event_id}</strong>
                                         <span style={{
-                                            padding: '4px 8px',
+                                            padding: '2px 8px',
                                             borderRadius: '999px',
                                             background: statusToneMap[item.status] || 'rgba(255,255,255,0.08)',
                                             color: 'var(--text-primary)',
-                                            fontSize: '0.8rem'
+                                            fontSize: '0.75rem',
+                                            fontWeight: 600
                                         }}>
-                                            {item.status}
+                                            {getTranslation(item.status)}
                                         </span>
                                     </div>
-                                    <div style={{ color: 'var(--text-secondary)', marginBottom: '8px' }}>
+                                    <div style={{ color: 'var(--text-secondary)', marginBottom: '8px', fontSize: '0.85rem' }}>
                                         {item.objective} / {item.placement_family} / {item.market}
                                     </div>
-                                    <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', color: 'var(--text-secondary)', fontSize: '0.85rem' }}>
-                                        <span>score: {item.overall_score ?? '--'}</span>
-                                        <span>{item.reviewed ? t('reviewed', '已審核') : t('pending', '待審核')}</span>
-                                        {item.latest_feedback_decision ? <span>{item.latest_feedback_decision}</span> : null}
+                                    <div style={{ display: 'flex', justifyContent: 'space-between', color: 'var(--text-secondary)', fontSize: '0.8rem' }}>
+                                        <span>{t('Score: ', '得分: ')}<strong>{item.overall_score ?? '--'}</strong></span>
+                                        <span style={{
+                                            color: item.reviewed ? '#10b981' : 'var(--text-secondary)',
+                                            fontWeight: item.reviewed ? 600 : 'normal'
+                                        }}>
+                                            {item.reviewed ? t('Reviewed', '已審核') : t('Unreviewed', '未審核')}
+                                        </span>
+                                        {item.latest_feedback_decision ? (
+                                            <span style={{ color: 'var(--accent-primary)', fontWeight: 600 }}>
+                                                {getTranslation(item.latest_feedback_decision)}
+                                            </span>
+                                        ) : null}
                                     </div>
                                 </button>
                             ))}
@@ -207,6 +295,7 @@ const MetaAndromedaReviewQueue = () => {
                     )}
                 </section>
 
+                {/* 右側詳細資料面板 */}
                 <section style={panelStyle}>
                     <h2 style={sectionTitleStyle}>{t('Selected Detail', '所選明細')}</h2>
                     {loadingDetail ? (
@@ -214,9 +303,19 @@ const MetaAndromedaReviewQueue = () => {
                     ) : !detail ? (
                         <div style={{ color: 'var(--text-secondary)' }}>{t('Select a queue item.', '請先選擇一筆佇列項目。')}</div>
                     ) : (
-                        <div style={{ display: 'grid', gap: '16px' }}>
+                        /* 明細也加上滾動支持，確保左右對齊不溢出 */
+                        <div 
+                            className="queue-scroll-box"
+                            style={{ 
+                                display: 'grid', 
+                                gap: '16px',
+                                maxHeight: 'calc(100vh - 290px)',
+                                overflowY: 'auto',
+                                paddingRight: '4px'
+                            }}
+                        >
                             <div style={detailCardStyle}>
-                                <div style={{ color: 'var(--text-secondary)', marginBottom: '8px' }}>score_event_id</div>
+                                <div style={{ color: 'var(--text-secondary)', marginBottom: '8px', fontSize: '0.85rem' }}>score_event_id</div>
                                 <div style={{ color: 'var(--text-primary)', fontWeight: 700 }}>{detail.score_event_id}</div>
                             </div>
                             <div style={{
@@ -225,21 +324,54 @@ const MetaAndromedaReviewQueue = () => {
                                 gap: '12px'
                             }}>
                                 <div style={detailCardStyle}>
-                                    <div style={{ color: 'var(--text-secondary)', marginBottom: '8px' }}>{t('Status', '狀態')}</div>
-                                    <div style={{ color: 'var(--text-primary)', fontWeight: 700 }}>{detail.status}</div>
+                                    <div style={{ color: 'var(--text-secondary)', marginBottom: '8px', fontSize: '0.85rem' }}>{t('Status', '狀態')}</div>
+                                    <div style={{ color: 'var(--text-primary)', fontWeight: 700 }}>{getTranslation(detail.status)}</div>
                                 </div>
                                 <div style={detailCardStyle}>
-                                    <div style={{ color: 'var(--text-secondary)', marginBottom: '8px' }}>{t('Asset Type', '素材類型')}</div>
-                                    <div style={{ color: 'var(--text-primary)', fontWeight: 700 }}>{detail.asset_type}</div>
+                                    <div style={{ color: 'var(--text-secondary)', marginBottom: '8px', fontSize: '0.85rem' }}>{t('Asset Type', '素材類型')}</div>
+                                    <div style={{ color: 'var(--text-primary)', fontWeight: 700 }}>
+                                        {detail.asset_type === 'video' ? t('Video', '影片') : t('Image', '圖片')}
+                                    </div>
                                 </div>
                                 <div style={detailCardStyle}>
-                                    <div style={{ color: 'var(--text-secondary)', marginBottom: '8px' }}>{t('Model Version', '模型版本')}</div>
+                                    <div style={{ color: 'var(--text-secondary)', marginBottom: '8px', fontSize: '0.85rem' }}>{t('Model Version', '模型版本')}</div>
                                     <div style={{ color: 'var(--text-primary)', fontWeight: 700 }}>{detail.model_version || '--'}</div>
                                 </div>
                             </div>
+                            
+                            {/* 評估核心與 Fallback 警告 (同步 ScoreLab 優質體驗) */}
+                            {detail.lineage && (
+                                <div style={detailCardStyle}>
+                                    <div style={{ color: 'var(--text-secondary)', marginBottom: '8px', fontSize: '0.85rem' }}>{t('Scoring Engine', '評估核心')}</div>
+                                    <div style={{
+                                        color: detail.lineage.scoring_mode === 'ai' ? 'var(--accent-primary)' : 'var(--text-secondary)',
+                                        fontWeight: 700,
+                                        display: 'flex',
+                                        alignItems: 'center',
+                                        gap: '6px'
+                                    }}>
+                                        <span>{detail.lineage.scoring_mode === 'ai' ? '🤖' : '⚙️'}</span>
+                                        <span>
+                                            {detail.lineage.scoring_mode === 'ai'
+                                                ? t(
+                                                    `Gemini AI (${detail.lineage.provider_model || 'gemini-1.5-flash'})`,
+                                                    `Gemini AI 多模態模型 (${detail.lineage.provider_model || 'gemini-1.5-flash'})`
+                                                  )
+                                                : t('Heuristic Rule Engine', '啟發式模擬規則引擎')
+                                            }
+                                        </span>
+                                    </div>
+                                    {detail.lineage.fallback_reason && (
+                                        <div style={{ color: '#ef4444', fontSize: '0.82rem', marginTop: '6px', lineHeight: 1.4 }}>
+                                            ⚠️ {t('AI Unavailable. Fallback engaged: ', 'AI 服務不可用，已啟用備用方案：')}{detail.lineage.fallback_reason}
+                                        </div>
+                                    )}
+                                </div>
+                            )}
+
                             <div style={detailCardStyle}>
-                                <div style={{ color: 'var(--text-secondary)', marginBottom: '8px' }}>{t('Summary', '摘要')}</div>
-                                <div style={{ color: 'var(--text-primary)' }}>
+                                <div style={{ color: 'var(--text-secondary)', marginBottom: '8px', fontSize: '0.85rem' }}>{t('Summary', '摘要')}</div>
+                                <div style={{ color: 'var(--text-primary)', lineHeight: 1.6 }}>
                                     {detail.explanations?.summary || t('No summary available yet.', '目前尚無摘要。')}
                                 </div>
                             </div>
@@ -249,30 +381,32 @@ const MetaAndromedaReviewQueue = () => {
                                 gap: '12px'
                             }}>
                                 <div style={detailCardStyle}>
-                                    <div style={{ color: 'var(--text-secondary)', marginBottom: '8px' }}>{t('Overall Score', '總分')}</div>
+                                    <div style={{ color: 'var(--text-secondary)', marginBottom: '8px', fontSize: '0.85rem' }}>{t('Overall Score', '總分')}</div>
                                     <div style={{ color: 'var(--text-primary)', fontWeight: 700 }}>{detail.overall_score ?? '--'}</div>
                                 </div>
                                 <div style={detailCardStyle}>
-                                    <div style={{ color: 'var(--text-secondary)', marginBottom: '8px' }}>ROAS band</div>
+                                    <div style={{ color: 'var(--text-secondary)', marginBottom: '8px', fontSize: '0.85rem' }}>ROAS band</div>
                                     <div style={{ color: 'var(--text-primary)', fontWeight: 700 }}>
                                         {detail.roas_prediction?.band || '--'}
                                     </div>
                                 </div>
                             </div>
                             <div style={detailCardStyle}>
-                                <div style={{ color: 'var(--text-secondary)', marginBottom: '8px' }}>{t('Positive Drivers', '正向因素')}</div>
+                                <div style={{ color: 'var(--text-secondary)', marginBottom: '8px', fontSize: '0.85rem' }}>{t('Positive Drivers', '正向因素')}</div>
                                 <ul style={listStyle}>
                                     {(detail.top_positive_drivers || []).map((item) => (
                                         <li key={item}>{item}</li>
                                     ))}
+                                    {(detail.top_positive_drivers || []).length === 0 && <li>--</li>}
                                 </ul>
                             </div>
                             <div style={detailCardStyle}>
-                                <div style={{ color: 'var(--text-secondary)', marginBottom: '8px' }}>{t('Risk Drivers', '風險因素')}</div>
+                                <div style={{ color: 'var(--text-secondary)', marginBottom: '8px', fontSize: '0.85rem' }}>{t('Risk Drivers', '風險因素')}</div>
                                 <ul style={listStyle}>
                                     {(detail.top_negative_drivers || []).map((item) => (
                                         <li key={item}>{item}</li>
                                     ))}
+                                    {(detail.top_negative_drivers || []).length === 0 && <li>--</li>}
                                 </ul>
                             </div>
                             <div style={detailCardStyle}>
@@ -281,22 +415,22 @@ const MetaAndromedaReviewQueue = () => {
                                 </div>
                                 <div style={{ display: 'grid', gap: '10px', marginBottom: '16px' }}>
                                     {feedback.length === 0 ? (
-                                        <div style={{ color: 'var(--text-secondary)' }}>{t('No feedback yet.', '目前尚無回饋紀錄。')}</div>
+                                        <div style={{ color: 'var(--text-secondary)', fontSize: '0.9rem' }}>{t('No feedback yet.', '目前尚無回饋紀錄。')}</div>
                                     ) : feedback.map((item) => (
                                         <div key={item.feedback_event_id} style={feedbackItemStyle}>
-                                            <div style={{ color: 'var(--accent-primary)', fontWeight: 700, marginBottom: '6px' }}>
-                                                {item.decision} · {item.reviewer_id}
+                                            <div style={{ color: 'var(--accent-primary)', fontWeight: 700, marginBottom: '6px', fontSize: '0.85rem' }}>
+                                                {getTranslation(item.decision)} · {item.reviewer_id}
                                             </div>
-                                            <div style={{ color: 'var(--text-secondary)', marginBottom: '6px' }}>
+                                            <div style={{ color: 'var(--text-secondary)', marginBottom: '6px', fontSize: '0.85rem' }}>
                                                 {item.reason_codes?.join(', ') || '--'}
                                             </div>
-                                            <div style={{ color: 'var(--text-secondary)' }}>{item.comment || '--'}</div>
+                                            <div style={{ color: 'var(--text-primary)', fontSize: '0.9rem' }}>{item.comment || '--'}</div>
                                         </div>
                                     ))}
                                 </div>
 
                                 <form onSubmit={handleFeedbackSubmit} style={{ display: 'grid', gap: '12px' }}>
-                                    <div style={{ color: 'var(--text-primary)', fontWeight: 700 }}>
+                                    <div style={{ color: 'var(--text-primary)', fontWeight: 700, fontSize: '0.95rem' }}>
                                         {t('Submit Feedback', '提交回饋')}
                                     </div>
                                     <select
@@ -343,11 +477,11 @@ const panelStyle = {
 
 const queueItemStyle = {
     textAlign: 'left',
-    padding: '16px',
+    padding: '12px 14px',
     borderRadius: '12px',
     border: '1px solid var(--glass-border)',
-    background: 'rgba(255,255,255,0.02)',
     cursor: 'pointer',
+    transition: 'all 0.15s ease-in-out',
 };
 
 const detailCardStyle = {
@@ -369,6 +503,17 @@ const selectStyle = {
     border: '1px solid var(--glass-border)',
     background: 'rgba(255, 255, 255, 0.05)',
     color: 'var(--text-primary)',
+};
+
+const searchInputStyle = {
+    width: '100%',
+    padding: '10px 12px',
+    borderRadius: '10px',
+    border: '1px solid var(--glass-border)',
+    background: 'rgba(255, 255, 255, 0.05)',
+    color: 'var(--text-primary)',
+    marginBottom: '16px',
+    fontSize: '0.85rem',
 };
 
 const inputStyle = {
