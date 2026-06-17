@@ -68,6 +68,7 @@ class GeminiScoringProvider(BaseScoringProvider):
             "Use overall_score as integer 0-100.\n"
             "Use roas_band as one of high/mid/low/null.\n"
             "Use diagnostic_breakdown values as short strings.\n"
+            "All textual outputs (summary, top_positive_drivers, top_negative_drivers) MUST be in Traditional Chinese.\n"
             f"Asset type: {score_payload['asset_type']}\n"
             f"Objective: {score_payload.get('objective', 'purchase')}\n"
             f"Placement family: {score_payload.get('placement_family', 'all')}\n"
@@ -79,7 +80,8 @@ class GeminiScoringProvider(BaseScoringProvider):
         )
         system_prompt = (
             "Score ad creatives conservatively. Keep explanations short. "
-            "Prefer stable judgments over hype."
+            "Prefer stable judgments over hype. "
+            "All explanations, summaries, and drivers MUST be written in Traditional Chinese (繁體中文)."
         )
         raw = await asyncio.to_thread(
             client.generate_content,
@@ -172,23 +174,23 @@ def build_heuristic_score_result(score_payload: dict, registry_entry: MetaAndrom
 
     top_positive_drivers = []
     if _clip(request_context.get("cta")):
-        top_positive_drivers.append("clear CTA")
+        top_positive_drivers.append("明確的行動呼籲 (CTA)")
     if _clip(request_context.get("headline")):
-        top_positive_drivers.append("headline present")
+        top_positive_drivers.append("包含廣告標題")
     if placement_family in {"feed", "stories"}:
-        top_positive_drivers.append("placement fit")
+        top_positive_drivers.append("版位適配良好")
     if not top_positive_drivers:
-        top_positive_drivers.append("baseline creative completeness")
+        top_positive_drivers.append("基礎素材完整度良好")
 
     top_negative_drivers = []
     if not _clip(request_context.get("headline")):
-        top_negative_drivers.append("headline missing")
+        top_negative_drivers.append("缺少廣告標題")
     if not _clip(request_context.get("primary_text")):
-        top_negative_drivers.append("primary text missing")
+        top_negative_drivers.append("缺少主要文字")
     if fallback_reason:
-        top_negative_drivers.append("ai runtime fallback engaged")
+        top_negative_drivers.append("已啟用 AI 執行期備用方案")
     if not top_negative_drivers:
-        top_negative_drivers.append("needs human review for nuance")
+        top_negative_drivers.append("細部調整需人工審核")
 
     risk_tags = ["heuristic_runtime"]
     if fallback_reason:
@@ -217,7 +219,7 @@ def build_heuristic_score_result(score_payload: dict, registry_entry: MetaAndrom
         "top_positive_drivers": top_positive_drivers[:3],
         "top_negative_drivers": top_negative_drivers[:3],
         "explanations": {
-            "summary": "Scored by the DataVue registry-backed heuristic runtime.",
+            "summary": "由 DataVue 註冊表支援的啟發式執行程序完成評分。",
             "top_positive_drivers": top_positive_drivers[:3],
             "top_risks": top_negative_drivers[:3],
             "diagnostic_evidence": {
