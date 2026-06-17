@@ -587,8 +587,8 @@ const Analytics = () => {
                 account_id: selectedAccountId,
                 ad_id: row.ad_id,
                 observation_window_kind: observationWindowKind,
-                since: observationWindowKind === 'custom' ? dateRange.since : null,
-                until: observationWindowKind === 'custom' ? dateRange.until : null,
+                since: dateRange.since,
+                until: dateRange.until,
                 market: 'TW',
                 placement_family: 'feed',
             });

@@ -203,6 +203,7 @@ async def get_custom_report(
     team_id=None,
     custom_fields=None,
     strict_token=False,
+    filtering=None,
 ):
     """
     非同步取得自訂廣告報告（含快取、動態欄位選擇）。
@@ -216,9 +217,10 @@ async def get_custom_report(
         team_id: 可選的團隊 ID
         custom_fields: 可選，逗號分隔的指標鍵值
         strict_token: True 則禁止 Fallback 至管理員 Token
+        filtering: 可選，伺服器端過濾條件字串
     """
     cache_key_suffix = f"_{custom_fields}" if custom_fields else ""
-    cached = get_analytics_cache(account_id, since, until, level + cache_key_suffix)
+    cached = None if filtering else get_analytics_cache(account_id, since, until, level + cache_key_suffix)
     if cached is not None:
         return cached
 
@@ -260,6 +262,8 @@ async def get_custom_report(
         "time_increment": "all_days",
         "limit": 500,
     }
+    if filtering:
+        params["filtering"] = filtering
 
     try:
         async with httpx.AsyncClient(timeout=TIMEOUT) as client:
@@ -318,7 +322,8 @@ async def get_custom_report(
 
         processed_rows = [_process_flat_row(row, level, ad_meta_map) for row in data]
 
-        set_analytics_cache(account_id, since, until, level + cache_key_suffix, processed_rows)
+        if not filtering:
+            set_analytics_cache(account_id, since, until, level + cache_key_suffix, processed_rows)
         return processed_rows
 
     except Exception as e:
