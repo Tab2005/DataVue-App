@@ -304,6 +304,25 @@ const MetaAndromedaMonitoring = () => {
 
     return (
         <div style={{ padding: isMobile ? '16px' : '24px' }}>
+            {/* 注入精美磨砂玻璃滾動條樣式 */}
+            <style>{`
+                .queue-scroll-box::-webkit-scrollbar {
+                    width: 6px;
+                }
+                .queue-scroll-box::-webkit-scrollbar-track {
+                    background: rgba(255, 255, 255, 0.01);
+                    border-radius: 999px;
+                }
+                .queue-scroll-box::-webkit-scrollbar-thumb {
+                    background: var(--glass-border);
+                    border-radius: 999px;
+                    transition: all 0.2s;
+                }
+                .queue-scroll-box::-webkit-scrollbar-thumb:hover {
+                    background: var(--accent-primary);
+                }
+            `}</style>
+
             <div style={{
                 marginBottom: '20px',
                 display: 'flex',
@@ -457,7 +476,16 @@ const MetaAndromedaMonitoring = () => {
 
                             <div style={{ marginBottom: '14px' }}>
                                 <div style={subTitleStyle}>{t('Recent Worker Events', '最近 Worker 事件')}</div>
-                                <div style={{ display: 'grid', gap: '10px' }}>
+                                <div 
+                                    className="queue-scroll-box"
+                                    style={{ 
+                                        display: 'grid', 
+                                        gap: '10px',
+                                        maxHeight: '350px',
+                                        overflowY: 'auto',
+                                        paddingRight: '6px'
+                                    }}
+                                >
                                     {visibleRecentEvents.map((event) => (
                                         <button
                                             key={event.worker_event_id}
@@ -499,7 +527,16 @@ const MetaAndromedaMonitoring = () => {
 
                             <div>
                                 <div style={subTitleStyle}>{t('Dead Letters', '死信事件')}</div>
-                                <div style={{ display: 'grid', gap: '10px' }}>
+                                <div 
+                                    className="queue-scroll-box"
+                                    style={{ 
+                                        display: 'grid', 
+                                        gap: '10px',
+                                        maxHeight: '350px',
+                                        overflowY: 'auto',
+                                        paddingRight: '6px'
+                                    }}
+                                >
                                     {visibleDeadLetters.map((item) => (
                                         <button
                                             key={item.dead_letter_id}
@@ -608,7 +645,17 @@ const MetaAndromedaMonitoring = () => {
 
                         <section style={panelStyle}>
                             <h2 style={sectionTitleStyle}>{t('Latest Drift Reports', '最近漂移報告')}</h2>
-                            <div style={{ display: 'grid', gap: '10px', marginBottom: '14px' }}>
+                            <div 
+                                className="queue-scroll-box"
+                                style={{ 
+                                    display: 'grid', 
+                                    gap: '10px', 
+                                    marginBottom: '14px',
+                                    maxHeight: '400px',
+                                    overflowY: 'auto',
+                                    paddingRight: '6px'
+                                }}
+                            >
                                 {(summary?.latest_drift_reports || []).map((report) => {
                                     const accuracy = report.report_payload?.accuracy;
                                     const mae = report.report_payload?.mae;
@@ -644,11 +691,16 @@ const MetaAndromedaMonitoring = () => {
                                                 <div style={{ color: statusColor, fontWeight: 700, marginBottom: '6px' }}>
                                                     {getTranslation(report.window_kind)} · {getTranslation(report.drift_status)}
                                                 </div>
-                                                {accuracy !== undefined && (
-                                                    <span style={{ fontSize: '0.8rem', color: 'var(--text-secondary)' }}>
-                                                        {t('Accuracy', '準確率')}: {(accuracy * 100).toFixed(1)}% | MAE: {mae.toFixed(2)}
+                                                <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: '4px' }}>
+                                                    {accuracy !== undefined && (
+                                                        <span style={{ fontSize: '0.8rem', color: 'var(--text-secondary)' }}>
+                                                            {t('Accuracy', '準確率')}: {(accuracy * 100).toFixed(1)}% | MAE: {mae.toFixed(2)}
+                                                        </span>
+                                                    )}
+                                                    <span style={{ fontSize: '0.75rem', color: 'var(--text-secondary)' }}>
+                                                        {t('Run Time', '執行時間')}: {formatDateTime(report.created_at)}
                                                     </span>
-                                                )}
+                                                </div>
                                             </div>
                                             <div style={{ color: 'var(--text-secondary)', lineHeight: 1.6, fontSize: '0.88rem', marginBottom: '8px' }}>{report.summary}</div>
                                             
@@ -691,7 +743,16 @@ const MetaAndromedaMonitoring = () => {
 
                         <section style={panelStyle}>
                             <h2 style={sectionTitleStyle}>{t('Active Alerts', '目前告警')}</h2>
-                            <div style={{ display: 'grid', gap: '10px' }}>
+                            <div 
+                                className="queue-scroll-box"
+                                style={{ 
+                                    display: 'grid', 
+                                    gap: '10px',
+                                    maxHeight: '350px',
+                                    overflowY: 'auto',
+                                    paddingRight: '6px'
+                                }}
+                            >
                                 {(summary?.active_alerts || []).length === 0 ? (
                                     <div style={emptyStateStyle}>{t('No active alerts.', '目前沒有告警。')}</div>
                                 ) : (summary?.active_alerts || []).map((alert, index) => (
