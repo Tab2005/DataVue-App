@@ -103,6 +103,8 @@ async def fetch_observed_creative_candidate(
         observation_window_start, observation_window_end = resolve_observation_window(observation_window_kind)
     
     fetcher = report_fetcher or get_custom_report
+    
+    # 1. 優先從整包快取/報告中尋找，以發揮 Cache 功效使批次匯入極速完成
     rows = await fetcher(
         account_id=account_id,
         user_id=user_id,
@@ -110,12 +112,24 @@ async def fetch_observed_creative_candidate(
         until=observation_window_end,
         level="ad",
         team_id=team_id,
-        ad_id=ad_id,
     )
-    if rows is None:
-        raise ValueError("FB Ads report unavailable")
-
-    target_row = next((row for row in rows if str(row.get("ad_id")) == str(ad_id)), None)
+    
+    target_row = next((row for row in rows if str(row.get("ad_id")) == str(ad_id)), None) if rows else None
+    
+    # 2. 若快取中找不到（可能因 limit 500 被截斷），退回直打單一 ad_id 的精準查詢 (Fallback)
+    if target_row is None:
+        fallback_rows = await fetcher(
+            account_id=account_id,
+            user_id=user_id,
+            since=observation_window_start,
+            until=observation_window_end,
+            level="ad",
+            team_id=team_id,
+            ad_id=ad_id,
+        )
+        if fallback_rows:
+            target_row = next((row for row in fallback_rows if str(row.get("ad_id")) == str(ad_id)), None)
+            
     if target_row is None:
         raise ValidationError(f"該廣告目前在 Facebook 尚未產生任何投放數據，無法匯入漂移診斷。")
 
