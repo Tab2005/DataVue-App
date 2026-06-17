@@ -22,6 +22,100 @@ const MetaAndromedaRelease = () => {
 
     const t = (en, zh) => (language === 'en' ? en : zh);
 
+    const getTranslation = (key) => {
+        if (!key) return '--';
+        const keyLower = String(key).toLowerCase();
+        switch (keyLower) {
+            // 資料庫與釋出屬性
+            case 'model_version':
+                return t('Model Version', '模型版本');
+            case 'status':
+                return t('Status', '狀態');
+            case 'approved_by':
+                return t('Approved By', '核准人員');
+            case 'pairwise_ranking_accuracy':
+                return t('Pairwise Ranking Accuracy', '成對排序準確率');
+            case 'mean_band_error':
+                return t('Mean Band Error', '平均級距誤差');
+            case 'release_status':
+                return t('Release Status', '釋出狀態');
+
+            // 狀態值
+            case 'approved':
+                return t('Approved', '已核准上線');
+            case 'rejected':
+                return t('Rejected', '已退回');
+            case 'rollback':
+                return t('Rollback', '回滾');
+            case 'rollbacked':
+                return t('Rolled Back', '已回滾');
+            case 'pending_review':
+                return t('Pending Review', '審核中');
+            case 'candidate':
+                return t('Candidate', '候選版本');
+            case 'current_production':
+                return t('Current Production', '目前線上版本');
+
+            // 歷史動作
+            case 'approve':
+                return t('Approve', '核准上線');
+            case 'reject':
+                return t('Reject', '退回');
+
+            // 漂移狀態與時間視窗
+            case 'drifted':
+                return t('Drifted', '嚴重漂移');
+            case 'warning':
+                return t('Warning', '警告');
+            case 'stable':
+                return t('Stable', '穩定');
+            case 'last_24h':
+                return t('Last 24 Hours', '最近 24 小時');
+            case 'last_7d':
+                return t('Last 7 Days', '最近 7 天');
+            case 'last_30d':
+                return t('Last 30 Days', '最近 30 天');
+
+            // 安全發佈閘門項 (Promotion Gates)
+            case 'accuracy_gate':
+                return t('Accuracy Gate', '準確率安全門檻');
+            case 'mae_gate':
+                return t('MAE Gate', '平均偏差安全門檻');
+            case 'bias_gate':
+                return t('Bias Gate', '模型偏向性門檻');
+            case 'model_loaded_check':
+                return t('Model Loaded Check', '模型載入測試');
+            case 'active_drift_alert_check':
+                return t('Active Drift Alert Check', '線上無嚴重漂移安全閘');
+
+            default:
+                return key;
+        }
+    };
+
+    const formatDateTime = (isoString) => {
+        if (!isoString) return '--';
+        try {
+            let dateStr = isoString;
+            if (!dateStr.endsWith('Z') && !dateStr.includes('+')) {
+                dateStr = dateStr.includes('T') ? `${dateStr}Z` : dateStr;
+            }
+            const date = new Date(dateStr);
+            if (isNaN(date.getTime())) return isoString;
+
+            const y = date.getFullYear();
+            const m = String(date.getMonth() + 1).padStart(2, '0');
+            const d = String(date.getDate()).padStart(2, '0');
+            const hh = String(date.getHours()).padStart(2, '0');
+            const mm = String(date.getMinutes()).padStart(2, '0');
+            const ss = String(date.getSeconds()).padStart(2, '0');
+
+            return `${y}-${m}-${d} ${hh}:${mm}:${ss}`;
+        } catch (e) {
+            return isoString;
+        }
+    };
+
     const loadOverview = async () => {
         setLoading(true);
         setError(null);
@@ -39,7 +133,7 @@ const MetaAndromedaRelease = () => {
                 console.error('Failed to load monitoring summary', monErr);
             }
         } catch (err) {
-            setError(err.message || 'Failed to load release overview');
+            setError(err.message || t('Failed to load release overview', '無法載入版本釋出總覽'));
         } finally {
             setLoading(false);
         }
@@ -65,10 +159,10 @@ const MetaAndromedaRelease = () => {
                 : action === 'reject'
                     ? await rejectMetaAndromedaRelease(payload)
                     : await rollbackMetaAndromedaRelease(payload);
-            setActionMessage(`${result.action}: ${result.model_version}`);
+            setActionMessage(`${t('Action executed successfully: ', '動作執行成功：')}${getTranslation(result.action)} (${result.model_version})`);
             await loadOverview();
         } catch (err) {
-            setError(err.message || 'Failed to execute release action');
+            setError(err.message || t('Failed to execute release action', '執行發佈動作失敗'));
         } finally {
             setSubmitting(false);
         }
@@ -100,7 +194,7 @@ const MetaAndromedaRelease = () => {
                     }}>
                         <section style={panelStyle}>
                             <h2 style={sectionTitleStyle}>{t('Current Production', '目前 Production')}</h2>
-                            <ReleaseRecordCard record={overview?.current_production} />
+                            <ReleaseRecordCard record={overview?.current_production} getTranslation={getTranslation} t={t} />
                             {!loadingReleasePermission && canRelease ? (
                                 <button
                                     type="button"
@@ -114,7 +208,7 @@ const MetaAndromedaRelease = () => {
                         </section>
                         <section style={panelStyle}>
                             <h2 style={sectionTitleStyle}>{t('Previous Production', '前一版 Production')}</h2>
-                            <ReleaseRecordCard record={overview?.previous_production} />
+                            <ReleaseRecordCard record={overview?.previous_production} getTranslation={getTranslation} t={t} />
                         </section>
                     </div>
 
@@ -145,11 +239,11 @@ const MetaAndromedaRelease = () => {
                                                         color: driftReport.drift_status === 'drifted' ? '#ef4444' : driftReport.drift_status === 'warning' ? '#f59e0b' : '#10b981',
                                                         marginLeft: '6px'
                                                     }}>
-                                                        {driftReport.drift_status.toUpperCase()}
+                                                        {getTranslation(driftReport.drift_status)}
                                                     </span>
                                                 </div>
                                                 <div style={{ fontSize: '0.8rem', color: 'var(--text-secondary)' }}>
-                                                    {driftReport.window_kind}
+                                                    {getTranslation(driftReport.window_kind)}
                                                 </div>
                                             </div>
 
@@ -165,7 +259,7 @@ const MetaAndromedaRelease = () => {
                                             </div>
 
                                             <div style={{ marginTop: '10px', fontSize: '0.8rem', color: 'var(--text-secondary)' }}>
-                                                {t('Triggered by: ', '觸發人員: ')}{driftReport.triggered_by} · {new Date(driftReport.created_at).toLocaleString()}
+                                                {t('Triggered by: ', '觸發人員: ')}{driftReport.triggered_by} · {formatDateTime(driftReport.created_at)}
                                             </div>
 
                                             {driftReport.drift_status === 'drifted' && (
@@ -202,16 +296,16 @@ const MetaAndromedaRelease = () => {
                                                     {candidate.model_version}
                                                 </div>
                                                 <div style={{ display: 'grid', gap: '8px', color: 'var(--text-secondary)' }}>
-                                                    <div>status: {candidate.release_status}</div>
-                                                    <div>pairwise_ranking_accuracy: {candidate.pairwise_ranking_accuracy}</div>
-                                                    <div>mean_band_error: {candidate.mean_band_error}</div>
+                                                    <div>{t('Status', '狀態')}: {getTranslation(candidate.release_status)}</div>
+                                                    <div>{t('Pairwise Ranking Accuracy', '成對排序準確率')}: {candidate.pairwise_ranking_accuracy}</div>
+                                                    <div>{t('Mean Band Error', '平均級距誤差')}: {candidate.mean_band_error}</div>
                                                 </div>
                                                 <div style={{ display: 'grid', gap: '6px', marginTop: '12px', fontSize: '0.9rem' }}>
                                                     {Object.entries(candidate.promotion_gate_summary || {}).map(([key, value]) => (
                                                         <div key={key} style={gateRowStyle}>
-                                                            <span style={{ color: 'var(--text-secondary)' }}>{key}</span>
+                                                            <span style={{ color: 'var(--text-secondary)' }}>{getTranslation(key)}</span>
                                                             <strong style={{ color: value ? '#10b981' : '#ef4444' }}>
-                                                                {String(value)}
+                                                                {value ? t('Passed', '通過') : t('Failed', '未通過')}
                                                             </strong>
                                                         </div>
                                                     ))}
@@ -274,10 +368,10 @@ const MetaAndromedaRelease = () => {
                                 {(overview?.history || []).map((item, index) => (
                                     <div key={index} style={detailCardStyle}>
                                         <div style={{ color: 'var(--accent-primary)', fontWeight: 700, marginBottom: '6px' }}>
-                                            {item.action} · {item.model_version}
+                                            {getTranslation(item.action)} · {item.model_version}
                                         </div>
                                         <div style={{ color: 'var(--text-secondary)', lineHeight: 1.6 }}>
-                                            {item.actor} · {item.created_at}
+                                            {item.actor} · {formatDateTime(item.created_at)}
                                         </div>
                                         <div style={{ color: 'var(--text-secondary)', lineHeight: 1.6, marginTop: '6px' }}>
                                             {item.note || '--'}
@@ -308,7 +402,7 @@ const MetaAndromedaRelease = () => {
     );
 };
 
-const ReleaseRecordCard = ({ record }) => {
+const ReleaseRecordCard = ({ record, getTranslation, t }) => {
     if (!record) {
         return <div style={{ color: 'var(--text-secondary)' }}>--</div>;
     }
@@ -316,14 +410,14 @@ const ReleaseRecordCard = ({ record }) => {
     return (
         <div style={{ display: 'grid', gap: '10px' }}>
             <div style={detailCardStyle}>
-                <div style={{ color: 'var(--text-secondary)', marginBottom: '6px' }}>model_version</div>
+                <div style={{ color: 'var(--text-secondary)', marginBottom: '6px' }}>{t('Model Version', '模型版本')}</div>
                 <div style={{ color: 'var(--text-primary)', fontWeight: 700 }}>{record.model_version}</div>
             </div>
             <div style={metricGridStyle}>
-                <Metric label="status" value={record.release_status} />
-                <Metric label="approved_by" value={record.approved_by} />
-                <Metric label="pairwise_ranking_accuracy" value={record.pairwise_ranking_accuracy} />
-                <Metric label="mean_band_error" value={record.mean_band_error} />
+                <Metric label={t('Status', '狀態')} value={getTranslation(record.release_status)} />
+                <Metric label={t('Approved By', '核准人員')} value={record.approved_by} />
+                <Metric label={t('Pairwise Ranking Accuracy', '成對排序準確率')} value={record.pairwise_ranking_accuracy} />
+                <Metric label={t('Mean Band Error', '平均級距誤差')} value={record.mean_band_error} />
             </div>
         </div>
     );
