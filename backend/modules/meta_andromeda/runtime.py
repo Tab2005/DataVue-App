@@ -304,7 +304,7 @@ class MetaAndromedaRuntimeAdapter:
         import os
         google_key = os.getenv("GOOGLE_AI_API_KEY")
         zeabur_key = os.getenv("ZEABUR_AI_HUB_API_KEY")
-        logger.info(
+        logger.warning(
             "[MetaAndromeda] generate_score_result. GOOGLE_AI_API_KEY len: %s, ZEABUR_AI_HUB_API_KEY len: %s, provider_override: %s",
             len(google_key) if google_key else 0,
             len(zeabur_key) if zeabur_key else 0,

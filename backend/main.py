@@ -256,11 +256,36 @@ async def health_check():
         503 Service Unavailable：資料庫異常
     """
     from database import SessionLocal
+    import os
+    
+    # 動態獲取 git commit
+    git_commit_dynamic = "unknown"
+    try:
+        import subprocess
+        git_commit_dynamic = subprocess.check_output(["git", "rev-parse", "HEAD"], stderr=subprocess.DEVNULL).decode().strip()
+    except Exception:
+        git_commit_dynamic = os.getenv("ZEABUR_GIT_COMMIT_SHA") or os.getenv("COMMIT_REF") or "unknown_inside_docker"
+
+    google_key = os.getenv("GOOGLE_AI_API_KEY") or ""
+    zeabur_key = os.getenv("ZEABUR_AI_HUB_API_KEY") or ""
+    from core.config import settings
+
     health_status = {
         "status": "healthy",
         "timestamp": datetime.now(timezone.utc).isoformat(),
         "uptime_seconds": int(time.time() - START_TIME),
         "version": "2.1.0",
+        "git_info": {
+            "deployed_via_agent_at": "2026-06-17T13:10:00+08:00",
+            "dynamic_commit": git_commit_dynamic,
+            "target_branch": "dev-saas"
+        },
+        "ai_config_debug": {
+            "GOOGLE_AI_API_KEY_len": len(google_key),
+            "ZEABUR_AI_HUB_API_KEY_len": len(zeabur_key),
+            "settings_GOOGLE_AI_API_KEY_len": len(settings.GOOGLE_AI_API_KEY or "") if settings.GOOGLE_AI_API_KEY else 0,
+            "META_ANDROMEDA_SCORING_PROVIDER": settings.META_ANDROMEDA_SCORING_PROVIDER
+        },
         "checks": {}
     }
 
