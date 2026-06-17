@@ -75,6 +75,13 @@ class Settings:
             or os.getenv("GOOGLE_API_KEY") 
             or os.getenv("ZEABUR_AI_HUB_API_KEY")
         )
+
+    @property
+    def OPENROUTER_API_KEY(self) -> Optional[str]:
+        return (
+            os.getenv("OPENROUTER_API_KEY")
+            or os.getenv("ZEABUR_AI_HUB_API_KEY")
+        )
     
     # === 應用設定 ===
     @property
@@ -161,14 +168,14 @@ class Settings:
     @property
     def META_ANDROMEDA_SCORING_PROVIDER(self) -> str:
         """
-        auto / heuristic / gemini
-        auto: 有 Gemini 金鑰時走 Gemini，否則走 heuristic fallback
+        auto / heuristic / openrouter
+        auto: 有 OpenRouter 金鑰時走 OpenRouter，否則走 heuristic fallback
         """
         return os.getenv("META_ANDROMEDA_SCORING_PROVIDER", "auto").lower()
 
     @property
     def META_ANDROMEDA_SCORING_MODEL(self) -> str:
-        return os.getenv("META_ANDROMEDA_SCORING_MODEL", "models/gemini-2.0-flash")
+        return os.getenv("META_ANDROMEDA_SCORING_MODEL", "deepseek/deepseek-v4-flash")
 
     @property
     def META_ANDROMEDA_SCORING_MODEL_VERSION(self) -> str:

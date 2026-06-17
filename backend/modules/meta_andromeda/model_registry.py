@@ -23,8 +23,8 @@ class MetaAndromedaModelRegistry:
         self._entries = {
             "prod_v2026_05_28": MetaAndromedaModelEntry(
                 model_version="prod_v2026_05_28",
-                provider="gemini",
-                provider_model="models/gemini-1.5-flash",
+                provider="openrouter",
+                provider_model="deepseek/deepseek-v4-flash",
                 scoring_profile="creative_scoring_v1",
                 feature_manifest_id="fm_prod_20260528",
                 release_channel="production",
@@ -41,8 +41,8 @@ class MetaAndromedaModelRegistry:
             ),
             "cand_v2026_06_05_a": MetaAndromedaModelEntry(
                 model_version="cand_v2026_06_05_a",
-                provider="gemini",
-                provider_model="models/gemini-2.0-flash",
+                provider="openrouter",
+                provider_model="deepseek/deepseek-v4-flash",
                 scoring_profile="creative_scoring_v2",
                 feature_manifest_id="fm_cand_20260605_a",
                 release_channel="candidate",
@@ -50,8 +50,8 @@ class MetaAndromedaModelRegistry:
             ),
             "cand_v2026_06_04_b": MetaAndromedaModelEntry(
                 model_version="cand_v2026_06_04_b",
-                provider="gemini",
-                provider_model="models/gemini-1.5-flash",
+                provider="openrouter",
+                provider_model="deepseek/deepseek-v4-flash",
                 scoring_profile="creative_scoring_v1",
                 feature_manifest_id="fm_cand_20260604_b",
                 release_channel="candidate",
@@ -88,10 +88,10 @@ class MetaAndromedaModelRegistry:
                 source_of_truth=entry.source_of_truth,
             )
 
-        if provider_override == "gemini" and model_override:
+        if provider_override == "openrouter" and model_override:
             return MetaAndromedaModelEntry(
                 model_version=entry.model_version,
-                provider="gemini",
+                provider="openrouter",
                 provider_model=model_override,
                 scoring_profile=entry.scoring_profile,
                 feature_manifest_id=entry.feature_manifest_id,
@@ -99,7 +99,7 @@ class MetaAndromedaModelRegistry:
                 source_of_truth=entry.source_of_truth,
             )
 
-        if provider_override == "auto" and model_override and entry.provider == "gemini":
+        if provider_override == "auto" and model_override and entry.provider == "openrouter":
             return MetaAndromedaModelEntry(
                 model_version=entry.model_version,
                 provider=entry.provider,

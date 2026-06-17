@@ -51,8 +51,10 @@ async def get_models(
     """
     # Map provider names to internal key names
     key_provider = provider
-    if provider == "google_gemini":
-        key_provider = "gemini"
+    if provider == "google_gemini" or provider == "gemini":
+        key_provider = "openrouter"
+    elif provider == "openrouter":
+        key_provider = "openrouter"
         
     # Get user's API key for this provider (if any)
     api_key = TokenManager.get_ai_api_key(user.google_id, provider=key_provider)
@@ -106,16 +108,16 @@ async def analyze_data(
     # 獲取使用者目前的 AI 設定 (如果請求中沒有指定)
     user_settings = TokenManager.get_ai_settings(user.google_id) or {}
     
-    # 決定使用的 Provider 與 Model (支援 'gemini' 映射到 'google_gemini')
+    # 決定使用的 Provider 與 Model (支援 'gemini' 映射到 'openrouter')
     raw_provider = request.provider if request.provider else user_settings.get("ai_provider", "zeabur")
-    provider = "google_gemini" if raw_provider == "gemini" else raw_provider
-    model = request.model if request.model and request.model != "gemini-1.5-flash" else user_settings.get("ai_model", "gemini-1.5-flash")
-    if not model: model = "gemini-1.5-flash"
+    provider = "openrouter" if raw_provider in ["gemini", "google_gemini"] else raw_provider
+    model = request.model if request.model and request.model != "gemini-1.5-flash" else user_settings.get("ai_model", "deepseek/deepseek-v4-flash")
+    if not model: model = "deepseek/deepseek-v4-flash"
     
     # 決定使用的 API Key
     api_key = request.api_key
     if not api_key:
-        key_provider = "gemini" if provider == "google_gemini" else "zeabur"
+        key_provider = "openrouter" if provider == "openrouter" else "zeabur"
         api_key = TokenManager.get_ai_api_key(user.google_id, provider=key_provider)
 
     logger.info(f"[AI Router] Starting analysis with provider={provider}, model={model}")
@@ -142,7 +144,8 @@ class AISettingsRequest(BaseModel):
     """Request model for saving AI settings"""
     zeabur_api_key: Optional[str] = None  # If empty string, will clear the key
     gemini_api_key: Optional[str] = None  # If empty string, will clear the key
-    ai_provider: Optional[str] = None     # 'zeabur' or 'gemini'
+    openrouter_api_key: Optional[str] = None  # If empty string, will clear the key
+    ai_provider: Optional[str] = None     # 'zeabur' or 'openrouter'
     ai_model: Optional[str] = None
 
 
@@ -158,9 +161,10 @@ async def get_ai_settings(user: User = Depends(get_current_user)):
         # Return defaults if no settings found
         return {
             "ai_provider": "zeabur",
-            "ai_model": "gemini-1.5-flash",
+            "ai_model": "deepseek/deepseek-v4-flash",
             "has_zeabur_key": False,
-            "has_gemini_key": False
+            "has_gemini_key": False,
+            "has_openrouter_key": False
         }
     
     return settings
@@ -176,7 +180,7 @@ async def save_ai_settings(
     """
     logger.info(f"[AI API] save_ai_settings called for user: {user.email}")
     logger.debug(
-        f"[AI API] Request data: gemini_key_len={len(request.gemini_api_key) if request.gemini_api_key else 0}, "
+        f"[AI API] Request data: openrouter_key_len={len(request.openrouter_api_key) if request.openrouter_api_key else 0}, "
         f"zeabur_key_len={len(request.zeabur_api_key) if request.zeabur_api_key else 0}, "
         f"provider={request.ai_provider}, model={request.ai_model}"
     )
@@ -186,6 +190,7 @@ async def save_ai_settings(
             google_id=user.google_id,
             zeabur_api_key=request.zeabur_api_key,
             gemini_api_key=request.gemini_api_key,
+            openrouter_api_key=request.openrouter_api_key,
             ai_provider=request.ai_provider,
             ai_model=request.ai_model
         )
@@ -212,12 +217,14 @@ async def clear_ai_key(
     Clear a specific AI provider's API key.
     """
     
-    if provider not in ["zeabur", "gemini"]:
-        raise HTTPException(status_code=400, detail="Invalid provider. Use 'zeabur' or 'gemini'.")
+    if provider not in ["zeabur", "gemini", "openrouter"]:
+        raise HTTPException(status_code=400, detail="Invalid provider. Use 'zeabur', 'gemini' or 'openrouter'.")
     
     try:
         if provider == "zeabur":
             TokenManager.save_ai_settings(user.google_id, zeabur_api_key="")
+        elif provider == "openrouter":
+            TokenManager.save_ai_settings(user.google_id, openrouter_api_key="")
         else:
             TokenManager.save_ai_settings(user.google_id, gemini_api_key="")
         
@@ -232,24 +239,24 @@ async def test_gemini_connection(
     user: User = Depends(get_current_user)
 ):
     """
-    Test Google Gemini API connection using the user's saved API key.
+    Test OpenRouter (formerly Google Gemini) API connection using the user's saved API key.
     Allows passing a specific model to test with.
     """
-    logger.info(f"[AI API] Testing Gemini connection for user: {user.email}")
+    logger.info(f"[AI API] Testing OpenRouter connection for user: {user.email}")
     
-    # Get the user's Gemini API key from encrypted storage
-    api_key = TokenManager.get_ai_api_key(user.google_id, provider="gemini")
+    # Get the user's OpenRouter API key from encrypted storage
+    api_key = TokenManager.get_ai_api_key(user.google_id, provider="openrouter")
     
     if not api_key:
         return {
             "success": False,
-            "message": "No Google Gemini API key configured.",
-            "provider": "gemini"
+            "message": "No OpenRouter API key configured.",
+            "provider": "openrouter"
         }
     
     try:
-        from services.ai.gemini_client import GoogleGeminiClient
-        client = GoogleGeminiClient(api_key=api_key)
+        from services.ai.openrouter_client import OpenRouterClient
+        client = OpenRouterClient(api_key=api_key)
         
         # Use provided model if available, otherwise fallback to saved setting
         test_model = None
@@ -268,15 +275,15 @@ async def test_gemini_connection(
         return {
             "success": result.get("success", False),
             "message": result.get("message", "Unknown result"),
-            "response": result.get("response", "")[:100] if result.get("response") else None,
+            "response": result.get("message")[:100] if result.get("message") else None,
             "model": result.get("model"),
-            "provider": "gemini"
+            "provider": "openrouter"
         }
     except Exception as e:
-        logger.error(f"[AI API] Gemini test error: {type(e).__name__}: {str(e)}")
+        logger.error(f"[AI API] OpenRouter test error: {type(e).__name__}: {str(e)}")
         return {
             "success": False,
             "message": f"Connection failed: {str(e)}",
-            "provider": "gemini"
+            "provider": "openrouter"
         }
 

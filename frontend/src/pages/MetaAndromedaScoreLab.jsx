@@ -339,8 +339,8 @@ const MetaAndromedaScoreLab = () => {
                                         <span>
                                             {scoreResult.lineage.scoring_mode === 'ai'
                                                 ? t(
-                                                    `Gemini AI (${scoreResult.lineage.provider_model || 'gemini-1.5-flash'})`,
-                                                    `Gemini AI 多模態模型 (${scoreResult.lineage.provider_model || 'gemini-1.5-flash'})`
+                                                    `OpenRouter (${scoreResult.lineage.provider_model || 'deepseek/deepseek-v4-flash'})`,
+                                                    `OpenRouter 聚合模型 (${scoreResult.lineage.provider_model || 'deepseek/deepseek-v4-flash'})`
                                                   )
                                                 : t('Heuristic Rule Engine', '啟發式模擬規則引擎')
                                             }

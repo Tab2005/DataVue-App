@@ -20,15 +20,15 @@ const SettingsModal = ({ isOpen, onClose, language, teamId, teamName, onSuccess 
         model: 'gemini-1.5-flash'
     });
 
-    // Google Gemini Direct API Data
-    const [geminiData, setGeminiData] = useState({
+    // OpenRouter Direct API Data
+    const [openrouterData, setOpenrouterData] = useState({
         apiKey: '',
-        model: 'gemini-1.5-flash'
+        model: 'deepseek/deepseek-v4-flash'
     });
 
     // Available models from backend (Separate lists)
     const [zeaburModels, setZeaburModels] = useState({});
-    const [googleModels, setGoogleModels] = useState({});
+    const [openrouterModels, setOpenrouterModels] = useState({});
 
     // Status & Loading (separate for FB and AI tabs)
     const [status, setStatus] = useState(null); // { type: 'success' | 'error', message: '' }
@@ -41,7 +41,7 @@ const SettingsModal = ({ isOpen, onClose, language, teamId, teamName, onSuccess 
     // Zeabur / AI Status
     const [aiConnectionStatus, setAiConnectionStatus] = useState('unknown'); // unknown, connected_zeabur, connected_user, disconnected
 
-    // Active AI Provider preference: 'zeabur' | 'gemini'
+    // Active AI Provider preference: 'zeabur' | 'openrouter'
     const [activeAiProvider, setActiveAiProvider] = useState('zeabur');
 
     const t = {
@@ -49,7 +49,7 @@ const SettingsModal = ({ isOpen, onClose, language, teamId, teamName, onSuccess 
         tabs: {
             facebook: 'Facebook Ads',
             ai: 'Zeabur AI Hub',
-            gemini: 'Google Gemini',
+            gemini: 'OpenRouter',
             line: language === 'zh' ? 'LINE 通知' : 'LINE Notify'
         },
         fb: {
@@ -229,8 +229,8 @@ const SettingsModal = ({ isOpen, onClose, language, teamId, teamName, onSuccess 
                 const data = await res.json();
                 if (provider === 'zeabur') {
                     setZeaburModels(data.models || {});
-                } else if (provider === 'google_gemini') {
-                    setGoogleModels(data.models || {});
+                } else if (provider === 'openrouter') {
+                    setOpenrouterModels(data.models || {});
                 }
                 
                 if (sync) {
@@ -250,7 +250,7 @@ const SettingsModal = ({ isOpen, onClose, language, teamId, teamName, onSuccess 
         // 1. Check LocalStorage for user key and settings
         const localKey = localStorage.getItem('ai_api_key');
         const savedProvider = localStorage.getItem('ai_provider') || 'zeabur';
-        const savedModel = localStorage.getItem('ai_model') || 'gemini-1.5-flash';
+        const savedModel = localStorage.getItem('ai_model') || 'deepseek/deepseek-v4-flash';
 
         if (localKey) {
             setAiData(prev => ({ ...prev, apiKey: localKey, provider: savedProvider, model: savedModel }));
@@ -261,7 +261,7 @@ const SettingsModal = ({ isOpen, onClose, language, teamId, teamName, onSuccess 
         // Fetch BOTH model lists initially
         await Promise.all([
             fetchAvailableModels('zeabur'),
-            fetchAvailableModels('google_gemini')
+            fetchAvailableModels('openrouter')
         ]);
 
         // 2. Test Connection (Backend will check Zeabur env if key is null)
@@ -379,7 +379,7 @@ const SettingsModal = ({ isOpen, onClose, language, teamId, teamName, onSuccess 
         setAiData(prev => ({ ...prev, provider: newProvider }));
         await fetchAvailableModels(newProvider);
         // Reset model to first available
-        setAiData(prev => ({ ...prev, model: 'gemini-1.5-flash' }));
+        setAiData(prev => ({ ...prev, model: 'deepseek/deepseek-v4-flash' }));
     };
 
     const handleClearAiKey = () => {
@@ -403,30 +403,21 @@ const SettingsModal = ({ isOpen, onClose, language, teamId, teamName, onSuccess 
                     setActiveAiProvider(provider);
                     
                     // 自動切換標籤頁到目前啟用的 AI Provider
-                    if (provider === 'gemini' || provider === 'google_gemini') {
+                    if (provider === 'gemini' || provider === 'google_gemini' || provider === 'openrouter') {
                         setActiveTab('gemini');
                     } else if (provider === 'zeabur') {
                         setActiveTab('zeabur');
                     }
 
-                    // 修正模型名稱前綴匹配問題 (資料庫可能存在不帶 models/ 的舊資料)
-                    const formatModelName = (name) => {
-                        if (!name) return 'gemini-1.5-flash';
-                        if (!name.startsWith('models/') && (name.includes('gemini') || name.includes('gemma'))) {
-                            return `models/${name}`;
-                        }
-                        return name;
-                    };
-
                     setAiData(prev => ({ 
                         ...prev, 
-                        model: settings.ai_model || 'gemini-1.5-flash',
+                        model: settings.ai_model || 'deepseek/deepseek-v4-flash',
                         apiKey: settings.has_zeabur_key ? '********' : ''
                     }));
-                    setGeminiData(prev => ({ 
+                    setOpenrouterData(prev => ({ 
                         ...prev, 
-                        model: formatModelName(settings.ai_model),
-                        apiKey: settings.has_gemini_key ? '********' : ''
+                        model: settings.ai_model || 'deepseek/deepseek-v4-flash',
+                        apiKey: (settings.has_openrouter_key || settings.has_gemini_key) ? '********' : ''
                     }));
                     // Store provider in localStorage for GSCStats to use (sync purpose only)
                     localStorage.setItem('ai_provider', provider);
@@ -443,11 +434,11 @@ const SettingsModal = ({ isOpen, onClose, language, teamId, teamName, onSuccess 
         }
     }, [activeTab, isOpen]);
 
-    // Switch to Gemini tab - settings already loaded from backend
+    // Switch to Gemini (now OpenRouter) tab - settings already loaded from backend
     useEffect(() => {
         if (isOpen && activeTab === 'gemini') {
             // Settings already loaded from backend on modal open
-            // geminiData.apiKey will be empty since we don't expose keys to frontend
+            // openrouterData.apiKey will be empty since we don't expose keys to frontend
         }
     }, [activeTab, isOpen]);
 
@@ -500,12 +491,12 @@ const SettingsModal = ({ isOpen, onClose, language, teamId, teamName, onSuccess 
                             </span>
                             <span style={{
                                 fontWeight: 'bold',
-                                color: activeAiProvider === 'gemini' ? '#60a5fa' : '#4ade80',
+                                color: activeAiProvider === 'openrouter' || activeAiProvider === 'gemini' ? '#60a5fa' : '#4ade80',
                                 display: 'flex',
                                 alignItems: 'center',
                                 gap: '4px'
                             }}>
-                                {activeAiProvider === 'gemini' ? '💎 Google Gemini' : '🚀 Zeabur AI Hub'}
+                                {activeAiProvider === 'openrouter' || activeAiProvider === 'gemini' ? '💎 OpenRouter' : '🚀 Zeabur AI Hub'}
                             </span>
                         </div>
                         <div style={{ display: 'flex', gap: '8px' }}>
@@ -538,32 +529,32 @@ const SettingsModal = ({ isOpen, onClose, language, teamId, teamName, onSuccess 
                                 onClick={async () => {
                                     // Check from backend settings (loaded on modal open)
                                     const settings = await fetchAiSettings();
-                                    if (!settings?.has_gemini_key) {
-                                        setStatus({ type: 'error', message: language === 'zh' ? '請先在 Google Gemini 分頁設定 API Key' : 'Please configure API Key in Google Gemini tab first' });
+                                    if (!settings?.has_openrouter_key && !settings?.has_gemini_key) {
+                                        setStatus({ type: 'error', message: language === 'zh' ? '請先在 OpenRouter 分頁設定 API Key' : 'Please configure API Key in OpenRouter tab first' });
                                         return;
                                     }
-                                    setActiveAiProvider('gemini');
-                                    localStorage.setItem('ai_provider', 'gemini');
+                                    setActiveAiProvider('openrouter');
+                                    localStorage.setItem('ai_provider', 'openrouter');
                                     // Also save to backend
                                     try {
-                                        await saveAiSettingsToServer({ ai_provider: 'gemini' });
-                                        setStatus({ type: 'success', message: language === 'zh' ? '已切換為 Google Gemini' : 'Switched to Google Gemini' });
+                                        await saveAiSettingsToServer({ ai_provider: 'openrouter' });
+                                        setStatus({ type: 'success', message: language === 'zh' ? '已切換為 OpenRouter' : 'Switched to OpenRouter' });
                                     } catch (err) {
-                                        setStatus({ type: 'success', message: language === 'zh' ? '已切換為 Google Gemini (本地)' : 'Switched to Google Gemini (local)' });
+                                        setStatus({ type: 'success', message: language === 'zh' ? '已切換為 OpenRouter (本地)' : 'Switched to OpenRouter (local)' });
                                     }
                                 }}
                                 style={{
                                     padding: '6px 12px',
                                     borderRadius: '6px',
-                                    border: activeAiProvider === 'gemini' ? '2px solid #60a5fa' : '1px solid var(--glass-border)',
-                                    background: activeAiProvider === 'gemini' ? 'rgba(96, 165, 250, 0.1)' : 'transparent',
-                                    color: activeAiProvider === 'gemini' ? '#60a5fa' : 'var(--text-secondary)',
+                                    border: activeAiProvider === 'openrouter' || activeAiProvider === 'gemini' ? '2px solid #60a5fa' : '1px solid var(--glass-border)',
+                                    background: activeAiProvider === 'openrouter' || activeAiProvider === 'gemini' ? 'rgba(96, 165, 250, 0.1)' : 'transparent',
+                                    color: activeAiProvider === 'openrouter' || activeAiProvider === 'gemini' ? '#60a5fa' : 'var(--text-secondary)',
                                     cursor: 'pointer',
                                     fontSize: '12px',
-                                    fontWeight: activeAiProvider === 'gemini' ? 'bold' : 'normal'
+                                    fontWeight: activeAiProvider === 'openrouter' || activeAiProvider === 'gemini' ? 'bold' : 'normal'
                                 }}
                             >
-                                💎 Gemini
+                                💎 OpenRouter
                             </button>
                         </div>
                     </div>
@@ -858,7 +849,7 @@ const SettingsModal = ({ isOpen, onClose, language, teamId, teamName, onSuccess 
                         </div>
                     )}
 
-                    {/* --- GOOGLE GEMINI TAB --- */}
+                    {/* --- GOOGLE GEMINI (NOW OPENROUTER) TAB --- */}
                     {activeTab === 'gemini' && (
                         <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
 
@@ -872,20 +863,20 @@ const SettingsModal = ({ isOpen, onClose, language, teamId, teamName, onSuccess 
                                 <div style={{ fontSize: '24px' }}>💎</div>
                                 <div>
                                     <div style={{ fontWeight: 'bold', color: '#60a5fa' }}>
-                                        {language === 'zh' ? 'Google Gemini 直連模式' : 'Google Gemini Direct Mode'}
+                                        {language === 'zh' ? 'OpenRouter 整合模式' : 'OpenRouter Integration Mode'}
                                     </div>
                                     <div style={{ fontSize: '0.85rem', color: 'var(--text-secondary)', marginTop: '4px' }}>
                                         {language === 'zh'
-                                            ? '直接使用 Google AI Studio 的 API Key，繞過 Zeabur AI Hub。'
-                                            : 'Directly use Google AI Studio API Key, bypass Zeabur AI Hub.'}
+                                            ? '直接使用 OpenRouter 的 API Key，解鎖對 DeepSeek、Gemini、Claude 與 GPT 的高速直連。'
+                                            : 'Directly use OpenRouter API Key to unlock high-speed connections to DeepSeek, Gemini, Claude, and GPT.'}
                                     </div>
                                     <a
-                                        href="https://aistudio.google.com/app/apikey"
+                                        href="https://openrouter.ai/keys"
                                         target="_blank"
                                         rel="noopener noreferrer"
                                         style={{ fontSize: '0.85rem', color: '#60a5fa', textDecoration: 'underline', marginTop: '8px', display: 'inline-block' }}
                                     >
-                                        {language === 'zh' ? '👉 前往 Google AI Studio 取得 API Key' : '👉 Get API Key from Google AI Studio'}
+                                        {language === 'zh' ? '👉 前往 OpenRouter 取得 API Key' : '👉 Get API Key from OpenRouter'}
                                     </a>
                                 </div>
                             </div>
@@ -894,10 +885,10 @@ const SettingsModal = ({ isOpen, onClose, language, teamId, teamName, onSuccess 
                             <div>
                                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
                                     <label style={{ color: 'var(--text-secondary)' }}>
-                                        {language === 'zh' ? 'Gemini 模型' : 'Gemini Model'}
+                                        {language === 'zh' ? 'OpenRouter 模型' : 'OpenRouter Model'}
                                     </label>
                                     <button 
-                                        onClick={() => fetchAvailableModels('google_gemini', true)}
+                                        onClick={() => fetchAvailableModels('openrouter', true)}
                                         disabled={isSyncingModels}
                                         style={{ 
                                             background: 'transparent', border: 'none', color: 'var(--accent-primary)', 
@@ -909,8 +900,8 @@ const SettingsModal = ({ isOpen, onClose, language, teamId, teamName, onSuccess 
                                     </button>
                                 </div>
                                 <select
-                                    value={geminiData.model}
-                                    onChange={(e) => setGeminiData({ ...geminiData, model: e.target.value })}
+                                    value={openrouterData.model}
+                                    onChange={(e) => setOpenrouterData({ ...openrouterData, model: e.target.value })}
                                     style={{
                                         width: '100%',
                                         padding: '12px',
@@ -920,17 +911,18 @@ const SettingsModal = ({ isOpen, onClose, language, teamId, teamName, onSuccess 
                                         color: 'var(--text-primary)'
                                     }}
                                 >
-                                    {Object.entries(googleModels).length > 0 ? (
-                                        Object.entries(googleModels).map(([id, config]) => (
+                                    {Object.entries(openrouterModels).length > 0 ? (
+                                        Object.entries(openrouterModels).map(([id, config]) => (
                                             <option key={id} value={id}>
                                                 {config.display_name || id}
                                             </option>
                                         ))
                                     ) : (
                                         <>
-                                            <option value="models/gemini-1.5-flash">Gemini 1.5 Flash (穩定版)</option>
-                                            <option value="models/gemini-2.0-flash">Gemini 2.0 Flash (最新世代)</option>
-                                            <option value="models/gemini-1.5-pro">Gemini 1.5 Pro (高品質)</option>
+                                            <option value="deepseek/deepseek-v4-flash">DeepSeek V4 Flash (預設)</option>
+                                            <option value="deepseek/deepseek-chat">DeepSeek V3 (Chat)</option>
+                                            <option value="google/gemini-2.5-flash">Gemini 2.5 Flash</option>
+                                            <option value="anthropic/claude-3.5-sonnet">Claude 3.5 Sonnet</option>
                                         </>
                                     )}
                                 </select>
@@ -939,13 +931,13 @@ const SettingsModal = ({ isOpen, onClose, language, teamId, teamName, onSuccess 
                             {/* API Key */}
                             <div>
                                 <label style={{ display: 'block', marginBottom: '8px', color: 'var(--text-secondary)' }}>
-                                    Google AI API Key
+                                    OpenRouter API Key
                                 </label>
                                 <input
                                     type="password"
-                                    value={geminiData.apiKey}
-                                    onChange={(e) => setGeminiData({ ...geminiData, apiKey: e.target.value })}
-                                    placeholder={language === 'zh' ? '輸入您的 Google AI API Key...' : 'Enter your Google AI API Key...'}
+                                    value={openrouterData.apiKey}
+                                    onChange={(e) => setOpenrouterData({ ...openrouterData, apiKey: e.target.value })}
+                                    placeholder={language === 'zh' ? '輸入您的 OpenRouter API Key...' : 'Enter your OpenRouter API Key...'}
                                     style={{
                                         width: '100%',
                                         padding: '12px',
@@ -959,14 +951,14 @@ const SettingsModal = ({ isOpen, onClose, language, teamId, teamName, onSuccess 
 
                             {/* Buttons */}
                             <div style={{ display: 'flex', gap: '12px', justifyContent: 'flex-end' }}>
-                                {geminiData.apiKey && (
+                                {openrouterData.apiKey && (
                                     <button
                                         onClick={async () => {
                                             setAiLoading(true);
                                             try {
-                                                await saveAiSettingsToServer({ gemini_api_key: '' });
-                                                setGeminiData({ apiKey: '', model: 'gemini-1.5-flash' });
-                                                setStatus({ type: 'success', message: language === 'zh' ? '已清除 Google Gemini 設定' : 'Google Gemini settings cleared' });
+                                                await saveAiSettingsToServer({ openrouter_api_key: '' });
+                                                setOpenrouterData({ apiKey: '', model: 'deepseek/deepseek-v4-flash' });
+                                                setStatus({ type: 'success', message: language === 'zh' ? '已清除 OpenRouter 設定' : 'OpenRouter settings cleared' });
                                             } catch (err) {
                                                 setStatus({ type: 'error', message: err.message });
                                             } finally {
@@ -980,18 +972,18 @@ const SettingsModal = ({ isOpen, onClose, language, teamId, teamName, onSuccess 
                                 )}
                                 <button
                                     onClick={async () => {
-                                        if (!geminiData.apiKey) {
+                                        if (!openrouterData.apiKey) {
                                             setStatus({ type: 'error', message: language === 'zh' ? '請輸入 API Key' : 'Please enter API Key' });
                                             return;
                                         }
                                         setAiLoading(true);
                                         try {
                                             await saveAiSettingsToServer({
-                                                gemini_api_key: geminiData.apiKey === '********' ? null : geminiData.apiKey,
-                                                ai_model: geminiData.model,
-                                                ai_provider: 'gemini'
+                                                openrouter_api_key: openrouterData.apiKey === '********' ? null : openrouterData.apiKey,
+                                                ai_model: openrouterData.model,
+                                                ai_provider: 'openrouter'
                                             });
-                                            setStatus({ type: 'success', message: language === 'zh' ? '✅ Google Gemini 設定已儲存至伺服器' : '✅ Google Gemini settings saved to server' });
+                                            setStatus({ type: 'success', message: language === 'zh' ? '✅ OpenRouter 設定已儲存至伺服器' : '✅ OpenRouter settings saved to server' });
                                         } catch (err) {
                                             setStatus({ type: 'error', message: language === 'zh' ? `❌ 儲存失敗: ${err.message}` : `❌ Save failed: ${err.message}` });
                                         } finally {
@@ -1011,19 +1003,23 @@ const SettingsModal = ({ isOpen, onClose, language, teamId, teamName, onSuccess 
                                         try {
                                             const token = localStorage.getItem('google_token');
                                             const apiUrl = import.meta.env.VITE_API_URL || 'http://localhost:8000';
-                                            const res = await fetch(`${apiUrl}/api/ai/test-gemini`, {
+                                            const res = await fetch(`${apiUrl}/api/ai/test-connection`, {
                                                 method: 'POST',
                                                 headers: { 
                                                     'Authorization': `Bearer ${token}`,
                                                     'Content-Type': 'application/json'
                                                 },
-                                                body: JSON.stringify({ model: geminiData.model })
+                                                body: JSON.stringify({
+                                                    api_key: openrouterData.apiKey === '********' ? null : openrouterData.apiKey,
+                                                    provider: 'openrouter',
+                                                    model: openrouterData.model
+                                                })
                                             });
                                             const data = await res.json();
-                                            if (data.success) {
-                                                setStatus({ type: 'success', message: language === 'zh' ? `✅ 連線成功！模型: ${data.model}` : `✅ Connected! Model: ${data.model}` });
+                                            if (res.ok) {
+                                                setStatus({ type: 'success', message: language === 'zh' ? `✅ 連線成功！模型: ${openrouterData.model}` : `✅ Connected! Model: ${openrouterData.model}` });
                                             } else {
-                                                setStatus({ type: 'error', message: language === 'zh' ? `❌ 連線失敗: ${data.message}` : `❌ Failed: ${data.message}` });
+                                                setStatus({ type: 'error', message: language === 'zh' ? `❌ 連線失敗: ${data.detail || data.message}` : `❌ Failed: ${data.detail || data.message}` });
                                             }
                                         } catch (err) {
                                             setStatus({ type: 'error', message: language === 'zh' ? `❌ 測試錯誤: ${err.message}` : `❌ Test error: ${err.message}` });
@@ -1047,8 +1043,8 @@ const SettingsModal = ({ isOpen, onClose, language, teamId, teamName, onSuccess 
                                 color: '#4ade80'
                             }}>
                                 💡 {language === 'zh'
-                                    ? '儲存後，請到上方切換啟用的 AI 模組為「💎 Gemini」即可開始使用。'
-                                    : 'After saving, switch to "💎 Gemini" in the provider selector above to start using it.'}
+                                    ? '儲存後，請到上方切換啟用的 AI 模組為「💎 OpenRouter」即可開始使用。'
+                                    : 'After saving, switch to "💎 OpenRouter" in the provider selector above to start using it.'}
                             </div>
                         </div>
                     )}

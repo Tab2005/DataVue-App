@@ -354,8 +354,8 @@ const MetaAndromedaReviewQueue = () => {
                                         <span>
                                             {detail.lineage.scoring_mode === 'ai'
                                                 ? t(
-                                                    `Gemini AI (${detail.lineage.provider_model || 'gemini-1.5-flash'})`,
-                                                    `Gemini AI 多模態模型 (${detail.lineage.provider_model || 'gemini-1.5-flash'})`
+                                                    `OpenRouter (${detail.lineage.provider_model || 'deepseek/deepseek-v4-flash'})`,
+                                                    `OpenRouter 聚合模型 (${detail.lineage.provider_model || 'deepseek/deepseek-v4-flash'})`
                                                   )
                                                 : t('Heuristic Rule Engine', '啟發式模擬規則引擎')
                                             }

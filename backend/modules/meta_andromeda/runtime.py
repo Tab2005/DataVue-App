@@ -51,16 +51,17 @@ class HeuristicScoringProvider(BaseScoringProvider):
         return build_heuristic_score_result(score_payload, registry_entry)
 
 
-class GeminiScoringProvider(BaseScoringProvider):
+class OpenRouterScoringProvider(BaseScoringProvider):
     def __init__(self, api_key: str | None = None):
         self.api_key = api_key
 
     async def score(self, score_payload: dict, registry_entry: MetaAndromedaModelEntry) -> dict:
-        from services.ai.gemini_client import GoogleGeminiClient
+        from services.ai.openrouter_client import OpenRouterClient
+        import openai
 
-        client = GoogleGeminiClient(api_key=self.api_key)
+        client = OpenRouterClient(api_key=self.api_key)
         if client.client is None:
-            raise RuntimeError("Gemini client is not configured")
+            raise RuntimeError("OpenRouter client is not configured")
 
         request_context = score_payload.get("request_context", {})
         request_mode = score_payload.get("request_mode", "auto")
@@ -101,11 +102,18 @@ class GeminiScoringProvider(BaseScoringProvider):
                 )
                 break
             except Exception as e:
-                is_rate_limit = "429" in str(e) or "resource_exhausted" in str(e).lower() or "exhausted" in str(e).lower()
+                is_rate_limit = False
+                if isinstance(e, openai.RateLimitError):
+                    is_rate_limit = True
+                elif hasattr(e, "status_code") and e.status_code == 429:
+                    is_rate_limit = True
+                elif "429" in str(e) or "resource_exhausted" in str(e).lower() or "exhausted" in str(e).lower() or "rate_limit" in str(e).lower():
+                    is_rate_limit = True
+                
                 if is_rate_limit and attempt < max_retries - 1:
                     sleep_time = backoff * (2 ** attempt)
                     logger.warning(
-                        "[MetaAndromeda] Gemini 429 Rate Limit hit. Retrying in %.1fs... (Attempt %d/%d)",
+                        "[MetaAndromeda] OpenRouter 429 Rate Limit hit. Retrying in %.1fs... (Attempt %d/%d)",
                         sleep_time,
                         attempt + 1,
                         max_retries
@@ -141,7 +149,7 @@ class GeminiScoringProvider(BaseScoringProvider):
             "top_positive_drivers": [str(item) for item in (parsed.get("top_positive_drivers") or [])][:3],
             "top_negative_drivers": [str(item) for item in (parsed.get("top_negative_drivers") or [])][:3],
             "explanations": {
-                "summary": str(parsed.get("summary") or "Scored by Gemini-backed Meta Andromeda runtime."),
+                "summary": str(parsed.get("summary") or "Scored by OpenRouter-backed Meta Andromeda runtime."),
                 "top_positive_drivers": [str(item) for item in (parsed.get("top_positive_drivers") or [])][:3],
                 "top_risks": [str(item) for item in (parsed.get("top_negative_drivers") or [])][:3],
                 "diagnostic_evidence": {
@@ -341,29 +349,29 @@ class MetaAndromedaRuntimeAdapter:
                     if asset and asset.uploaded_by:
                         user = db_session.query(User).filter(User.id == asset.uploaded_by).first()
                         if user and user.google_id:
-                            db_key = TokenManager.get_ai_api_key(user.google_id, provider="gemini")
+                            db_key = TokenManager.get_ai_api_key(user.google_id, provider="openrouter")
                 finally:
                     db_session.close()
             except Exception as e:
                 logger.error(f"[MetaAndromeda] Failed to retrieve DB API key for asset {asset_id}: {e}")
 
-        google_key = db_key or os.getenv("GOOGLE_AI_API_KEY") or os.getenv("GOOGLE_API_KEY")
+        openrouter_key = db_key or os.getenv("OPENROUTER_API_KEY")
         zeabur_key = os.getenv("ZEABUR_AI_HUB_API_KEY")
 
         logger.warning(
-            "[MetaAndromeda] generate_score_result. DB Key present: %s, GOOGLE_AI_API_KEY len: %s, provider_override: %s",
+            "[MetaAndromeda] generate_score_result. DB Key present: %s, OPENROUTER_API_KEY len: %s, provider_override: %s",
             bool(db_key),
-            len(google_key) if google_key else 0,
+            len(openrouter_key) if openrouter_key else 0,
             settings.META_ANDROMEDA_SCORING_PROVIDER
         )
 
-        has_any_google_key = bool(google_key) or bool(settings.GOOGLE_AI_API_KEY)
-        if settings.META_ANDROMEDA_SCORING_PROVIDER == "auto" and provider_name == "gemini" and not has_any_google_key:
+        has_any_openrouter_key = bool(openrouter_key) or bool(settings.OPENROUTER_API_KEY)
+        if settings.META_ANDROMEDA_SCORING_PROVIDER == "auto" and provider_name == "openrouter" and not has_any_openrouter_key:
             provider_name = "heuristic"
 
         provider: BaseScoringProvider
-        if provider_name == "gemini":
-            provider = GeminiScoringProvider(api_key=google_key)
+        if provider_name == "openrouter":
+            provider = OpenRouterScoringProvider(api_key=openrouter_key)
         else:
             provider = HeuristicScoringProvider()
 

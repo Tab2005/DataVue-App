@@ -268,11 +268,13 @@ async def health_check():
 
     google_key = os.getenv("GOOGLE_AI_API_KEY") or ""
     google_key_alt = os.getenv("GOOGLE_API_KEY") or ""
+    openrouter_key = os.getenv("OPENROUTER_API_KEY") or ""
     zeabur_key = os.getenv("ZEABUR_AI_HUB_API_KEY") or ""
     from core.config import settings
 
     # 統計資料庫中有金鑰的用戶數
     db_users_with_gemini_key_count = 0
+    db_users_with_openrouter_key_count = 0
     try:
         temp_session = SessionLocal()
         try:
@@ -280,6 +282,10 @@ async def health_check():
             db_users_with_gemini_key_count = temp_session.query(User).filter(
                 User.gemini_api_key.isnot(None),
                 User.gemini_api_key != ""
+            ).count()
+            db_users_with_openrouter_key_count = temp_session.query(User).filter(
+                User.openrouter_api_key.isnot(None),
+                User.openrouter_api_key != ""
             ).count()
         finally:
             temp_session.close()
@@ -299,9 +305,12 @@ async def health_check():
         "ai_config_debug": {
             "GOOGLE_AI_API_KEY_len": len(google_key),
             "GOOGLE_API_KEY_len": len(google_key_alt),
+            "OPENROUTER_API_KEY_len": len(openrouter_key),
             "ZEABUR_AI_HUB_API_KEY_len": len(zeabur_key),
             "settings_GOOGLE_AI_API_KEY_len": len(settings.GOOGLE_AI_API_KEY or "") if settings.GOOGLE_AI_API_KEY else 0,
+            "settings_OPENROUTER_API_KEY_len": len(settings.OPENROUTER_API_KEY or "") if settings.OPENROUTER_API_KEY else 0,
             "db_users_with_gemini_key_count": db_users_with_gemini_key_count,
+            "db_users_with_openrouter_key_count": db_users_with_openrouter_key_count,
             "META_ANDROMEDA_SCORING_PROVIDER": settings.META_ANDROMEDA_SCORING_PROVIDER
         },
         "checks": {}
