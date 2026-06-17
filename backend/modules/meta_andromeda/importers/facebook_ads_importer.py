@@ -102,9 +102,6 @@ async def fetch_observed_creative_candidate(
     else:
         observation_window_start, observation_window_end = resolve_observation_window(observation_window_kind)
     
-    import json
-    filtering_param = json.dumps([{"field": "ad.id", "operator": "IN", "values": [str(ad_id)]}])
-
     fetcher = report_fetcher or get_custom_report
     rows = await fetcher(
         account_id=account_id,
@@ -113,7 +110,7 @@ async def fetch_observed_creative_candidate(
         until=observation_window_end,
         level="ad",
         team_id=team_id,
-        filtering=filtering_param,
+        ad_id=ad_id,
     )
     if rows is None:
         raise ValueError("FB Ads report unavailable")
