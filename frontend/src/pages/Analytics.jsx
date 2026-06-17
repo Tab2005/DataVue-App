@@ -176,6 +176,9 @@ const resolveObservationWindowKind = (datePreset) => {
     if (datePreset === 'last_30d') {
         return 'last_30d';
     }
+    if (datePreset === 'lifetime') {
+        return 'lifetime';
+    }
     return 'lifetime';
 };
 
@@ -218,6 +221,7 @@ const Analytics = () => {
                 last_7d: "過去 7 天",
                 last_14d: "過去 14 天",
                 last_30d: "過去 30 天",
+                lifetime: "累積歷史成效",
                 custom: "自訂",
             },
             comparePresets: {
@@ -273,6 +277,7 @@ const Analytics = () => {
                 last_7d: "Past 7 Days",
                 last_14d: "Past 14 Days",
                 last_30d: "Past 30 Days",
+                lifetime: "Lifetime",
                 custom: "Custom",
             },
             comparePresets: {
@@ -457,6 +462,7 @@ const Analytics = () => {
             case 'last_7d': newRange.since = format(subDays(today, 7), 'yyyy-MM-dd'); newRange.until = format(subDays(today, 1), 'yyyy-MM-dd'); break; // Exclude today
             case 'last_14d': newRange.since = format(subDays(today, 14), 'yyyy-MM-dd'); newRange.until = format(subDays(today, 1), 'yyyy-MM-dd'); break;
             case 'last_30d': newRange.since = format(subDays(today, 30), 'yyyy-MM-dd'); newRange.until = format(subDays(today, 1), 'yyyy-MM-dd'); break;
+            case 'lifetime': newRange.since = format(subYears(today, 3), 'yyyy-MM-dd'); newRange.until = format(today, 'yyyy-MM-dd'); break;
             case 'custom': return;
         }
 

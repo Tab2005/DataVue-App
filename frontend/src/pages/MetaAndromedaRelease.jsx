@@ -75,6 +75,8 @@ const MetaAndromedaRelease = () => {
                 return t('Last 7 Days', '最近 7 天');
             case 'last_30d':
                 return t('Last 30 Days', '最近 30 天');
+            case 'lifetime':
+                return t('Lifetime', '累積歷史成效');
 
             // 安全發佈閘門項 (Promotion Gates)
             case 'accuracy_gate':

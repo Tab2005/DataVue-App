@@ -92,7 +92,7 @@ class MonitoringTimelineResponse(BaseModel):
 
 
 class DriftTriggerRequest(BaseModel):
-    window_kind: Literal["last_24h", "last_7d", "last_30d"] = "last_24h"
+    window_kind: Literal["last_24h", "last_7d", "last_30d", "lifetime"] = "last_24h"
     note: str | None = None
 
 

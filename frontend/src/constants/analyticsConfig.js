@@ -15,6 +15,7 @@ export const DATE_PRESETS = [
     { label: '最近 7 天 (Last 7 Days)', value: 'last_7d' },
     { label: '最近 14 天 (Last 14 Days)', value: 'last_14d' },
     { label: '最近 30 天 (Last 30 Days)', value: 'last_30d' },
+    { label: '累積歷史成效 (Lifetime)', value: 'lifetime' },
     { label: '自訂 (Custom)', value: 'custom' },
 ];
 

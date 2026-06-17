@@ -86,6 +86,8 @@ const MetaAndromedaMonitoring = () => {
                 return t('Last 7 Days', '最近 7 天');
             case 'last_30d':
                 return t('Last 30 Days', '最近 30 天');
+            case 'lifetime':
+                return t('Lifetime', '累積歷史成效');
 
             // 級距
             case 'high':
@@ -377,6 +379,7 @@ const MetaAndromedaMonitoring = () => {
                                         <option value="last_24h">{t('Last 24 Hours', '最近 24 小時')}</option>
                                         <option value="last_7d">{t('Last 7 Days', '最近 7 天')}</option>
                                         <option value="last_30d">{t('Last 30 Days', '最近 30 天')}</option>
+                                        <option value="lifetime">{t('Lifetime (All Time)', '累積歷史成效')}</option>
                                     </select>
                                     <textarea
                                         value={driftNote}
