@@ -707,7 +707,9 @@ class MetaAndromedaRepository:
                 "total_matched": total_matched,
                 "accuracy": round(accuracy, 4),
                 "mae": round(mae, 4),
-                "matched_details": matched_pairs
+                "matched_details": matched_pairs,
+                "since": since,
+                "until": until,
             }
         )
         db.add(report)

@@ -695,7 +695,21 @@ const MetaAndromedaMonitoring = () => {
                                             )}
                                             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', flexWrap: 'wrap', gap: '8px' }}>
                                                 <div style={{ color: statusColor, fontWeight: 700, marginBottom: '6px' }}>
-                                                    {getTranslation(report.window_kind)} · {getTranslation(report.drift_status)}
+                                                    {getTranslation(report.window_kind)}
+                                                    {report.window_kind === 'custom' && (() => {
+                                                        const since = report.report_payload?.since;
+                                                        const until = report.report_payload?.until;
+                                                        if (since && until) {
+                                                            return ` (${since} ~ ${until})`;
+                                                        }
+                                                        if (report.note && report.note.includes('~')) {
+                                                            const match = report.note.match(/(\d{4}-\d{2}-\d{2})\s*~\s*(\d{4}-\d{2}-\d{2})/);
+                                                            if (match) {
+                                                                return ` (${match[1]} ~ ${match[2]})`;
+                                                            }
+                                                        }
+                                                        return '';
+                                                    })()} · {getTranslation(report.drift_status)}
                                                 </div>
                                                 <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: '4px' }}>
                                                     {accuracy !== undefined && (
@@ -926,11 +940,20 @@ const MetaAndromedaMonitoring = () => {
                                                 </span>
                                             </div>
 
-                                            {hasError && !isExcluded && (
-                                                <div style={{ fontSize: '0.75rem', color: '#ef4444', marginTop: '6px', fontStyle: 'italic' }}>
-                                                    ⚠ {t(`Overestimated by ${item.error} bands`, `預估偏高 ${item.error} 個級距`)}
-                                                </div>
-                                            )}
+                                            {hasError && !isExcluded && (() => {
+                                                const bandOrder = { low: 1, mid: 2, high: 3 };
+                                                const predVal = bandOrder[item.prediction_band] || 0;
+                                                const obsVal = bandOrder[item.observed_band] || 0;
+                                                const isOver = predVal > obsVal;
+                                                
+                                                return (
+                                                    <div style={{ fontSize: '0.75rem', color: '#ef4444', marginTop: '6px', fontStyle: 'italic' }}>
+                                                        ⚠ {isOver 
+                                                            ? t(`Overestimated by ${item.error} bands`, `預估偏高 ${item.error} 個級距`)
+                                                            : t(`Underestimated by ${item.error} bands`, `預估偏低 ${item.error} 個級距`)}
+                                                    </div>
+                                                );
+                                            })()}
                                         </div>
                                     );
                                 })}

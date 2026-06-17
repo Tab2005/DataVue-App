@@ -252,6 +252,20 @@ const MetaAndromedaRelease = () => {
                                                 </div>
                                                 <div style={{ fontSize: '0.8rem', color: 'var(--text-secondary)' }}>
                                                     {getTranslation(driftReport.window_kind)}
+                                                    {driftReport.window_kind === 'custom' && (() => {
+                                                        const since = driftReport.report_payload?.since;
+                                                        const until = driftReport.report_payload?.until;
+                                                        if (since && until) {
+                                                            return ` (${since} ~ ${until})`;
+                                                        }
+                                                        if (driftReport.note && driftReport.note.includes('~')) {
+                                                            const match = driftReport.note.match(/(\d{4}-\d{2}-\d{2})\s*~\s*(\d{4}-\d{2}-\d{2})/);
+                                                            if (match) {
+                                                                return ` (${match[1]} ~ ${match[2]})`;
+                                                            }
+                                                        }
+                                                        return '';
+                                                    })()}
                                                 </div>
                                             </div>
 
