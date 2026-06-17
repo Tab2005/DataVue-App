@@ -23,6 +23,8 @@ const MetaAndromedaMonitoring = () => {
     const [deadLetterOnly, setDeadLetterOnly] = useState(searchParams.get('dead') === '1');
     const [selectedScoreEventId, setSelectedScoreEventId] = useState(searchParams.get('event') || '');
     const [driftWindowKind, setDriftWindowKind] = useState(searchParams.get('window') || 'last_24h');
+    const [driftSince, setDriftSince] = useState(searchParams.get('since') || '');
+    const [driftUntil, setDriftUntil] = useState(searchParams.get('until') || '');
     const [driftNote, setDriftNote] = useState('');
     const [selectedDriftReport, setSelectedDriftReport] = useState(null);
     const [excludedObsIds, setExcludedObsIds] = useState(new Set());
@@ -88,6 +90,8 @@ const MetaAndromedaMonitoring = () => {
                 return t('Last 30 Days', '最近 30 天');
             case 'lifetime':
                 return t('Lifetime', '累積歷史成效');
+            case 'custom':
+                return t('Custom Range', '自訂時間區間');
 
             // 級距
             case 'high':
@@ -194,8 +198,15 @@ const MetaAndromedaMonitoring = () => {
         if (driftWindowKind !== 'last_24h') {
             nextParams.set('window', driftWindowKind);
         }
+        if (driftWindowKind === 'custom') {
+            if (driftSince) nextParams.set('since', driftSince);
+            if (driftUntil) nextParams.set('until', driftUntil);
+        } else {
+            nextParams.delete('since');
+            nextParams.delete('until');
+        }
         setSearchParams(nextParams, { replace: true });
-    }, [hostFilter, eventQuery, deadLetterOnly, selectedScoreEventId, driftWindowKind, setSearchParams]);
+    }, [hostFilter, eventQuery, deadLetterOnly, selectedScoreEventId, driftWindowKind, driftSince, driftUntil, setSearchParams]);
 
     useEffect(() => {
         loadTimeline(selectedScoreEventId);
@@ -230,12 +241,18 @@ const MetaAndromedaMonitoring = () => {
 
     const handleDriftTrigger = async (event) => {
         event.preventDefault();
+        if (driftWindowKind === 'custom' && (!driftSince || !driftUntil)) {
+            setError(language === 'zh' ? '請提供自訂時間區間的開始與結束日期' : 'Please provide both start and end dates for custom range');
+            return;
+        }
         setRunningDrift(true);
         setError(null);
         try {
             await triggerMetaAndromedaDriftReport({
                 window_kind: driftWindowKind,
                 note: driftNote.trim() || null,
+                since: driftWindowKind === 'custom' ? driftSince : null,
+                until: driftWindowKind === 'custom' ? driftUntil : null,
             });
             setDriftNote('');
             await loadSummary();
@@ -379,8 +396,30 @@ const MetaAndromedaMonitoring = () => {
                                         <option value="last_24h">{t('Last 24 Hours', '最近 24 小時')}</option>
                                         <option value="last_7d">{t('Last 7 Days', '最近 7 天')}</option>
                                         <option value="last_30d">{t('Last 30 Days', '最近 30 天')}</option>
-                                        <option value="lifetime">{t('Lifetime (All Time)', '累積歷史成效')}</option>
+                                        <option value="custom">{t('Custom Date Range', '自訂時間區間')}</option>
                                     </select>
+                                    {driftWindowKind === 'custom' && (
+                                        <div style={{ display: 'flex', gap: '8px', marginBottom: '4px' }}>
+                                            <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                                                <span style={{ fontSize: '0.8rem', color: 'var(--text-secondary)' }}>{t('Start Date', '開始日期')}</span>
+                                                <input 
+                                                    type="date" 
+                                                    value={driftSince} 
+                                                    onChange={(e) => setDriftSince(e.target.value)} 
+                                                    style={{ ...inputStyle, colorScheme: 'dark' }}
+                                                />
+                                            </div>
+                                            <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                                                <span style={{ fontSize: '0.8rem', color: 'var(--text-secondary)' }}>{t('End Date', '結束日期')}</span>
+                                                <input 
+                                                    type="date" 
+                                                    value={driftUntil} 
+                                                    onChange={(e) => setDriftUntil(e.target.value)} 
+                                                    style={{ ...inputStyle, colorScheme: 'dark' }}
+                                                />
+                                            </div>
+                                        </div>
+                                    )}
                                     <textarea
                                         value={driftNote}
                                         onChange={(event) => setDriftNote(event.target.value)}

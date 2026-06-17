@@ -94,8 +94,13 @@ async def fetch_observed_creative_candidate(
     cta: str | None,
     team_id: str | None = None,
     report_fetcher=None,
+    since: str | None = None,
+    until: str | None = None,
 ) -> ObservedCreativeCandidate:
-    observation_window_start, observation_window_end = resolve_observation_window(observation_window_kind)
+    if observation_window_kind == "custom" and since and until:
+        observation_window_start, observation_window_end = since, until
+    else:
+        observation_window_start, observation_window_end = resolve_observation_window(observation_window_kind)
     fetcher = report_fetcher or get_custom_report
     rows = await fetcher(
         account_id=account_id,

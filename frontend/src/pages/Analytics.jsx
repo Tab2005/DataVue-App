@@ -176,10 +176,10 @@ const resolveObservationWindowKind = (datePreset) => {
     if (datePreset === 'last_30d') {
         return 'last_30d';
     }
-    if (datePreset === 'lifetime') {
-        return 'lifetime';
+    if (datePreset === 'custom') {
+        return 'custom';
     }
-    return 'lifetime';
+    return 'custom';
 };
 
 const Analytics = () => {
@@ -462,7 +462,6 @@ const Analytics = () => {
             case 'last_7d': newRange.since = format(subDays(today, 7), 'yyyy-MM-dd'); newRange.until = format(subDays(today, 1), 'yyyy-MM-dd'); break; // Exclude today
             case 'last_14d': newRange.since = format(subDays(today, 14), 'yyyy-MM-dd'); newRange.until = format(subDays(today, 1), 'yyyy-MM-dd'); break;
             case 'last_30d': newRange.since = format(subDays(today, 30), 'yyyy-MM-dd'); newRange.until = format(subDays(today, 1), 'yyyy-MM-dd'); break;
-            case 'lifetime': newRange.since = format(subYears(today, 3), 'yyyy-MM-dd'); newRange.until = format(today, 'yyyy-MM-dd'); break;
             case 'custom': return;
         }
 
@@ -588,6 +587,8 @@ const Analytics = () => {
                 account_id: selectedAccountId,
                 ad_id: row.ad_id,
                 observation_window_kind: observationWindowKind,
+                since: observationWindowKind === 'custom' ? dateRange.since : null,
+                until: observationWindowKind === 'custom' ? dateRange.until : null,
                 market: 'TW',
                 placement_family: 'feed',
             });
@@ -1856,11 +1857,11 @@ const Analytics = () => {
                             {language === 'zh'
                                 ? `已選 ${selectedObservationRows.length} 筆 / 可匯入 ${observationImportableRows.length} 筆`
                                 : `${selectedObservationRows.length} selected / ${observationImportableRows.length} importable`}
-                            {observationWindowKind === 'lifetime' && (
+                            {observationWindowKind === 'custom' && (
                                 <span style={{ marginLeft: '8px', color: '#fbbf24' }}>
                                     {language === 'zh'
-                                        ? '目前日期區段將以 lifetime 匯入。'
-                                        : 'Current date preset imports as lifetime.'}
+                                        ? '目前日期區段將以自訂時間區間匯入。'
+                                        : 'Current date preset imports as custom range.'}
                                 </span>
                             )}
                         </div>
@@ -2318,10 +2319,10 @@ const Analytics = () => {
                                                                 onClick={() => handleObservationImport(row)}
                                                                 disabled={observationImportState[row.id]?.status === 'loading'}
                                                                 title={
-                                                                    observationWindowKind === 'lifetime'
+                                                                    observationWindowKind === 'custom'
                                                                         ? (language === 'zh'
-                                                                            ? '目前日期區段會以 lifetime 匯入 observation。'
-                                                                            : 'Current date preset will import observation as lifetime.')
+                                                                            ? '目前日期區段會以自訂時間區間匯入 observation。'
+                                                                            : 'Current date preset will import observation as custom range.')
                                                                         : undefined
                                                                 }
                                                                 style={{

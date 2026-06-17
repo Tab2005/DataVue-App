@@ -112,12 +112,16 @@ class MetaAndromedaService:
         window_kind: str,
         triggered_by: str | None = None,
         note: str | None = None,
+        since: str | None = None,
+        until: str | None = None,
     ) -> dict:
         return repository.create_drift_report(
             db,
             window_kind=window_kind,
             triggered_by=triggered_by,
             note=note,
+            since=since,
+            until=until,
         )
 
     @staticmethod
@@ -278,6 +282,8 @@ class MetaAndromedaService:
             headline=payload.get("headline"),
             cta=payload.get("cta"),
             team_id=team_id,
+            since=payload.get("since"),
+            until=payload.get("until"),
         )
 
     @staticmethod

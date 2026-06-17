@@ -555,14 +555,28 @@ class MetaAndromedaRepository:
         window_kind: str,
         triggered_by: str | None = None,
         note: str | None = None,
+        since: str | None = None,
+        until: str | None = None,
     ):
         self.ensure_seed_data(db)
         # 1. 撈取該窗口的所有 Observed Creative
-        observed_list = (
-            db.query(MetaAndromedaObservedCreative)
-            .filter(MetaAndromedaObservedCreative.observation_window_kind == window_kind)
-            .all()
-        )
+        if window_kind == "custom" and since and until:
+            range_str = f"[{since} ~ {until}]"
+            note = f"{note} {range_str}" if note else range_str
+            observed_list = (
+                db.query(MetaAndromedaObservedCreative)
+                .filter(
+                    MetaAndromedaObservedCreative.observation_window_start >= since,
+                    MetaAndromedaObservedCreative.observation_window_end <= until
+                )
+                .all()
+            )
+        else:
+            observed_list = (
+                db.query(MetaAndromedaObservedCreative)
+                .filter(MetaAndromedaObservedCreative.observation_window_kind == window_kind)
+                .all()
+            )
         
         matched_pairs = []
         correct_count = 0

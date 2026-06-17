@@ -136,6 +136,8 @@ async def trigger_drift_report(
         window_kind=payload.window_kind,
         triggered_by=getattr(user, "email", None) or "datavue_operator",
         note=payload.note,
+        since=payload.since,
+        until=payload.until,
     )
 
 

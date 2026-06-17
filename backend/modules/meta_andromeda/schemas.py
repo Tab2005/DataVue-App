@@ -92,7 +92,9 @@ class MonitoringTimelineResponse(BaseModel):
 
 
 class DriftTriggerRequest(BaseModel):
-    window_kind: Literal["last_24h", "last_7d", "last_30d", "lifetime"] = "last_24h"
+    window_kind: Literal["last_24h", "last_7d", "last_30d", "lifetime", "custom"] = "last_24h"
+    since: str | None = None
+    until: str | None = None
     note: str | None = None
 
 
@@ -220,7 +222,9 @@ class ScoreSubmitRequest(BaseModel):
 class FacebookAdObservedImportRequest(BaseModel):
     account_id: str
     ad_id: str
-    observation_window_kind: Literal["last_7d", "last_30d", "lifetime"]
+    observation_window_kind: Literal["last_7d", "last_30d", "lifetime", "custom"]
+    since: str | None = None
+    until: str | None = None
     market: str = "TW"
     placement_family: str = "all"
     primary_text: str | None = None
