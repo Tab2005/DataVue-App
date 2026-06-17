@@ -64,7 +64,7 @@ const MetaAndromedaRelease = () => {
 
             // 漂移狀態與時間視窗
             case 'drifted':
-                return t('Drifted', '嚴重漂移');
+                return t('Drifted', '嚴重預估偏差');
             case 'warning':
                 return t('Warning', '警告');
             case 'stable':
@@ -90,7 +90,7 @@ const MetaAndromedaRelease = () => {
             case 'model_loaded_check':
                 return t('Model Loaded Check', '模型載入測試');
             case 'active_drift_alert_check':
-                return t('Active Drift Alert Check', '線上無嚴重漂移安全閘');
+                return t('Active Drift Alert Check', '線上無嚴重預估偏差安全閘');
             case 'release actions now persist to datavue db.':
                 return t('Release actions now persist to DataVue DB.', '版本發佈操作已成功持久化至 DataVue 資料庫。');
             case 'release metadata is now aligned with the meta andromeda registry source of truth.':
@@ -231,7 +231,7 @@ const MetaAndromedaRelease = () => {
                                 <h2 style={sectionTitleStyle}>{t('Online Performance Evidence', '線上實測對照證據')}</h2>
                                 {!driftReport ? (
                                     <div style={emptyStateStyle}>
-                                        {t('No recent drift reports found.', '目前無最新漂移報告。')}
+                                        {t('No recent drift reports found.', '目前無最新預估偏差報告。')}
                                     </div>
                                 ) : (
                                     <div style={{ display: 'grid', gap: '12px' }}>
@@ -283,7 +283,7 @@ const MetaAndromedaRelease = () => {
                                                 }}>
                                                     ⚠️ {t(
                                                         'Online model detected significant drift. Release functionality is locked to prevent degraded inference quality. Please perform calibration inside the Monitoring Console first.',
-                                                        '線上模型已檢測出顯著漂移。為了避免劣質預估，已自動鎖定發佈。請先進入監控工作台執行「資料校準」。'
+                                                        '線上模型已檢測出顯著預估偏差。為了避免劣質預估，已自動鎖定發佈。請先進入監控工作台執行「資料校準」。'
                                                     )}
                                                 </div>
                                             )}
@@ -330,7 +330,7 @@ const MetaAndromedaRelease = () => {
                                                                 }}
                                                                 disabled={submitting || isDrifted}
                                                                 onClick={() => handleReleaseAction('approve', candidate.model_version)}
-                                                                title={isDrifted ? t('Locked due to online model drift', '因線上模型漂移而鎖定發佈') : ''}
+                                                                title={isDrifted ? t('Locked due to online model drift', '因線上模型預估偏差過大而鎖定發佈') : ''}
                                                             >
                                                                 {t('Approve', '批准')}
                                                             </button>
@@ -357,7 +357,7 @@ const MetaAndromedaRelease = () => {
                                                             }}>
                                                                 ⚠️ {t(
                                                                     `Online model detected significant drift (Accuracy: ${(driftReport?.report_payload?.accuracy * 100).toFixed(1)}% < 60%). Release has been automatically locked to prevent poor predictions. Please run "Data Calibration" in the monitoring workshop before approving new models.`,
-                                                                    `線上模型已檢測出顯著漂移 (Accuracy: ${(driftReport?.report_payload?.accuracy * 100).toFixed(1)}% < 60%)。為了避免劣質預估，已自動鎖定發佈。請先進入監控工作台執行「資料校準」，再行核准新模型。`
+                                                                    `線上模型已檢測出顯著預估偏差 (Accuracy: ${(driftReport?.report_payload?.accuracy * 100).toFixed(1)}% < 60%)。為了避免劣質預估，已自動鎖定發佈。請先進入監控工作台執行「資料校準」，再行核准新模型。`
                                                                 )}
                                                             </div>
                                                         )}

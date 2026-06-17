@@ -73,9 +73,9 @@ const MetaAndromedaMonitoring = () => {
             case 'queued':
                 return t('Queued', '已入佇列');
             case 'dead_letter':
-                return t('Dead Letter', '已入死信佇列');
+                return t('Dead Letter', '異常任務 (已隔離)');
             case 'drifted':
-                return t('Drifted', '嚴重漂移');
+                return t('Drifted', '嚴重預估偏差');
             case 'warning':
                 return t('Warning', '警告');
             case 'stable':
@@ -107,7 +107,7 @@ const MetaAndromedaMonitoring = () => {
             case 'dataset_calibration':
                 return t('Dataset Calibration', '資料集校準');
             case 'drift_diagnostics':
-                return t('Drift Diagnostics', '漂移診斷');
+                return t('Drift Diagnostics', '偏差診斷');
             case 'prediction_inference':
                 return t('Prediction Inference', '預測推論');
             case 'model_sync':
@@ -121,6 +121,12 @@ const MetaAndromedaMonitoring = () => {
             case 'critical':
                 return t('Critical', '嚴重');
 
+            // 主機策略
+            case 'shared_queue_host_adapter':
+                return t('Shared Queue Host Adapter', '共用佇列適配器');
+
+            default:
+                return key;
         }
     };
 
@@ -375,7 +381,7 @@ const MetaAndromedaMonitoring = () => {
                         checked={deadLetterOnly}
                         onChange={(event) => setDeadLetterOnly(event.target.checked)}
                     />
-                    <span>{t('Dead Letters Only', '只看死信')}</span>
+                    <span>{t('Dead Letters Only', '只看異常任務')}</span>
                 </label>
             </div>
 
@@ -408,7 +414,7 @@ const MetaAndromedaMonitoring = () => {
                         ))}
 
                         <section style={panelStyle}>
-                            <h2 style={sectionTitleStyle}>{t('Drift Trigger', '漂移檢查')}</h2>
+                            <h2 style={sectionTitleStyle}>{t('Drift Trigger', '預估偏差檢查')}</h2>
                             {loadingOperatePermission ? null : canOperate ? (
                                 <form onSubmit={handleDriftTrigger} style={{ display: 'grid', gap: '12px' }}>
                                     <select value={driftWindowKind} onChange={(event) => setDriftWindowKind(event.target.value)} style={inputStyle}>
@@ -447,14 +453,14 @@ const MetaAndromedaMonitoring = () => {
                                         style={inputStyle}
                                     />
                                     <button type="submit" style={buttonPrimaryStyle} disabled={runningDrift}>
-                                        {runningDrift ? t('Running...', '執行中...') : t('Run Drift Check', '執行漂移檢查')}
+                                        {runningDrift ? t('Running...', '執行中...') : t('Run Drift Check', '執行預估偏差檢查')}
                                     </button>
                                 </form>
                             ) : (
                                 <div style={infoPanelStyle}>
                                     {t(
                                         'Triggering drift reports requires meta_andromeda:operate.',
-                                        '執行漂移檢查需要 meta_andromeda:operate 權限。'
+                                        '執行預估偏差檢查需要 meta_andromeda:operate 權限。'
                                     )}
                                 </div>
                             )}
@@ -471,7 +477,7 @@ const MetaAndromedaMonitoring = () => {
                             <div style={{ display: 'grid', gap: '12px', marginBottom: '16px' }}>
                                 <Metric label={t('active_host', '目前主機')} value={summary?.worker_host?.active_host} />
                                 <Metric label={t('host_strategy', '主機策略')} value={getTranslation(summary?.worker_host?.host_strategy)} />
-                                <Metric label={t('dead_letter_count', '死信數量')} value={summary?.worker_host?.dead_letter_count} />
+                                <Metric label={t('dead_letter_count', '異常任務數量')} value={summary?.worker_host?.dead_letter_count} />
                             </div>
 
                             <div style={{ marginBottom: '14px' }}>
@@ -526,7 +532,7 @@ const MetaAndromedaMonitoring = () => {
                             </div>
 
                             <div>
-                                <div style={subTitleStyle}>{t('Dead Letters', '死信事件')}</div>
+                                <div style={subTitleStyle}>{t('Dead Letters', '異常任務')}</div>
                                 <div 
                                     className="queue-scroll-box"
                                     style={{ 
@@ -568,7 +574,7 @@ const MetaAndromedaMonitoring = () => {
                                         </button>
                                     ))}
                                     {visibleDeadLetters.length === 0 && (
-                                        <div style={emptyStateStyle}>{t('No dead letters match the current filter.', '目前篩選條件下沒有死信事件。')}</div>
+                                        <div style={emptyStateStyle}>{t('No dead letters match the current filter.', '目前篩選條件下沒有異常任務。')}</div>
                                     )}
                                 </div>
                             </div>
@@ -577,7 +583,7 @@ const MetaAndromedaMonitoring = () => {
                         <section style={panelStyle}>
                             <h2 style={sectionTitleStyle}>{t('Event Timeline', '事件時間軸')}</h2>
                             {!selectedScoreEventId ? (
-                                <div style={emptyStateStyle}>{t('Select a worker event or dead letter to inspect the full timeline.', '請先選擇一筆 worker event 或死信事件以查看完整時間軸。')}</div>
+                                <div style={emptyStateStyle}>{t('Select a worker event or dead letter to inspect the full timeline.', '請先選擇一筆 worker event 或異常任務以查看完整時間軸。')}</div>
                             ) : loadingTimeline ? (
                                 <div style={emptyStateStyle}>{t('Loading event timeline...', '載入事件時間軸中...')}</div>
                             ) : !timeline ? (
@@ -608,9 +614,9 @@ const MetaAndromedaMonitoring = () => {
                                         </div>
                                     </div>
                                     <div style={detailCardStyle}>
-                                        <div style={subTitleStyle}>{t('Dead Letter Detail', '死信明細')}</div>
+                                        <div style={subTitleStyle}>{t('Dead Letter Detail', '異常任務明細')}</div>
                                         {(timeline.dead_letters || []).length === 0 ? (
-                                            <div style={{ color: 'var(--text-secondary)' }}>{t('No dead letters for this score event.', '這筆 score event 沒有死信紀錄。')}</div>
+                                            <div style={{ color: 'var(--text-secondary)' }}>{t('No dead letters for this score event.', '這筆 score event 沒有異常任務紀錄。')}</div>
                                         ) : (
                                             <div style={{ display: 'grid', gap: '10px' }}>
                                                 {timeline.dead_letters.map((item) => (
@@ -644,7 +650,7 @@ const MetaAndromedaMonitoring = () => {
                         </section>
 
                         <section style={panelStyle}>
-                            <h2 style={sectionTitleStyle}>{t('Latest Drift Reports', '最近漂移報告')}</h2>
+                            <h2 style={sectionTitleStyle}>{t('Latest Drift Reports', '最近預估偏差報告')}</h2>
                             <div 
                                 className="queue-scroll-box"
                                 style={{ 
@@ -673,7 +679,7 @@ const MetaAndromedaMonitoring = () => {
                                             position: 'relative',
                                             overflow: 'hidden'
                                         }}>
-                                            {/* 漂移呼吸燈 */}
+                                            {/* 偏差呼吸燈 */}
                                             {isDrifted && (
                                                 <div style={{
                                                     position: 'absolute',
@@ -694,7 +700,7 @@ const MetaAndromedaMonitoring = () => {
                                                 <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: '4px' }}>
                                                     {accuracy !== undefined && (
                                                         <span style={{ fontSize: '0.8rem', color: 'var(--text-secondary)' }}>
-                                                            {t('Accuracy', '準確率')}: {(accuracy * 100).toFixed(1)}% | MAE: {mae.toFixed(2)}
+                                                            {t('Accuracy', '準確率')}: {(accuracy * 100).toFixed(1)}% | {t('MAE', '平均絕對偏差')}: {mae.toFixed(2)}
                                                         </span>
                                                     )}
                                                     <span style={{ fontSize: '0.75rem', color: 'var(--text-secondary)' }}>
@@ -769,7 +775,7 @@ const MetaAndromedaMonitoring = () => {
                 </>
             )}
 
-            {/* 漂移診斷 Slide-over 滑出面板 */}
+            {/* 預估偏差診斷 Slide-over 滑出面板 */}
             <div style={{
                 position: 'fixed',
                 top: 0,
@@ -796,7 +802,7 @@ const MetaAndromedaMonitoring = () => {
                 }}>
                     <div style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
                         <div style={{ fontWeight: 'bold', fontSize: '1.05rem', color: 'var(--text-primary)' }}>
-                            {t('Drift Diagnostics Workspace', '漂移診斷工作台')}
+                            {t('Drift Diagnostics Workspace', '預估偏差診斷工作台')}
                         </div>
                         <div style={{ fontSize: '0.8rem', color: 'var(--text-secondary)' }}>
                             {selectedDriftReport ? `${getTranslation(selectedDriftReport.window_kind)} · ${t('Accuracy', '準確率')}: ${(selectedDriftReport.report_payload?.accuracy * 100).toFixed(1)}%` : ''}
