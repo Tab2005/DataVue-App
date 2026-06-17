@@ -355,10 +355,11 @@ class MetaAndromedaRuntimeAdapter:
             if not settings.META_ANDROMENS_SCORING_ALLOW_FALLBACK if hasattr(settings, "META_ANDROMENS_SCORING_ALLOW_FALLBACK") else not settings.META_ANDROMEDA_SCORING_ALLOW_FALLBACK:
                 raise
             fallback_entry = model_registry.get_entry("candidate_v0")
+            err_detail = str(exc).replace("\n", " ")
             return build_heuristic_score_result(
                 score_payload,
                 fallback_entry,
-                fallback_reason=f"{provider_name}:{type(exc).__name__}",
+                fallback_reason=f"{provider_name}:{type(exc).__name__} ({err_detail[:120]})",
             )
 
 
