@@ -70,7 +70,11 @@ class Settings:
     
     @property
     def GOOGLE_AI_API_KEY(self) -> Optional[str]:
-        return os.getenv("GOOGLE_AI_API_KEY") or os.getenv("ZEABUR_AI_HUB_API_KEY")
+        return (
+            os.getenv("GOOGLE_AI_API_KEY") 
+            or os.getenv("GOOGLE_API_KEY") 
+            or os.getenv("ZEABUR_AI_HUB_API_KEY")
+        )
     
     # === 應用設定 ===
     @property
