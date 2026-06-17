@@ -87,6 +87,10 @@ const MetaAndromedaRelease = () => {
                 return t('Model Loaded Check', '模型載入測試');
             case 'active_drift_alert_check':
                 return t('Active Drift Alert Check', '線上無嚴重漂移安全閘');
+            case 'release actions now persist to datavue db.':
+                return t('Release actions now persist to DataVue DB.', '版本發佈操作已成功持久化至 DataVue 資料庫。');
+            case 'release metadata is now aligned with the meta andromeda registry source of truth.':
+                return t('Release metadata is now aligned with the Meta Andromeda registry source of truth.', '版本中繼資料已與 Meta Andromeda 註冊表單一事實來源同步。');
 
             default:
                 return key;
@@ -382,7 +386,7 @@ const MetaAndromedaRelease = () => {
                             <div style={{ display: 'grid', gap: '8px' }}>
                                 {(overview?.notes || []).map((note, index) => (
                                     <div key={index} style={{ color: 'var(--text-secondary)', lineHeight: 1.6 }}>
-                                        {note}
+                                        {getTranslation(note)}
                                     </div>
                                 ))}
                             </div>
