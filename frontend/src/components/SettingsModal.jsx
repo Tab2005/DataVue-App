@@ -29,6 +29,7 @@ const SettingsModal = ({ isOpen, onClose, language, teamId, teamName, onSuccess 
     // Available models from backend (Separate lists)
     const [zeaburModels, setZeaburModels] = useState({});
     const [openrouterModels, setOpenrouterModels] = useState({});
+    const [isCustomModel, setIsCustomModel] = useState(false);
 
     // Status & Loading (separate for FB and AI tabs)
     const [status, setStatus] = useState(null); // { type: 'success' | 'error', message: '' }
@@ -409,16 +410,26 @@ const SettingsModal = ({ isOpen, onClose, language, teamId, teamName, onSuccess 
                         setActiveTab('zeabur');
                     }
 
+                    const activeModel = settings.ai_model || 'deepseek/deepseek-v4-flash';
+                    const presets = ['deepseek/deepseek-v4-flash', 'deepseek/deepseek-chat', 'google/gemini-2.5-flash', 'anthropic/claude-3.5-sonnet'];
+                    const isPreset = presets.includes(activeModel);
+
                     setAiData(prev => ({ 
                         ...prev, 
-                        model: settings.ai_model || 'deepseek/deepseek-v4-flash',
+                        model: activeModel,
                         apiKey: settings.has_zeabur_key ? '********' : ''
                     }));
                     setOpenrouterData(prev => ({ 
                         ...prev, 
-                        model: settings.ai_model || 'deepseek/deepseek-v4-flash',
+                        model: activeModel,
                         apiKey: (settings.has_openrouter_key || settings.has_gemini_key) ? '********' : ''
                     }));
+
+                    if (!isPreset && activeModel && (provider === 'openrouter' || provider === 'gemini' || provider === 'google_gemini')) {
+                        setIsCustomModel(true);
+                    } else {
+                        setIsCustomModel(false);
+                    }
                     // Store provider in localStorage for GSCStats to use (sync purpose only)
                     localStorage.setItem('ai_provider', provider);
                 }
@@ -887,45 +898,84 @@ const SettingsModal = ({ isOpen, onClose, language, teamId, teamName, onSuccess 
                                     <label style={{ color: 'var(--text-secondary)' }}>
                                         {language === 'zh' ? 'OpenRouter 模型' : 'OpenRouter Model'}
                                     </label>
-                                    <button 
-                                        onClick={() => fetchAvailableModels('openrouter', true)}
-                                        disabled={isSyncingModels}
-                                        style={{ 
-                                            background: 'transparent', border: 'none', color: 'var(--accent-primary)', 
-                                            cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '4px', fontSize: '12px' 
+                                    <div style={{ display: 'flex', gap: '12px', alignItems: 'center' }}>
+                                        <button 
+                                            onClick={() => {
+                                                const nextCustom = !isCustomModel;
+                                                setIsCustomModel(nextCustom);
+                                                if (!nextCustom) {
+                                                    setOpenrouterData(prev => ({ ...prev, model: 'deepseek/deepseek-v4-flash' }));
+                                                }
+                                            }}
+                                            style={{ 
+                                                background: 'transparent', border: 'none', color: '#60a5fa', 
+                                                cursor: 'pointer', fontSize: '12px', textDecoration: 'underline'
+                                            }}
+                                        >
+                                            {isCustomModel 
+                                                ? (language === 'zh' ? '選擇預設模型' : 'Choose Preset') 
+                                                : (language === 'zh' ? '👉 自定義模型 ID' : '👉 Custom Model ID')
+                                            }
+                                        </button>
+                                        {!isCustomModel && (
+                                            <button 
+                                                onClick={() => fetchAvailableModels('openrouter', true)}
+                                                disabled={isSyncingModels}
+                                                style={{ 
+                                                    background: 'transparent', border: 'none', color: 'var(--accent-primary)', 
+                                                    cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '4px', fontSize: '12px' 
+                                                }}
+                                            >
+                                                <FiRefreshCw className={isSyncingModels ? 'spin' : ''} size={12} />
+                                                {language === 'zh' ? '同步' : 'Sync'}
+                                            </button>
+                                        )}
+                                    </div>
+                                </div>
+                                {isCustomModel ? (
+                                    <input
+                                        type="text"
+                                        value={openrouterData.model}
+                                        onChange={(e) => setOpenrouterData({ ...openrouterData, model: e.target.value })}
+                                        placeholder={language === 'zh' ? '例如: mistralai/pixtral-12b 或 cohere/command-r' : 'e.g., mistralai/pixtral-12b'}
+                                        style={{
+                                            width: '100%',
+                                            padding: '12px',
+                                            borderRadius: '8px',
+                                            border: '1px solid var(--glass-border)',
+                                            background: '#ffffff',
+                                            color: '#000000'
+                                        }}
+                                    />
+                                ) : (
+                                    <select
+                                        value={openrouterData.model}
+                                        onChange={(e) => setOpenrouterData({ ...openrouterData, model: e.target.value })}
+                                        style={{
+                                            width: '100%',
+                                            padding: '12px',
+                                            borderRadius: '8px',
+                                            border: '1px solid var(--glass-border)',
+                                            background: 'rgba(255,255,255,0.05)',
+                                            color: 'var(--text-primary)'
                                         }}
                                     >
-                                        <FiRefreshCw className={isSyncingModels ? 'spin' : ''} size={12} />
-                                        {language === 'zh' ? '同步清單' : 'Sync List'}
-                                    </button>
-                                </div>
-                                <select
-                                    value={openrouterData.model}
-                                    onChange={(e) => setOpenrouterData({ ...openrouterData, model: e.target.value })}
-                                    style={{
-                                        width: '100%',
-                                        padding: '12px',
-                                        borderRadius: '8px',
-                                        border: '1px solid var(--glass-border)',
-                                        background: 'rgba(255,255,255,0.05)',
-                                        color: 'var(--text-primary)'
-                                    }}
-                                >
-                                    {Object.entries(openrouterModels).length > 0 ? (
-                                        Object.entries(openrouterModels).map(([id, config]) => (
-                                            <option key={id} value={id}>
-                                                {config.display_name || id}
-                                            </option>
-                                        ))
-                                    ) : (
-                                        <>
-                                            <option value="deepseek/deepseek-v4-flash">DeepSeek V4 Flash (預設)</option>
-                                            <option value="deepseek/deepseek-chat">DeepSeek V3 (Chat)</option>
-                                            <option value="google/gemini-2.5-flash">Gemini 2.5 Flash</option>
-                                            <option value="anthropic/claude-3.5-sonnet">Claude 3.5 Sonnet</option>
-                                        </>
-                                    )}
-                                </select>
+                                        {Object.entries(openrouterModels).length > 0 ? (
+                                            Object.entries(openrouterModels).map(([id, config]) => (
+                                                <option key={id} value={id}>
+                                                    {config.display_name || id}
+                                                </option>
+                                            ))
+                                        ) : (
+                                            <>
+                                                <option value="deepseek/deepseek-v4-flash">DeepSeek V4 Flash (預設)</option>
+                                                <option value="deepseek/deepseek-chat">DeepSeek V3 (Chat)</option>
+                                                <option value="google/gemini-2.5-flash">Gemini 2.5 Flash</option>
+                                                <option value="anthropic/claude-3.5-sonnet">Claude 3.5 Sonnet</option>
+                                            </>
+                                        )}
+                                    </select>
+                                )}
                             </div>
 
                             {/* API Key */}
