@@ -1,6 +1,6 @@
 # backend/services/ai/__init__.py
 from .zeabur_client import ZeaburAIClient
 from .intent_classifier import AIIntentClassifier
-from .gemini_client import GoogleGeminiClient
+from .openrouter_client import OpenRouterClient
 
-__all__ = ["ZeaburAIClient", "AIIntentClassifier", "GoogleGeminiClient"]
+__all__ = ["ZeaburAIClient", "AIIntentClassifier", "OpenRouterClient"]

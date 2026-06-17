@@ -30,7 +30,7 @@ AI 整合模組 - 提供 AI 客戶端、意圖分類器、以及相關 API
 from .router import router
 from .service import AIService
 from .intent_classifier import AIIntentClassifier
-from .clients import ZeaburAIClient, GoogleGeminiClient
+from .clients import ZeaburAIClient, OpenRouterClient
 
 __all__ = [
     # Router
@@ -42,5 +42,5 @@ __all__ = [
     
     # Clients
     "ZeaburAIClient",
-    "GoogleGeminiClient",
+    "OpenRouterClient",
 ]

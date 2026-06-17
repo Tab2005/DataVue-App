@@ -8,6 +8,6 @@ AI 客戶端集合
 """
 
 from .zeabur import ZeaburAIClient
-from .gemini import GoogleGeminiClient
+from .openrouter import OpenRouterClient
 
-__all__ = ["ZeaburAIClient", "GoogleGeminiClient"]
+__all__ = ["ZeaburAIClient", "OpenRouterClient"]
