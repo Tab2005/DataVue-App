@@ -325,6 +325,34 @@ const MetaAndromedaScoreLab = () => {
                                     </div>
                                 ) : null}
                             </div>
+                            {scoreResult.lineage && (
+                                <div style={detailCardStyle}>
+                                    <div style={{ color: 'var(--text-secondary)', marginBottom: '6px' }}>{t('Scoring Engine', '評估核心')}</div>
+                                    <div style={{
+                                        color: scoreResult.lineage.scoring_mode === 'ai' ? 'var(--accent-primary)' : 'var(--text-secondary)',
+                                        fontWeight: 700,
+                                        display: 'flex',
+                                        alignItems: 'center',
+                                        gap: '6px'
+                                    }}>
+                                        <span>{scoreResult.lineage.scoring_mode === 'ai' ? '🤖' : '⚙️'}</span>
+                                        <span>
+                                            {scoreResult.lineage.scoring_mode === 'ai'
+                                                ? t(
+                                                    `Gemini AI (${scoreResult.lineage.provider_model || 'gemini-1.5-flash'})`,
+                                                    `Gemini AI 多模態模型 (${scoreResult.lineage.provider_model || 'gemini-1.5-flash'})`
+                                                  )
+                                                : t('Heuristic Rule Engine', '啟發式模擬規則引擎')
+                                            }
+                                        </span>
+                                    </div>
+                                    {scoreResult.lineage.fallback_reason && (
+                                        <div style={{ color: '#ef4444', fontSize: '0.82rem', marginTop: '6px', lineHeight: 1.4 }}>
+                                            ⚠️ {t('AI Unavailable. Fallback engaged: ', 'AI 服務不可用，已啟用備用方案：')}{scoreResult.lineage.fallback_reason}
+                                        </div>
+                                    )}
+                                </div>
+                            )}
                             <div style={detailCardStyle}>
                                 <div style={{ color: 'var(--text-secondary)', marginBottom: '6px' }}>{getTranslation('attempts')}</div>
                                 <div style={{ color: 'var(--text-primary)', fontWeight: 700 }}>{scoreResult.attempt_count ?? 0}</div>
