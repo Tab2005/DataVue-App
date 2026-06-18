@@ -1,1 +1,0 @@
-- [Meta Andromeda audit state](meta-andromeda-audit-state.md) — 模組審查現狀與未修復的高風險問題清單（截至 2026-06-18）

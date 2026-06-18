@@ -1,5 +1,8 @@
 # 21 Meta Andromeda 模組完整度審計報告 (Module Audit)
 
+> [!IMPORTANT]
+> **歷史快照**：本報告為早期開發進度盤點。2026-06-18 復審與優化狀態之最新結論，請以 [22_Meta_Andromeda_模組復審與優化建議報告.md](file:///C:/Users/BWM2/Documents/python/DataVue-App/docs/22_Meta_Andromeda_模組復審與優化建議報告.md) 與 [23_Meta_Andromeda_模組功能審查與優化報告.md](file:///C:/Users/BWM2/Documents/python/DataVue-App/docs/23_Meta_Andromeda_模組功能審查與優化報告.md) 為準。
+
 本報告針對 `Meta Andromeda` 模組的四大演進階段（Phase 0 至 Phase 3）以及 Phase 5 的前端操作優化方案，進行了全方位的代碼審計與狀態盤點。
 
 ---

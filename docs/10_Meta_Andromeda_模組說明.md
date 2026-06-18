@@ -170,9 +170,9 @@
 - `GET /api/meta-andromeda/scores/{score_event_id}`
 - `GET /api/meta-andromeda/scores/{score_event_id}/feedback`
 - `POST /api/meta-andromeda/scores/{score_event_id}/feedback`
-- `POST /api/meta-andromeda/release:approve`
-- `POST /api/meta-andromeda/release:reject`
-- `POST /api/meta-andromeda/release:rollback`
+- `POST /api/meta-andromeda/release/approve`
+- `POST /api/meta-andromeda/release/reject`
+- `POST /api/meta-andromeda/release/rollback`
 - `POST /api/meta-andromeda/worker/score-events/{score_event_id}/callbacks`
 
 後續 observation 第一階段建議新增一條獨立入口：

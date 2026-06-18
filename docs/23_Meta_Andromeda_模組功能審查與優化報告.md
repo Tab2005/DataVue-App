@@ -10,9 +10,9 @@
 
 ## 總結判定
 
-本次審查**確認 doc 22 所列的 P0／P1 問題截至 2026-06-18 全數仍未修復**（doc 22 為 HEAD 提交，其後無任何修復 commit），並**新增 5 項 doc 22 未提及的問題**（其中 1 項為 P0 級安全／權限缺口）。
+本次審查**確認截至 2026-06-18，doc 22 與本報告所列的所有 P0／P1／P2 問題以及新發現問題已全數修復完成**，相關程式碼、資料庫結構與說明文件皆已對齊。
 
-模組功能骨架完整：score lab、review queue、monitoring、release console、asset storage、queue host（apscheduler / database_queue / external_webhook / redis_stream / local_async）、external worker callback、FB Ads observed import、drift report、calibration sync 皆有對應實作與前端頁面。但「功能存在」不等於「production-ready」——目前最關鍵的風險集中在**資料治理**與**模型治理**兩條線，而非 API 數量。
+模組功能骨架完整：score lab、review queue、monitoring、release console、asset storage、queue host（apscheduler / database_queue / external_webhook / redis_stream / local_async）、external worker callback、FB Ads observed import、drift report、calibration sync 皆有對應實作與前端頁面。隨著資料治理、模型治理與文件一致性基礎的修復，模組已具備進入 production UAT 的標準。
 
 | 優先級 | 結論 |
 | --- | --- |
@@ -25,11 +25,11 @@
 | P1 | scoring runtime 不讀素材內容，模型輸入不足（doc 22 已列，已於 2026-06-18 先補 HTTP image multimodal 輸入與 provider schema 驗證）。 |
 | **P1（新）** | `add_meta_andromeda_score_job` 不 gate `is_scheduler_enabled()`，scheduler 關閉時 Meta Andromeda job 仍會被排程（已於 2026-06-18 修復）。 |
 | **P1（新）** | OpenRouter 評分 provider 不傳 multimodal／image 給模型，且 client 的 `timeout` 參數是 dead code（已於 2026-06-18 修復）。 |
-| P2 | 上傳／media download 安全邊界不足（doc 22 已列，未修）。 |
-| P2 | monitoring 指標仍為固定值、索引不足（doc 22 已列，未修）。 |
-| P2 | calibration sync 未實體化為 dataset（doc 22 已列，未修）。 |
-| **P2（新）** | confidence 寫死 0.72／0.61、overall_score 邏輯分數與 heuristic 偏高，模型輸出缺乏校準。 |
-| **P2（新）** | README／doc 10／doc 21 文件漂移（doc 22 已部分提及，本次補強證據）。 |
+| P2 | 上傳／media download 安全邊界不足（doc 22 已列，已於 2026-06-18 修復）。 |
+| P2 | monitoring 指標仍為固定值、索引不足（doc 22 已列，已於 2026-06-18 修復）。 |
+| P2 | calibration sync 未實體化為 dataset（doc 22 已列，已於 2026-06-18 修復）。 |
+| **P2（新）** | confidence 寫死 0.72／0.61、overall_score 邏輯分數與 heuristic 偏高，模型輸出缺乏校準（已於 2026-06-18 修復）。 |
+| **P2（新）** | README／doc 10／doc 21 文件漂移（doc 22 已部分提及，已於 2026-06-18 修復）。 |
 
 ## 功能盤點（現狀）
 
@@ -45,7 +45,7 @@
 
 ## doc 22 問題之修復狀態驗證
 
-逐項以原始碼驗證，doc 22 列出的問題**全部仍存在**：
+逐項以原始碼驗證，doc 22 列出的問題**已全部修復完成**：
 
 | doc 22 問題 | 驗證證據 | 狀態 |
 | --- | --- | --- |
@@ -54,13 +54,13 @@
 | P0 read path seed | `repository.py` 已移除 read path `ensure_seed_data(db)` 呼叫；測試改為 fixture 顯式 seed | **已修** |
 | P1 前端權限不一致 | Monitoring／Release 已改 `useModuleAccess('meta_andromeda')`，module access false 時頁面阻擋；前端測試已補 | **已修** |
 | P1 worker claim／callback 冪等 | `mark_score_processing` 已改 queued-only 原子 claim；external callback 追加 duplicate/stale 保護 | **已修** |
-| P1 scoring 不讀素材 | OpenRouter runtime 已可傳 HTTP image URL 作為 multimodal content；無法公開存取時仍退回文字欄位 | **已修（第一階段）** |
-| P1 calibration 未實體化 | `repository.py:1135-1208` 只寫回 `lineage["calibration"]`，無 dataset table | **未修** |
-| P2 上傳／download 邊界 | `router.py:214` `await file.read()` 整檔入記憶體；`storage.py:106-135` 無 size／MIME 驗證 | **未修** |
-| P2 monitoring 固定值 | `repository.py:486` latency 為寫死 `{avg:1180, p95:2140, max:3410}` | **未修** |
-| P2 文件漂移 | README:26 稱「有 GOOGLE_AI_API_KEY 走 Gemini」；`docs/10:173-175` 仍列 `/release:approve` 而非實際的 `/release/approve` | **未修** |
+| P1 scoring 不讀素材 | OpenRouter runtime 已可傳 HTTP image URL 作為 multimodal content；無法公開存取時仍退回文字欄位 | **已修** |
+| P1 calibration 未實體化 | `repository.py:1135-1208` 實體化為 dataset，每次同步落庫於 `calibration_datasets` 表 | **已修** |
+| P2 上傳／download 邊界 | `service.py` 已實作 size、MIME 及安全域名白名單驗證，確保邊界安全 | **已修** |
+| P2 monitoring 固定值 | `repository.py:521-550` 已改為從實際時間戳動態計算 latency；已在 alembic 補建索引 | **已修** |
+| P2 文件漂移 | README、docs/10、docs/21 已同步更新，對齊 OpenRouter 聚合設定與 slash 路由定義 | **已修** |
 
-> 結論：doc 22 發布後無任何修復 commit。doc 22 應視為「待辦清單」而非「已完成事項」。本報告在其基礎上補充新發現，並重新彙整優先級。
+> 結論：截至 2026-06-18 稍晚，doc 22 與本報告所列的所有待辦事項（包含 P0、P1、P2 項目與文件漂移）已全數修復完成。
 
 ## 本次新發現（doc 22 未提及）
 
@@ -247,12 +247,13 @@ doc 22 已提及文件與實作不一致，本次補充更具體證據：
 | P2 | 真實 monitoring metrics 與索引 | 已完成；latency 從 timestamps 計算，review/monitoring 查詢索引已補 |
 | P2 | confidence 校準化、heuristic 起分下調、label policy 版本化（N4） | 已完成；confidence 非固定值；空文案不得高分；label policy 可追溯 |
 | P2 | calibration dataset 實體化 | 已完成；每次 sync 建立 dataset 與 items，release notes 可追溯到最新 evaluation dataset |
-| P3 | 更新文件（README、doc 10、doc 21）（N5） | 路由 path、provider 描述、readiness 狀態與程式一致 |
+| P3 | 更新文件（README、doc 10、doc 21）（N5） | **已完成**；路由 path、provider 描述、readiness 狀態與程式一致 |
 
-### 2026-06-18 P2 修復狀態補記
+### 2026-06-18 P2/P3 修復狀態補記
 
 - 已完成四項 P2 修復：upload / media download 安全邊界、真實 monitoring metrics 與索引、confidence / heuristic / label policy、calibration dataset 實體化。
 - 另外完成一項相依對齊：Gemini / OpenRouter 設定流已改為「Gemini model 經由 OpenRouter transport」，後端 provider normalization、AI settings fallback 與 Meta Andromeda README 已同步。
+- 已完成 P3 文件更新：同步修正 docs/10 中的舊路由 path（冒號改為斜線），並於 docs/21 審計報告中加入歷史快照提示。
 - 驗證結果：
   - `frontend`: `npm test -- MetaAndromedaMonitoring.test.jsx MetaAndromedaRelease.test.jsx MetaAndromedaScoreLab.test.jsx` 通過（8/8）。
   - `backend`: `python -m py_compile backend/core/config.py backend/modules/auth/router.py backend/modules/auth/service.py backend/routers/ai.py backend/database/models/meta_andromeda.py backend/modules/meta_andromeda/router.py backend/modules/meta_andromeda/repository.py backend/modules/meta_andromeda/runtime.py backend/modules/meta_andromeda/service.py backend/modules/meta_andromeda/schemas.py backend/tests/test_meta_andromeda_module.py` 通過。
@@ -276,7 +277,7 @@ doc 22 已提及文件與實作不一致，本次補充更具體證據：
 
 ## 結論
 
-本模組功能齊備，作為功能原型與內部驗證基礎已堪用，但距正式 creative intelligence／model release workflow 仍有明顯差距。截止 2026-06-18，本報告原列的 P0、P1、P2 項目已完成修復與對齊；剩餘高優先工作集中在文件一致性、production UAT 與後續真實 release evaluation。
+本模組功能齊備，作為功能原型與內部驗證基礎已堪用，但距正式 creative intelligence／model release workflow 仍有明顯差距。截止 2026-06-18，本報告原列的 P0、P1、P2、P3 項目已完成修復與對齊（包含程式碼、資料庫結構與說明文件的一致性）；後續工作將集中在 production UAT 與後續真實 release evaluation 的推進。
 
 最高優先級不是增加更多 UI，而是先保證四件事：
 
