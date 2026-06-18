@@ -67,7 +67,7 @@ def _build_multimodal_user_content(prompt: str, score_payload: dict) -> list[dic
     )
     if score_payload.get("asset_type") == "image" and isinstance(image_url, str):
         normalized_url = image_url.strip()
-        if normalized_url.startswith(("http://", "https://")):
+        if normalized_url.startswith(("http://", "https://", "data:image/")):
             user_content.append({"type": "image_url", "image_url": {"url": normalized_url}})
     return user_content
 
@@ -213,13 +213,23 @@ class OpenRouterScoringProvider(BaseScoringProvider):
         request_context = score_payload.get("request_context", {})
         request_mode = score_payload.get("request_mode", "auto")
         prompt = (
-            "You are the Meta Andromeda creative scoring runtime.\n"
+            "You are the Meta Andromeda creative scoring runtime, an expert in mobile ad conversion optimization (CRO) and ad design.\n"
+            "Analyze both the provided ad image (via image_url) and the text metadata details to evaluate the overall performance.\n\n"
+            "CRITICAL EVALUATION CRITERIA:\n"
+            "1. Visual Focus & Hierarchy: Is the product/subject clear? Is the background clean and supportive?\n"
+            "2. Text Ratio & Legibility: Are copy elements in the image readable? Is the text-to-image ratio balanced (avoiding overloaded text)?\n"
+            "3. CTA Prominence: Is there a clear visual CTA in the image, and does it align with the text CTA?\n"
+            "4. Relevance & Consistency: Does the visual style connect tightly with the Headline and Primary text?\n\n"
             "Return JSON only with keys: overall_score, roas_band, top_positive_drivers, "
             "top_negative_drivers, risk_tags, diagnostic_breakdown, summary.\n"
-            "Use overall_score as integer 0-100.\n"
+            "Use overall_score as integer 0-100. Be critical and conservative—do not give high scores (>80) unless the creative is truly premium and highly optimized.\n"
             "Use roas_band as one of high/mid/low/null.\n"
-            "Use diagnostic_breakdown values as short strings.\n"
-            "All textual outputs (summary, top_positive_drivers, top_negative_drivers) MUST be in Traditional Chinese.\n"
+            "The diagnostic_breakdown object MUST contain exactly these keys with short Chinese evaluation:\n"
+            "  - visual_appeal: Evaluates composition, focal point, and aesthetics.\n"
+            "  - copywriting: Evaluates headline and primary text persuasiveness.\n"
+            "  - cta_clarity: Evaluates CTA prominence and action clarity.\n"
+            "  - relevance: Evaluates the consistency between the image and texts.\n\n"
+            "All textual outputs (summary, top_positive_drivers, top_negative_drivers, diagnostic_breakdown values) MUST be in Traditional Chinese (繁體中文).\n"
             f"Asset type: {score_payload['asset_type']}\n"
             f"Objective: {score_payload.get('objective', 'purchase')}\n"
             f"Placement family: {score_payload.get('placement_family', 'all')}\n"
@@ -230,9 +240,9 @@ class OpenRouterScoringProvider(BaseScoringProvider):
             f"CTA: {_clip(request_context.get('cta'))}\n"
         )
         system_prompt = (
-            "Score ad creatives conservatively. Keep explanations short. "
-            "Prefer stable judgments over hype. "
-            "All explanations, summaries, and drivers MUST be written in Traditional Chinese (繁體中文)."
+            "You are an elite performance marketing creative auditor. Score ad creatives conservatively based on CRO best practices.\n"
+            "Always inspect the image details if available. Give objective, realistic scores. Do not sugarcoat.\n"
+            "All explanations, summaries, and breakdowns MUST be written in Traditional Chinese (繁體中文)."
         )
         user_content = _build_multimodal_user_content(prompt, score_payload)
         raw = None
@@ -476,6 +486,39 @@ class MetaAndromedaRuntimeAdapter:
                         request_context = score_payload.setdefault("request_context", {})
                         request_context.setdefault("asset_public_url", asset.public_url)
                         request_context.setdefault("asset_source_url", asset.asset_uri)
+
+                        # 若為內部儲存協議，將其轉為 Base64 Data URI 直接傳送給 AI
+                        if asset.asset_uri.startswith("storage://") and asset.asset_type == "image":
+                            try:
+                                import base64
+                                from pathlib import Path
+
+                                if asset.storage_backend == "filesystem":
+                                    storage_root = Path(settings.META_ANDROMEDA_STORAGE_ROOT)
+                                    safe_path = (storage_root / asset.storage_key).resolve()
+                                    if safe_path.relative_to(storage_root.resolve()) and safe_path.exists():
+                                        file_bytes = safe_path.read_bytes()
+                                        mime = "image/png"
+                                        if asset.source_filename.lower().endswith((".jpg", ".jpeg")):
+                                            mime = "image/jpeg"
+                                        elif asset.source_filename.lower().endswith(".webp"):
+                                            mime = "image/webp"
+                                        elif asset.source_filename.lower().endswith(".gif"):
+                                            mime = "image/gif"
+                                        base64_str = base64.b64encode(file_bytes).decode("utf-8")
+                                        request_context["asset_public_url"] = f"data:{mime};base64,{base64_str}"
+                                
+                                elif asset.storage_backend == "s3_compatible":
+                                    from .storage import storage_adapter
+                                    client = storage_adapter._build_s3_client()
+                                    bucket = settings.META_ANDROMEDA_STORAGE_S3_BUCKET
+                                    response = client.get_object(Bucket=bucket, Key=asset.storage_key)
+                                    file_bytes = response['Body'].read()
+                                    mime = response.get('ContentType', 'image/png')
+                                    base64_str = base64.b64encode(file_bytes).decode("utf-8")
+                                    request_context["asset_public_url"] = f"data:{mime};base64,{base64_str}"
+                            except Exception as parse_exc:
+                                logger.error(f"[MetaAndromeda] Base64 encoding failed for asset {asset_id}: {parse_exc}")
                 finally:
                     db_session.close()
             except Exception as e:
