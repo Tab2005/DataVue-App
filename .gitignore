@@ -68,3 +68,4 @@ frontend/.env.production.local
 # We DO want to commit the template .env files if they exist, but not the actual ones with secrets
 # unless they are explicitly named differently.
 # For this project, we are using .env for secrets in backend, so it's ignored.
+memory/

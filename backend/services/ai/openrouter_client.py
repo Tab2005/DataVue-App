@@ -165,7 +165,9 @@ class OpenRouterClient:
         messages.append({"role": "user", "content": user_content if user_content is not None else prompt})
 
         try:
-            response = self.client.with_options(timeout=timeout).chat.completions.create(
+            # 限制 connect timeout 為 3.0 秒，避免在部署網路不通時卡死 20 秒才 fallback
+            api_timeout = (3.0, float(timeout)) if timeout is not None else (3.0, 15.0)
+            response = self.client.with_options(timeout=api_timeout).chat.completions.create(
                 model=model_to_use,
                 messages=messages,
                 temperature=temperature,

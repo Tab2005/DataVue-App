@@ -491,9 +491,14 @@ class MetaAndromedaRuntimeAdapter:
             settings.META_ANDROMEDA_SCORING_PROVIDER
         )
 
-        has_any_openrouter_key = bool(openrouter_key) or bool(settings.OPENROUTER_API_KEY)
-        if settings.META_ANDROMEDA_SCORING_PROVIDER == "auto" and provider_name == "openrouter" and not has_any_openrouter_key:
+        if settings.META_ANDROMEDA_SCORING_PROVIDER == "heuristic":
             provider_name = "heuristic"
+        elif settings.META_ANDROMEDA_SCORING_PROVIDER == "openrouter":
+            provider_name = "openrouter"
+        else:
+            has_any_openrouter_key = bool(openrouter_key) or bool(settings.OPENROUTER_API_KEY)
+            if provider_name == "openrouter" and not has_any_openrouter_key:
+                provider_name = "heuristic"
 
         provider: BaseScoringProvider
         if provider_name == "openrouter":
