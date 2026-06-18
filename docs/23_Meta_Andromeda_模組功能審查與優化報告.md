@@ -16,10 +16,10 @@
 
 | 優先級 | 結論 |
 | --- | --- |
-| P0 | `meta_andromeda_observed_creatives` 表仍無 Alembic migration（doc 22 已列，未修）。 |
-| P0 | drift report 仍在 read path 隨機建立並持久化 `ma_evt_mock_*` score event（doc 22 已列，未修）。 |
-| P0 | 讀取 API 仍自動寫入 seed/demo data（doc 22 已列，未修）。 |
-| **P0（新）** | `MetaAndromedaScoreLab.jsx` 完全沒有權限 gate，任何能進入頁面的使用者都能上傳素材並送評。 |
+| P0 | `meta_andromeda_observed_creatives` 表仍無 Alembic migration（doc 22 已列，已於 2026-06-18 修復）。 |
+| P0 | drift report 仍在 read path 隨機建立並持久化 `ma_evt_mock_*` score event（doc 22 已列，已於 2026-06-18 修復）。 |
+| P0 | 讀取 API 仍自動寫入 seed/demo data（doc 22 已列，已於 2026-06-18 修復）。 |
+| **P0（新）** | `MetaAndromedaScoreLab.jsx` 完全沒有權限 gate，任何能進入頁面的使用者都能上傳素材並送評（已於 2026-06-18 修復）。 |
 | P1 | 前端 Monitoring／Release 仍用已廢棄的 `meta_andromeda:operate`／`:release` feature permission（doc 22 已列，未修）。 |
 | P1 | queue／worker 狀態轉換缺原子 claim 與 callback 冪等性（doc 22 已列，未修）。 |
 | P1 | scoring runtime 不讀素材內容，模型輸入不足（doc 22 已列，未修）。 |
@@ -49,9 +49,9 @@
 
 | doc 22 問題 | 驗證證據 | 狀態 |
 | --- | --- | --- |
-| P0 ObservedCreative 缺 migration | `backend/alembic/versions/` 僅 3 個 andromeda migration（0608、0609、0611），grep `observed_creative` 在 versions 目錄無任何命中 | **未修** |
-| P0 drift mock score 持久化 | `repository.py:619` `if random.random() < 0.8`、`repository.py:625` `id=f"ma_evt_mock_..."`、`repository.py:638-639` `db.add`＋`db.commit` | **未修** |
-| P0 read path seed | `repository.py` 仍有 10 處 `ensure_seed_data(db)` 呼叫（418, 436, 443, 511, 561, 722, 1000, 1027, 1057 等） | **未修** |
+| P0 ObservedCreative 缺 migration | `backend/alembic/versions/20260618_meta_andromeda_observed_creatives.py` 已補 table 與索引，兼容既有 DB 補建索引 | **已修** |
+| P0 drift mock score 持久化 | `repository.py` 已移除 `ma_evt_mock_*` 建立與 commit 邏輯，缺預測資料時直接略過 | **已修** |
+| P0 read path seed | `repository.py` 已移除 read path `ensure_seed_data(db)` 呼叫；測試改為 fixture 顯式 seed | **已修** |
 | P1 前端權限不一致 | `MetaAndromedaMonitoring.jsx:32` `usePermission('meta_andromeda:operate')`、`MetaAndromedaRelease.jsx:21` `usePermission('meta_andromeda:release')` | **未修** |
 | P1 worker claim／callback 冪等 | `repository.py:935-946` mark_score_processing 無原子 claim；`service.py:514-639` callback 無 receipt 去重 | **未修** |
 | P1 scoring 不讀素材 | `runtime.py:68-84` prompt 只含文字欄位；`runtime.py:175-273` heuristic 只看文案是否存在 | **未修** |
@@ -219,9 +219,17 @@ doc 22 已提及文件與實作不一致，本次補充更具體證據：
 
 | 優先級 | 建議工作 | 驗收標準 |
 | --- | --- | --- |
-| P0 | 補 `meta_andromeda_observed_creatives` Alembic migration＋索引 | 全新 DB `alembic upgrade head` 後存在 observed table 與索引 |
-| P0 | 移除 read path seed 與 drift mock score 持久化 | 所有 GET／read API 無寫入 side effect；drift 不再建立 `ma_evt_mock_*` |
-| P0 | ScoreLab 頁面補權限 gate（本報告 N1） | module access 為 false 時無法上傳／送評；補前端測試 |
+| P0 | 補 `meta_andromeda_observed_creatives` Alembic migration＋索引 | 已完成；新增 `20260618_meta_andromeda_observed_creatives.py` |
+| P0 | 移除 read path seed 與 drift mock score 持久化 | 已完成；read API 移除 side effect，drift 不再建立 `ma_evt_mock_*` |
+| P0 | ScoreLab 頁面補權限 gate（本報告 N1） | 已完成；module access 為 false 時無法上傳／送評，前端測試已補 |
+
+### 2026-06-18 P0 修復狀態補記
+
+- 已完成三項 P0 修復：ObservedCreative migration、read path seed / drift mock 移除、ScoreLab module access gate。
+- 驗證結果：
+  - `frontend`: `npm test -- MetaAndromedaScoreLab.test.jsx` 通過（2/2）。
+  - `backend`: `python -m py_compile backend/tests/test_meta_andromeda_module.py backend/alembic/versions/20260618_meta_andromeda_observed_creatives.py` 通過。
+  - `backend pytest` 尚未執行，原因是目前環境缺少 `pytest` 套件（`No module named pytest`）。
 | P1 | 前端 Monitoring／Release 改 module-only 權限 gate | 只有 `meta_andromeda` module access 時操作按鈕可見 |
 | P1 | `add_meta_andromeda_score_job` gate `is_scheduler_enabled()`（N2） | scheduler disabled 時 score 派工行為可預期 |
 | P1 | worker claim／callback 冪等化 | 重複 job、重複 callback、stale callback 不覆蓋 terminal status |

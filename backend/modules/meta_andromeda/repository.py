@@ -415,7 +415,6 @@ class MetaAndromedaRepository:
         }
 
     def list_review_queue(self, db: Session, status=None, reviewed=None, limit=30):
-        self.ensure_seed_data(db)
         query = db.query(MetaAndromedaScoreEvent)
         if status:
             query = query.filter(MetaAndromedaScoreEvent.status == status)
@@ -433,14 +432,12 @@ class MetaAndromedaRepository:
         }
 
     def get_review_queue_detail(self, db: Session, score_event_id: str):
-        self.ensure_seed_data(db)
         row = db.query(MetaAndromedaScoreEvent).filter(MetaAndromedaScoreEvent.id == score_event_id).first()
         if row is None:
             raise KeyError(score_event_id)
         return self._score_to_detail(row)
 
     def get_monitoring_summary(self, db: Session):
-        self.ensure_seed_data(db)
         total = db.query(MetaAndromedaScoreEvent).count()
         completed = db.query(MetaAndromedaScoreEvent).filter(MetaAndromedaScoreEvent.status == "completed").count()
         queued = db.query(MetaAndromedaScoreEvent).filter(MetaAndromedaScoreEvent.status == "queued").count()
@@ -508,7 +505,6 @@ class MetaAndromedaRepository:
         }
 
     def get_score_event_timeline(self, db: Session, score_event_id: str):
-        self.ensure_seed_data(db)
         score = db.query(MetaAndromedaScoreEvent).filter(MetaAndromedaScoreEvent.id == score_event_id).first()
         if score is None:
             raise KeyError(score_event_id)
@@ -558,7 +554,6 @@ class MetaAndromedaRepository:
         since: str | None = None,
         until: str | None = None,
     ):
-        self.ensure_seed_data(db)
         # 1. 撈取該窗口的所有 Observed Creative
         if window_kind == "custom" and since and until:
             range_str = f"[{since} ~ {until}]"
@@ -600,46 +595,8 @@ class MetaAndromedaRepository:
                 .order_by(MetaAndromedaScoreEvent.completed_at.desc())
                 .first()
             )
-            
             if not pred:
-                # 測試與展示友善機制：如果總匯入廣告大於等於 5 筆，但缺少預估評分紀錄，我們在此為其動態模擬一個 Completed ScoreEvent
-                if len(observed_list) >= 5:
-                    import random
-                    import uuid
-                    from datetime import timezone
-                    real_roas = obs.performance_snapshot.get("roas", 0.0) if obs.performance_snapshot else 0.0
-                    if real_roas < 1.5:
-                        real_band = "low"
-                    elif real_roas < 3.5:
-                        real_band = "mid"
-                    else:
-                        real_band = "high"
-                    
-                    # 模擬預估級距：80% 一致，20% 偏高或偏低
-                    if random.random() < 0.8:
-                        pred_band = real_band
-                    else:
-                        pred_band = random.choice(["low", "mid", "high"])
-                    
-                    pred = MetaAndromedaScoreEvent(
-                        id=f"ma_evt_mock_{uuid.uuid4().hex[:8]}",
-                        status="completed",
-                        asset_uri=obs.asset_uri,
-                        asset_type=obs.media_type or "image",
-                        asset_id=obs.asset_id or f"asset_mock_{uuid.uuid4().hex[:6]}",
-                        request_mode="diagnostic_plus_roas",
-                        objective=obs.objective or "purchase",
-                        placement_family=obs.placement_family or "feed",
-                        market=obs.market or "TW",
-                        roas_band=pred_band,
-                        overall_score=85 if pred_band == "high" else 65 if pred_band == "mid" else 45,
-                        completed_at=datetime.now(timezone.utc),
-                    )
-                    db.add(pred)
-                    db.commit()
-                    db.refresh(pred)
-                else:
-                    continue
+                continue
                 
             # 提取真實 ROAS 并轉成 Band
             real_roas = obs.performance_snapshot.get("roas", 0.0) if obs.performance_snapshot else 0.0
@@ -719,7 +676,6 @@ class MetaAndromedaRepository:
         return self._drift_report_to_dict(report)
 
     def get_release_overview(self, db: Session):
-        self.ensure_seed_data(db)
         records = db.query(MetaAndromedaReleaseRecord).all()
         current = next(item for item in records if item.record_kind == "current_production")
         previous = next(item for item in records if item.record_kind == "previous_production")
@@ -997,7 +953,6 @@ class MetaAndromedaRepository:
         return self._score_to_detail(score)
 
     def list_feedback(self, db: Session, score_event_id: str):
-        self.ensure_seed_data(db)
         score = db.query(MetaAndromedaScoreEvent).filter(MetaAndromedaScoreEvent.id == score_event_id).first()
         if score is None:
             raise KeyError(score_event_id)
@@ -1024,7 +979,6 @@ class MetaAndromedaRepository:
         }
 
     def submit_feedback(self, db: Session, score_event_id: str, reviewer_id: str, decision: str, reason_codes=None, comment=None):
-        self.ensure_seed_data(db)
         score = db.query(MetaAndromedaScoreEvent).filter(MetaAndromedaScoreEvent.id == score_event_id).first()
         if score is None:
             raise KeyError(score_event_id)
@@ -1054,7 +1008,6 @@ class MetaAndromedaRepository:
         }
 
     def perform_release_action(self, db: Session, action: str, model_version: str, actor: str, note: str | None):
-        self.ensure_seed_data(db)
         current = db.query(MetaAndromedaReleaseRecord).filter(MetaAndromedaReleaseRecord.record_kind == "current_production").first()
         previous = db.query(MetaAndromedaReleaseRecord).filter(MetaAndromedaReleaseRecord.record_kind == "previous_production").first()
         candidate = (

@@ -30,7 +30,8 @@ from modules.meta_andromeda.dependencies import (
 
 
 @pytest.fixture
-def meta_andromeda_access(client, sample_admin_user):
+def meta_andromeda_access(client, db, sample_admin_user):
+    repository.ensure_seed_data(db)
     app.dependency_overrides[get_current_meta_andromeda_user] = lambda: sample_admin_user
     app.dependency_overrides[require_meta_andromeda_module] = lambda: True
     app.dependency_overrides[require_fb_ads_module] = lambda: True
@@ -44,6 +45,7 @@ def meta_andromeda_access(client, sample_admin_user):
 
 @pytest.fixture
 def meta_andromeda_permission_client(client, db, sample_user):
+    repository.ensure_seed_data(db)
     app.dependency_overrides[get_current_meta_andromeda_user] = lambda: sample_user
     app.dependency_overrides[auth_dependencies.get_current_user] = lambda: sample_user
     app.dependency_overrides[auth_dependencies.get_db] = lambda: db
@@ -144,6 +146,25 @@ def _grant_team_role_permission(
     ).first()
     if role_permission is None:
         db.add(RolePermission(role_id=role.id, permission_id=permission.id))
+
+
+def _clear_meta_andromeda_operational_data(db) -> None:
+    from database.models.meta_andromeda import (
+        MetaAndromedaDeadLetter,
+        MetaAndromedaDriftReport,
+        MetaAndromedaFeedbackEvent,
+        MetaAndromedaObservedCreative,
+        MetaAndromedaScoreEvent,
+        MetaAndromedaWorkerEvent,
+    )
+
+    db.query(MetaAndromedaDeadLetter).delete()
+    db.query(MetaAndromedaWorkerEvent).delete()
+    db.query(MetaAndromedaFeedbackEvent).delete()
+    db.query(MetaAndromedaDriftReport).delete()
+    db.query(MetaAndromedaObservedCreative).delete()
+    db.query(MetaAndromedaScoreEvent).delete()
+    db.commit()
 
 
 @pytest.mark.unit
@@ -369,6 +390,65 @@ def test_meta_andromeda_drift_accuracy_and_mae_calculation(meta_andromeda_access
     assert payload2["drift_status"] == "drifted"
     assert payload2["report_payload"]["accuracy"] == 0.4
     assert payload2["report_payload"]["mae"] == 0.8
+
+
+@pytest.mark.unit
+def test_meta_andromeda_monitoring_summary_does_not_reseed_read_path(meta_andromeda_access, db):
+    from database.models.meta_andromeda import (
+        MetaAndromedaDriftReport,
+        MetaAndromedaScoreEvent,
+        MetaAndromedaWorkerEvent,
+    )
+
+    _clear_meta_andromeda_operational_data(db)
+
+    response = meta_andromeda_access.get("/api/meta-andromeda/monitoring/summary")
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["latest_drift_reports"] == []
+    assert payload["worker_host"]["recent_events"] == []
+    assert db.query(MetaAndromedaScoreEvent).count() == 0
+    assert db.query(MetaAndromedaWorkerEvent).count() == 0
+    assert db.query(MetaAndromedaDriftReport).count() == 0
+
+
+@pytest.mark.unit
+def test_meta_andromeda_drift_trigger_does_not_persist_mock_scores(meta_andromeda_access, db):
+    from database.models.meta_andromeda import MetaAndromedaObservedCreative, MetaAndromedaScoreEvent
+
+    _clear_meta_andromeda_operational_data(db)
+
+    for idx in range(5):
+        db.add(
+            MetaAndromedaObservedCreative(
+                id=f"no_pred_obs_{idx}",
+                asset_uri=f"storage://meta-andromeda/uploads/no-pred-{idx}.png",
+                source_platform="facebook_ads",
+                source_account_id="act_999",
+                ad_id=f"ad_no_pred_{idx}",
+                placement_family="feed",
+                market="TW",
+                media_type="image",
+                observation_window_kind="last_7d",
+                observation_window_start="2026-06-09",
+                observation_window_end="2026-06-16",
+                source_fetched_at="2026-06-16T12:00:00Z",
+                performance_snapshot={"roas": 1.2 + idx * 0.1},
+                lineage={"source": "unit_test"},
+            )
+        )
+    db.commit()
+
+    response = meta_andromeda_access.post(
+        "/api/meta-andromeda/drift:trigger",
+        json={"window_kind": "last_7d", "note": "missing predictions should not backfill"},
+    )
+
+    assert response.status_code == 201
+    payload = response.json()
+    assert payload["drift_status"] == "insufficient_data"
+    assert db.query(MetaAndromedaScoreEvent).count() == 0
 
 
 @pytest.mark.unit

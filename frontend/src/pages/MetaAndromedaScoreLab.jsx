@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { useOutletContext } from 'react-router-dom';
+import { useModuleAccess } from '../hooks/usePermission';
 
 import {
     fetchMetaAndromedaScore,
@@ -20,7 +21,8 @@ const inferAssetType = (file) => {
 const terminalStatuses = new Set(['completed', 'failed']);
 
 const MetaAndromedaScoreLab = () => {
-    const { isMobile, language } = useOutletContext();
+    const { isMobile, language, selectedTeamId } = useOutletContext();
+    const { hasAccess, loading: accessLoading } = useModuleAccess('meta_andromeda', selectedTeamId);
     const [selectedFile, setSelectedFile] = useState(null);
     const [uploadedAsset, setUploadedAsset] = useState(null);
     const [scoreResult, setScoreResult] = useState(null);
@@ -154,6 +156,39 @@ const MetaAndromedaScoreLab = () => {
     const statusLabel = scoreResult?.status
         ? t(`Status: ${scoreResult.status}`, `狀態：${getTranslation(scoreResult.status)}`)
         : t('No score result yet.', '目前尚無評分結果。');
+
+    if (accessLoading) {
+        return (
+            <div style={{ padding: isMobile ? '16px' : '24px' }}>
+                <section style={panelStyle}>
+                    <h1 style={{ margin: '0 0 8px 0', color: 'var(--text-primary)' }}>
+                        {t('Score Lab', '評分工作台')}
+                    </h1>
+                    <div style={{ color: 'var(--text-secondary)' }}>
+                        {t('Checking workspace access...', '正在檢查工作區模組權限...')}
+                    </div>
+                </section>
+            </div>
+        );
+    }
+
+    if (!hasAccess) {
+        return (
+            <div style={{ padding: isMobile ? '16px' : '24px' }}>
+                <section style={panelStyle}>
+                    <h1 style={{ margin: '0 0 8px 0', color: 'var(--text-primary)' }}>
+                        {t('Score Lab', '評分工作台')}
+                    </h1>
+                    <div style={errorPanelStyle}>
+                        {t(
+                            'You do not have access to Meta Andromeda in this workspace.',
+                            '你目前沒有此工作區的 Meta Andromeda 模組存取權限。'
+                        )}
+                    </div>
+                </section>
+            </div>
+        );
+    }
 
     return (
         <div style={{ padding: isMobile ? '16px' : '24px' }}>
