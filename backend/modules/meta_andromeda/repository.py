@@ -518,17 +518,29 @@ class MetaAndromedaRepository:
             .limit(5)
             .all()
         )
+        def _to_naive(dt: datetime) -> datetime | None:
+            if dt is None:
+                return None
+            if dt.tzinfo is not None:
+                return dt.replace(tzinfo=None)
+            return dt
+
         latency_samples = []
         queue_markers = []
-        now = datetime.now(timezone.utc)
+        now = datetime.now(timezone.utc).replace(tzinfo=None)
         for row in score_rows:
-            if row.queued_at:
-                queue_markers.append((row.queued_at, 1))
-                queue_end = row.started_at or row.completed_at or row.failed_at or now
+            queued_at_naive = _to_naive(row.queued_at)
+            started_at_naive = _to_naive(row.started_at)
+            completed_at_naive = _to_naive(row.completed_at)
+            failed_at_naive = _to_naive(row.failed_at)
+
+            if queued_at_naive:
+                queue_markers.append((queued_at_naive, 1))
+                queue_end = started_at_naive or completed_at_naive or failed_at_naive or now
                 if queue_end:
                     queue_markers.append((queue_end, -1))
-            if row.queued_at and (row.completed_at or row.failed_at):
-                latency_ms = int(((row.completed_at or row.failed_at) - row.queued_at).total_seconds() * 1000)
+            if queued_at_naive and (completed_at_naive or failed_at_naive):
+                latency_ms = int(((completed_at_naive or failed_at_naive) - queued_at_naive).total_seconds() * 1000)
                 latency_samples.append(max(0, latency_ms))
 
         queue_markers.sort(key=lambda item: (item[0], -item[1]))
@@ -815,6 +827,10 @@ class MetaAndromedaRepository:
             "created_at": event.created_at,
             "note": event.note or "",
         }
+
+    def get_asset_by_uri(self, db: Session, asset_uri: str) -> MetaAndromedaAsset | None:
+        """根據 asset_uri 查詢已上傳的 MetaAndromedaAsset"""
+        return db.query(MetaAndromedaAsset).filter(MetaAndromedaAsset.asset_uri == asset_uri).first()
 
     def create_uploaded_asset(self, db: Session, asset_record: dict):
         asset = MetaAndromedaAsset(**asset_record)

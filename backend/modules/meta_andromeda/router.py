@@ -205,6 +205,88 @@ async def sync_calibration_dataset(
     )
 
 
+@router.get("/assets/preview")
+async def preview_asset(
+    uri: str = Query(...),
+    db=Depends(get_db),
+):
+    """
+    提供素材的即時預覽與下載路由，安全地代理並提供檔案給前端。
+    """
+    asset = MetaAndromedaService.get_asset_by_uri(db, uri)
+    if not asset:
+        from database.models.meta_andromeda import MetaAndromedaAsset
+        asset = db.query(MetaAndromedaAsset).filter(
+            (MetaAndromedaAsset.asset_uri == uri) | 
+            (MetaAndromedaAsset.source_filename == uri) |
+            (MetaAndromedaAsset.storage_key.endswith(uri))
+        ).first()
+
+    if not asset:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Asset not found for URI: {uri}",
+        )
+
+    from fastapi.responses import FileResponse, StreamingResponse
+
+    if asset.storage_backend == "filesystem":
+        from pathlib import Path
+        from core.config import settings
+        storage_root = Path(settings.META_ANDROMEDA_STORAGE_ROOT)
+        safe_path = (storage_root / asset.storage_key).resolve()
+        if not str(safe_path).startswith(str(storage_root.resolve())):
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Access denied: Path traversal detected.",
+            )
+
+        if not safe_path.exists() or not safe_path.is_file():
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Asset file does not exist on filesystem.",
+            )
+
+        media_type = "image/png"
+        if asset.asset_type == "video":
+            media_type = "video/mp4"
+        elif asset.source_filename.lower().endswith((".jpg", ".jpeg")):
+            media_type = "image/jpeg"
+        elif asset.source_filename.lower().endswith(".gif"):
+            media_type = "image/gif"
+        elif asset.source_filename.lower().endswith(".webp"):
+            media_type = "image/webp"
+
+        return FileResponse(path=safe_path, media_type=media_type, filename=asset.source_filename)
+
+    elif asset.storage_backend == "s3_compatible":
+        from core.config import settings
+        from .storage import storage_adapter
+        try:
+            client = storage_adapter._build_s3_client()
+            bucket = settings.META_ANDROMEDA_STORAGE_S3_BUCKET
+            
+            response = client.get_object(Bucket=bucket, Key=asset.storage_key)
+            body = response['Body']
+            media_type = response.get('ContentType', 'application/octet-stream')
+            
+            def iterfile():
+                yield from body
+                
+            return StreamingResponse(iterfile(), media_type=media_type)
+        except Exception as exc:
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail=f"S3 storage retrieval failed: {str(exc)}",
+            ) from exc
+
+    else:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Unsupported storage backend: {asset.storage_backend}",
+        )
+
+
 @router.post("/assets:upload", response_model=AssetUploadResponse, status_code=status.HTTP_201_CREATED)
 async def upload_asset(
     asset_type: str = Form(...),

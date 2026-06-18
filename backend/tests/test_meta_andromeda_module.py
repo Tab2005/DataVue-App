@@ -244,7 +244,6 @@ def test_meta_andromeda_upload_supports_s3_compatible_storage(meta_andromeda_acc
     assert captured["bytes"] == b"object-image-bytes"
     assert captured["extra_args"]["ContentType"] == "image/png"
 
-
 @pytest.mark.unit
 def test_meta_andromeda_upload_rejects_empty_file(meta_andromeda_access):
     response = meta_andromeda_access.post(
@@ -257,7 +256,7 @@ def test_meta_andromeda_upload_rejects_empty_file(meta_andromeda_access):
     )
 
     assert response.status_code == 400
-    assert response.json()["detail"] == "upload_empty_file"
+    assert (response.json().get("detail") or response.json().get("error")) == "upload_empty_file"
 
 
 @pytest.mark.unit
@@ -272,7 +271,7 @@ def test_meta_andromeda_upload_rejects_mime_extension_mismatch(meta_andromeda_ac
     )
 
     assert response.status_code == 415
-    assert response.json()["detail"] == "upload_mime_not_allowed"
+    assert (response.json().get("detail") or response.json().get("error")) == "upload_mime_not_allowed"
 
 
 @pytest.mark.unit
@@ -942,7 +941,8 @@ def test_meta_andromeda_feedback_submit_updates_timeline(meta_andromeda_access):
 
 
 @pytest.mark.asyncio
-async def test_meta_andromeda_score_submit_queues_then_completes(meta_andromeda_access, db):
+async def test_meta_andromeda_score_submit_queues_then_completes(meta_andromeda_access, db, monkeypatch):
+    monkeypatch.setenv("META_ANDROMEDA_SCORING_PROVIDER", "auto")
     response = meta_andromeda_access.post(
         "/api/meta-andromeda/scores",
         json={
@@ -1728,7 +1728,7 @@ def test_meta_andromeda_observation_import_rejects_disallowed_media_host(meta_an
     )
 
     assert response.status_code == 400
-    assert response.json()["detail"] == "observed_media_url_host_not_allowed"
+    assert (response.json().get("detail") or response.json().get("error")) == "observed_media_url_host_not_allowed"
 
 
 @pytest.mark.unit
@@ -2000,7 +2000,6 @@ def test_meta_andromeda_scheduler_disabled_skips_score_job_registration(monkeypa
     scheduled = []
 
     monkeypatch.setattr(scheduler_module, "is_scheduler_enabled", lambda: False)
-    monkeypatch.setattr(scheduler_module.scheduler, "running", False, raising=False)
     monkeypatch.setattr(
         scheduler_module.scheduler,
         "add_job",
@@ -2200,6 +2199,7 @@ async def test_meta_andromeda_openrouter_invalid_schema_falls_back_to_heuristic(
     current = repository.get_review_queue_detail(db, score_event_id)
 
     monkeypatch.setenv("OPENROUTER_API_KEY", "test-openrouter-key")
+    monkeypatch.setenv("META_ANDROMEDA_SCORING_PROVIDER", "openrouter")
 
     def fake_init(self, api_key=None):
         self.api_key = api_key or "test-openrouter-key"

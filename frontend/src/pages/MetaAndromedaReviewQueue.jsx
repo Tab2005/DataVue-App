@@ -15,6 +15,18 @@ const statusToneMap = {
     processing: 'rgba(245, 158, 11, 0.15)',
 };
 
+const resolvePreviewUrl = (item) => {
+    if (!item) return null;
+    const url = item.preview_url;
+    if (url && (url.startsWith('http') || url.startsWith('/'))) {
+        return url;
+    }
+    if (item.asset_uri) {
+        return `/api/meta-andromeda/assets/preview?uri=${encodeURIComponent(item.asset_uri)}`;
+    }
+    return null;
+};
+
 const defaultFeedbackForm = {
     decision: 'approve',
     reason_codes: '',
@@ -245,9 +257,9 @@ const MetaAndromedaReviewQueue = () => {
                             }}
                         >
                             {filteredItems.map((item) => {
-                                const previewUrl = item.preview_url;
+                                const previewUrl = resolvePreviewUrl(item);
                                 const isVideo = item.asset_type === 'video';
-                                const hasRealPreview = previewUrl && (previewUrl.startsWith('http') || previewUrl.startsWith('/'));
+                                const hasRealPreview = !!previewUrl;
                                 
                                 return (
                                     <button
@@ -374,29 +386,34 @@ const MetaAndromedaReviewQueue = () => {
                                 borderRadius: '12px',
                                 overflow: 'hidden'
                             }}>
-                                {detail.preview_url && (detail.preview_url.startsWith('http') || detail.preview_url.startsWith('/')) ? (
-                                    detail.asset_type === 'video' ? (
-                                        <video 
-                                            src={detail.preview_url} 
-                                            controls 
-                                            style={{ maxWidth: '100%', maxHeight: '300px', borderRadius: '8px' }} 
-                                        />
-                                    ) : (
-                                        <img 
-                                            src={detail.preview_url} 
-                                            style={{ maxWidth: '100%', maxHeight: '300px', objectFit: 'contain', borderRadius: '8px' }} 
-                                            alt="creative preview" 
-                                        />
-                                    )
-                                ) : (
-                                    <div style={{ color: 'var(--text-secondary)', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '8px' }}>
-                                        <span style={{ fontSize: '2.5rem' }}>{detail.asset_type === 'video' ? '📹' : '🖼️'}</span>
-                                        <span style={{ fontSize: '0.82rem' }}>
-                                            {t('No online preview URL (asset_uri: ', '無線上預覽網址 (素材 URI: ')}
-                                            {detail.asset_uri ? detail.asset_uri.split('/').pop() : '--'})
-                                        </span>
-                                    </div>
-                                )}
+                                {(() => {
+                                    const detailPreviewUrl = resolvePreviewUrl(detail);
+                                    if (detailPreviewUrl) {
+                                        return detail.asset_type === 'video' ? (
+                                            <video 
+                                                src={detailPreviewUrl} 
+                                                controls 
+                                                style={{ maxWidth: '100%', maxHeight: '300px', borderRadius: '8px' }} 
+                                            />
+                                        ) : (
+                                            <img 
+                                                src={detailPreviewUrl} 
+                                                style={{ maxWidth: '100%', maxHeight: '300px', objectFit: 'contain', borderRadius: '8px' }} 
+                                                alt="creative preview" 
+                                            />
+                                        );
+                                    } else {
+                                        return (
+                                            <div style={{ color: 'var(--text-secondary)', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '8px' }}>
+                                                <span style={{ fontSize: '2.5rem' }}>{detail.asset_type === 'video' ? '📹' : '🖼️'}</span>
+                                                <span style={{ fontSize: '0.82rem' }}>
+                                                    {t('No online preview URL (asset_uri: ', '無線上預覽網址 (素材 URI: ')}
+                                                    {detail.asset_uri ? detail.asset_uri.split('/').pop() : '--'})
+                                                </span>
+                                            </div>
+                                        );
+                                    }
+                                })()}
                             </div>
 
                             <div style={detailCardStyle}>

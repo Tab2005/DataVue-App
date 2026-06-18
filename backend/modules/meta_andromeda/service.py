@@ -254,6 +254,10 @@ class MetaAndromedaService:
         return repository.get_release_overview(db)
 
     @staticmethod
+    def get_asset_by_uri(db, asset_uri: str):
+        return repository.get_asset_by_uri(db, asset_uri)
+
+    @staticmethod
     def upload_asset(
         db,
         file_bytes: bytes,
@@ -422,6 +426,8 @@ class MetaAndromedaService:
                     content_type=snapshot["content_type"],
                 )
                 stored_asset = repository.create_uploaded_asset(db, asset_record=asset_record)
+            except MetaAndromedaValidationError:
+                raise
             except Exception as e:
                 import logging
                 logger = logging.getLogger(__name__)
