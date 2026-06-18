@@ -3,7 +3,7 @@ Meta Andromeda Module - Request / Response Schemas
 """
 
 from datetime import datetime
-from typing import Literal
+from typing import Any, Literal
 
 from pydantic import BaseModel, Field
 
@@ -163,7 +163,7 @@ class ScoreExplanationResponse(BaseModel):
     summary: str
     top_positive_drivers: list[str]
     top_risks: list[str]
-    diagnostic_evidence: dict[str, str]
+    diagnostic_evidence: dict[str, Any]
 
 
 class ReviewQueueDetailResponse(BaseModel):
