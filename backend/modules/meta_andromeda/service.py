@@ -24,6 +24,13 @@ from .storage import storage_adapter
 from redis_cache import get_redis_client
 
 
+class MetaAndromedaValidationError(ValueError):
+    def __init__(self, detail: str, status_code: int = 400):
+        super().__init__(detail)
+        self.detail = detail
+        self.status_code = status_code
+
+
 class MetaAndromedaService:
     """Service layer for the current DataVue integration slice."""
 
@@ -255,6 +262,12 @@ class MetaAndromedaService:
         uploaded_by: str | None = None,
         content_type: str | None = None,
     ) -> dict:
+        MetaAndromedaService._validate_uploaded_asset(
+            file_bytes=file_bytes,
+            asset_type=asset_type,
+            source_filename=source_filename,
+            content_type=content_type,
+        )
         asset_record = storage_adapter.store_asset(
             file_bytes=file_bytes,
             asset_type=asset_type,
@@ -263,6 +276,51 @@ class MetaAndromedaService:
             content_type=content_type,
         )
         return repository.create_uploaded_asset(db, asset_record=asset_record)
+
+    @staticmethod
+    def _validate_uploaded_asset(
+        *,
+        file_bytes: bytes,
+        asset_type: str,
+        source_filename: str,
+        content_type: str | None,
+    ) -> None:
+        if not file_bytes:
+            raise MetaAndromedaValidationError("upload_empty_file", status_code=400)
+        if len(file_bytes) > settings.META_ANDROMEDA_UPLOAD_MAX_BYTES:
+            raise MetaAndromedaValidationError("upload_file_too_large", status_code=413)
+
+        allowed = {
+            "image": {
+                "mimes": {"image/png", "image/jpeg", "image/webp"},
+                "exts": {".png", ".jpg", ".jpeg", ".webp"},
+            },
+            "video": {
+                "mimes": {"video/mp4", "video/quicktime"},
+                "exts": {".mp4", ".mov"},
+            },
+        }
+        spec = allowed.get((asset_type or "").strip().lower())
+        if spec is None:
+            raise MetaAndromedaValidationError("unsupported_asset_type", status_code=415)
+
+        content_type_normalized = (content_type or "").split(";")[0].strip().lower()
+        ext = Path(source_filename or "").suffix.lower()
+        if ext not in spec["exts"]:
+            raise MetaAndromedaValidationError("upload_extension_not_allowed", status_code=415)
+        if content_type_normalized not in spec["mimes"]:
+            raise MetaAndromedaValidationError("upload_mime_not_allowed", status_code=415)
+
+    @staticmethod
+    def _is_allowed_media_host(hostname: str | None) -> bool:
+        if not hostname:
+            return False
+        host = hostname.lower()
+        for allowed in settings.META_ANDROMEDA_ALLOWED_MEDIA_HOSTS:
+            normalized = allowed.lstrip(".")
+            if host == normalized or host.endswith(f".{normalized}"):
+                return True
+        return False
 
     @staticmethod
     async def _fetch_observed_facebook_ad_candidate(
@@ -293,12 +351,22 @@ class MetaAndromedaService:
         ad_id: str,
         media_type: str,
     ) -> dict:
+        parsed = urlparse(media_url)
+        if parsed.scheme != "https":
+            raise MetaAndromedaValidationError("observed_media_url_must_use_https", status_code=400)
+        if not MetaAndromedaService._is_allowed_media_host(parsed.hostname):
+            raise MetaAndromedaValidationError("observed_media_url_host_not_allowed", status_code=400)
         async with httpx.AsyncClient(timeout=30.0, follow_redirects=True) as client:
             response = await client.get(media_url)
             response.raise_for_status()
 
         content_type = response.headers.get("content-type", "").split(";")[0].strip() or None
-        parsed = urlparse(media_url)
+        if len(response.content) > settings.META_ANDROMEDA_OBSERVED_DOWNLOAD_MAX_BYTES:
+            raise MetaAndromedaValidationError("observed_media_too_large", status_code=413)
+        if media_type == "image" and content_type not in {"image/png", "image/jpeg", "image/webp"}:
+            raise MetaAndromedaValidationError("observed_media_mime_not_allowed", status_code=415)
+        if media_type == "video" and content_type not in {"video/mp4", "video/quicktime"}:
+            raise MetaAndromedaValidationError("observed_media_mime_not_allowed", status_code=415)
         path_name = Path(parsed.path).name
         if path_name:
             source_filename = path_name

@@ -39,7 +39,7 @@ from .schemas import (
     RuntimeHealthResponse,
     ScoreSubmitRequest,
 )
-from .service import MetaAndromedaService
+from .service import MetaAndromedaService, MetaAndromedaValidationError
 
 router = APIRouter()
 
@@ -175,12 +175,15 @@ async def import_facebook_ad_observation(
     x_team_id: str | None = Header(default=None, alias="X-Team-ID"),
     db=Depends(get_db),
 ):
-    return await MetaAndromedaService.import_observed_facebook_ad(
-        db,
-        payload.model_dump(),
-        user_id=getattr(user, "google_id", None) or getattr(user, "id", None),
-        team_id=x_team_id,
-    )
+    try:
+        return await MetaAndromedaService.import_observed_facebook_ad(
+            db,
+            payload.model_dump(),
+            user_id=getattr(user, "google_id", None) or getattr(user, "id", None),
+            team_id=x_team_id,
+        )
+    except MetaAndromedaValidationError as exc:
+        raise HTTPException(status_code=exc.status_code, detail=exc.detail) from exc
 
 
 @router.post(
@@ -212,14 +215,17 @@ async def upload_asset(
     db=Depends(get_db),
 ):
     file_bytes = await file.read()
-    return MetaAndromedaService.upload_asset(
-        db,
-        file_bytes=file_bytes,
-        asset_type=asset_type,
-        source_filename=source_filename,
-        uploaded_by=getattr(user, "id", None),
-        content_type=file.content_type,
-    )
+    try:
+        return MetaAndromedaService.upload_asset(
+            db,
+            file_bytes=file_bytes,
+            asset_type=asset_type,
+            source_filename=source_filename,
+            uploaded_by=getattr(user, "id", None),
+            content_type=file.content_type,
+        )
+    except MetaAndromedaValidationError as exc:
+        raise HTTPException(status_code=exc.status_code, detail=exc.detail) from exc
 
 
 @router.post("/scores", response_model=ReviewQueueDetailResponse, status_code=status.HTTP_201_CREATED)

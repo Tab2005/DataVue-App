@@ -226,7 +226,7 @@ async def clear_ai_key(
         elif provider == "openrouter":
             TokenManager.save_ai_settings(user.google_id, openrouter_api_key="")
         else:
-            TokenManager.save_ai_settings(user.google_id, gemini_api_key="")
+            TokenManager.save_ai_settings(user.google_id, gemini_api_key="", openrouter_api_key="")
         
         return {"success": True, "message": f"{provider} API key cleared"}
     except Exception as e:

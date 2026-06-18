@@ -23,7 +23,7 @@ DataVue 內的 Meta Andromeda 模組整合入口。
 - read / write workflow 已落到 DataVue DB
 - asset upload 已支援 `filesystem` 與 `s3_compatible` storage backend；可落檔到 `META_ANDROMEDA_STORAGE_ROOT`，或寫入 shared object storage bucket
 - score submit 已改成 APScheduler-backed queued processing
-- score runtime 已改成 registry-backed provider flow，預設 `auto` 模式會在有 `GOOGLE_AI_API_KEY` 時走 Gemini，否則回退到 deterministic heuristic provider
+- score runtime 已改成 registry-backed provider flow，預設 `auto` 模式會在有 `OPENROUTER_API_KEY`（或使用者儲存的 OpenRouter key）時走 OpenRouter-backed model routing；若模型選的是 `google/gemini-*`，也是透過 OpenRouter transport 呼叫，不再走獨立 Gemini provider
 - score worker 已補 timeout / retry policy，受 `META_ANDROMEDA_SCORE_TIMEOUT_SECONDS`、`META_ANDROMEDA_SCORE_MAX_ATTEMPTS`、`META_ANDROMEDA_SCORE_RETRY_DELAY_SECONDS` 控制
 - 初次 submit 與 retry 都走 `queue_host.py`，目前可切到 `apscheduler`、`local_async`、`database_queue`、`external_webhook`、`redis_stream`
 - `database_queue` 模式下，web host 只寫入 queued record，worker host 由 scheduler sweeper 依 `META_ANDROMEDA_QUEUE_SWEEP_INTERVAL_SECONDS` 掃描並派工

@@ -107,6 +107,8 @@ class CalibrationSyncResponse(BaseModel):
     dataset_id: str
     synced_count: int
     status: str
+    item_count: int | None = None
+    label_policy_version: str | None = None
 
 
 class ReviewQueueItemResponse(BaseModel):

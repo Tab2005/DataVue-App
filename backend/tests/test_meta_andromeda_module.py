@@ -246,6 +246,36 @@ def test_meta_andromeda_upload_supports_s3_compatible_storage(meta_andromeda_acc
 
 
 @pytest.mark.unit
+def test_meta_andromeda_upload_rejects_empty_file(meta_andromeda_access):
+    response = meta_andromeda_access.post(
+        "/api/meta-andromeda/assets:upload",
+        data={
+            "asset_type": "image",
+            "source_filename": "empty.png",
+        },
+        files={"file": ("empty.png", b"", "image/png")},
+    )
+
+    assert response.status_code == 400
+    assert response.json()["detail"] == "upload_empty_file"
+
+
+@pytest.mark.unit
+def test_meta_andromeda_upload_rejects_mime_extension_mismatch(meta_andromeda_access):
+    response = meta_andromeda_access.post(
+        "/api/meta-andromeda/assets:upload",
+        data={
+            "asset_type": "image",
+            "source_filename": "creative.png",
+        },
+        files={"file": ("creative.png", b"fake-bytes", "video/mp4")},
+    )
+
+    assert response.status_code == 415
+    assert response.json()["detail"] == "upload_mime_not_allowed"
+
+
+@pytest.mark.unit
 def test_meta_andromeda_overview_returns_current_integration_state(meta_andromeda_access):
     response = meta_andromeda_access.get("/api/meta-andromeda/overview")
 
@@ -1653,6 +1683,55 @@ def test_meta_andromeda_observation_import_allows_with_fb_ads_module_and_permiss
 
 
 @pytest.mark.unit
+def test_meta_andromeda_observation_import_rejects_disallowed_media_host(meta_andromeda_access, monkeypatch):
+    from modules.meta_andromeda.schemas import ObservedCreativeCandidate
+
+    async def fake_fetch_observed_creative_candidate(**kwargs):
+        payload = kwargs["payload"]
+        return ObservedCreativeCandidate(
+            source_platform="facebook_ads",
+            source_account_id=payload["account_id"],
+            campaign_id="120000000000010",
+            adset_id="120000000000011",
+            ad_id=payload["ad_id"],
+            ad_name="Blocked Host Ad",
+            objective="OUTCOME_SALES",
+            placement_family=payload["placement_family"],
+            market=payload["market"],
+            primary_text=None,
+            headline=None,
+            cta=None,
+            media_url="https://evil.example.net/blocked.png",
+            media_type="image",
+            performance_snapshot={"roas": 2.0},
+            observation_window_kind="last_30d",
+            observation_window_start="2026-05-17",
+            observation_window_end="2026-06-15",
+            source_fetched_at="2026-06-15T00:00:00Z",
+        )
+
+    monkeypatch.setattr(
+        meta_andromeda_service_module.MetaAndromedaService,
+        "_fetch_observed_facebook_ad_candidate",
+        staticmethod(fake_fetch_observed_creative_candidate),
+    )
+
+    response = meta_andromeda_access.post(
+        "/api/meta-andromeda/evaluations/import/facebook-ads",
+        json={
+            "account_id": "act_123456789",
+            "ad_id": "120000000000012",
+            "observation_window_kind": "last_30d",
+            "market": "TW",
+            "placement_family": "feed",
+        },
+    )
+
+    assert response.status_code == 400
+    assert response.json()["detail"] == "observed_media_url_host_not_allowed"
+
+
+@pytest.mark.unit
 def test_meta_andromeda_team_user_without_module_access_is_denied_read_only_endpoint(
     meta_andromeda_permission_client,
     db,
@@ -1750,7 +1829,12 @@ def test_meta_andromeda_team_member_can_trigger_drift_report_and_approve_release
 
 @pytest.mark.unit
 def test_sync_calibration_dataset_endpoint(meta_andromeda_access, db):
-    from database.models.meta_andromeda import MetaAndromedaObservedCreative, MetaAndromedaScoreEvent
+    from database.models.meta_andromeda import (
+        MetaAndromedaCalibrationDataset,
+        MetaAndromedaCalibrationItem,
+        MetaAndromedaObservedCreative,
+        MetaAndromedaScoreEvent,
+    )
     
     # 確保資料庫純淨
     db.query(MetaAndromedaObservedCreative).delete()
@@ -1798,12 +1882,117 @@ def test_sync_calibration_dataset_endpoint(meta_andromeda_access, db):
     payload = response.json()
     assert "dataset_id" in payload
     assert payload["synced_count"] == 1
+    assert payload["item_count"] == 1
     assert payload["status"] == "queued_for_calibration"
+    assert payload["label_policy_version"] == "ma_label_policy_v1"
 
     # 檢查資料庫中 Observed Creative 的 lineage["calibration"] 是否被寫入
     obs_db = db.query(MetaAndromedaObservedCreative).filter(MetaAndromedaObservedCreative.id == "obs_to_calibrate").first()
     assert obs_db.lineage["calibration"]["dataset_id"] == payload["dataset_id"]
     assert obs_db.lineage["calibration"]["error"] == 2
+    assert obs_db.lineage["calibration"]["label_policy_version"] == "ma_label_policy_v1"
+
+    dataset = db.query(MetaAndromedaCalibrationDataset).filter(MetaAndromedaCalibrationDataset.id == payload["dataset_id"]).one()
+    item = db.query(MetaAndromedaCalibrationItem).filter(MetaAndromedaCalibrationItem.dataset_id == payload["dataset_id"]).one()
+    assert dataset.synced_count == 1
+    assert dataset.label_policy_version == "ma_label_policy_v1"
+    assert item.prediction_band == "high"
+    assert item.observed_band == "low"
+
+
+@pytest.mark.unit
+def test_meta_andromeda_monitoring_summary_uses_real_latency_metrics(meta_andromeda_access, db):
+    from database.models.meta_andromeda import MetaAndromedaScoreEvent
+    from datetime import datetime, timedelta, timezone
+
+    _clear_meta_andromeda_operational_data(db)
+
+    base = datetime(2026, 6, 18, 12, 0, tzinfo=timezone.utc)
+    db.add_all(
+        [
+            MetaAndromedaScoreEvent(
+                id="lat_evt_1",
+                status="completed",
+                asset_uri="storage://latency/1.png",
+                asset_type="image",
+                request_mode="auto",
+                objective="purchase",
+                placement_family="feed",
+                market="TW",
+                queued_at=base,
+                completed_at=base + timedelta(seconds=2),
+                created_at=base,
+                updated_at=base + timedelta(seconds=2),
+            ),
+            MetaAndromedaScoreEvent(
+                id="lat_evt_2",
+                status="failed",
+                asset_uri="storage://latency/2.png",
+                asset_type="image",
+                request_mode="auto",
+                objective="purchase",
+                placement_family="feed",
+                market="TW",
+                queued_at=base + timedelta(seconds=1),
+                failed_at=base + timedelta(seconds=5),
+                created_at=base + timedelta(seconds=1),
+                updated_at=base + timedelta(seconds=5),
+            ),
+            MetaAndromedaScoreEvent(
+                id="lat_evt_3",
+                status="queued",
+                asset_uri="storage://latency/3.png",
+                asset_type="image",
+                request_mode="auto",
+                objective="purchase",
+                placement_family="feed",
+                market="TW",
+                queued_at=base + timedelta(seconds=2),
+                created_at=base + timedelta(seconds=2),
+                updated_at=base + timedelta(seconds=2),
+            ),
+        ]
+    )
+    db.commit()
+
+    response = meta_andromeda_access.get("/api/meta-andromeda/monitoring/summary")
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["jobs"]["score-request"]["latency_ms"]["avg"] == 3000
+    assert payload["jobs"]["score-request"]["latency_ms"]["p95"] == 4000
+    assert payload["jobs"]["score-request"]["latency_ms"]["max"] == 4000
+    assert payload["jobs"]["score-request"]["queue_depth"]["current"] == 1
+    assert payload["jobs"]["score-request"]["queue_depth"]["peak"] >= 2
+
+
+@pytest.mark.unit
+def test_meta_andromeda_heuristic_runtime_uses_lower_score_and_dynamic_confidence():
+    from modules.meta_andromeda.runtime import build_heuristic_score_result
+    from modules.meta_andromeda.model_registry import model_registry
+
+    registry_entry = model_registry.get_entry("candidate_v0")
+    result = build_heuristic_score_result(
+        {
+            "asset_type": "image",
+            "objective": "purchase",
+            "request_mode": "auto",
+            "placement_family": "all",
+            "request_context": {
+                "headline": "",
+                "primary_text": "",
+                "cta": "",
+                "objective": "purchase",
+                "placement_family": "all",
+                "market": "TW",
+            },
+        },
+        registry_entry,
+    )
+
+    assert result["overall_score"] < 60
+    assert result["roas_prediction"]["confidence"] != 0.61
+    assert result["lineage"]["label_policy_version"] == "ma_label_policy_v1"
 
 
 @pytest.mark.unit

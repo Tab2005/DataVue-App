@@ -15,6 +15,7 @@ from .model_registry import MetaAndromedaModelEntry, model_registry
 
 logger = logging.getLogger(__name__)
 VALID_ROAS_BANDS = {"high", "mid", "low"}
+LABEL_POLICY_VERSION = "ma_label_policy_v1"
 
 
 def _clip(value: str | None, limit: int = 140) -> str:
@@ -71,8 +72,48 @@ def _build_multimodal_user_content(prompt: str, score_payload: dict) -> list[dic
     return user_content
 
 
+def _compute_signal_completeness(score_payload: dict) -> tuple[float, dict]:
+    request_context = score_payload.get("request_context", {})
+    components = {
+        "headline": 1.0 if _clip(request_context.get("headline")) else 0.0,
+        "primary_text": 1.0 if _clip(request_context.get("primary_text")) else 0.0,
+        "cta": 1.0 if _clip(request_context.get("cta")) else 0.0,
+        "image_signal": 1.0 if any(part.get("type") == "image_url" for part in _build_multimodal_user_content("", score_payload)[1:]) else 0.0,
+        "objective": 1.0 if _clip(request_context.get("objective") or score_payload.get("objective")) else 0.0,
+        "placement_family": 1.0 if _clip(request_context.get("placement_family") or score_payload.get("placement_family")) else 0.0,
+        "market": 1.0 if _clip(request_context.get("market") or score_payload.get("market")) else 0.0,
+    }
+    completeness = sum(components.values()) / len(components)
+    return completeness, components
+
+
+def _compute_confidence(score_payload: dict, *, scoring_mode: str, used_multimodal: bool, fallback_reason: str | None = None) -> tuple[float | None, dict]:
+    if score_payload.get("request_mode") == "diagnostic_only":
+        return None, {"reason": "diagnostic_only_request"}
+
+    completeness, components = _compute_signal_completeness(score_payload)
+    base = 0.42 if scoring_mode == "heuristic" else 0.58
+    confidence = base + completeness * (0.26 if scoring_mode == "heuristic" else 0.24)
+    if used_multimodal:
+        confidence += 0.06
+    if fallback_reason:
+        confidence -= 0.12
+    return max(0.18, min(round(confidence, 4), 0.92)), {
+        "signal_completeness": round(completeness, 4),
+        "components": components,
+        "used_multimodal": used_multimodal,
+        "fallback": bool(fallback_reason),
+    }
+
+
 def _validate_provider_result(parsed: dict, score_payload: dict, registry_entry: MetaAndromedaModelEntry) -> dict:
     prediction_mode = "diagnostic_only" if score_payload.get("request_mode") == "diagnostic_only" else "diagnostic_plus_roas"
+    used_multimodal = len(_build_multimodal_user_content("", score_payload)) > 1
+    confidence, confidence_detail = _compute_confidence(
+        score_payload,
+        scoring_mode="ai",
+        used_multimodal=used_multimodal,
+    )
 
     raw_score = parsed.get("overall_score")
     if raw_score is None:
@@ -110,7 +151,7 @@ def _validate_provider_result(parsed: dict, score_payload: dict, registry_entry:
         "roas_prediction": {
             "eligible": prediction_mode == "diagnostic_plus_roas",
             "band": roas_band,
-            "confidence": 0.72 if prediction_mode == "diagnostic_plus_roas" else None,
+            "confidence": confidence,
             "reason_if_unavailable": None if prediction_mode == "diagnostic_plus_roas" else "diagnostic only request",
         },
         "risk_tags": risk_tags,
@@ -125,6 +166,7 @@ def _validate_provider_result(parsed: dict, score_payload: dict, registry_entry:
                 "provider_model": registry_entry.provider_model,
                 "objective": score_payload.get("objective", "purchase"),
                 "placement_family": score_payload.get("placement_family", "all"),
+                "confidence_detail": confidence_detail,
             },
         },
         "lineage": {
@@ -136,6 +178,7 @@ def _validate_provider_result(parsed: dict, score_payload: dict, registry_entry:
             "registry_profile": registry_entry.scoring_profile,
             "registry_source": registry_entry.source_of_truth,
             "scoring_mode": "ai",
+            "label_policy_version": LABEL_POLICY_VERSION,
         },
     }
 
@@ -241,20 +284,36 @@ def build_heuristic_score_result(score_payload: dict, registry_entry: MetaAndrom
     request_context = score_payload.get("request_context", {})
     prediction_mode = "diagnostic_plus_roas" if request_mode != "diagnostic_only" else "diagnostic_only"
 
-    score = 72 if asset_type == "image" else 67
+    score = 56 if asset_type == "image" else 52
     if objective == "purchase":
-        score += 4
-    if objective == "lead":
-        score += 1
-    if _clip(request_context.get("headline")):
-        score += 4
-    if _clip(request_context.get("primary_text")):
         score += 3
-    if _clip(request_context.get("cta")):
-        score += 5
-    if placement_family in {"feed", "stories"}:
+    elif objective == "lead":
         score += 2
-    score = max(48, min(score, 91))
+    if _clip(request_context.get("headline")):
+        score += 8
+    else:
+        score -= 5
+    if _clip(request_context.get("primary_text")):
+        score += 8
+    else:
+        score -= 6
+    if _clip(request_context.get("cta")):
+        score += 10
+    else:
+        score -= 5
+    if placement_family in {"feed", "stories"}:
+        score += 4
+    if not _clip(request_context.get("headline")) and not _clip(request_context.get("primary_text")) and not _clip(request_context.get("cta")):
+        score -= 8
+    score = max(24, min(score, 88))
+
+    used_multimodal = len(_build_multimodal_user_content("", score_payload)) > 1
+    confidence, confidence_detail = _compute_confidence(
+        score_payload,
+        scoring_mode="heuristic",
+        used_multimodal=used_multimodal,
+        fallback_reason=fallback_reason,
+    )
 
     if score >= 80:
         roas_band = "high"
@@ -303,7 +362,7 @@ def build_heuristic_score_result(score_payload: dict, registry_entry: MetaAndrom
         "roas_prediction": {
             "eligible": prediction_mode == "diagnostic_plus_roas",
             "band": roas_band if prediction_mode == "diagnostic_plus_roas" else None,
-            "confidence": 0.61 if prediction_mode == "diagnostic_plus_roas" else None,
+            "confidence": confidence,
             "reason_if_unavailable": None if prediction_mode == "diagnostic_plus_roas" else "diagnostic only request",
         },
         "risk_tags": risk_tags,
@@ -318,6 +377,7 @@ def build_heuristic_score_result(score_payload: dict, registry_entry: MetaAndrom
                 "provider_model": registry_entry.provider_model,
                 "objective": objective,
                 "placement_family": placement_family,
+                "confidence_detail": confidence_detail,
             },
         },
         "lineage": {
@@ -330,6 +390,7 @@ def build_heuristic_score_result(score_payload: dict, registry_entry: MetaAndrom
             "registry_source": registry_entry.source_of_truth,
             "scoring_mode": "heuristic",
             "fallback_reason": fallback_reason or "",
+            "label_policy_version": LABEL_POLICY_VERSION,
         },
     }
 

@@ -198,6 +198,22 @@ class Settings:
         return max(0.0, float(os.getenv("META_ANDROMEDA_SCORE_RETRY_DELAY_SECONDS", "5")))
 
     @property
+    def META_ANDROMEDA_UPLOAD_MAX_BYTES(self) -> int:
+        return max(1, int(os.getenv("META_ANDROMEDA_UPLOAD_MAX_BYTES", str(15 * 1024 * 1024))))
+
+    @property
+    def META_ANDROMEDA_OBSERVED_DOWNLOAD_MAX_BYTES(self) -> int:
+        return max(1, int(os.getenv("META_ANDROMEDA_OBSERVED_DOWNLOAD_MAX_BYTES", str(20 * 1024 * 1024))))
+
+    @property
+    def META_ANDROMEDA_ALLOWED_MEDIA_HOSTS(self) -> list[str]:
+        raw = os.getenv(
+            "META_ANDROMEDA_ALLOWED_MEDIA_HOSTS",
+            "cdn.example.com,fbcdn.net,scontent.xx.fbcdn.net,lookaside.fbsbx.com",
+        )
+        return [item.strip().lower() for item in raw.split(",") if item.strip()]
+
+    @property
     def META_ANDROMEDA_SCORE_LOCAL_ASYNC_FALLBACK(self) -> bool:
         return os.getenv("META_ANDROMEDA_SCORE_LOCAL_ASYNC_FALLBACK", "true").lower() in {"1", "true", "yes", "on"}
 

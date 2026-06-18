@@ -17,7 +17,7 @@ const SettingsModal = ({ isOpen, onClose, language, teamId, teamName, onSuccess 
     const [aiData, setAiData] = useState({
         provider: 'zeabur', // Default to Zeabur AI Hub
         apiKey: '',
-        model: 'gemini-1.5-flash'
+        model: 'deepseek/deepseek-v4-flash'
     });
 
     // OpenRouter Direct API Data

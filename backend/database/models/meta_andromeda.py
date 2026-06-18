@@ -185,3 +185,56 @@ class MetaAndromedaDriftReport(Base):
     note = Column(Text, nullable=True)
     report_payload = Column(JSON, nullable=False, default=dict)
     created_at = Column(DateTime, default=text("CURRENT_TIMESTAMP"))
+
+
+class MetaAndromedaCalibrationDataset(Base):
+    __tablename__ = "meta_andromeda_calibration_datasets"
+
+    id = Column(String, primary_key=True, default=lambda: f"cal_ds_{uuid.uuid4().hex[:12]}")
+    window_kind = Column(String(50), nullable=False, index=True)
+    status = Column(String(50), nullable=False, index=True)
+    label_policy_version = Column(String(50), nullable=False)
+    since = Column(String(40), nullable=True)
+    until = Column(String(40), nullable=True)
+    excluded_observed_ids = Column(JSON, nullable=False, default=list)
+    synced_count = Column(Integer, nullable=False, default=0)
+    summary = Column(JSON, nullable=False, default=dict)
+    created_at = Column(DateTime, default=text("CURRENT_TIMESTAMP"))
+
+
+class MetaAndromedaCalibrationItem(Base):
+    __tablename__ = "meta_andromeda_calibration_items"
+
+    id = Column(String, primary_key=True, default=lambda: f"cal_item_{uuid.uuid4().hex[:12]}")
+    dataset_id = Column(
+        String,
+        ForeignKey("meta_andromeda_calibration_datasets.id"),
+        nullable=False,
+        index=True,
+    )
+    observed_creative_id = Column(
+        String,
+        ForeignKey("meta_andromeda_observed_creatives.id"),
+        nullable=False,
+        index=True,
+    )
+    score_event_id = Column(
+        String,
+        ForeignKey("meta_andromeda_score_events.id"),
+        nullable=False,
+        index=True,
+    )
+    asset_uri = Column(String, nullable=True, index=True)
+    objective = Column(String(50), nullable=True)
+    market = Column(String(20), nullable=False)
+    placement_family = Column(String(50), nullable=False)
+    prediction_band = Column(String(20), nullable=False)
+    observed_band = Column(String(20), nullable=False)
+    error = Column(Float, nullable=False)
+    performance_snapshot = Column(JSON, nullable=False, default=dict)
+    label_policy_version = Column(String(50), nullable=False)
+    created_at = Column(DateTime, default=text("CURRENT_TIMESTAMP"))
+
+    dataset = relationship("MetaAndromedaCalibrationDataset", backref="items")
+    observed_creative = relationship("MetaAndromedaObservedCreative")
+    score_event = relationship("MetaAndromedaScoreEvent")

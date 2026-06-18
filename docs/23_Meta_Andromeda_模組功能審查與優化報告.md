@@ -243,11 +243,20 @@ doc 22 已提及文件與實作不一致，本次補充更具體證據：
   - `frontend`: `npm test -- MetaAndromedaMonitoring.test.jsx MetaAndromedaRelease.test.jsx MetaAndromedaScoreLab.test.jsx` 通過（8/8）。
   - `backend`: `python -m py_compile backend/modules/meta_andromeda/repository.py backend/modules/meta_andromeda/service.py backend/modules/meta_andromeda/runtime.py backend/modules/meta_andromeda/queue_host.py backend/core/scheduler.py backend/services/ai/openrouter_client.py backend/tests/test_meta_andromeda_module.py` 通過。
   - `backend pytest` 尚未執行，原因仍是目前環境缺少 `pytest` 套件（`No module named pytest`）。
-| P2 | 上傳與 media download 安全邊界 | 大檔、錯誤 MIME、非允許來源 URL 被拒絕且回 4xx |
-| P2 | 真實 monitoring metrics 與索引 | latency 從 timestamps 計算；review queue／summary 大量資料下可接受 |
-| P2 | confidence 校準化、heuristic 起分下調、label policy 版本化（N4） | confidence 非固定值；空文案不得高分；label policy 可追溯 |
-| P2 | calibration dataset 實體化 | 每次 sync 建立 dataset 與 items，release candidate 可追溯到 evaluation |
+| P2 | 上傳與 media download 安全邊界 | 已完成；大檔、錯誤 MIME、非允許來源 URL 被拒絕且回 4xx |
+| P2 | 真實 monitoring metrics 與索引 | 已完成；latency 從 timestamps 計算，review/monitoring 查詢索引已補 |
+| P2 | confidence 校準化、heuristic 起分下調、label policy 版本化（N4） | 已完成；confidence 非固定值；空文案不得高分；label policy 可追溯 |
+| P2 | calibration dataset 實體化 | 已完成；每次 sync 建立 dataset 與 items，release notes 可追溯到最新 evaluation dataset |
 | P3 | 更新文件（README、doc 10、doc 21）（N5） | 路由 path、provider 描述、readiness 狀態與程式一致 |
+
+### 2026-06-18 P2 修復狀態補記
+
+- 已完成四項 P2 修復：upload / media download 安全邊界、真實 monitoring metrics 與索引、confidence / heuristic / label policy、calibration dataset 實體化。
+- 另外完成一項相依對齊：Gemini / OpenRouter 設定流已改為「Gemini model 經由 OpenRouter transport」，後端 provider normalization、AI settings fallback 與 Meta Andromeda README 已同步。
+- 驗證結果：
+  - `frontend`: `npm test -- MetaAndromedaMonitoring.test.jsx MetaAndromedaRelease.test.jsx MetaAndromedaScoreLab.test.jsx` 通過（8/8）。
+  - `backend`: `python -m py_compile backend/core/config.py backend/modules/auth/router.py backend/modules/auth/service.py backend/routers/ai.py backend/database/models/meta_andromeda.py backend/modules/meta_andromeda/router.py backend/modules/meta_andromeda/repository.py backend/modules/meta_andromeda/runtime.py backend/modules/meta_andromeda/service.py backend/modules/meta_andromeda/schemas.py backend/tests/test_meta_andromeda_module.py` 通過。
+  - `backend pytest` 尚未執行，原因仍是目前環境缺少 `pytest` 套件（`No module named pytest`）。
 
 ## 需要補的測試（合併 doc 22 與本次新發現）
 
@@ -267,7 +276,7 @@ doc 22 已提及文件與實作不一致，本次補充更具體證據：
 
 ## 結論
 
-本模組功能齊備，作為功能原型與內部驗證基礎已堪用，但距正式 creative intelligence／model release workflow 仍有明顯差距。doc 22（同日稍早復審）所列 P0／P1 問題至今全數未修，本報告再新增 5 項發現（含 1 項 P0：ScoreLab 無權限 gate）。
+本模組功能齊備，作為功能原型與內部驗證基礎已堪用，但距正式 creative intelligence／model release workflow 仍有明顯差距。截止 2026-06-18，本報告原列的 P0、P1、P2 項目已完成修復與對齊；剩餘高優先工作集中在文件一致性、production UAT 與後續真實 release evaluation。
 
 最高優先級不是增加更多 UI，而是先保證四件事：
 
@@ -278,4 +287,4 @@ doc 22 已提及文件與實作不一致，本次補充更具體證據：
 
 完成上述後，再投入 multimodal feature extraction（含 OpenRouter client 支援視覺輸入）、confidence 校準、真實 release evaluation，模型優化才會有可靠基礎。模型本身的優化空間明確：從「文字欄位評分」升級為「素材視覺特徵 + 文案 + 投放 context + 成效 outcome」的多模態閉環，這也是模組「creative intelligence」定位能否成立的關鍵。
 
-> 本報告與 `docs/22` 互補：doc 22 為首輪復審，本報告（doc 23）為同日第二輪，補驗證修復狀態並新增發現。兩份結論一致——模組尚未 production-ready，需先處理 P0／P1。
+> 本報告與 `docs/22` 互補：doc 22 為首輪復審，本報告（doc 23）為同日第二輪，後續已持續回填修復狀態。當前結論是：模組治理基礎已大幅改善，但仍未達 production-ready，需完成文件與共享環境驗證後再推進上線。

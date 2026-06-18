@@ -280,6 +280,15 @@ class TokenManager:
     # ============================================================
     # AI Settings 管理
     # ============================================================
+
+    @staticmethod
+    def _normalize_ai_provider(ai_provider: str | None) -> str | None:
+        if ai_provider is None:
+            return None
+        normalized = ai_provider.strip().lower()
+        if normalized in {"gemini", "google_gemini"}:
+            return "openrouter"
+        return normalized
     
     @staticmethod
     def save_ai_settings(google_id: str, zeabur_api_key: str = None,
@@ -312,7 +321,7 @@ class TokenManager:
                 user.openrouter_api_key = TokenManager._encrypt(openrouter_api_key) if openrouter_api_key else None
             
             if ai_provider is not None:
-                user.ai_provider = ai_provider
+                user.ai_provider = TokenManager._normalize_ai_provider(ai_provider)
             
             if ai_model is not None:
                 user.ai_model = ai_model
@@ -340,7 +349,7 @@ class TokenManager:
                 return None
             
             return {
-                "ai_provider": user.ai_provider if user.ai_provider else "zeabur",
+                "ai_provider": TokenManager._normalize_ai_provider(user.ai_provider) if user.ai_provider else "zeabur",
                 "ai_model": user.ai_model if user.ai_model else "deepseek/deepseek-v4-flash",
                 "has_zeabur_key": bool(user.zeabur_api_key),
                 "has_gemini_key": bool(user.gemini_api_key),
@@ -364,12 +373,14 @@ class TokenManager:
             if not user:
                 return None
             
-            active_provider = provider or user.ai_provider or "zeabur"
+            active_provider = TokenManager._normalize_ai_provider(provider or user.ai_provider) or "zeabur"
             
             if active_provider == "openrouter":
-                return TokenManager._decrypt(user.openrouter_api_key) if user.openrouter_api_key else None
-            elif active_provider == "gemini":
-                return TokenManager._decrypt(user.gemini_api_key) if user.gemini_api_key else None
+                if user.openrouter_api_key:
+                    return TokenManager._decrypt(user.openrouter_api_key)
+                if user.gemini_api_key:
+                    return TokenManager._decrypt(user.gemini_api_key)
+                return None
             else:
                 return TokenManager._decrypt(user.zeabur_api_key) if user.zeabur_api_key else None
         finally:

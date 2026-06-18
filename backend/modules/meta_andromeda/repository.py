@@ -4,10 +4,13 @@ Meta Andromeda Module - DB-backed repository
 
 from copy import deepcopy
 from datetime import datetime, timezone
+import math
 from sqlalchemy.orm import Session
 
 from database.models.meta_andromeda import (
     MetaAndromedaAsset,
+    MetaAndromedaCalibrationDataset,
+    MetaAndromedaCalibrationItem,
     MetaAndromedaDeadLetter,
     MetaAndromedaDriftReport,
     MetaAndromedaFeedbackEvent,
@@ -21,6 +24,54 @@ from .model_registry import model_registry
 
 
 TERMINAL_SCORE_STATUSES = {"completed", "failed"}
+LABEL_POLICY_VERSION = "ma_label_policy_v1"
+
+
+def _objective_key(value: str | None) -> str:
+    return (value or "").strip().lower()
+
+
+def _resolve_observed_band(objective: str | None, performance_snapshot: dict | None) -> tuple[str, dict]:
+    snapshot = performance_snapshot or {}
+    objective_key = _objective_key(objective)
+
+    if any(token in objective_key for token in ("lead", "cpl")):
+        cvr = snapshot.get("cvr")
+        if cvr is not None:
+            value = float(cvr)
+            if value >= 0.08:
+                return "high", {"metric": "cvr", "value": value}
+            if value >= 0.03:
+                return "mid", {"metric": "cvr", "value": value}
+            return "low", {"metric": "cvr", "value": value}
+        cpl = snapshot.get("cpl")
+        if cpl is not None:
+            value = float(cpl)
+            if value <= 150:
+                return "high", {"metric": "cpl", "value": value}
+            if value <= 350:
+                return "mid", {"metric": "cpl", "value": value}
+            return "low", {"metric": "cpl", "value": value}
+
+    roas = snapshot.get("roas")
+    if roas is not None:
+        value = float(roas)
+        if value < 1.5:
+            return "low", {"metric": "roas", "value": value}
+        if value < 3.5:
+            return "mid", {"metric": "roas", "value": value}
+        return "high", {"metric": "roas", "value": value}
+
+    cpa = snapshot.get("cpa")
+    if cpa is not None:
+        value = float(cpa)
+        if value <= 120:
+            return "high", {"metric": "cpa", "value": value}
+        if value <= 300:
+            return "mid", {"metric": "cpa", "value": value}
+        return "low", {"metric": "cpa", "value": value}
+
+    return "low", {"metric": "fallback", "value": None}
 
 
 SEED_REVIEW_QUEUE = [
@@ -441,11 +492,13 @@ class MetaAndromedaRepository:
         return self._score_to_detail(row)
 
     def get_monitoring_summary(self, db: Session):
-        total = db.query(MetaAndromedaScoreEvent).count()
-        completed = db.query(MetaAndromedaScoreEvent).filter(MetaAndromedaScoreEvent.status == "completed").count()
-        queued = db.query(MetaAndromedaScoreEvent).filter(MetaAndromedaScoreEvent.status == "queued").count()
-        failed = db.query(MetaAndromedaScoreEvent).filter(MetaAndromedaScoreEvent.status == "failed").count()
-        retrying = db.query(MetaAndromedaScoreEvent).filter(MetaAndromedaScoreEvent.attempt_count > 1).count()
+        score_rows = db.query(MetaAndromedaScoreEvent).all()
+        total = len(score_rows)
+        completed_rows = [row for row in score_rows if row.status == "completed"]
+        queued = sum(1 for row in score_rows if row.status == "queued")
+        failed = sum(1 for row in score_rows if row.status == "failed")
+        retrying = sum(1 for row in score_rows if row.attempt_count > 1)
+        completed = len(completed_rows)
         feedback_events = db.query(MetaAndromedaFeedbackEvent).count()
         worker_events = (
             db.query(MetaAndromedaWorkerEvent)
@@ -465,6 +518,37 @@ class MetaAndromedaRepository:
             .limit(5)
             .all()
         )
+        latency_samples = []
+        queue_markers = []
+        now = datetime.now(timezone.utc)
+        for row in score_rows:
+            if row.queued_at:
+                queue_markers.append((row.queued_at, 1))
+                queue_end = row.started_at or row.completed_at or row.failed_at or now
+                if queue_end:
+                    queue_markers.append((queue_end, -1))
+            if row.queued_at and (row.completed_at or row.failed_at):
+                latency_ms = int(((row.completed_at or row.failed_at) - row.queued_at).total_seconds() * 1000)
+                latency_samples.append(max(0, latency_ms))
+
+        queue_markers.sort(key=lambda item: (item[0], -item[1]))
+        current_depth = 0
+        peak_depth = 0
+        for _, delta in queue_markers:
+            current_depth += delta
+            peak_depth = max(peak_depth, current_depth)
+
+        latency_samples.sort()
+        if latency_samples:
+            p95_index = max(0, min(len(latency_samples) - 1, math.ceil(len(latency_samples) * 0.95) - 1))
+            latency_metrics = {
+                "avg": int(sum(latency_samples) / len(latency_samples)),
+                "p95": latency_samples[p95_index],
+                "max": latency_samples[-1],
+            }
+        else:
+            latency_metrics = {"avg": 0, "p95": 0, "max": 0}
+
         active_alerts = [
             {
                 "severity": report.severity,
@@ -482,8 +566,8 @@ class MetaAndromedaRepository:
                     "queued_total": total,
                     "completed_total": completed,
                     "failure_total": failed,
-                    "queue_depth": {"current": queued, "peak": max(queued, 1)},
-                    "latency_ms": {"avg": 1180, "p95": 2140, "max": 3410},
+                    "queue_depth": {"current": queued, "peak": peak_depth},
+                    "latency_ms": latency_metrics,
                 }
             },
             "worker_host": {
@@ -502,6 +586,7 @@ class MetaAndromedaRepository:
                 f"Score events persisted in DataVue DB: {total}",
                 f"Feedback events persisted in DataVue DB: {feedback_events}",
                 f"Retry-involved score events: {retrying}",
+                f"Calibration label policy version: {LABEL_POLICY_VERSION}",
                 f"Active scoring registry target: {model_registry.get_entry().model_version}",
                 "Monitoring timeline and drift trigger are now available from the shared DataVue host.",
             ],
@@ -602,14 +687,8 @@ class MetaAndromedaRepository:
                 continue
                 
             # 提取真實 ROAS 并轉成 Band
+            real_band, label_detail = _resolve_observed_band(obs.objective, obs.performance_snapshot)
             real_roas = obs.performance_snapshot.get("roas", 0.0) if obs.performance_snapshot else 0.0
-            
-            if real_roas < 1.5:
-                real_band = "low"
-            elif real_roas < 3.5:
-                real_band = "mid"
-            else:
-                real_band = "high"
                 
             pred_band = pred.roas_band or "low"
             
@@ -628,7 +707,9 @@ class MetaAndromedaRepository:
                 "prediction_band": pred_band,
                 "observed_band": real_band,
                 "real_roas": real_roas,
-                "error": err
+                "error": err,
+                "label_policy_version": LABEL_POLICY_VERSION,
+                "label_metric": label_detail["metric"],
             })
             
         # 3. 計算統計指標
@@ -667,6 +748,7 @@ class MetaAndromedaRepository:
                 "total_matched": total_matched,
                 "accuracy": round(accuracy, 4),
                 "mae": round(mae, 4),
+                "label_policy_version": LABEL_POLICY_VERSION,
                 "matched_details": matched_pairs,
                 "since": since,
                 "until": until,
@@ -684,6 +766,11 @@ class MetaAndromedaRepository:
         previous = next(item for item in records if item.record_kind == "previous_production")
         candidates = [item for item in records if item.record_kind == "candidate"]
         history = db.query(MetaAndromedaReleaseEvent).order_by(MetaAndromedaReleaseEvent.created_at.desc()).all()
+        latest_calibration = (
+            db.query(MetaAndromedaCalibrationDataset)
+            .order_by(MetaAndromedaCalibrationDataset.created_at.desc())
+            .first()
+        )
         return {
             "current_production": self._release_record_to_dict(current),
             "previous_production": self._release_record_to_dict(previous),
@@ -692,6 +779,12 @@ class MetaAndromedaRepository:
             "notes": [
                 "Release actions now persist to DataVue DB.",
                 "Release metadata is now aligned with the Meta Andromeda registry source of truth.",
+                (
+                    f"Latest calibration dataset: {latest_calibration.id} "
+                    f"({latest_calibration.synced_count} items, policy {latest_calibration.label_policy_version})"
+                    if latest_calibration
+                    else "No calibration dataset has been materialized yet."
+                ),
                 *model_registry.list_registry_notes(
                     [current.model_version, previous.model_version, *[item.model_version for item in candidates]]
                 ),
@@ -1142,11 +1235,21 @@ class MetaAndromedaRepository:
             .all()
         )
         
-        # 產生一個 dataset_id
         import uuid
         dataset_id = f"cal_ds_{datetime.now(timezone.utc).strftime('%Y%m%d')}_{uuid.uuid4().hex[:8]}"
         synced_count = 0
+        matched_count = 0
         band_score = {"low": 1, "mid": 2, "high": 3}
+        dataset = MetaAndromedaCalibrationDataset(
+            id=dataset_id,
+            window_kind=window_kind,
+            status="no_data_to_sync",
+            label_policy_version=LABEL_POLICY_VERSION,
+            excluded_observed_ids=excluded_observed_ids or [],
+            synced_count=0,
+            summary={},
+        )
+        db.add(dataset)
         
         # 2. 篩選有偏差且未被排除的進行標記
         for obs in observed_list:
@@ -1168,21 +1271,16 @@ class MetaAndromedaRepository:
             
             if not pred:
                 continue
+            matched_count += 1
                 
-            # 提取實際 ROAS 並轉換
-            real_roas = obs.performance_snapshot.get("roas", 0.0) if obs.performance_snapshot else 0.0
-            if real_roas < 1.5:
-                real_band = "low"
-            elif real_roas < 3.5:
-                real_band = "mid"
-            else:
-                real_band = "high"
+            real_band, label_detail = _resolve_observed_band(obs.objective, obs.performance_snapshot)
                 
             pred_band = pred.roas_band or "low"
             
             # 只有有偏差的才需要校準
             err = abs(band_score.get(pred_band, 1) - band_score.get(real_band, 1))
             if err > 0:
+                item_id = f"cal_item_{uuid.uuid4().hex[:12]}"
                 # 更新 lineage
                 lineage = deepcopy(obs.lineage or {})
                 lineage["calibration"] = {
@@ -1190,18 +1288,44 @@ class MetaAndromedaRepository:
                     "synced_at": datetime.now(timezone.utc).isoformat(),
                     "prediction_band": pred_band,
                     "observed_band": real_band,
-                    "error": err
+                    "error": err,
+                    "label_policy_version": LABEL_POLICY_VERSION,
+                    "label_metric": label_detail["metric"],
                 }
                 obs.lineage = lineage
+                db.add(
+                    MetaAndromedaCalibrationItem(
+                        id=item_id,
+                        dataset_id=dataset_id,
+                        observed_creative_id=obs.id,
+                        score_event_id=pred.id,
+                        asset_uri=obs.asset_uri,
+                        objective=obs.objective,
+                        market=obs.market,
+                        placement_family=obs.placement_family,
+                        prediction_band=pred_band,
+                        observed_band=real_band,
+                        error=float(err),
+                        performance_snapshot=deepcopy(obs.performance_snapshot or {}),
+                        label_policy_version=LABEL_POLICY_VERSION,
+                    )
+                )
                 synced_count += 1
-                
-        if synced_count > 0:
-            db.commit()
+        dataset.synced_count = synced_count
+        dataset.status = "queued_for_calibration" if synced_count > 0 else "no_data_to_sync"
+        dataset.summary = {
+            "matched_count": matched_count,
+            "excluded_count": len(excluded_observed_ids or []),
+            "label_policy_version": LABEL_POLICY_VERSION,
+        }
+        db.commit()
             
         return {
             "dataset_id": dataset_id,
             "synced_count": synced_count,
-            "status": "queued_for_calibration" if synced_count > 0 else "no_data_to_sync"
+            "status": dataset.status,
+            "item_count": synced_count,
+            "label_policy_version": LABEL_POLICY_VERSION,
         }
 
 
