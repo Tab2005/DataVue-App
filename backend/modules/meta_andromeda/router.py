@@ -235,7 +235,9 @@ async def preview_asset(
         from core.config import settings
         storage_root = Path(settings.META_ANDROMEDA_STORAGE_ROOT)
         safe_path = (storage_root / asset.storage_key).resolve()
-        if not str(safe_path).startswith(str(storage_root.resolve())):
+        try:
+            safe_path.relative_to(storage_root.resolve())
+        except ValueError:
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
                 detail="Access denied: Path traversal detected.",

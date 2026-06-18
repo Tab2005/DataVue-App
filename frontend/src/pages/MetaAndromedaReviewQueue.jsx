@@ -15,6 +15,8 @@ const statusToneMap = {
     processing: 'rgba(245, 158, 11, 0.15)',
 };
 
+const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000';
+
 const resolvePreviewUrl = (item) => {
     if (!item) return null;
     const url = item.preview_url;
@@ -22,7 +24,8 @@ const resolvePreviewUrl = (item) => {
         return url;
     }
     if (item.asset_uri) {
-        return `/api/meta-andromeda/assets/preview?uri=${encodeURIComponent(item.asset_uri)}`;
+        const base = API_URL.endsWith('/') ? API_URL.slice(0, -1) : API_URL;
+        return `${base}/api/meta-andromeda/assets/preview?uri=${encodeURIComponent(item.asset_uri)}`;
     }
     return null;
 };
