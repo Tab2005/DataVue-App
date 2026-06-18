@@ -20,11 +20,11 @@
 | P0 | drift report 仍在 read path 隨機建立並持久化 `ma_evt_mock_*` score event（doc 22 已列，已於 2026-06-18 修復）。 |
 | P0 | 讀取 API 仍自動寫入 seed/demo data（doc 22 已列，已於 2026-06-18 修復）。 |
 | **P0（新）** | `MetaAndromedaScoreLab.jsx` 完全沒有權限 gate，任何能進入頁面的使用者都能上傳素材並送評（已於 2026-06-18 修復）。 |
-| P1 | 前端 Monitoring／Release 仍用已廢棄的 `meta_andromeda:operate`／`:release` feature permission（doc 22 已列，未修）。 |
-| P1 | queue／worker 狀態轉換缺原子 claim 與 callback 冪等性（doc 22 已列，未修）。 |
-| P1 | scoring runtime 不讀素材內容，模型輸入不足（doc 22 已列，未修）。 |
-| **P1（新）** | `add_meta_andromeda_score_job` 不 gate `is_scheduler_enabled()`，scheduler 關閉時 Meta Andromeda job 仍會被排程。 |
-| **P1（新）** | OpenRouter 評分 provider 不傳 multimodal／image 給模型，且 client 的 `timeout` 參數是 dead code。 |
+| P1 | 前端 Monitoring／Release 仍用已廢棄的 `meta_andromeda:operate`／`:release` feature permission（doc 22 已列，已於 2026-06-18 修復）。 |
+| P1 | queue／worker 狀態轉換缺原子 claim 與 callback 冪等性（doc 22 已列，已於 2026-06-18 修復）。 |
+| P1 | scoring runtime 不讀素材內容，模型輸入不足（doc 22 已列，已於 2026-06-18 先補 HTTP image multimodal 輸入與 provider schema 驗證）。 |
+| **P1（新）** | `add_meta_andromeda_score_job` 不 gate `is_scheduler_enabled()`，scheduler 關閉時 Meta Andromeda job 仍會被排程（已於 2026-06-18 修復）。 |
+| **P1（新）** | OpenRouter 評分 provider 不傳 multimodal／image 給模型，且 client 的 `timeout` 參數是 dead code（已於 2026-06-18 修復）。 |
 | P2 | 上傳／media download 安全邊界不足（doc 22 已列，未修）。 |
 | P2 | monitoring 指標仍為固定值、索引不足（doc 22 已列，未修）。 |
 | P2 | calibration sync 未實體化為 dataset（doc 22 已列，未修）。 |
@@ -52,9 +52,9 @@
 | P0 ObservedCreative 缺 migration | `backend/alembic/versions/20260618_meta_andromeda_observed_creatives.py` 已補 table 與索引，兼容既有 DB 補建索引 | **已修** |
 | P0 drift mock score 持久化 | `repository.py` 已移除 `ma_evt_mock_*` 建立與 commit 邏輯，缺預測資料時直接略過 | **已修** |
 | P0 read path seed | `repository.py` 已移除 read path `ensure_seed_data(db)` 呼叫；測試改為 fixture 顯式 seed | **已修** |
-| P1 前端權限不一致 | `MetaAndromedaMonitoring.jsx:32` `usePermission('meta_andromeda:operate')`、`MetaAndromedaRelease.jsx:21` `usePermission('meta_andromeda:release')` | **未修** |
-| P1 worker claim／callback 冪等 | `repository.py:935-946` mark_score_processing 無原子 claim；`service.py:514-639` callback 無 receipt 去重 | **未修** |
-| P1 scoring 不讀素材 | `runtime.py:68-84` prompt 只含文字欄位；`runtime.py:175-273` heuristic 只看文案是否存在 | **未修** |
+| P1 前端權限不一致 | Monitoring／Release 已改 `useModuleAccess('meta_andromeda')`，module access false 時頁面阻擋；前端測試已補 | **已修** |
+| P1 worker claim／callback 冪等 | `mark_score_processing` 已改 queued-only 原子 claim；external callback 追加 duplicate/stale 保護 | **已修** |
+| P1 scoring 不讀素材 | OpenRouter runtime 已可傳 HTTP image URL 作為 multimodal content；無法公開存取時仍退回文字欄位 | **已修（第一階段）** |
 | P1 calibration 未實體化 | `repository.py:1135-1208` 只寫回 `lineage["calibration"]`，無 dataset table | **未修** |
 | P2 上傳／download 邊界 | `router.py:214` `await file.read()` 整檔入記憶體；`storage.py:106-135` 無 size／MIME 驗證 | **未修** |
 | P2 monitoring 固定值 | `repository.py:486` latency 為寫死 `{avg:1180, p95:2140, max:3410}` | **未修** |
@@ -230,11 +230,19 @@ doc 22 已提及文件與實作不一致，本次補充更具體證據：
   - `frontend`: `npm test -- MetaAndromedaScoreLab.test.jsx` 通過（2/2）。
   - `backend`: `python -m py_compile backend/tests/test_meta_andromeda_module.py backend/alembic/versions/20260618_meta_andromeda_observed_creatives.py` 通過。
   - `backend pytest` 尚未執行，原因是目前環境缺少 `pytest` 套件（`No module named pytest`）。
-| P1 | 前端 Monitoring／Release 改 module-only 權限 gate | 只有 `meta_andromeda` module access 時操作按鈕可見 |
-| P1 | `add_meta_andromeda_score_job` gate `is_scheduler_enabled()`（N2） | scheduler disabled 時 score 派工行為可預期 |
-| P1 | worker claim／callback 冪等化 | 重複 job、重複 callback、stale callback 不覆蓋 terminal status |
-| P1 | OpenRouter client 支援 multimodal＋修通 timeout（N3） | 視覺素材能傳入模型；SDK 呼叫有實際 timeout |
-| P1 | 模型輸出 schema 驗證 | provider 回傳不合法 band／score／risk_tags 時能被拒絕或降級 |
+| P1 | 前端 Monitoring／Release 改 module-only 權限 gate | 已完成；module access false 時頁面阻擋，true 時操作可見 |
+| P1 | `add_meta_andromeda_score_job` gate `is_scheduler_enabled()`（N2） | 已完成；scheduler disabled 時不註冊 job，明確 fallback/unavailable |
+| P1 | worker claim／callback 冪等化 | 已完成；重複 job 不重複 claim，重複 callback / stale callback 不覆蓋 terminal status |
+| P1 | OpenRouter client 支援 multimodal＋修通 timeout（N3） | 已完成；HTTP 圖像素材可傳入模型，SDK timeout 已實際生效 |
+| P1 | 模型輸出 schema 驗證 | 已完成；provider 回傳不合法 band／score／risk_tags 時降級為 heuristic fallback |
+
+### 2026-06-18 P1 修復狀態補記
+
+- 已完成五項 P1 修復：Monitoring／Release module-only gate、scheduler gate、worker claim／callback 冪等、OpenRouter multimodal + timeout、模型輸出 schema 驗證。
+- 驗證結果：
+  - `frontend`: `npm test -- MetaAndromedaMonitoring.test.jsx MetaAndromedaRelease.test.jsx MetaAndromedaScoreLab.test.jsx` 通過（8/8）。
+  - `backend`: `python -m py_compile backend/modules/meta_andromeda/repository.py backend/modules/meta_andromeda/service.py backend/modules/meta_andromeda/runtime.py backend/modules/meta_andromeda/queue_host.py backend/core/scheduler.py backend/services/ai/openrouter_client.py backend/tests/test_meta_andromeda_module.py` 通過。
+  - `backend pytest` 尚未執行，原因仍是目前環境缺少 `pytest` 套件（`No module named pytest`）。
 | P2 | 上傳與 media download 安全邊界 | 大檔、錯誤 MIME、非允許來源 URL 被拒絕且回 4xx |
 | P2 | 真實 monitoring metrics 與索引 | latency 從 timestamps 計算；review queue／summary 大量資料下可接受 |
 | P2 | confidence 校準化、heuristic 起分下調、label policy 版本化（N4） | confidence 非固定值；空文案不得高分；label policy 可追溯 |

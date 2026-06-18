@@ -3,6 +3,7 @@ import { fireEvent, screen, waitFor } from '@testing-library/react';
 
 import MetaAndromedaRelease from '../MetaAndromedaRelease';
 import { renderWithOutlet } from '../../test/renderWithOutlet';
+import { useModuleAccess } from '../../hooks/usePermission';
 import {
     approveMetaAndromedaRelease,
     fetchMetaAndromedaReleaseOverview,
@@ -10,7 +11,7 @@ import {
 import { fetchMetaAndromedaMonitoringSummary } from '../../services/metaAndromedaMonitoringService';
 
 vi.mock('../../hooks/usePermission', () => ({
-    usePermission: vi.fn(() => ({ hasPermission: true, loading: false })),
+    useModuleAccess: vi.fn(),
 }));
 
 vi.mock('../../services/metaAndromedaReleaseService', () => ({
@@ -30,6 +31,7 @@ vi.mock('../../services/metaAndromedaMonitoringService', () => ({
 describe('MetaAndromedaRelease', () => {
     beforeEach(() => {
         vi.clearAllMocks();
+        useModuleAccess.mockReturnValue({ hasAccess: true, loading: false, error: null });
         fetchMetaAndromedaReleaseOverview.mockResolvedValue({
             current_production: {
                 model_version: 'prod_v1',
@@ -103,8 +105,8 @@ describe('MetaAndromedaRelease', () => {
 
         await screen.findByText('cand_v2');
 
-        // 線上實測對照證據面板應該顯示 DRIFTED 狀態
-        expect(await screen.findByText('DRIFTED')).toBeInTheDocument();
+        // 線上實測對照證據面板應該顯示 drifted 狀態
+        expect(await screen.findByText('嚴重預估偏差')).toBeInTheDocument();
 
         // 批准 (Approve) 按鈕應該被 disabled
         const approveButton = screen.getByRole('button', { name: '批准' });
@@ -112,5 +114,14 @@ describe('MetaAndromedaRelease', () => {
 
         // 應該顯示警告訊息
         expect(screen.getByText(/再行核准新模型/)).toBeInTheDocument();
+    });
+
+    it('blocks the page when module access is denied', () => {
+        useModuleAccess.mockReturnValue({ hasAccess: false, loading: false, error: null });
+
+        renderWithOutlet(<MetaAndromedaRelease />);
+
+        expect(screen.getByText('You do not have access to Meta Andromeda in this workspace.')).toBeInTheDocument();
+        expect(screen.queryByText('Release Overview')).not.toBeInTheDocument();
     });
 });

@@ -35,6 +35,10 @@ class MetaAndromedaQueueHostAdapter:
     @staticmethod
     def get_active_host() -> str:
         configured = settings.META_ANDROMEDA_QUEUE_HOST
+        if configured == "apscheduler" and not (is_scheduler_enabled() and scheduler.running):
+            if settings.META_ANDROMEDA_SCORE_LOCAL_ASYNC_FALLBACK:
+                return "local_async"
+            return "unavailable"
         if configured != "auto":
             return configured
         if is_scheduler_enabled() and scheduler.running:

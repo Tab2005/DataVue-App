@@ -1,7 +1,7 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { useOutletContext, useSearchParams } from 'react-router-dom';
 
-import { usePermission } from '../hooks/usePermission';
+import { useModuleAccess } from '../hooks/usePermission';
 import {
     fetchMetaAndromedaMonitoringSummary,
     fetchMetaAndromedaMonitoringTimeline,
@@ -29,7 +29,7 @@ const MetaAndromedaMonitoring = () => {
     const [selectedDriftReport, setSelectedDriftReport] = useState(null);
     const [excludedObsIds, setExcludedObsIds] = useState(new Set());
     const [syncingCal, setSyncingCal] = useState(false);
-    const { hasPermission: canOperate, loading: loadingOperatePermission } = usePermission('meta_andromeda:operate', selectedTeamId);
+    const { hasAccess, loading: loadingModuleAccess } = useModuleAccess('meta_andromeda', selectedTeamId);
 
     const t = (en, zh) => (language === 'en' ? en : zh);
 
@@ -184,8 +184,11 @@ const MetaAndromedaMonitoring = () => {
     };
 
     useEffect(() => {
+        if (!hasAccess) {
+            return;
+        }
         loadSummary();
-    }, []);
+    }, [hasAccess]);
 
     useEffect(() => {
         const nextParams = new URLSearchParams();
@@ -308,6 +311,27 @@ const MetaAndromedaMonitoring = () => {
         }
     };
 
+    if (loadingModuleAccess) {
+        return (
+            <div style={{ padding: isMobile ? '16px' : '24px' }}>
+                <div style={panelStyle}>{t('Checking workspace access...', '正在檢查工作區模組權限...')}</div>
+            </div>
+        );
+    }
+
+    if (!hasAccess) {
+        return (
+            <div style={{ padding: isMobile ? '16px' : '24px' }}>
+                <div style={infoPanelStyle}>
+                    {t(
+                        'You do not have access to Meta Andromeda in this workspace.',
+                        '你目前沒有此工作區的 Meta Andromeda 模組存取權限。'
+                    )}
+                </div>
+            </div>
+        );
+    }
+
     return (
         <div style={{ padding: isMobile ? '16px' : '24px' }}>
             {/* 注入精美磨砂玻璃滾動條樣式 */}
@@ -415,55 +439,46 @@ const MetaAndromedaMonitoring = () => {
 
                         <section style={panelStyle}>
                             <h2 style={sectionTitleStyle}>{t('Drift Trigger', '預估偏差檢查')}</h2>
-                            {loadingOperatePermission ? null : canOperate ? (
-                                <form onSubmit={handleDriftTrigger} style={{ display: 'grid', gap: '12px' }}>
-                                    <select value={driftWindowKind} onChange={(event) => setDriftWindowKind(event.target.value)} style={inputStyle}>
-                                        <option value="last_24h">{t('Last 24 Hours', '最近 24 小時')}</option>
-                                        <option value="last_7d">{t('Last 7 Days', '最近 7 天')}</option>
-                                        <option value="last_30d">{t('Last 30 Days', '最近 30 天')}</option>
-                                        <option value="custom">{t('Custom Date Range', '自訂時間區間')}</option>
-                                    </select>
-                                    {driftWindowKind === 'custom' && (
-                                        <div style={{ display: 'flex', gap: '8px', marginBottom: '4px' }}>
-                                            <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: '4px' }}>
-                                                <span style={{ fontSize: '0.8rem', color: 'var(--text-secondary)' }}>{t('Start Date', '開始日期')}</span>
-                                                <input 
-                                                    type="date" 
-                                                    value={driftSince} 
-                                                    onChange={(e) => setDriftSince(e.target.value)} 
-                                                    style={{ ...inputStyle, colorScheme: 'dark' }}
-                                                />
-                                            </div>
-                                            <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: '4px' }}>
-                                                <span style={{ fontSize: '0.8rem', color: 'var(--text-secondary)' }}>{t('End Date', '結束日期')}</span>
-                                                <input 
-                                                    type="date" 
-                                                    value={driftUntil} 
-                                                    onChange={(e) => setDriftUntil(e.target.value)} 
-                                                    style={{ ...inputStyle, colorScheme: 'dark' }}
-                                                />
-                                            </div>
+                            <form onSubmit={handleDriftTrigger} style={{ display: 'grid', gap: '12px' }}>
+                                <select value={driftWindowKind} onChange={(event) => setDriftWindowKind(event.target.value)} style={inputStyle}>
+                                    <option value="last_24h">{t('Last 24 Hours', '最近 24 小時')}</option>
+                                    <option value="last_7d">{t('Last 7 Days', '最近 7 天')}</option>
+                                    <option value="last_30d">{t('Last 30 Days', '最近 30 天')}</option>
+                                    <option value="custom">{t('Custom Date Range', '自訂時間區間')}</option>
+                                </select>
+                                {driftWindowKind === 'custom' && (
+                                    <div style={{ display: 'flex', gap: '8px', marginBottom: '4px' }}>
+                                        <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                                            <span style={{ fontSize: '0.8rem', color: 'var(--text-secondary)' }}>{t('Start Date', '開始日期')}</span>
+                                            <input 
+                                                type="date" 
+                                                value={driftSince} 
+                                                onChange={(e) => setDriftSince(e.target.value)} 
+                                                style={{ ...inputStyle, colorScheme: 'dark' }}
+                                            />
                                         </div>
-                                    )}
-                                    <textarea
-                                        value={driftNote}
-                                        onChange={(event) => setDriftNote(event.target.value)}
-                                        rows={3}
-                                        placeholder={t('Optional operator note', '可選操作備註')}
-                                        style={inputStyle}
-                                    />
-                                    <button type="submit" style={buttonPrimaryStyle} disabled={runningDrift}>
-                                        {runningDrift ? t('Running...', '執行中...') : t('Run Drift Check', '執行預估偏差檢查')}
-                                    </button>
-                                </form>
-                            ) : (
-                                <div style={infoPanelStyle}>
-                                    {t(
-                                        'Triggering drift reports requires meta_andromeda:operate.',
-                                        '執行預估偏差檢查需要 meta_andromeda:operate 權限。'
-                                    )}
-                                </div>
-                            )}
+                                        <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                                            <span style={{ fontSize: '0.8rem', color: 'var(--text-secondary)' }}>{t('End Date', '結束日期')}</span>
+                                            <input 
+                                                type="date" 
+                                                value={driftUntil} 
+                                                onChange={(e) => setDriftUntil(e.target.value)} 
+                                                style={{ ...inputStyle, colorScheme: 'dark' }}
+                                            />
+                                        </div>
+                                    </div>
+                                )}
+                                <textarea
+                                    value={driftNote}
+                                    onChange={(event) => setDriftNote(event.target.value)}
+                                    rows={3}
+                                    placeholder={t('Optional operator note', '可選操作備註')}
+                                    style={inputStyle}
+                                />
+                                <button type="submit" style={buttonPrimaryStyle} disabled={runningDrift}>
+                                    {runningDrift ? t('Running...', '執行中...') : t('Run Drift Check', '執行預估偏差檢查')}
+                                </button>
+                            </form>
                         </section>
                     </div>
 

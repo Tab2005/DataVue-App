@@ -5,7 +5,7 @@ OpenRouter AI 聚合服務客戶端
 import os
 import httpx
 import logging
-from typing import Optional, Dict, List, Union, Generator
+from typing import Any, Optional, Dict, List, Union, Generator
 from openai import OpenAI
 
 logger = logging.getLogger(__name__)
@@ -52,7 +52,6 @@ class OpenRouterClient:
         self.api_key = (
             api_key 
             or os.getenv("OPENROUTER_API_KEY") 
-            or os.getenv("GOOGLE_API_KEY") 
             or os.getenv("ZEABUR_AI_HUB_API_KEY")
         )
         if not self.api_key:
@@ -151,7 +150,9 @@ class OpenRouterClient:
         model: Optional[str] = None,
         system_prompt: Optional[str] = None,
         temperature: float = 0.7,
-        max_tokens: Optional[int] = None
+        max_tokens: Optional[int] = None,
+        timeout: Optional[float] = None,
+        user_content: Optional[Union[str, List[Dict[str, Any]]]] = None,
     ) -> str:
         """生成內容 (同步阻塞呼叫)"""
         if not self.client:
@@ -161,10 +162,10 @@ class OpenRouterClient:
         messages = []
         if system_prompt:
             messages.append({"role": "system", "content": system_prompt})
-        messages.append({"role": "user", "content": prompt})
+        messages.append({"role": "user", "content": user_content if user_content is not None else prompt})
 
         try:
-            response = self.client.chat.completions.create(
+            response = self.client.with_options(timeout=timeout).chat.completions.create(
                 model=model_to_use,
                 messages=messages,
                 temperature=temperature,

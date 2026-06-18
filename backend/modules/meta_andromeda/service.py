@@ -480,8 +480,33 @@ class MetaAndromedaService:
     def _ensure_external_processing_state(db, score_event_id: str) -> dict:
         current = repository.get_review_queue_detail(db, score_event_id)
         if current["status"] == "queued":
-            return repository.mark_score_processing(db, score_event_id)
+            claimed = repository.mark_score_processing(db, score_event_id)
+            return claimed or repository.get_review_queue_detail(db, score_event_id)
         return current
+
+    @staticmethod
+    def _external_worker_event_name(event_type: str) -> str:
+        return f"external_worker_{event_type}"
+
+    @staticmethod
+    def _is_duplicate_external_callback(
+        db,
+        score_event_id: str,
+        *,
+        event_type: str,
+        runtime_job_id: str | None,
+        receipt_id: str | None,
+    ) -> bool:
+        return (
+            repository.find_worker_event(
+                db,
+                score_event_id=score_event_id,
+                event_type=MetaAndromedaService._external_worker_event_name(event_type),
+                runtime_job_id=runtime_job_id,
+                receipt_id=receipt_id,
+            )
+            is not None
+        )
 
     @staticmethod
     def _normalize_external_result_payload(result_payload: dict) -> dict:
@@ -516,6 +541,8 @@ class MetaAndromedaService:
         queue_host = payload.get("queue_host") or "external_webhook"
         runtime_job_id = payload.get("runtime_job_id") or current.get("runtime_job_id")
         if runtime_job_id and current.get("runtime_job_id") != runtime_job_id:
+            if current.get("status") in {"completed", "failed"}:
+                return current
             current = repository.assign_runtime_job(db, score_event_id, runtime_job_id)
 
         event_type = payload["event_type"]
@@ -527,6 +554,14 @@ class MetaAndromedaService:
             "retry_delay_seconds": payload.get("retry_delay_seconds"),
             "callback_metadata": payload.get("callback_metadata") or {},
         }
+        if MetaAndromedaService._is_duplicate_external_callback(
+            db,
+            score_event_id,
+            event_type=event_type,
+            runtime_job_id=runtime_job_id,
+            receipt_id=payload.get("receipt_id"),
+        ):
+            return repository.get_review_queue_detail(db, score_event_id)
 
         if event_type == "accepted":
             repository.log_worker_event(
@@ -543,6 +578,8 @@ class MetaAndromedaService:
             return repository.get_review_queue_detail(db, score_event_id)
 
         if event_type == "processing":
+            if current["status"] in {"completed", "failed"}:
+                return current
             processing = MetaAndromedaService._ensure_external_processing_state(db, score_event_id)
             repository.log_worker_event(
                 db,
@@ -560,6 +597,8 @@ class MetaAndromedaService:
         if event_type == "completed":
             if not payload.get("result_payload"):
                 raise ValueError("completed callback requires result_payload")
+            if current["status"] in {"completed", "failed"}:
+                return current
             MetaAndromedaService._ensure_external_processing_state(db, score_event_id)
             normalized_result = MetaAndromedaService._normalize_external_result_payload(payload["result_payload"])
             completed = repository.mark_score_completed(db, score_event_id, normalized_result)
@@ -577,6 +616,8 @@ class MetaAndromedaService:
             return completed
 
         if event_type == "failed":
+            if current["status"] in {"completed", "failed"}:
+                return current
             processing = MetaAndromedaService._ensure_external_processing_state(db, score_event_id)
             error_message = payload.get("error_message") or "external_worker_failed"
             if payload.get("retryable") and processing["attempt_count"] < settings.META_ANDROMEDA_SCORE_MAX_ATTEMPTS:
@@ -643,6 +684,8 @@ class MetaAndromedaService:
         db = SessionLocal()
         try:
             current = repository.mark_score_processing(db, score_event_id)
+            if current is None:
+                return repository.get_review_queue_detail(db, score_event_id)
             repository.log_worker_event(
                 db,
                 score_event_id=score_event_id,

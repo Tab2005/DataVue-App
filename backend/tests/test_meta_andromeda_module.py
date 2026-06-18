@@ -14,6 +14,7 @@ import pytest
 import modules.meta_andromeda.service as meta_andromeda_service_module
 import modules.meta_andromeda.queue_host as meta_andromeda_queue_host_module
 import modules.meta_andromeda.storage as meta_andromeda_storage_module
+import core.scheduler as scheduler_module
 from modules.auth import dependencies as auth_dependencies
 import redis_cache as redis_cache_module
 from database import Module, Permission, Role, RolePermission, Team, TeamMember, UserModuleAccess, UserRole
@@ -1803,3 +1804,236 @@ def test_sync_calibration_dataset_endpoint(meta_andromeda_access, db):
     obs_db = db.query(MetaAndromedaObservedCreative).filter(MetaAndromedaObservedCreative.id == "obs_to_calibrate").first()
     assert obs_db.lineage["calibration"]["dataset_id"] == payload["dataset_id"]
     assert obs_db.lineage["calibration"]["error"] == 2
+
+
+@pytest.mark.unit
+def test_meta_andromeda_scheduler_disabled_skips_score_job_registration(monkeypatch):
+    scheduled = []
+
+    monkeypatch.setattr(scheduler_module, "is_scheduler_enabled", lambda: False)
+    monkeypatch.setattr(scheduler_module.scheduler, "running", False, raising=False)
+    monkeypatch.setattr(
+        scheduler_module.scheduler,
+        "add_job",
+        lambda *args, **kwargs: scheduled.append({"args": args, "kwargs": kwargs}),
+    )
+
+    job = scheduler_module.add_meta_andromeda_score_job("ma_evt_scheduler_disabled", delay_seconds=0)
+
+    assert job is None
+    assert scheduled == []
+
+
+@pytest.mark.unit
+def test_meta_andromeda_mark_score_processing_claim_is_single_shot(meta_andromeda_access, db):
+    response = meta_andromeda_access.post(
+        "/api/meta-andromeda/scores",
+        json={
+            "asset_uri": "storage://meta-andromeda/uploads/test/claim-once.png",
+            "asset_type": "image",
+            "asset_id": "asset_claim_once",
+            "objective": "purchase",
+            "placement_family": "feed",
+            "market": "TW",
+        },
+    )
+
+    assert response.status_code == 201
+    score_event_id = response.json()["score_event_id"]
+
+    first_claim = repository.mark_score_processing(db, score_event_id)
+    second_claim = repository.mark_score_processing(db, score_event_id)
+    latest = repository.get_review_queue_detail(db, score_event_id)
+
+    assert first_claim is not None
+    assert second_claim is None
+    assert latest["status"] == "processing"
+    assert latest["attempt_count"] == 1
+
+
+@pytest.mark.unit
+def test_meta_andromeda_external_worker_completed_callback_is_idempotent(meta_andromeda_access, db, monkeypatch):
+    from database.models.meta_andromeda import MetaAndromedaWorkerEvent
+
+    monkeypatch.setenv("META_ANDROMEDA_EXTERNAL_WORKER_SHARED_SECRET", "worker-secret")
+
+    queued_response = meta_andromeda_access.post(
+        "/api/meta-andromeda/scores",
+        json={
+            "asset_uri": "storage://meta-andromeda/uploads/test/external-worker-idempotent.png",
+            "asset_type": "image",
+            "asset_id": "asset_external_worker_idempotent",
+            "objective": "purchase",
+            "placement_family": "feed",
+            "market": "TW",
+        },
+    )
+    score_event_id = queued_response.json()["score_event_id"]
+    runtime_job_id = queued_response.json()["runtime_job_id"]
+
+    callback_payload = {
+        "event_type": "completed",
+        "queue_host": "external_webhook",
+        "runtime_job_id": runtime_job_id,
+        "worker_id": "worker-a",
+        "receipt_id": "receipt_cb_idempotent",
+        "result_payload": {
+            "prediction_mode": "diagnostic_plus_roas",
+            "overall_score": 86,
+            "roas_band": "high",
+            "model_version": "cand_v2026_06_05_a",
+            "diagnostic_breakdown": {"cta_presence": "clear"},
+            "risk_tags": ["external_worker"],
+            "top_positive_drivers": ["clear CTA"],
+            "top_negative_drivers": ["needs more variants"],
+            "explanations": {"summary": "Completed by external worker."},
+        },
+    }
+    raw_body = json.dumps(callback_payload).encode("utf-8")
+    signature = hmac.new(b"worker-secret", raw_body, hashlib.sha256).hexdigest()
+
+    response1 = meta_andromeda_access.post(
+        f"/api/meta-andromeda/worker/score-events/{score_event_id}/callbacks",
+        content=raw_body,
+        headers={
+            "Content-Type": "application/json",
+            "X-Meta-Andromeda-Worker-Signature": signature,
+        },
+    )
+    response2 = meta_andromeda_access.post(
+        f"/api/meta-andromeda/worker/score-events/{score_event_id}/callbacks",
+        content=raw_body,
+        headers={
+            "Content-Type": "application/json",
+            "X-Meta-Andromeda-Worker-Signature": signature,
+        },
+    )
+
+    assert response1.status_code == 200
+    assert response2.status_code == 200
+    assert response2.json()["current_status"] == "completed"
+    assert (
+        db.query(MetaAndromedaWorkerEvent)
+        .filter(
+            MetaAndromedaWorkerEvent.score_event_id == score_event_id,
+            MetaAndromedaWorkerEvent.event_type == "external_worker_completed",
+        )
+        .count()
+        == 1
+    )
+
+
+@pytest.mark.unit
+def test_meta_andromeda_external_worker_stale_failed_callback_does_not_override_completed(
+    meta_andromeda_access,
+    db,
+    monkeypatch,
+):
+    monkeypatch.setenv("META_ANDROMEDA_EXTERNAL_WORKER_SHARED_SECRET", "worker-secret")
+
+    queued_response = meta_andromeda_access.post(
+        "/api/meta-andromeda/scores",
+        json={
+            "asset_uri": "storage://meta-andromeda/uploads/test/external-worker-stale.png",
+            "asset_type": "image",
+            "asset_id": "asset_external_worker_stale",
+            "objective": "purchase",
+            "placement_family": "feed",
+            "market": "TW",
+        },
+    )
+    score_event_id = queued_response.json()["score_event_id"]
+    runtime_job_id = queued_response.json()["runtime_job_id"]
+
+    completed_payload = {
+        "event_type": "completed",
+        "queue_host": "external_webhook",
+        "runtime_job_id": runtime_job_id,
+        "worker_id": "worker-a",
+        "receipt_id": "receipt_cb_stale_completed",
+        "result_payload": {
+            "prediction_mode": "diagnostic_plus_roas",
+            "overall_score": 81,
+            "roas_band": "mid",
+            "model_version": "cand_v2026_06_05_a",
+            "diagnostic_breakdown": {"cta_presence": "clear"},
+            "risk_tags": ["external_worker"],
+            "top_positive_drivers": ["clear CTA"],
+            "top_negative_drivers": ["needs more variants"],
+            "explanations": {"summary": "Completed first."},
+        },
+    }
+    failed_payload = {
+        "event_type": "failed",
+        "queue_host": "external_webhook",
+        "runtime_job_id": runtime_job_id,
+        "worker_id": "worker-a",
+        "receipt_id": "receipt_cb_stale_failed",
+        "error_message": "late_failure",
+        "retryable": False,
+    }
+
+    for payload in (completed_payload, failed_payload):
+        raw_body = json.dumps(payload).encode("utf-8")
+        signature = hmac.new(b"worker-secret", raw_body, hashlib.sha256).hexdigest()
+        response = meta_andromeda_access.post(
+            f"/api/meta-andromeda/worker/score-events/{score_event_id}/callbacks",
+            content=raw_body,
+            headers={
+                "Content-Type": "application/json",
+                "X-Meta-Andromeda-Worker-Signature": signature,
+            },
+        )
+        assert response.status_code == 200
+
+    detail = MetaAndromedaService.get_score_detail(db, score_event_id)
+    assert detail["status"] == "completed"
+    assert detail["error_message"] is None
+
+
+@pytest.mark.asyncio
+async def test_meta_andromeda_openrouter_invalid_schema_falls_back_to_heuristic(meta_andromeda_access, db, monkeypatch):
+    from services.ai.openrouter_client import OpenRouterClient
+
+    response = meta_andromeda_access.post(
+        "/api/meta-andromeda/scores",
+        json={
+            "asset_uri": "https://cdn.example.com/meta-andromeda/test-schema.png",
+            "asset_type": "image",
+            "asset_id": "asset_invalid_schema",
+            "objective": "purchase",
+            "placement_family": "feed",
+            "market": "TW",
+        },
+    )
+    score_event_id = response.json()["score_event_id"]
+    repository.mark_score_processing(db, score_event_id)
+    current = repository.get_review_queue_detail(db, score_event_id)
+
+    monkeypatch.setenv("OPENROUTER_API_KEY", "test-openrouter-key")
+
+    def fake_init(self, api_key=None):
+        self.api_key = api_key or "test-openrouter-key"
+        self.client = object()
+        self.model_name = "deepseek/deepseek-v4-flash"
+
+    def fake_generate_content(self, *args, **kwargs):
+        return json.dumps(
+            {
+                "overall_score": "not-a-number",
+                "roas_band": "extreme",
+                "top_positive_drivers": "invalid",
+                "top_negative_drivers": [],
+                "risk_tags": [],
+                "diagnostic_breakdown": {},
+                "summary": "bad schema",
+            }
+        )
+
+    monkeypatch.setattr(OpenRouterClient, "__init__", fake_init)
+    monkeypatch.setattr(OpenRouterClient, "generate_content", fake_generate_content)
+
+    result = await runtime_adapter.generate_score_result(current)
+
+    assert result["lineage"]["scoring_mode"] == "heuristic"
+    assert "provider_fallback" in result["risk_tags"]

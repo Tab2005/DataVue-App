@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { useOutletContext } from 'react-router-dom';
 
-import { usePermission } from '../hooks/usePermission';
+import { useModuleAccess } from '../hooks/usePermission';
 import {
     approveMetaAndromedaRelease,
     fetchMetaAndromedaReleaseOverview,
@@ -18,7 +18,7 @@ const MetaAndromedaRelease = () => {
     const [submitting, setSubmitting] = useState(false);
     const [error, setError] = useState(null);
     const [actionMessage, setActionMessage] = useState(null);
-    const { hasPermission: canRelease, loading: loadingReleasePermission } = usePermission('meta_andromeda:release', selectedTeamId);
+    const { hasAccess, loading: loadingModuleAccess } = useModuleAccess('meta_andromeda', selectedTeamId);
 
     const t = (en, zh) => (language === 'en' ? en : zh);
 
@@ -148,8 +148,11 @@ const MetaAndromedaRelease = () => {
     };
 
     useEffect(() => {
+        if (!hasAccess) {
+            return;
+        }
         loadOverview();
-    }, []);
+    }, [hasAccess]);
 
     const handleReleaseAction = async (action, modelVersion) => {
         const note = window.prompt(
@@ -175,6 +178,27 @@ const MetaAndromedaRelease = () => {
             setSubmitting(false);
         }
     };
+
+    if (loadingModuleAccess) {
+        return (
+            <div style={{ padding: isMobile ? '16px' : '24px' }}>
+                <div style={panelStyle}>{t('Checking workspace access...', '正在檢查工作區模組權限...')}</div>
+            </div>
+        );
+    }
+
+    if (!hasAccess) {
+        return (
+            <div style={{ padding: isMobile ? '16px' : '24px' }}>
+                <div style={infoPanelStyle}>
+                    {t(
+                        'You do not have access to Meta Andromeda in this workspace.',
+                        '你目前沒有此工作區的 Meta Andromeda 模組存取權限。'
+                    )}
+                </div>
+            </div>
+        );
+    }
 
     return (
         <div style={{ padding: isMobile ? '16px' : '24px' }}>
@@ -203,16 +227,14 @@ const MetaAndromedaRelease = () => {
                         <section style={panelStyle}>
                             <h2 style={sectionTitleStyle}>{t('Current Production', '目前 Production')}</h2>
                             <ReleaseRecordCard record={overview?.current_production} getTranslation={getTranslation} t={t} />
-                            {!loadingReleasePermission && canRelease ? (
-                                <button
-                                    type="button"
-                                    style={{ ...buttonSecondaryStyle, marginTop: '16px' }}
-                                    disabled={submitting}
-                                    onClick={() => handleReleaseAction('rollback', overview?.current_production?.model_version)}
-                                >
-                                    {submitting ? t('Submitting...', '送出中...') : t('Rollback to Previous', '回滾到前一版')}
-                                </button>
-                            ) : null}
+                            <button
+                                type="button"
+                                style={{ ...buttonSecondaryStyle, marginTop: '16px' }}
+                                disabled={submitting}
+                                onClick={() => handleReleaseAction('rollback', overview?.current_production?.model_version)}
+                            >
+                                {submitting ? t('Submitting...', '送出中...') : t('Rollback to Previous', '回滾到前一版')}
+                            </button>
                         </section>
                         <section style={panelStyle}>
                             <h2 style={sectionTitleStyle}>{t('Previous Production', '前一版 Production')}</h2>
@@ -332,51 +354,49 @@ const MetaAndromedaRelease = () => {
                                                         </div>
                                                     ))}
                                                 </div>
-                                                {!loadingReleasePermission && canRelease ? (
-                                                    <div style={{ display: 'flex', gap: '10px', marginTop: '16px', flexWrap: 'wrap', flexDirection: 'column' }}>
-                                                        <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap' }}>
-                                                            <button
-                                                                type="button"
-                                                                style={{
-                                                                    ...buttonPrimaryStyle,
-                                                                    opacity: isDrifted ? 0.4 : 1,
-                                                                    cursor: isDrifted ? 'not-allowed' : 'pointer'
-                                                                }}
-                                                                disabled={submitting || isDrifted}
-                                                                onClick={() => handleReleaseAction('approve', candidate.model_version)}
-                                                                title={isDrifted ? t('Locked due to online model drift', '因線上模型預估偏差過大而鎖定發佈') : ''}
-                                                            >
-                                                                {t('Approve', '批准')}
-                                                            </button>
-                                                            <button
-                                                                type="button"
-                                                                style={buttonSecondaryStyle}
-                                                                disabled={submitting}
-                                                                onClick={() => handleReleaseAction('reject', candidate.model_version)}
-                                                            >
-                                                                {t('Reject', '退回')}
-                                                            </button>
-                                                        </div>
-                                                        {isDrifted && (
-                                                            <div style={{
-                                                                color: '#ef4444',
-                                                                fontSize: '0.82rem',
-                                                                lineHeight: 1.5,
-                                                                background: 'rgba(239, 68, 68, 0.08)',
-                                                                padding: '10px',
-                                                                borderRadius: '8px',
-                                                                border: '1px solid rgba(239, 68, 68, 0.2)',
-                                                                marginTop: '8px',
-                                                                alignSelf: 'stretch'
-                                                            }}>
-                                                                ⚠️ {t(
-                                                                    `Online model detected significant drift (Accuracy: ${(driftReport?.report_payload?.accuracy * 100).toFixed(1)}% < 60%). Release has been automatically locked to prevent poor predictions. Please run "Data Calibration" in the monitoring workshop before approving new models.`,
-                                                                    `線上模型已檢測出顯著預估偏差 (Accuracy: ${(driftReport?.report_payload?.accuracy * 100).toFixed(1)}% < 60%)。為了避免劣質預估，已自動鎖定發佈。請先進入監控工作台執行「資料校準」，再行核准新模型。`
-                                                                )}
-                                                            </div>
-                                                        )}
+                                                <div style={{ display: 'flex', gap: '10px', marginTop: '16px', flexWrap: 'wrap', flexDirection: 'column' }}>
+                                                    <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap' }}>
+                                                        <button
+                                                            type="button"
+                                                            style={{
+                                                                ...buttonPrimaryStyle,
+                                                                opacity: isDrifted ? 0.4 : 1,
+                                                                cursor: isDrifted ? 'not-allowed' : 'pointer'
+                                                            }}
+                                                            disabled={submitting || isDrifted}
+                                                            onClick={() => handleReleaseAction('approve', candidate.model_version)}
+                                                            title={isDrifted ? t('Locked due to online model drift', '因線上模型預估偏差過大而鎖定發佈') : ''}
+                                                        >
+                                                            {t('Approve', '批准')}
+                                                        </button>
+                                                        <button
+                                                            type="button"
+                                                            style={buttonSecondaryStyle}
+                                                            disabled={submitting}
+                                                            onClick={() => handleReleaseAction('reject', candidate.model_version)}
+                                                        >
+                                                            {t('Reject', '退回')}
+                                                        </button>
                                                     </div>
-                                                ) : null}
+                                                    {isDrifted && (
+                                                        <div style={{
+                                                            color: '#ef4444',
+                                                            fontSize: '0.82rem',
+                                                            lineHeight: 1.5,
+                                                            background: 'rgba(239, 68, 68, 0.08)',
+                                                            padding: '10px',
+                                                            borderRadius: '8px',
+                                                            border: '1px solid rgba(239, 68, 68, 0.2)',
+                                                            marginTop: '8px',
+                                                            alignSelf: 'stretch'
+                                                        }}>
+                                                            ⚠️ {t(
+                                                                `Online model detected significant drift (Accuracy: ${(driftReport?.report_payload?.accuracy * 100).toFixed(1)}% < 60%). Release has been automatically locked to prevent poor predictions. Please run "Data Calibration" in the monitoring workshop before approving new models.`,
+                                                                `線上模型已檢測出顯著預估偏差 (Accuracy: ${(driftReport?.report_payload?.accuracy * 100).toFixed(1)}% < 60%)。為了避免劣質預估，已自動鎖定發佈。請先進入監控工作台執行「資料校準」，再行核准新模型。`
+                                                            )}
+                                                        </div>
+                                                    )}
+                                                </div>
                                             </div>
                                         );
                                     })}
@@ -408,14 +428,6 @@ const MetaAndromedaRelease = () => {
                                     </div>
                                 ))}
                             </div>
-                            {!loadingReleasePermission && !canRelease ? (
-                                <div style={infoPanelStyle}>
-                                    {t(
-                                        'Release actions require meta_andromeda:release. You currently have read-only visibility.',
-                                        '執行 release action 需要 meta_andromeda:release 權限，目前你只有唯讀可見權。'
-                                    )}
-                                </div>
-                            ) : null}
                         </section>
                     </div>
                 </>

@@ -20,6 +20,9 @@ from database.models.meta_andromeda import (
 from .model_registry import model_registry
 
 
+TERMINAL_SCORE_STATUSES = {"completed", "failed"}
+
+
 SEED_REVIEW_QUEUE = [
     {
         "id": "ma_evt_20260605_001",
@@ -863,6 +866,28 @@ class MetaAndromedaRepository:
         db.refresh(event)
         return self._worker_event_to_dict(event)
 
+    def find_worker_event(
+        self,
+        db: Session,
+        *,
+        score_event_id: str,
+        event_type: str,
+        runtime_job_id: str | None = None,
+        receipt_id: str | None = None,
+    ) -> dict | None:
+        query = db.query(MetaAndromedaWorkerEvent).filter(
+            MetaAndromedaWorkerEvent.score_event_id == score_event_id,
+            MetaAndromedaWorkerEvent.event_type == event_type,
+        )
+        if runtime_job_id is not None:
+            query = query.filter(MetaAndromedaWorkerEvent.runtime_job_id == runtime_job_id)
+        events = query.order_by(MetaAndromedaWorkerEvent.created_at.desc()).all()
+        for event in events:
+            payload = event.event_payload or {}
+            if receipt_id is None or payload.get("receipt_id") == receipt_id:
+                return self._worker_event_to_dict(event)
+        return None
+
     def create_dead_letter(
         self,
         db: Session,
@@ -889,15 +914,30 @@ class MetaAndromedaRepository:
         return self._dead_letter_to_dict(dead_letter)
 
     def mark_score_processing(self, db: Session, score_event_id: str):
-        score = db.query(MetaAndromedaScoreEvent).filter(MetaAndromedaScoreEvent.id == score_event_id).first()
-        if score is None:
-            raise KeyError(score_event_id)
         now = datetime.now(timezone.utc)
-        score.status = "processing"
-        score.started_at = now
-        score.updated_at = now
-        score.attempt_count += 1
+        updated = (
+            db.query(MetaAndromedaScoreEvent)
+            .filter(
+                MetaAndromedaScoreEvent.id == score_event_id,
+                MetaAndromedaScoreEvent.status == "queued",
+            )
+            .update(
+                {
+                    MetaAndromedaScoreEvent.status: "processing",
+                    MetaAndromedaScoreEvent.started_at: now,
+                    MetaAndromedaScoreEvent.updated_at: now,
+                    MetaAndromedaScoreEvent.attempt_count: MetaAndromedaScoreEvent.attempt_count + 1,
+                },
+                synchronize_session=False,
+            )
+        )
+        if updated == 0:
+            score = db.query(MetaAndromedaScoreEvent).filter(MetaAndromedaScoreEvent.id == score_event_id).first()
+            if score is None:
+                raise KeyError(score_event_id)
+            return None
         db.commit()
+        score = db.query(MetaAndromedaScoreEvent).filter(MetaAndromedaScoreEvent.id == score_event_id).first()
         db.refresh(score)
         return self._score_to_detail(score)
 
@@ -905,6 +945,8 @@ class MetaAndromedaRepository:
         score = db.query(MetaAndromedaScoreEvent).filter(MetaAndromedaScoreEvent.id == score_event_id).first()
         if score is None:
             raise KeyError(score_event_id)
+        if score.status in TERMINAL_SCORE_STATUSES:
+            return self._score_to_detail(score)
         now = datetime.now(timezone.utc)
         score.status = result_payload["status"]
         score.prediction_mode = result_payload.get("prediction_mode")
@@ -931,6 +973,8 @@ class MetaAndromedaRepository:
         score = db.query(MetaAndromedaScoreEvent).filter(MetaAndromedaScoreEvent.id == score_event_id).first()
         if score is None:
             raise KeyError(score_event_id)
+        if score.status in TERMINAL_SCORE_STATUSES:
+            return self._score_to_detail(score)
         now = datetime.now(timezone.utc)
         score.status = "failed"
         score.error_message = error_message

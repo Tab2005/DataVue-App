@@ -449,6 +449,12 @@ def add_report_job(
 
 def add_meta_andromeda_score_job(score_event_id: str, delay_seconds: float = 1, queue_host: str = "apscheduler"):
     """Enqueue an immediate Meta Andromeda score job on the shared scheduler."""
+    if not is_scheduler_enabled() or not scheduler.running:
+        logger.info(
+            "⏰ [MetaAndromeda] Scheduler unavailable. Skipping score job registration for %s.",
+            score_event_id,
+        )
+        return None
     run_at = datetime.now(_LOCAL_TIMEZONE) + timedelta(seconds=delay_seconds)
     job_id = get_meta_andromeda_score_job_id(score_event_id)
     job = scheduler.add_job(

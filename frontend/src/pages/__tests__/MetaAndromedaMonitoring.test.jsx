@@ -3,10 +3,11 @@ import { fireEvent, screen, waitFor } from '@testing-library/react';
 
 import MetaAndromedaMonitoring from '../MetaAndromedaMonitoring';
 import { renderWithOutlet } from '../../test/renderWithOutlet';
+import { useModuleAccess } from '../../hooks/usePermission';
 import { fetchMetaAndromedaMonitoringSummary } from '../../services/metaAndromedaMonitoringService';
 
 vi.mock('../../hooks/usePermission', () => ({
-    usePermission: vi.fn(() => ({ hasPermission: true, loading: false })),
+    useModuleAccess: vi.fn(),
 }));
 
 vi.mock('../../services/metaAndromedaMonitoringService', () => ({
@@ -69,6 +70,7 @@ const monitoringSummary = {
 describe('MetaAndromedaMonitoring', () => {
     beforeEach(() => {
         vi.clearAllMocks();
+        useModuleAccess.mockReturnValue({ hasAccess: true, loading: false, error: null });
         fetchMetaAndromedaMonitoringSummary.mockResolvedValue(monitoringSummary);
     });
 
@@ -95,5 +97,14 @@ describe('MetaAndromedaMonitoring', () => {
 
         fireEvent.click(screen.getByRole('button', { name: 'Refresh' }));
         await waitFor(() => expect(fetchMetaAndromedaMonitoringSummary).toHaveBeenCalledTimes(2));
+    });
+
+    it('blocks the page when module access is denied', () => {
+        useModuleAccess.mockReturnValue({ hasAccess: false, loading: false, error: null });
+
+        renderWithOutlet(<MetaAndromedaMonitoring />);
+
+        expect(screen.getByText('You do not have access to Meta Andromeda in this workspace.')).toBeInTheDocument();
+        expect(screen.queryByText('Monitoring Summary')).not.toBeInTheDocument();
     });
 });

@@ -14,6 +14,7 @@ from .model_registry import MetaAndromedaModelEntry, model_registry
 
 
 logger = logging.getLogger(__name__)
+VALID_ROAS_BANDS = {"high", "mid", "low"}
 
 
 def _clip(value: str | None, limit: int = 140) -> str:
@@ -34,6 +35,109 @@ def _extract_json_payload(raw_text: str) -> dict:
         if not match:
             raise
         return json.loads(match.group(0))
+
+
+def _normalize_string_list(value, field_name: str, *, limit: int | None = None) -> list[str]:
+    if value is None:
+        return []
+    if not isinstance(value, (list, tuple)):
+        raise ValueError(f"{field_name}_must_be_list")
+    normalized = [str(item).strip() for item in value if str(item).strip()]
+    return normalized[:limit] if limit is not None else normalized
+
+
+def _normalize_diagnostic_breakdown(value) -> dict[str, str]:
+    if value is None:
+        return {}
+    if not isinstance(value, dict):
+        raise ValueError("diagnostic_breakdown_must_be_object")
+    return {str(key): str(item) for key, item in value.items()}
+
+
+def _build_multimodal_user_content(prompt: str, score_payload: dict) -> list[dict]:
+    user_content = [{"type": "text", "text": prompt}]
+    request_context = score_payload.get("request_context", {})
+    image_url = (
+        request_context.get("asset_public_url")
+        or request_context.get("preview_url")
+        or request_context.get("asset_source_url")
+        or score_payload.get("preview_url")
+        or score_payload.get("asset_uri")
+    )
+    if score_payload.get("asset_type") == "image" and isinstance(image_url, str):
+        normalized_url = image_url.strip()
+        if normalized_url.startswith(("http://", "https://")):
+            user_content.append({"type": "image_url", "image_url": {"url": normalized_url}})
+    return user_content
+
+
+def _validate_provider_result(parsed: dict, score_payload: dict, registry_entry: MetaAndromedaModelEntry) -> dict:
+    prediction_mode = "diagnostic_only" if score_payload.get("request_mode") == "diagnostic_only" else "diagnostic_plus_roas"
+
+    raw_score = parsed.get("overall_score")
+    if raw_score is None:
+        raise ValueError("provider_missing_overall_score")
+    try:
+        overall_score = int(raw_score)
+    except (TypeError, ValueError) as exc:
+        raise ValueError("provider_invalid_overall_score") from exc
+    if overall_score < 0 or overall_score > 100:
+        raise ValueError("provider_invalid_overall_score")
+
+    roas_band = parsed.get("roas_band")
+    if prediction_mode == "diagnostic_only":
+        roas_band = None
+    elif roas_band is not None:
+        roas_band = str(roas_band).lower().strip()
+        if roas_band not in VALID_ROAS_BANDS:
+            raise ValueError("provider_invalid_roas_band")
+
+    top_positive_drivers = _normalize_string_list(parsed.get("top_positive_drivers"), "top_positive_drivers", limit=3)
+    top_negative_drivers = _normalize_string_list(parsed.get("top_negative_drivers"), "top_negative_drivers", limit=3)
+    risk_tags = _normalize_string_list(parsed.get("risk_tags"), "risk_tags")
+    diagnostic_breakdown = _normalize_diagnostic_breakdown(parsed.get("diagnostic_breakdown"))
+    summary = str(parsed.get("summary") or "Scored by OpenRouter-backed Meta Andromeda runtime.").strip()
+
+    return {
+        "status": "completed",
+        "prediction_mode": prediction_mode,
+        "overall_score": overall_score,
+        "roas_band": roas_band,
+        "model_version": registry_entry.model_version,
+        "feature_manifest_id": registry_entry.feature_manifest_id,
+        "error_message": None,
+        "diagnostic_breakdown": diagnostic_breakdown,
+        "roas_prediction": {
+            "eligible": prediction_mode == "diagnostic_plus_roas",
+            "band": roas_band,
+            "confidence": 0.72 if prediction_mode == "diagnostic_plus_roas" else None,
+            "reason_if_unavailable": None if prediction_mode == "diagnostic_plus_roas" else "diagnostic only request",
+        },
+        "risk_tags": risk_tags,
+        "top_positive_drivers": top_positive_drivers,
+        "top_negative_drivers": top_negative_drivers,
+        "explanations": {
+            "summary": summary,
+            "top_positive_drivers": top_positive_drivers,
+            "top_risks": top_negative_drivers,
+            "diagnostic_evidence": {
+                "provider": registry_entry.provider,
+                "provider_model": registry_entry.provider_model,
+                "objective": score_payload.get("objective", "purchase"),
+                "placement_family": score_payload.get("placement_family", "all"),
+            },
+        },
+        "lineage": {
+            "source_ingest_batch_id": f"runtime_batch_{uuid4().hex[:6]}",
+            "feature_manifest_id": registry_entry.feature_manifest_id,
+            "registry_model_version": registry_entry.model_version,
+            "registry_provider": registry_entry.provider,
+            "provider_model": registry_entry.provider_model,
+            "registry_profile": registry_entry.scoring_profile,
+            "registry_source": registry_entry.source_of_truth,
+            "scoring_mode": "ai",
+        },
+    }
 
 
 class BaseScoringProvider:
@@ -87,6 +191,7 @@ class OpenRouterScoringProvider(BaseScoringProvider):
             "Prefer stable judgments over hype. "
             "All explanations, summaries, and drivers MUST be written in Traditional Chinese (繁體中文)."
         )
+        user_content = _build_multimodal_user_content(prompt, score_payload)
         raw = None
         max_retries = 3
         backoff = 2.0
@@ -99,6 +204,8 @@ class OpenRouterScoringProvider(BaseScoringProvider):
                     system_prompt,
                     0.2,
                     600,
+                    settings.META_ANDROMEDA_SCORE_TIMEOUT_SECONDS,
+                    user_content,
                 )
                 break
             except Exception as e:
@@ -123,53 +230,7 @@ class OpenRouterScoringProvider(BaseScoringProvider):
                     raise
         parsed = _extract_json_payload(raw)
 
-        prediction_mode = "diagnostic_only" if request_mode == "diagnostic_only" else "diagnostic_plus_roas"
-        roas_band = parsed.get("roas_band")
-        if prediction_mode == "diagnostic_only":
-            roas_band = None
-
-        return {
-            "status": "completed",
-            "prediction_mode": prediction_mode,
-            "overall_score": max(0, min(int(parsed.get("overall_score", 70)), 100)),
-            "roas_band": roas_band,
-            "model_version": registry_entry.model_version,
-            "feature_manifest_id": registry_entry.feature_manifest_id,
-            "error_message": None,
-            "diagnostic_breakdown": {
-                key: str(value) for key, value in (parsed.get("diagnostic_breakdown") or {}).items()
-            },
-            "roas_prediction": {
-                "eligible": prediction_mode == "diagnostic_plus_roas",
-                "band": roas_band,
-                "confidence": 0.72 if prediction_mode == "diagnostic_plus_roas" else None,
-                "reason_if_unavailable": None if prediction_mode == "diagnostic_plus_roas" else "diagnostic only request",
-            },
-            "risk_tags": [str(item) for item in (parsed.get("risk_tags") or [])],
-            "top_positive_drivers": [str(item) for item in (parsed.get("top_positive_drivers") or [])][:3],
-            "top_negative_drivers": [str(item) for item in (parsed.get("top_negative_drivers") or [])][:3],
-            "explanations": {
-                "summary": str(parsed.get("summary") or "Scored by OpenRouter-backed Meta Andromeda runtime."),
-                "top_positive_drivers": [str(item) for item in (parsed.get("top_positive_drivers") or [])][:3],
-                "top_risks": [str(item) for item in (parsed.get("top_negative_drivers") or [])][:3],
-                "diagnostic_evidence": {
-                    "provider": registry_entry.provider,
-                    "provider_model": registry_entry.provider_model,
-                    "objective": score_payload.get("objective", "purchase"),
-                    "placement_family": score_payload.get("placement_family", "all"),
-                },
-            },
-            "lineage": {
-                "source_ingest_batch_id": f"runtime_batch_{uuid4().hex[:6]}",
-                "feature_manifest_id": registry_entry.feature_manifest_id,
-                "registry_model_version": registry_entry.model_version,
-                "registry_provider": registry_entry.provider,
-                "provider_model": registry_entry.provider_model,
-                "registry_profile": registry_entry.scoring_profile,
-                "registry_source": registry_entry.source_of_truth,
-                "scoring_mode": "ai",
-            },
-        }
+        return _validate_provider_result(parsed, score_payload, registry_entry)
 
 
 def build_heuristic_score_result(score_payload: dict, registry_entry: MetaAndromedaModelEntry, fallback_reason: str | None = None) -> dict:
@@ -350,6 +411,10 @@ class MetaAndromedaRuntimeAdapter:
                         user = db_session.query(User).filter(User.id == asset.uploaded_by).first()
                         if user and user.google_id:
                             db_key = TokenManager.get_ai_api_key(user.google_id, provider="openrouter")
+                    if asset:
+                        request_context = score_payload.setdefault("request_context", {})
+                        request_context.setdefault("asset_public_url", asset.public_url)
+                        request_context.setdefault("asset_source_url", asset.asset_uri)
                 finally:
                     db_session.close()
             except Exception as e:
