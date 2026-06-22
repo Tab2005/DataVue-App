@@ -164,6 +164,11 @@ class OpenRouterClient:
             messages.append({"role": "system", "content": system_prompt})
         messages.append({"role": "user", "content": user_content if user_content is not None else prompt})
 
+        logger.info(
+            "[OpenRouterClient] Sending request to model: %s, messages count: %d, temperature: %s",
+            model_to_use, len(messages), temperature
+        )
+
         try:
             # 限制 connect timeout 為 3.0 秒，避免在部署網路不通時卡死 20 秒才 fallback
             api_timeout = (3.0, float(timeout)) if timeout is not None else (3.0, 15.0)
@@ -173,7 +178,14 @@ class OpenRouterClient:
                 temperature=temperature,
                 max_tokens=max_tokens or 4096
             )
-            return response.choices[0].message.content or ""
+            
+            if not response.choices:
+                logger.warning("[OpenRouterClient] API response returned no choices: %s", response)
+                return ""
+                
+            content = response.choices[0].message.content or ""
+            logger.info("[OpenRouterClient] Received response content length: %d", len(content))
+            return content
         except Exception as e:
             logger.error(f"[OpenRouterClient] Generation error: {e}")
             raise
