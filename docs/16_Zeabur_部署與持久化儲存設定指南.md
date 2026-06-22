@@ -90,6 +90,22 @@ META_ANDROMEDA_STORAGE_PUBLIC_BASE_URL=https://assets.sitetegy.com/meta-andromed
 | `ALLOWED_ORIGINS` | 允許的前端來源 | `https://datavue-dev-saas.sitetegy.com` |
 | `ENV` | 執行環境 | `production` |
 
+### 2.3 Meta Andromeda 模組專屬環境變數對照表
+為使 Meta Andromeda 廣告評估與漂移診斷模組正常運作，請在後端及背景服務中配置以下環境變數：
+
+| 變數名稱 | 說明 | 預設值 / 範例 |
+| :--- | :--- | :--- |
+| `META_ANDROMEDA_STORAGE_BACKEND` | 素材儲存後端，可選 `filesystem` 或 `s3_compatible` | `filesystem` |
+| `META_ANDROMEDA_STORAGE_ROOT` | 本地素材落檔根目錄，必須指向持久化磁碟掛載路徑 | `/app/backend/storage/meta_andromeda` |
+| `META_ANDROMEDA_SCORING_PROVIDER` | 評分模組運行者，可選 `auto`, `heuristic` 或 `openrouter` | `auto` |
+| `META_ANDROMEDA_SCORING_MODEL` | 評分模型，預設採用 Gemini | `google/gemini-3.5-flash` |
+| `META_ANDROMEDA_QUEUE_HOST` | 自動評分事件佇列，預設 `auto`（自動選擇），生產環境建議配合 Worker 使用 `database_queue` | `auto` |
+| `META_ANDROMEDA_STORAGE_S3_BUCKET` | S3 儲存桶名稱 (方案 B) | `datavue-assets` |
+| `META_ANDROMEDA_STORAGE_S3_ACCESS_KEY_ID` | S3 連線 Key ID (方案 B) | `YOUR_S3_ACCESS_KEY` |
+| `META_ANDROMEDA_STORAGE_S3_SECRET_ACCESS_KEY` | S3 連線 Secret (方案 B) | `YOUR_S3_SECRET_ACCESS_KEY` |
+| `META_ANDROMEDA_STORAGE_S3_ENDPOINT_URL` | 非 AWS S3 (如 Cloudflare R2) 需指定自訂端點 (方案 B) | `https://<account_id>.r2.cloudflarestorage.com` |
+| `META_ANDROMEDA_STORAGE_PUBLIC_BASE_URL` | 靜態資源公開讀取 Base URL (方案 B) | `https://assets.sitetegy.com/meta-andromeda` |
+
 ---
 
 ## 🌐 第三階段：前端部署
