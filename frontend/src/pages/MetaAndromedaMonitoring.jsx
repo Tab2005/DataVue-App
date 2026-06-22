@@ -45,7 +45,9 @@ const MetaAndromedaMonitoring = () => {
             case 'failure_total':
                 return t('Failure Total', '累計失敗數');
             case 'observed_total':
-                return t('Observed Imported', '已匯入 Observation');
+                return t('Observed Imported (Cumulative)', '已匯入 Observation（累積）');
+            case 'latest_observed_total':
+                return t('Observed in Latest Drift Window', '最近 Drift 區間 Observation');
             case 'observed_with_asset':
                 return t('Observed With Asset', '已有素材 Observation');
             case 'latest_matched_total':
@@ -469,6 +471,10 @@ const MetaAndromedaMonitoring = () => {
                                 <Metric
                                     label={getTranslation('observed_total')}
                                     value={summary?.observation_pipeline?.observed_total}
+                                />
+                                <Metric
+                                    label={getTranslation('latest_observed_total')}
+                                    value={summary?.observation_pipeline?.latest_observed_total}
                                 />
                                 <Metric
                                     label={getTranslation('observed_with_asset')}

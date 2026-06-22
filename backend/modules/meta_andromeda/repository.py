@@ -602,6 +602,7 @@ class MetaAndromedaRepository:
             },
             "observation_pipeline": {
                 "observed_total": observed_total,
+                "latest_observed_total": latest_observed,
                 "observed_with_asset": observed_with_asset,
                 "latest_matched_total": latest_matched,
                 "latest_match_rate": round(latest_matched / latest_observed, 4) if latest_observed > 0 else 0.0,

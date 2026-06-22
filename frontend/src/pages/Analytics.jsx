@@ -919,6 +919,9 @@ const Analytics = () => {
 
         setObservationBatchSummary({
             status: 'loading',
+            attemptedCount: selectedObservationRows.length,
+            successCount: 0,
+            failureCount: 0,
             message: language === 'zh'
                 ? `批次匯入中，共 ${selectedObservationRows.length} 筆。`
                 : `Batch import in progress for ${selectedObservationRows.length} ads.`,
@@ -938,6 +941,9 @@ const Analytics = () => {
 
         setObservationBatchSummary({
             status: failureCount === 0 ? 'success' : 'warning',
+            attemptedCount: selectedObservationRows.length,
+            successCount,
+            failureCount,
             message: language === 'zh'
                 ? `批次匯入完成，成功 ${successCount} 筆，失敗 ${failureCount} 筆。`
                 : `Batch import completed: ${successCount} succeeded, ${failureCount} failed.`,
@@ -1878,6 +1884,39 @@ const Analytics = () => {
                                 {observationBatchSummary.message}
                             </div>
                         )}
+                        {observationBatchSummary && (
+                            <div style={{
+                                display: 'grid',
+                                gridTemplateColumns: 'repeat(3, minmax(90px, 1fr))',
+                                gap: '8px',
+                                marginTop: '8px',
+                            }}>
+                                <div style={observationStatCardStyle}>
+                                    <div style={observationStatLabelStyle}>
+                                        {language === 'zh' ? '本次送出' : 'Attempted'}
+                                    </div>
+                                    <div style={observationStatValueStyle}>
+                                        {observationBatchSummary.attemptedCount ?? '--'}
+                                    </div>
+                                </div>
+                                <div style={observationStatCardStyle}>
+                                    <div style={observationStatLabelStyle}>
+                                        {language === 'zh' ? '本次匯入成功' : 'Succeeded'}
+                                    </div>
+                                    <div style={{ ...observationStatValueStyle, color: '#34d399' }}>
+                                        {observationBatchSummary.successCount ?? '--'}
+                                    </div>
+                                </div>
+                                <div style={observationStatCardStyle}>
+                                    <div style={observationStatLabelStyle}>
+                                        {language === 'zh' ? '本次匯入失敗' : 'Failed'}
+                                    </div>
+                                    <div style={{ ...observationStatValueStyle, color: observationBatchSummary.failureCount > 0 ? '#fbbf24' : 'var(--text-primary)' }}>
+                                        {observationBatchSummary.failureCount ?? '--'}
+                                    </div>
+                                </div>
+                            </div>
+                        )}
                     </div>
 
                     <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
@@ -2594,6 +2633,25 @@ const Analytics = () => {
             />
         </div >
     );
+};
+
+const observationStatCardStyle = {
+    padding: '10px 12px',
+    borderRadius: '8px',
+    background: 'rgba(255,255,255,0.04)',
+    border: '1px solid var(--glass-border)',
+};
+
+const observationStatLabelStyle = {
+    fontSize: '0.76rem',
+    color: 'var(--text-secondary)',
+    marginBottom: '4px',
+};
+
+const observationStatValueStyle = {
+    fontSize: '1rem',
+    fontWeight: 700,
+    color: 'var(--text-primary)',
 };
 
 export default Analytics;
