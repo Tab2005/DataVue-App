@@ -358,10 +358,23 @@ def run_startup_tasks():
     # 6. Initialize database (dev-mode create_all)
     init_db()
     
-    # 7. Seed permissions
+    # 7. Seed Meta Andromeda default models and records
+    try:
+        from modules.meta_andromeda.repository import repository
+        from database import SessionLocal
+        db = SessionLocal()
+        try:
+            repository.ensure_seed_data(db)
+            logger.info("✅ Meta Andromeda seed data verified/initialized.")
+        finally:
+            db.close()
+    except Exception as e:
+        logger.error(f"Failed to seed Meta Andromeda data on startup: {e}")
+
+    # 8. Seed permissions
     seed_permissions()
     
-    # 8. Sync super admin
+    # 9. Sync super admin
     sync_super_admin()
     
     logger.info("=" * 50)
