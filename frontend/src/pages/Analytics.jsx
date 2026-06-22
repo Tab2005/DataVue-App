@@ -11,6 +11,8 @@ import { AnalyticsKPISection, MetricSelector } from '../components/Analytics';
 import ReportModal from '../components/Analytics/ReportModal';
 // Import Metrics Registry for extended metrics support
 import { METRICS_REGISTRY, METRIC_CATEGORIES } from '../constants/metricsRegistry';
+import { useModuleAccess, usePermission } from '../hooks/usePermission';
+import { importMetaAndromedaObservedFacebookAd } from '../services/metaAndromedaWorkflowService';
 
 // API constants
 const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:8000';
@@ -167,10 +169,25 @@ const buildUnifiedMetricGroups = () => {
 
 const ALL_METRIC_GROUPS = buildUnifiedMetricGroups();
 
+const resolveObservationWindowKind = (datePreset) => {
+    if (datePreset === 'last_7d') {
+        return 'last_7d';
+    }
+    if (datePreset === 'last_30d') {
+        return 'last_30d';
+    }
+    if (datePreset === 'custom') {
+        return 'custom';
+    }
+    return 'custom';
+};
+
 const Analytics = () => {
     // 1. Get shared context
     const { selectedAccountId, user, language, isSidebarCollapsed, selectedTeamId } = useOutletContext();
     const [showReportModal, setShowReportModal] = useState(false);
+    const { hasAccess: hasMetaAndromedaAccess } = useModuleAccess('meta_andromeda', selectedTeamId);
+    const { hasPermission: hasFbAnalyticsPermission } = usePermission('fb_ads:analytics:view', selectedTeamId);
 
     // 2. Translations
     const t = {
@@ -204,6 +221,7 @@ const Analytics = () => {
                 last_7d: "過去 7 天",
                 last_14d: "過去 14 天",
                 last_30d: "過去 30 天",
+                lifetime: "累積歷史成效",
                 custom: "自訂",
             },
             comparePresets: {
@@ -259,6 +277,7 @@ const Analytics = () => {
                 last_7d: "Past 7 Days",
                 last_14d: "Past 14 Days",
                 last_30d: "Past 30 Days",
+                lifetime: "Lifetime",
                 custom: "Custom",
             },
             comparePresets: {
@@ -342,12 +361,16 @@ const Analytics = () => {
     const [filterKeyword, setFilterKeyword] = useState('');
     const [filterMode, setFilterMode] = useState('include'); // include, exclude
     const [filterActiveOnly, setFilterActiveOnly] = useState(false);
+    const [filterObservationImported, setFilterObservationImported] = useState('all'); // 'all', 'imported', 'not_imported'
 
     // Sorting State
     const [sortConfig, setSortConfig] = useState({ key: null, direction: 'desc' });
 
     // Table Row Selection State
     const [selectedRowIds, setSelectedRowIds] = useState(new Set()); // IDs of selected rows
+    const [selectedObservationIds, setSelectedObservationIds] = useState(new Set());
+    const [observationImportState, setObservationImportState] = useState({});
+    const [observationBatchSummary, setObservationBatchSummary] = useState(null);
 
     // UI: Toggle Metric Panel
     const [showMetricPanel, setShowMetricPanel] = useState(false);
@@ -536,6 +559,67 @@ const Analytics = () => {
     const [prevReportData, setPrevReportData] = useState(null);
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState(null);
+    const observationWindowKind = resolveObservationWindowKind(datePreset);
+
+    const importObservationRow = useCallback(async (row) => {
+        if (!selectedAccountId || !row?.ad_id) {
+            const message = language === 'zh' ? '缺少廣告識別資料，無法匯入。' : 'Missing ad identifier. Import unavailable.';
+            setObservationImportState((prev) => ({
+                ...prev,
+                [row.id]: {
+                    status: 'error',
+                    message,
+                },
+            }));
+            return { ok: false, message };
+        }
+
+        setObservationImportState((prev) => ({
+            ...prev,
+            [row.id]: {
+                status: 'loading',
+                message: language === 'zh' ? '匯入中...' : 'Importing...',
+            },
+        }));
+
+        try {
+            const response = await importMetaAndromedaObservedFacebookAd({
+                account_id: selectedAccountId,
+                ad_id: row.ad_id,
+                observation_window_kind: observationWindowKind,
+                since: dateRange.since,
+                until: dateRange.until,
+                market: 'TW',
+                placement_family: 'feed',
+            });
+
+            const message = `${language === 'zh' ? '已匯入' : 'Imported'}: ${response.observed_creative_id}`;
+            setObservationImportState((prev) => ({
+                ...prev,
+                [row.id]: {
+                    status: 'success',
+                    message,
+                    observedCreativeId: response.observed_creative_id,
+                },
+            }));
+            return { ok: true, observedCreativeId: response.observed_creative_id };
+        } catch (err) {
+            const message = err?.message || (language === 'zh' ? '匯入失敗' : 'Import failed');
+            setObservationImportState((prev) => ({
+                ...prev,
+                [row.id]: {
+                    status: 'error',
+                    message,
+                },
+            }));
+            return { ok: false, message };
+        }
+    }, [language, observationWindowKind, selectedAccountId]);
+
+    const handleObservationImport = useCallback(async (row) => {
+        setObservationBatchSummary(null);
+        await importObservationRow(row);
+    }, [importObservationRow]);
 
     // 4. Fetch Function
     // 4. Fetch Function
@@ -714,12 +798,26 @@ const Analytics = () => {
                 const name = (row.name || row.campaign_name || row.adset_name || row.ad_name || '').toLowerCase();
                 const match = name.includes(keyword);
 
-                return filterMode === 'include' ? match : !match;
+                if (filterMode === 'include') {
+                    if (!match) return false;
+                } else {
+                    if (match) return false;
+                }
+            }
+
+            // 3. Observation Filter (Only when level is 'ad')
+            if (level === 'ad' && filterObservationImported !== 'all') {
+                const importState = observationImportState[row.id]?.status;
+                if (filterObservationImported === 'imported') {
+                    if (importState !== 'success') return false;
+                } else if (filterObservationImported === 'not_imported') {
+                    if (importState === 'success') return false;
+                }
             }
 
             return true;
         });
-    }, [reportData, filterKeyword, filterMode, filterActiveOnly]);
+    }, [reportData, filterKeyword, filterMode, filterActiveOnly, filterObservationImported, observationImportState, level]);
 
     const filteredPrevData = React.useMemo(() => {
         if (!prevReportData) return [];
@@ -732,11 +830,38 @@ const Analytics = () => {
                 const keyword = filterKeyword.toLowerCase();
                 const name = (row.name || row.campaign_name || row.adset_name || row.ad_name || '').toLowerCase();
                 const match = name.includes(keyword);
-                return filterMode === 'include' ? match : !match;
+                if (filterMode === 'include') {
+                    if (!match) return false;
+                } else {
+                    if (match) return false;
+                }
+            }
+            if (level === 'ad' && filterObservationImported !== 'all') {
+                const importState = observationImportState[row.id]?.status;
+                if (filterObservationImported === 'imported') {
+                    if (importState !== 'success') return false;
+                } else if (filterObservationImported === 'not_imported') {
+                    if (importState === 'success') return false;
+                }
             }
             return true;
         });
-    }, [prevReportData, filterKeyword, filterMode, filterActiveOnly]);
+    }, [prevReportData, filterKeyword, filterMode, filterActiveOnly, filterObservationImported, observationImportState, level]);
+
+    const canUseObservationImport = level === 'ad' && hasMetaAndromedaAccess && hasFbAnalyticsPermission;
+    const observationImportableRows = useMemo(() => {
+        if (!canUseObservationImport) {
+            return [];
+        }
+        return filteredData.filter((row) => Boolean(row?.ad_id));
+    }, [canUseObservationImport, filteredData]);
+
+    const selectedObservationRows = useMemo(() => {
+        if (!canUseObservationImport) {
+            return [];
+        }
+        return observationImportableRows.filter((row) => selectedObservationIds.has(row.id));
+    }, [canUseObservationImport, observationImportableRows, selectedObservationIds]);
 
 
     // Sync selectedRowIds with filteredData
@@ -747,6 +872,77 @@ const Analytics = () => {
             setSelectedRowIds(allIds);
         }
     }, [filteredData]);
+
+    useEffect(() => {
+        if (!canUseObservationImport) {
+            setSelectedObservationIds(new Set());
+            setObservationBatchSummary(null);
+            return;
+        }
+
+        setSelectedObservationIds((prev) => {
+            const next = new Set();
+            observationImportableRows.forEach((row) => {
+                if (prev.has(row.id)) {
+                    next.add(row.id);
+                }
+            });
+            return next;
+        });
+    }, [canUseObservationImport, observationImportableRows]);
+
+    const handleToggleObservationRow = useCallback((rowId, checked) => {
+        setSelectedObservationIds((prev) => {
+            const next = new Set(prev);
+            if (checked) {
+                next.add(rowId);
+            } else {
+                next.delete(rowId);
+            }
+            return next;
+        });
+    }, []);
+
+    const handleToggleAllObservationRows = useCallback((checked) => {
+        if (!checked) {
+            setSelectedObservationIds(new Set());
+            return;
+        }
+
+        setSelectedObservationIds(new Set(observationImportableRows.map((row) => row.id)));
+    }, [observationImportableRows]);
+
+    const handleBatchObservationImport = useCallback(async () => {
+        if (!selectedObservationRows.length) {
+            return;
+        }
+
+        setObservationBatchSummary({
+            status: 'loading',
+            message: language === 'zh'
+                ? `批次匯入中，共 ${selectedObservationRows.length} 筆。`
+                : `Batch import in progress for ${selectedObservationRows.length} ads.`,
+        });
+
+        let successCount = 0;
+        let failureCount = 0;
+
+        for (const row of selectedObservationRows) {
+            const result = await importObservationRow(row);
+            if (result.ok) {
+                successCount += 1;
+            } else {
+                failureCount += 1;
+            }
+        }
+
+        setObservationBatchSummary({
+            status: failureCount === 0 ? 'success' : 'warning',
+            message: language === 'zh'
+                ? `批次匯入完成，成功 ${successCount} 筆，失敗 ${failureCount} 筆。`
+                : `Batch import completed: ${successCount} succeeded, ${failureCount} failed.`,
+        });
+    }, [importObservationRow, language, selectedObservationRows]);
 
     // 7. Calculate Summary for KPI Cards (Dynamic Selection)
     const calculateSummary = (dataSource) => {
@@ -997,7 +1193,7 @@ const Analytics = () => {
                                     borderRadius: '8px',
                                     background: 'rgba(255,255,255,0.05)',
                                     border: '1px solid var(--glass-border)',
-                                    color: 'white',
+                                    color: 'var(--text-primary)',
                                     width: '100%'
                                 }}
                             >
@@ -1019,7 +1215,7 @@ const Analytics = () => {
                                     borderRadius: '8px',
                                     background: 'rgba(255,255,255,0.05)',
                                     border: '1px solid var(--glass-border)',
-                                    color: 'white',
+                                    color: 'var(--text-primary)',
                                     width: '100%'
                                 }}
                             >
@@ -1179,12 +1375,14 @@ const Analytics = () => {
                             value={filterMode}
                             onChange={(e) => setFilterMode(e.target.value)}
                             style={{
-                                background: 'transparent',
-                                border: 'none',
-                                color: 'var(--text-secondary)',
+                                background: 'rgba(255,255,255,0.05)',
+                                border: '1px solid var(--glass-border)',
+                                color: 'var(--text-primary)',
                                 fontSize: '0.9rem',
                                 cursor: 'pointer',
-                                outline: 'none'
+                                outline: 'none',
+                                padding: '6px 10px',
+                                borderRadius: '6px'
                             }}
                         >
                             <option value="include">{language === 'zh' ? '包含 (Include)' : 'Include'}</option>
@@ -1212,6 +1410,30 @@ const Analytics = () => {
                                 </span>
                             </div>
                         </label>
+
+                        {level === 'ad' && (
+                            <>
+                                <div style={{ width: '1px', height: '24px', background: 'var(--glass-border)' }}></div>
+                                <select
+                                    value={filterObservationImported}
+                                    onChange={(e) => setFilterObservationImported(e.target.value)}
+                                    style={{
+                                        background: 'rgba(255,255,255,0.05)',
+                                        border: '1px solid var(--glass-border)',
+                                        color: 'var(--text-primary)',
+                                        fontSize: '0.9rem',
+                                        cursor: 'pointer',
+                                        outline: 'none',
+                                        padding: '6px 10px',
+                                        borderRadius: '6px'
+                                    }}
+                                >
+                                    <option value="all">{language === 'zh' ? '全部匯入狀態' : 'All Import Status'}</option>
+                                    <option value="imported">{language === 'zh' ? '已送出' : 'Imported'}</option>
+                                    <option value="not_imported">{language === 'zh' ? '未送出' : 'Not Imported'}</option>
+                                </select>
+                            </>
+                        )}
                     </div>
 
                     {activeView === 'custom' && showMetricPanel && (
@@ -1327,7 +1549,7 @@ const Analytics = () => {
                                         borderRadius: '8px',
                                         background: 'rgba(255,255,255,0.05)',
                                         border: '1px solid var(--glass-border)',
-                                        color: 'white',
+                                        color: 'var(--text-primary)',
                                         width: '100%'
                                     }}
                                 >
@@ -1352,10 +1574,10 @@ const Analytics = () => {
                                                 style={{ 
                                                     padding: '10px', 
                                                     borderRadius: '8px', 
-                                                    background: 'rgba(255,255,255,0.05)', 
-                                                    border: '1px solid var(--glass-border)', 
-                                                    color: 'var(--text-primary)', 
-                                                    colorScheme: 'dark', 
+                                                    background: 'rgba(255,255,255,0.05)',
+                                                    border: '1px solid var(--glass-border)',
+                                                    color: 'var(--text-primary)',
+                                                    colorScheme: 'dark',
                                                     width: '100%' 
                                                 }} 
                                             />
@@ -1371,10 +1593,10 @@ const Analytics = () => {
                                                 style={{ 
                                                     padding: '10px', 
                                                     borderRadius: '8px', 
-                                                    background: 'rgba(255,255,255,0.05)', 
-                                                    border: '1px solid var(--glass-border)', 
-                                                    color: 'var(--text-primary)', 
-                                                    colorScheme: 'dark', 
+                                                    background: 'rgba(255,255,255,0.05)',
+                                                    border: '1px solid var(--glass-border)',
+                                                    color: 'var(--text-primary)',
+                                                    colorScheme: 'dark',
                                                     width: '100%' 
                                                 }} 
                                             />
@@ -1614,6 +1836,106 @@ const Analytics = () => {
                 selectedRowIds={selectedRowIds} // Pass selection to filter chart
             />
 
+            {canUseObservationImport && (
+                <div style={{
+                    display: 'flex',
+                    flexDirection: isMobile ? 'column' : 'row',
+                    alignItems: isMobile ? 'stretch' : 'center',
+                    justifyContent: 'space-between',
+                    gap: '12px',
+                    marginBottom: '12px',
+                    padding: '12px 14px',
+                    borderRadius: '12px',
+                    background: 'rgba(255,255,255,0.03)',
+                    border: '1px solid var(--glass-border)'
+                }}>
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                        <div style={{ fontSize: '0.92rem', fontWeight: 600, color: 'var(--text-primary)' }}>
+                            {language === 'zh' ? 'Meta Andromeda 匯入操作' : 'Meta Andromeda Import Actions'}
+                        </div>
+                        <div style={{ fontSize: '0.82rem', color: 'var(--text-secondary)' }}>
+                            {language === 'zh'
+                                ? `已選 ${selectedObservationRows.length} 筆 / 可匯入 ${observationImportableRows.length} 筆`
+                                : `${selectedObservationRows.length} selected / ${observationImportableRows.length} importable`}
+                            {observationWindowKind === 'custom' && (
+                                <span style={{ marginLeft: '8px', color: '#fbbf24' }}>
+                                    {language === 'zh'
+                                        ? '目前日期區段將以自訂時間區間匯入。'
+                                        : 'Current date preset imports as custom range.'}
+                                </span>
+                            )}
+                        </div>
+                        {observationBatchSummary?.message && (
+                            <div style={{
+                                fontSize: '0.8rem',
+                                color: observationBatchSummary.status === 'success'
+                                    ? '#34d399'
+                                    : observationBatchSummary.status === 'warning'
+                                        ? '#fbbf24'
+                                        : 'var(--text-secondary)',
+                                lineHeight: 1.4,
+                            }}>
+                                {observationBatchSummary.message}
+                            </div>
+                        )}
+                    </div>
+
+                    <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+                        <button
+                            type="button"
+                            onClick={() => handleToggleAllObservationRows(true)}
+                            disabled={observationImportableRows.length === 0}
+                            style={{
+                                padding: '8px 12px',
+                                borderRadius: '8px',
+                                border: '1px solid var(--glass-border)',
+                                background: 'rgba(255,255,255,0.04)',
+                                color: 'var(--text-primary)',
+                                cursor: observationImportableRows.length === 0 ? 'not-allowed' : 'pointer',
+                                opacity: observationImportableRows.length === 0 ? 0.5 : 1,
+                            }}
+                        >
+                            {language === 'zh' ? '全選可匯入項目' : 'Select importable'}
+                        </button>
+                        <button
+                            type="button"
+                            onClick={() => handleToggleAllObservationRows(false)}
+                            disabled={selectedObservationRows.length === 0}
+                            style={{
+                                padding: '8px 12px',
+                                borderRadius: '8px',
+                                border: '1px solid var(--glass-border)',
+                                background: 'rgba(255,255,255,0.04)',
+                                color: 'var(--text-primary)',
+                                cursor: selectedObservationRows.length === 0 ? 'not-allowed' : 'pointer',
+                                opacity: selectedObservationRows.length === 0 ? 0.5 : 1,
+                            }}
+                        >
+                            {language === 'zh' ? '清除選取' : 'Clear selection'}
+                        </button>
+                        <button
+                            type="button"
+                            onClick={handleBatchObservationImport}
+                            disabled={selectedObservationRows.length === 0 || observationBatchSummary?.status === 'loading'}
+                            style={{
+                                padding: '8px 14px',
+                                borderRadius: '8px',
+                                border: 'none',
+                                background: 'var(--accent-primary)',
+                                color: '#fff',
+                                fontWeight: 600,
+                                cursor: selectedObservationRows.length === 0 || observationBatchSummary?.status === 'loading' ? 'not-allowed' : 'pointer',
+                                opacity: selectedObservationRows.length === 0 || observationBatchSummary?.status === 'loading' ? 0.5 : 1,
+                            }}
+                        >
+                            {observationBatchSummary?.status === 'loading'
+                                ? (language === 'zh' ? '批次匯入中...' : 'Batch importing...')
+                                : (language === 'zh' ? '批次送出' : 'Batch send')}
+                        </button>
+                    </div>
+                </div>
+            )}
+
             {/* Data Table */}
             {
                 loading ? (
@@ -1696,6 +2018,20 @@ const Analytics = () => {
                                                     )}
                                                 </th>
                                             ))}
+                                            {canUseObservationImport && (
+                                                <th rowSpan={2} style={{
+                                                    padding: '12px',
+                                                    minWidth: '150px',
+                                                    position: 'sticky',
+                                                    top: 0,
+                                                    zIndex: 40,
+                                                    background: '#242526',
+                                                    textAlign: 'left',
+                                                    borderLeft: '1px solid var(--glass-border)'
+                                                }}>
+                                                    {language === 'zh' ? '操作' : 'Actions'}
+                                                </th>
+                                            )}
                                         </tr>
                                         {/* Row 2: Sub-columns */}
                                         <tr style={{ borderBottom: '1px solid var(--glass-border)', textAlign: 'right', fontSize: '0.8rem', color: 'var(--text-secondary)' }}>
@@ -1769,6 +2105,20 @@ const Analytics = () => {
                                                 )}
                                             </th>
                                         ))}
+                                        {canUseObservationImport && (
+                                            <th style={{
+                                                padding: '12px',
+                                                minWidth: '150px',
+                                                position: 'sticky',
+                                                top: 0,
+                                                zIndex: 40,
+                                                background: '#242526',
+                                                borderLeft: '1px solid var(--glass-border)',
+                                                textAlign: 'left'
+                                            }}>
+                                                {language === 'zh' ? '操作' : 'Actions'}
+                                            </th>
+                                        )}
                                     </tr>
                                 )}
                             </thead>
@@ -1932,6 +2282,120 @@ const Analytics = () => {
                                                 );
                                             }
                                         })}
+                                        {canUseObservationImport && (
+                                            <td style={{
+                                                padding: '12px',
+                                                borderLeft: '1px solid rgba(255,255,255,0.05)',
+                                                verticalAlign: 'top',
+                                                minWidth: '150px'
+                                            }}>
+                                                {row.ad_id ? (
+                                                    <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                                                        <div style={{
+                                                            display: 'flex',
+                                                            alignItems: 'center',
+                                                            gap: '8px',
+                                                            flexWrap: 'wrap'
+                                                        }}>
+                                                            <label style={{
+                                                                display: 'inline-flex',
+                                                                alignItems: 'center',
+                                                                gap: '6px',
+                                                                fontSize: '0.78rem',
+                                                                color: 'var(--text-secondary)',
+                                                                cursor: 'pointer',
+                                                                whiteSpace: 'nowrap'
+                                                            }}>
+                                                            <input
+                                                                type="checkbox"
+                                                                checked={selectedObservationIds.has(row.id)}
+                                                                onChange={(e) => handleToggleObservationRow(row.id, e.target.checked)}
+                                                                style={{ cursor: 'pointer' }}
+                                                            />
+                                                                {language === 'zh' ? '批次' : 'Batch'}
+                                                            </label>
+                                                            <button
+                                                                type="button"
+                                                                onClick={() => handleObservationImport(row)}
+                                                                disabled={observationImportState[row.id]?.status === 'loading'}
+                                                                title={
+                                                                    observationWindowKind === 'custom'
+                                                                        ? (language === 'zh'
+                                                                            ? '目前日期區段會以自訂時間區間匯入 observation。'
+                                                                            : 'Current date preset will import observation as custom range.')
+                                                                        : undefined
+                                                                }
+                                                                style={{
+                                                                    display: 'inline-flex',
+                                                                    alignItems: 'center',
+                                                                    justifyContent: 'center',
+                                                                    padding: '6px 10px',
+                                                                    borderRadius: '8px',
+                                                                    border: '1px solid var(--glass-border)',
+                                                                    background: 'rgba(255,255,255,0.04)',
+                                                                    color: 'var(--accent-primary)',
+                                                                    fontSize: '0.78rem',
+                                                                    fontWeight: 600,
+                                                                    cursor: observationImportState[row.id]?.status === 'loading' ? 'wait' : 'pointer',
+                                                                    whiteSpace: 'nowrap'
+                                                                }}
+                                                            >
+                                                                {observationImportState[row.id]?.status === 'loading'
+                                                                    ? (language === 'zh' ? '匯入中' : 'Importing')
+                                                                    : (language === 'zh' ? '送出' : 'Send')}
+                                                            </button>
+                                                            <div style={{
+                                                                display: 'inline-flex',
+                                                                alignItems: 'center',
+                                                                width: 'fit-content',
+                                                                maxWidth: '100%',
+                                                                padding: '4px 8px',
+                                                                borderRadius: '999px',
+                                                                fontSize: '0.72rem',
+                                                                fontWeight: 600,
+                                                                background: observationImportState[row.id]?.status === 'success'
+                                                                    ? 'rgba(52, 211, 153, 0.12)'
+                                                                    : observationImportState[row.id]?.status === 'error'
+                                                                        ? 'rgba(248, 113, 113, 0.12)'
+                                                                        : observationImportState[row.id]?.status === 'loading'
+                                                                            ? 'rgba(96, 165, 250, 0.12)'
+                                                                            : 'rgba(255,255,255,0.06)',
+                                                                color: observationImportState[row.id]?.status === 'success'
+                                                                    ? '#34d399'
+                                                                    : observationImportState[row.id]?.status === 'error'
+                                                                        ? '#f87171'
+                                                                        : observationImportState[row.id]?.status === 'loading'
+                                                                            ? '#60a5fa'
+                                                                            : 'var(--text-secondary)',
+                                                                whiteSpace: 'nowrap'
+                                                            }}>
+                                                                {observationImportState[row.id]?.status === 'success'
+                                                                    ? (language === 'zh' ? '已送出' : 'Imported')
+                                                                    : observationImportState[row.id]?.status === 'error'
+                                                                        ? (language === 'zh' ? '失敗' : 'Failed')
+                                                                        : observationImportState[row.id]?.status === 'loading'
+                                                                            ? (language === 'zh' ? '匯入中' : 'Importing')
+                                                                            : (language === 'zh' ? '未送出' : 'Not imported')}
+                                                            </div>
+                                                        </div>
+                                                        {observationImportState[row.id]?.message && (
+                                                            <div style={{
+                                                                fontSize: '0.75rem',
+                                                                color: 'var(--text-secondary)',
+                                                                lineHeight: 1.4,
+                                                                wordBreak: 'break-word',
+                                                            }}>
+                                                                {observationImportState[row.id].message}
+                                                            </div>
+                                                        )}
+                                                    </div>
+                                                ) : (
+                                                    <div style={{ fontSize: '0.78rem', color: 'var(--text-tertiary)', lineHeight: 1.4 }}>
+                                                        {language === 'zh' ? '缺少 ad_id，無法匯入。' : 'Unavailable without ad_id.'}
+                                                    </div>
+                                                )}
+                                            </td>
+                                        )}
                                     </tr>
                                 ))}
                             </tbody>

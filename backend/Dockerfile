@@ -34,4 +34,4 @@ HEALTHCHECK --interval=30s --timeout=10s --start-period=10s --retries=3 \
     CMD curl -f http://localhost:8000/health || exit 1
 
 # 啟動命令
-CMD ["sh", "-c", "python main.py"]
+CMD ["sh", "-c", "python run_migration.py && export DATAVUE_SKIP_STARTUP_MIGRATIONS=1 && exec python main.py"]

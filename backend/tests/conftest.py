@@ -9,6 +9,7 @@
 import os
 
 os.environ.setdefault("ENABLE_REPORT_SCHEDULER", "false")
+os.environ.setdefault("META_ANDROMEDA_SCORE_LOCAL_ASYNC_FALLBACK", "false")
 
 import pytest
 from fastapi.testclient import TestClient

@@ -181,7 +181,7 @@ const SourceGroupModal = ({
                                 borderRadius: '8px',
                                 border: '1px solid var(--glass-border, rgba(255,255,255,0.1))',
                                 background: 'rgba(255,255,255,0.05)',
-                                color: 'var(--text-primary, white)',
+                                color: 'var(--text-primary)',
                                 fontSize: '14px',
                                 boxSizing: 'border-box'
                             }}
@@ -210,7 +210,7 @@ const SourceGroupModal = ({
                                 borderRadius: '8px',
                                 border: '1px solid var(--glass-border, rgba(255,255,255,0.1))',
                                 background: 'rgba(255,255,255,0.05)',
-                                color: 'var(--text-primary, white)',
+                                color: 'var(--text-primary)',
                                 fontSize: '14px',
                                 boxSizing: 'border-box'
                             }}

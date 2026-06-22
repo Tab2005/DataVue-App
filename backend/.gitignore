@@ -17,6 +17,7 @@ wheels/
 # ─── 虛擬環境 ────────────────────
 venv/
 .venv/
+.venv311/
 env/
 .env_backup/
 
@@ -35,6 +36,9 @@ tokens.json
 *.sqlite3
 *.db-shm
 *.db-wal
+
+# ─── 上傳與存儲 ──────────────────
+storage/
 
 # ─── 日誌檔案 ────────────────────
 *.log

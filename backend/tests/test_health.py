@@ -20,6 +20,7 @@ def test_health_endpoint_has_required_fields(client):
     assert "status" in data
     assert "checks" in data
     assert "database" in data["checks"]
+    assert "meta_andromeda" in data["checks"]
 
 
 @pytest.mark.unit
@@ -35,3 +36,14 @@ def test_health_database_connected(client):
     response = client.get("/health")
     data = response.json()
     assert data["checks"]["database"] == "ok"
+
+
+@pytest.mark.unit
+def test_health_meta_andromeda_runtime_check_is_structured(client):
+    response = client.get("/health")
+    data = response.json()
+    runtime_check = data["checks"]["meta_andromeda"]
+    assert isinstance(runtime_check, dict)
+    assert "status" in runtime_check
+    assert "queue_host" in runtime_check
+    assert "checks" in runtime_check

@@ -1395,7 +1395,7 @@ const GSCStats = ({ language, isMobile = false }) => {
         padding: isMobile ? '10px 12px' : '8px 12px',
         borderRadius: '8px',
         border: '1px solid var(--glass-border)',
-        background: 'var(--bg-secondary)',
+        background: 'rgba(255, 255, 255, 0.05)',
         color: 'var(--text-primary)',
         outline: 'none',
         fontSize: isMobile ? '0.9rem' : '1rem',
@@ -1511,7 +1511,7 @@ const GSCStats = ({ language, isMobile = false }) => {
         padding: '8px 12px',
         borderRadius: '8px',
         border: '1px solid var(--glass-border)',
-        background: 'var(--bg-primary)',
+        background: 'rgba(255, 255, 255, 0.05)',
         color: 'var(--text-primary)',
         outline: 'none',
         fontSize: '14px',
@@ -2552,7 +2552,7 @@ const GSCStats = ({ language, isMobile = false }) => {
                                                         color: 'white',
                                                         fontSize: '0.8rem',
                                                         padding: '2px 4px',
-                                                        colorScheme: 'dark'
+                                                        colorScheme: 'light'
                                                     }}
                                                 />
                                                 <span style={{ color: 'var(--text-tertiary)' }}>~</span>
@@ -2567,7 +2567,7 @@ const GSCStats = ({ language, isMobile = false }) => {
                                                         color: 'white',
                                                         fontSize: '0.8rem',
                                                         padding: '2px 4px',
-                                                        colorScheme: 'dark'
+                                                        colorScheme: 'light'
                                                     }}
                                                 />
                                             </div>

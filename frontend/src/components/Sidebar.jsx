@@ -3,13 +3,15 @@ import { FiHome, FiBarChart2, FiUsers, FiSettings, FiActivity, FiChevronLeft, Fi
 import { Link, useLocation } from 'react-router-dom';
 import SettingsModal from './SettingsModal';
 import CreateTeamModal from './CreateTeamModal';
+import { useUserModules } from '../hooks/usePermission';
 
 const Sidebar = ({ user, language, isCollapsed, setIsCollapsed, isMobile, selectedTeamId, selectedTeamName, teams = [], setSelectedTeamId, onRefresh }) => {
 
     const [isSettingsOpen, setIsSettingsOpen] = useState(false);
     // Track expanded submenus by label key
-    const [expandedMenus, setExpandedMenus] = useState({ 'Team Settings': true });
+    const [expandedMenus, setExpandedMenus] = useState({ 'Meta Andromeda': false });
     const location = useLocation();
+    const { modules: accessibleModules } = useUserModules(selectedTeamId || null);
 
     // Mobile: Toggle logic is inverted for visual state (Collapsed = Hidden)
     const showSidebar = isMobile ? !isCollapsed : true;
@@ -27,12 +29,24 @@ const Sidebar = ({ user, language, isCollapsed, setIsCollapsed, isMobile, select
     const t = (en, zh) => language === 'zh' ? zh : en;
 
     const menuItems = [
-        { icon: <FiHome size={20} />, label: t('Overview', '總覽'), path: '/dashboard' },
-        { icon: <FiBarChart2 size={20} />, label: t('Analytics', '成效分析'), path: '/analytics' },
-        { icon: <FiActivity size={20} />, label: t('Metrics Manager', '指標管理'), path: '/metrics' },
-        { icon: <FiFileText size={20} />, label: t('Reports', '報表管理'), path: '/reports' },
-        { icon: <FiSearch size={20} />, label: t('Search Console', '搜尋管理'), path: '/gsc' },
-        { icon: <FiTrendingUp size={20} />, label: t('Traffic Analytics', '流量分析'), path: '/ga4' },
+        { icon: <FiHome size={20} />, label: t('Overview', '總覽'), path: '/dashboard', requiredModule: 'fb_ads' },
+        { icon: <FiBarChart2 size={20} />, label: t('Analytics', '成效分析'), path: '/analytics', requiredModule: 'fb_ads' },
+        { icon: <FiActivity size={20} />, label: t('Metrics Manager', '指標管理'), path: '/metrics', requiredModule: 'fb_ads' },
+        { icon: <FiSearch size={20} />, label: t('Search Console', '搜尋管理'), path: '/gsc', requiredModule: 'gsc' },
+        { icon: <FiTrendingUp size={20} />, label: t('Traffic Analytics', '流量分析'), path: '/ga4', requiredModule: 'ga4' },
+        {
+            icon: <FiActivity size={20} />,
+            label: t('Meta Andromeda', 'Meta Andromeda'),
+            requiredModule: 'meta_andromeda',
+            children: [
+                { label: t('Module Overview', '模組總覽'), path: '/meta-andromeda' },
+                { label: t('Review Queue', '審核佇列'), path: '/meta-andromeda/review-queue' },
+                { label: t('Monitoring', '監控總覽'), path: '/meta-andromeda/monitoring' },
+                { label: t('Release Console', '版本總覽'), path: '/meta-andromeda/release' },
+                { label: t('Score Lab', '評分工作台'), path: '/meta-andromeda/score-lab' },
+            ],
+        },
+        { icon: <FiFileText size={20} />, label: t('Weekly Reports', '週報管理'), path: '/reports', requiredModule: 'fb_ads' },
         // Grouped Team Settings
         {
             icon: <FiSettings size={20} />,
@@ -51,6 +65,19 @@ const Sidebar = ({ user, language, isCollapsed, setIsCollapsed, isMobile, select
             style: { color: 'var(--accent-secondary)' } // Distinguished color
         });
     }
+
+    const filteredMenuItems = menuItems.filter((item) => {
+        if (!item.requiredModule) {
+            return true;
+        }
+        return accessibleModules.includes(item.requiredModule);
+    });
+
+    useEffect(() => {
+        if (location.pathname.startsWith('/meta-andromeda')) {
+            setExpandedMenus(prev => ({ ...prev, 'Meta Andromeda': true }));
+        }
+    }, [location.pathname]);
 
 
     // Switcher State
@@ -262,7 +289,7 @@ const Sidebar = ({ user, language, isCollapsed, setIsCollapsed, isMobile, select
                 </div>
 
                 <nav style={{ display: 'flex', flexDirection: 'column', gap: '8px', flex: 1, overflowY: 'auto' }}>
-                    {menuItems.map((item, index) => {
+                    {filteredMenuItems.map((item, index) => {
                         // Check if any child is active to highlight parent
                         const isChildActive = item.children?.some(child => child.path === location.pathname);
                         const isActive = item.path === location.pathname || isChildActive;

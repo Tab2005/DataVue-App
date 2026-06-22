@@ -203,6 +203,7 @@ async def get_custom_report(
     team_id=None,
     custom_fields=None,
     strict_token=False,
+    ad_id=None,
 ):
     """
     非同步取得自訂廣告報告（含快取、動態欄位選擇）。
@@ -216,9 +217,10 @@ async def get_custom_report(
         team_id: 可選的團隊 ID
         custom_fields: 可選，逗號分隔的指標鍵值
         strict_token: True 則禁止 Fallback 至管理員 Token
+        ad_id: 可選，指定特定廣告 ID 進行專屬查詢
     """
     cache_key_suffix = f"_{custom_fields}" if custom_fields else ""
-    cached = get_analytics_cache(account_id, since, until, level + cache_key_suffix)
+    cached = None if ad_id else get_analytics_cache(account_id, since, until, level + cache_key_suffix)
     if cached is not None:
         return cached
 
@@ -252,7 +254,11 @@ async def get_custom_report(
         if level == "ad":
             api_fields += ",quality_ranking,engagement_rate_ranking,conversion_rate_ranking"
 
-    url = f"{BASE_URL}/{account_id}/insights"
+    if ad_id:
+        url = f"{BASE_URL}/{ad_id}/insights"
+    else:
+        url = f"{BASE_URL}/{account_id}/insights"
+
     params = {
         "fields": api_fields,
         "level": level,
@@ -318,7 +324,8 @@ async def get_custom_report(
 
         processed_rows = [_process_flat_row(row, level, ad_meta_map) for row in data]
 
-        set_analytics_cache(account_id, since, until, level + cache_key_suffix, processed_rows)
+        if not ad_id:
+            set_analytics_cache(account_id, since, until, level + cache_key_suffix, processed_rows)
         return processed_rows
 
     except Exception as e:

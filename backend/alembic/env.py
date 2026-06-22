@@ -5,8 +5,17 @@ import os
 import sys
 from dotenv import load_dotenv
 
-# Add parent directory to path so we can import from database
-sys.path.append(os.getcwd())
+# Add backend directory to sys.path so we can import from database
+import os
+import sys
+
+backend_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+if backend_dir not in sys.path:
+    sys.path.insert(0, backend_dir)
+
+# Also keep CWD in path for backward compatibility
+if os.getcwd() not in sys.path:
+    sys.path.append(os.getcwd())
 load_dotenv()
 
 from alembic import context

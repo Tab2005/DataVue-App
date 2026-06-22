@@ -4,6 +4,8 @@ import Sidebar from './Sidebar';
 import Header from './Header';
 import { TeamService } from '../services/teamService';
 
+const SELECTED_TEAM_EVENT = 'datavue:selected-team-changed';
+
 const Layout = () => {
     // Global State
     const [accounts, setAccounts] = useState([]);
@@ -63,6 +65,10 @@ const Layout = () => {
         } else {
             localStorage.removeItem('selected_team_id');
         }
+
+        window.dispatchEvent(new CustomEvent(SELECTED_TEAM_EVENT, {
+            detail: { teamId: selectedTeamId || null }
+        }));
     }, [selectedTeamId]);
 
     // Fetch Accounts Logic (Moved from Dashboard)

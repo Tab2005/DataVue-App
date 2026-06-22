@@ -82,7 +82,7 @@ const CreateTeamModal = ({ isOpen, onClose, onTeamCreated, language }) => {
                                 borderRadius: '6px',
                                 border: '1px solid var(--glass-border)',
                                 background: 'rgba(255,255,255,0.05)',
-                                color: 'white',
+                                color: 'var(--text-primary)',
                                 fontSize: '1rem',
                                 outline: 'none'
                             }}

@@ -233,7 +233,7 @@ function Dashboard() {
                                 }}
                             >
                                 {kpiList.map(opt => (
-                                    <option key={opt.key} value={opt.key} style={{ background: '#1a1d21' }}>
+                                    <option key={opt.key} value={opt.key}>
                                         {opt.title}
                                     </option>
                                 ))}

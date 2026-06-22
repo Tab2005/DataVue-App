@@ -123,9 +123,23 @@ app.add_middleware(GZipMiddleware, minimum_size=1000)
 # Exception Handlers
 # ============================================================
 
+import re
+
+def _add_cors_headers_to_response(request: Request, response: JSONResponse) -> JSONResponse:
+    origin = request.headers.get("origin")
+    if not origin:
+        return response
+    if re.match(allow_origin_regex, origin):
+        response.headers["Access-Control-Allow-Origin"] = origin
+        response.headers["Access-Control-Allow-Credentials"] = "true"
+        response.headers["Access-Control-Allow-Methods"] = "*"
+        response.headers["Access-Control-Allow-Headers"] = "*"
+    return response
+
+
 @app.exception_handler(RateLimitExceeded)
 async def rate_limit_handler(request: Request, exc: RateLimitExceeded):
-    return JSONResponse(
+    response = JSONResponse(
         status_code=429,
         content={
             "error": "請求過於頻繁",
@@ -134,11 +148,12 @@ async def rate_limit_handler(request: Request, exc: RateLimitExceeded):
         },
         headers={"Retry-After": str(getattr(exc, "retry_after", 60))},
     )
+    return _add_cors_headers_to_response(request, response)
 
 
 @app.exception_handler(AppException)
 async def app_exception_handler(request: Request, exc: AppException):
-    return JSONResponse(
+    response = JSONResponse(
         status_code=exc.status_code,
         content={
             "error": exc.message,
@@ -147,11 +162,12 @@ async def app_exception_handler(request: Request, exc: AppException):
             "error_type": "app_error"
         }
     )
+    return _add_cors_headers_to_response(request, response)
 
 
 @app.exception_handler(HTTPException)
 async def http_exception_handler(request: Request, exc: HTTPException):
-    return JSONResponse(
+    response = JSONResponse(
         status_code=exc.status_code,
         content={
             "error": str(exc.detail),
@@ -159,20 +175,23 @@ async def http_exception_handler(request: Request, exc: HTTPException):
             "error_type": "http_error"
         }
     )
+    return _add_cors_headers_to_response(request, response)
 
 
 @app.exception_handler(Exception)
 async def general_exception_handler(request: Request, exc: Exception):
     logger.error(f"Unhandled exception: {exc}")
     logger.error(traceback.format_exc())
-    return JSONResponse(
+    response = JSONResponse(
         status_code=500,
         content={
             "error": "Internal server error",
             "error_code": "INTERNAL_SERVER_ERROR",
-            "error_type": "unhandled_exception"
+            "error_type": "unhandled_exception",
+            "details": str(exc)
         }
     )
+    return _add_cors_headers_to_response(request, response)
 
 
 # ============================================================
@@ -182,6 +201,7 @@ async def general_exception_handler(request: Request, exc: Exception):
 from routers import users, teams, invites, admin, ai, saved_views, gsc, permissions
 from routers import facebook, debug, ga4, auth, reports, line
 from routers.metrics import router as metrics_router
+from modules.meta_andromeda import router as meta_andromeda_router
 
 # Authentication & Users
 app.include_router(auth.router)
@@ -202,6 +222,7 @@ app.include_router(ai.router, prefix="/api/ai", tags=["ai"])
 app.include_router(saved_views.router)
 app.include_router(reports.router)
 app.include_router(line.router)
+app.include_router(meta_andromeda_router, prefix="/api/meta-andromeda", tags=["meta_andromeda"])
 
 # Metrics Registry (4.6)
 app.include_router(metrics_router)
@@ -235,11 +256,63 @@ async def health_check():
         503 Service Unavailable：資料庫異常
     """
     from database import SessionLocal
+    import os
+    
+    # 動態獲取 git commit
+    git_commit_dynamic = "unknown"
+    try:
+        import subprocess
+        git_commit_dynamic = subprocess.check_output(["git", "rev-parse", "HEAD"], stderr=subprocess.DEVNULL).decode().strip()
+    except Exception:
+        git_commit_dynamic = os.getenv("ZEABUR_GIT_COMMIT_SHA") or os.getenv("COMMIT_REF") or "unknown_inside_docker"
+
+    google_key = os.getenv("GOOGLE_AI_API_KEY") or ""
+    google_key_alt = os.getenv("GOOGLE_API_KEY") or ""
+    openrouter_key = os.getenv("OPENROUTER_API_KEY") or ""
+    zeabur_key = os.getenv("ZEABUR_AI_HUB_API_KEY") or ""
+    from core.config import settings
+
+    # 統計資料庫中有金鑰的用戶數
+    db_users_with_gemini_key_count = 0
+    db_users_with_openrouter_key_count = 0
+    try:
+        temp_session = SessionLocal()
+        try:
+            from database.models.user import User
+            db_users_with_gemini_key_count = temp_session.query(User).filter(
+                User.gemini_api_key.isnot(None),
+                User.gemini_api_key != ""
+            ).count()
+            db_users_with_openrouter_key_count = temp_session.query(User).filter(
+                User.openrouter_api_key.isnot(None),
+                User.openrouter_api_key != ""
+            ).count()
+        finally:
+            temp_session.close()
+    except Exception:
+        pass
+
     health_status = {
         "status": "healthy",
         "timestamp": datetime.now(timezone.utc).isoformat(),
         "uptime_seconds": int(time.time() - START_TIME),
         "version": "2.1.0",
+        "git_info": {
+            "deployed_via_agent_at": "2026-06-17T13:25:00+08:00",
+            "dynamic_commit": git_commit_dynamic,
+            "target_branch": "dev-saas"
+        },
+        "ai_config_debug": {
+            "GOOGLE_AI_API_KEY_len": len(google_key),
+            "GOOGLE_API_KEY_len": len(google_key_alt),
+            "OPENROUTER_API_KEY_len": len(openrouter_key),
+            "ZEABUR_AI_HUB_API_KEY_len": len(zeabur_key),
+            "settings_GOOGLE_AI_API_KEY_len": len(settings.GOOGLE_AI_API_KEY or "") if settings.GOOGLE_AI_API_KEY else 0,
+            "settings_OPENROUTER_API_KEY_len": len(settings.OPENROUTER_API_KEY or "") if settings.OPENROUTER_API_KEY else 0,
+            "db_users_with_gemini_key_count": db_users_with_gemini_key_count,
+            "db_users_with_openrouter_key_count": db_users_with_openrouter_key_count,
+            "META_ANDROMEDA_SCORING_PROVIDER": settings.META_ANDROMEDA_SCORING_PROVIDER
+        },
         "checks": {}
     }
 
@@ -275,6 +348,17 @@ async def health_check():
     except Exception as e:
         health_status["checks"]["scheduler"] = f"error: {str(e)}"
 
+    try:
+        from modules.meta_andromeda.service import MetaAndromedaService
+
+        db = SessionLocal()
+        try:
+            health_status["checks"]["meta_andromeda"] = MetaAndromedaService.get_runtime_health(db)
+        finally:
+            db.close()
+    except Exception as e:
+        health_status["checks"]["meta_andromeda"] = f"error: {str(e)}"
+
     if health_status["status"] == "unhealthy":
         return JSONResponse(status_code=503, content=health_status)
 
@@ -282,14 +366,9 @@ async def health_check():
 
 
 @app.get("/api/health", tags=["system"])
-def health_check_legacy():
+async def health_check_legacy():
     """健康檢查端點（舊路徑，向後相容）。"""
-    return {
-        "status": "ok",
-        "version": "2.1.0",
-        "timestamp": datetime.now(timezone.utc).isoformat(),
-        "message": "DataVue Backend is healthy"
-    }
+    return await health_check()
 
 
 # ============================================================

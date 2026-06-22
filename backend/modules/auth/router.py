@@ -131,8 +131,9 @@ def get_ai_settings(
     if not settings:
         return {
             "ai_provider": "zeabur",
-            "ai_model": "gemini-1.5-flash",
+            "ai_model": "deepseek/deepseek-v4-flash",
             "has_zeabur_key": False,
-            "has_gemini_key": False
+            "has_gemini_key": False,
+            "has_openrouter_key": False,
         }
     return settings

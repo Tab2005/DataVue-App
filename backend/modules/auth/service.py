@@ -280,11 +280,20 @@ class TokenManager:
     # ============================================================
     # AI Settings 管理
     # ============================================================
+
+    @staticmethod
+    def _normalize_ai_provider(ai_provider: str | None) -> str | None:
+        if ai_provider is None:
+            return None
+        normalized = ai_provider.strip().lower()
+        if normalized in {"gemini", "google_gemini"}:
+            return "openrouter"
+        return normalized
     
     @staticmethod
     def save_ai_settings(google_id: str, zeabur_api_key: str = None,
-                         gemini_api_key: str = None, ai_provider: str = None,
-                         ai_model: str = None) -> bool:
+                         gemini_api_key: str = None, openrouter_api_key: str = None,
+                         ai_provider: str = None, ai_model: str = None) -> bool:
         """
         儲存用戶的 AI 設定（API Key 加密儲存）
         
@@ -292,7 +301,8 @@ class TokenManager:
             google_id: 用戶的 Google ID
             zeabur_api_key: Zeabur AI Hub API Key
             gemini_api_key: Google Gemini API Key
-            ai_provider: 使用的 AI 提供者 ('zeabur' 或 'gemini')
+            openrouter_api_key: OpenRouter API Key
+            ai_provider: 使用的 AI 提供者 ('zeabur', 'gemini' 或 'openrouter')
             ai_model: 使用的 AI 模型名稱
         """
         session = SessionLocal()
@@ -306,9 +316,12 @@ class TokenManager:
             
             if gemini_api_key is not None:
                 user.gemini_api_key = TokenManager._encrypt(gemini_api_key) if gemini_api_key else None
+
+            if openrouter_api_key is not None:
+                user.openrouter_api_key = TokenManager._encrypt(openrouter_api_key) if openrouter_api_key else None
             
             if ai_provider is not None:
-                user.ai_provider = ai_provider
+                user.ai_provider = TokenManager._normalize_ai_provider(ai_provider)
             
             if ai_model is not None:
                 user.ai_model = ai_model
@@ -327,7 +340,7 @@ class TokenManager:
         取得用戶的 AI 設定
         
         Returns:
-            包含 ai_provider, ai_model, has_zeabur_key, has_gemini_key 的字典
+            包含 ai_provider, ai_model, has_zeabur_key, has_gemini_key, has_openrouter_key 的字典
         """
         session = SessionLocal()
         try:
@@ -336,10 +349,11 @@ class TokenManager:
                 return None
             
             return {
-                "ai_provider": user.ai_provider if user.ai_provider else "zeabur",
-                "ai_model": user.ai_model if user.ai_model else "gemini-1.5-flash",
+                "ai_provider": TokenManager._normalize_ai_provider(user.ai_provider) if user.ai_provider else "zeabur",
+                "ai_model": user.ai_model if user.ai_model else "deepseek/deepseek-v4-flash",
                 "has_zeabur_key": bool(user.zeabur_api_key),
-                "has_gemini_key": bool(user.gemini_api_key)
+                "has_gemini_key": bool(user.gemini_api_key),
+                "has_openrouter_key": bool(user.openrouter_api_key)
             }
         finally:
             session.close()
@@ -351,7 +365,7 @@ class TokenManager:
         
         Args:
             google_id: 用戶的 Google ID
-            provider: 'zeabur' 或 'gemini'（若未指定，使用用戶設定的 provider）
+            provider: 'zeabur', 'gemini' 或 'openrouter'（若未指定，使用用戶設定的 provider）
         """
         session = SessionLocal()
         try:
@@ -359,10 +373,14 @@ class TokenManager:
             if not user:
                 return None
             
-            active_provider = provider or user.ai_provider or "zeabur"
+            active_provider = TokenManager._normalize_ai_provider(provider or user.ai_provider) or "zeabur"
             
-            if active_provider == "gemini":
-                return TokenManager._decrypt(user.gemini_api_key) if user.gemini_api_key else None
+            if active_provider == "openrouter":
+                if user.openrouter_api_key:
+                    return TokenManager._decrypt(user.openrouter_api_key)
+                if user.gemini_api_key:
+                    return TokenManager._decrypt(user.gemini_api_key)
+                return None
             else:
                 return TokenManager._decrypt(user.zeabur_api_key) if user.zeabur_api_key else None
         finally:

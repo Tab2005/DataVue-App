@@ -89,24 +89,24 @@ class AIIntentClassifier:
     def __init__(
         self,
         api_key: Optional[str] = None,
-        model: str = "gemini-1.5-flash",
-        provider: str = "zeabur"  # "zeabur" or "gemini"
+        model: str = "deepseek/deepseek-v4-flash",
+        provider: str = "zeabur"  # "zeabur" or "openrouter"
     ):
         """
         初始化 AI 意圖分類器
 
         Args:
-            api_key: API Key (Zeabur AI Hub 或 Google AI Studio)
+            api_key: API Key (Zeabur AI Hub 或 OpenRouter)
             model: 使用的 AI 模型
-            provider: AI 提供者 ("zeabur" 使用 Zeabur AI Hub, "gemini" 使用 Google Gemini 直連)
+            provider: AI 提供者 ("zeabur" 使用 Zeabur AI Hub, "openrouter" 使用 OpenRouter 客戶端)
         """
         self.provider = provider
         self.model = model
         
-        if provider == "gemini":
-            # 使用 Google Gemini 直連
-            from .gemini_client import GoogleGeminiClient
-            self.client = GoogleGeminiClient(api_key=api_key)
+        if provider == "openrouter":
+            # 使用 OpenRouter 客戶端
+            from .openrouter_client import OpenRouterClient
+            self.client = OpenRouterClient(api_key=api_key)
             self.client.set_model(model)
         else:
             # 預設使用 Zeabur AI Hub
@@ -142,16 +142,16 @@ class AIIntentClassifier:
         import sys
         import time
         
-        # Batch processing for Gemini free tier rate limits
-        # Gemini 2.5 Flash: 10 RPM (requests per minute)
+        # Batch processing for OpenRouter rate limits
+        # OpenRouter default free models rate limit
         BATCH_SIZE = 10  # Keywords per batch
-        BATCH_DELAY = 6  # Seconds between batches (for 10 RPM)
+        BATCH_DELAY = 6  # Seconds between batches
         
-        # Check if batch processing is needed for Gemini
-        use_batching = self.provider == "gemini" and len(queries) > BATCH_SIZE
+        # Check if batch processing is needed for OpenRouter
+        use_batching = self.provider == "openrouter" and len(queries) > BATCH_SIZE
         
         if use_batching:
-            logger.info(f"[AIIntentClassifier] Using batch processing for {len(queries)} keywords (Gemini rate limit)")
+            logger.info(f"[AIIntentClassifier] Using batch processing for {len(queries)} keywords (OpenRouter rate limit)")
             return self._classify_queries_batched(queries, temperature, BATCH_SIZE, BATCH_DELAY)
         
         # Regular single-request processing

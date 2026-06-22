@@ -1,0 +1,279 @@
+# 14 Meta Andromeda Phase 5 操作優化方案
+
+## 目的
+
+本文件用來整理 `FB Ads Analytics -> Meta Andromeda Observation Import` 在前端操作上的優化方向。
+
+目前 `Phase 5` 已完成基本入口，使用者可從 `FB Ads Analytics` 單筆將 `ad` 匯入 `Meta Andromeda`。但實際部署後，現有操作仍有兩個主要問題：
+
+1. `送至 Meta Andromeda` 按鈕位置不夠直覺
+2. 缺少批次匯入能力，逐筆操作成本過高
+
+本方案的目標不是改變後端 observation import 契約，而是提升現有入口的可用性與營運效率。
+
+## 現況問題
+
+### 1. 按鈕掛在內容欄內，掃表效率差
+
+目前按鈕附著在 `ad` 名稱或內容區塊附近，會造成：
+
+- 操作入口與資料內容混在一起
+- 表格掃視時不容易快速辨識可執行操作
+- 多筆操作時，視線需要在內容與按鈕之間來回切換
+
+### 2. 單筆匯入流程可用，但不適合日常營運
+
+目前流程適合驗證功能是否打通，但不適合真實工作情境：
+
+- 使用者通常會先篩選日期、帳戶、活動或素材
+- 篩選後往往需要一次匯入多筆 `ad`
+- 若只能逐筆點擊，操作時間與失誤機率都會上升
+
+### 3. 狀態回饋分散，難以快速掌握結果
+
+若每列都顯示完整訊息，表格會變得凌亂；但若只靠 toast，又不容易回頭確認哪一筆成功或失敗。
+
+需要把：
+
+- 全域摘要
+- 列內狀態
+- 後續去向
+
+三者分開處理。
+
+## 設計原則
+
+本次優化以以下原則為主：
+
+1. `Observation import` 是表格操作，不是內容展示
+2. 先支援多選批次，不先做「全部一鍵送出」
+3. 後端先沿用既有單筆 endpoint，前端可先逐筆批次呼叫
+4. 狀態顯示要能同時支援單筆追蹤與批次摘要
+5. 只在 `ad-level` 開放匯入，不延伸到 `campaign` 或 `adset`
+
+## 推薦方案
+
+### A. 表格新增固定操作欄
+
+建議在 `ad-level` 表格右側新增固定 `操作` 欄，將目前單筆匯入按鈕移到此欄位。
+
+預期效果：
+
+- 使用者可以快速掃描每列可執行操作
+- 避免把素材名稱欄撐亂
+- 便於後續再加入其他 `ad-level` 操作
+
+欄位內容建議：
+
+- 主要按鈕：`送至 Meta Andromeda`
+- 次要狀態：`未送出 / 匯入中 / 已送出 / 失敗`
+
+### B. 新增多選批次匯入
+
+建議在表格最左側加入 checkbox，並在表格上方顯示批次操作列。
+
+基本互動：
+
+1. 使用者勾選多筆 `ad`
+2. 上方顯示 `已選 N 筆`
+3. 點擊 `批次送至 Meta Andromeda`
+4. 前端逐筆呼叫現有 observation import API
+5. 顯示批次結果摘要
+
+第一版不建議直接做：
+
+- `全部匯入`
+- 自動匯入當前頁全部資料
+
+原因是廣告營運通常需要保留人工選擇空間，不應預設把整頁資料全部送入 observation pipeline。
+
+### C. 狀態回饋分層
+
+建議將狀態分成兩層：
+
+#### 1. 全域摘要
+
+批次匯入完成後，在頁面頂部或 toast 顯示：
+
+- `成功 10 筆`
+- `失敗 2 筆`
+- `略過 3 筆`
+
+#### 2. 列內 badge
+
+每列僅顯示精簡狀態：
+
+- `未送出`
+- `匯入中`
+- `已送出`
+- `失敗`
+
+詳細錯誤內容不直接塞進表格主區，避免破壞閱讀節奏。
+
+### D. 只允許可匯入列被勾選
+
+若某筆 `ad` 缺少 observation import 必要條件，例如：
+
+- 沒有 `ad_id`
+- 沒有可用素材來源
+- 權限不足
+
+則：
+
+- checkbox 應 disabled
+- 單筆按鈕應 disabled 或不顯示
+- 提供簡短提示原因
+
+這樣可以在送出前先過濾掉明顯無法匯入的資料。
+
+## 方案比較
+
+### 方案 1. 單筆按鈕移到操作欄 + 多選批次匯入
+
+優點：
+
+- 最符合表格操作習慣
+- 對現有資料結構衝擊小
+- 可先沿用既有單筆 API
+- 之後容易擴充更多操作
+
+缺點：
+
+- 需要調整表格欄位結構
+- 需要新增選取 state 與批次流程
+
+建議：優先採用
+
+### 方案 2. 保留現有位置，只補批次按鈕
+
+優點：
+
+- 開發成本較低
+
+缺點：
+
+- 根本問題未解
+- 操作入口仍與內容混在一起
+- 後續仍會再調整版位
+
+建議：不採用
+
+### 方案 3. 改為更多操作選單
+
+優點：
+
+- 表面更乾淨
+
+缺點：
+
+- 多一層點擊
+- 不適合作為現階段主操作
+
+建議：可作為未來擴充，不作為本次首選
+
+## 建議實作範圍
+
+### Phase 5.1（已完成）
+
+已完成最小高價值優化，實作細節如下：
+
+1. **新增固定 `操作` 欄**：在 `ad-level` 表格右側新增了固定的操作列，不再干擾 ad 名稱的閱讀。
+2. **單筆匯入按鈕移入 `操作` 欄**：使用者點擊「送出」按鈕即可針對單筆進行匯入，並在列內直接看見結果。
+3. **新增列選取 checkbox**：僅在符合 `canUseObservationImport` 條件（例如有 `ad_id`）的列上顯示批次 checkbox，並提供「全選可匯入項目」與「清除選取」的輔助功能。
+4. **新增批次匯入工具列**：在表格上方新增「Meta Andromeda 匯入操作」工具列，顯示當前選取筆數與可匯入筆數，並提供「批次送出」按鈕。
+5. **分層狀態回饋**：
+   - **全域摘要**：批次匯入完成後，在工具列顯示成功、失敗與總筆數摘要。
+   - **列內 badge**：各列顯示「未送出 / 匯入中 / 已送出 / 失敗」的精簡標籤，若有錯誤訊息，亦以副標形式收納於操作欄內。
+
+#### 核心前端實作程式碼片段 (於 [Analytics.jsx](file:///C:/Users/BWM2/Documents/python/DataVue-App/frontend/src/pages/Analytics.jsx))
+
+```javascript
+// 批次匯入處理邏輯
+const handleBatchObservationImport = useCallback(async () => {
+    if (!selectedObservationRows.length) return;
+
+    setObservationBatchSummary({
+        status: 'loading',
+        message: language === 'zh'
+            ? `批次匯入中，共 ${selectedObservationRows.length} 筆。`
+            : `Batch import in progress for ${selectedObservationRows.length} ads.`,
+    });
+
+    let successCount = 0;
+    let failureCount = 0;
+
+    for (const row of selectedObservationRows) {
+        const result = await importObservationRow(row);
+        if (result.ok) {
+            successCount += 1;
+        } else {
+            failureCount += 1;
+        }
+    }
+
+    setObservationBatchSummary({
+        status: failureCount === 0 ? 'success' : 'warning',
+        message: language === 'zh'
+            ? `批次匯入完成，成功 ${successCount} 筆，失敗 ${failureCount} 筆。`
+            : `Batch import completed: ${successCount} succeeded, ${failureCount} failed.`,
+    });
+}, [importObservationRow, language, selectedObservationRows]);
+```
+
+### Phase 5.2
+
+視第一版使用情況再追加：
+
+1. 成功後提供 `查看 Meta Andromeda` 入口
+2. 支援 `已送出` 的快速過濾
+3. 若有必要，再考慮後端 batch endpoint
+
+## 建議互動流程
+
+### 單筆
+
+1. 使用者在 `ad-level` 表格看到 `操作` 欄
+2. 點擊 `送至 Meta Andromeda`
+3. 列狀態切換為 `匯入中`
+4. 成功後顯示 `已送出`
+5. 失敗則顯示 `失敗`
+
+### 批次
+
+1. 使用者勾選多筆 `ad`
+2. 頁面上方顯示 `已選 N 筆`
+3. 點擊 `批次送至 Meta Andromeda`
+4. 前端逐筆送出
+5. 顯示總結結果
+6. 各列保留最終狀態
+
+## 實作順序
+
+1. 重構 `Analytics` 表格欄位，加入固定 `操作` 欄
+2. 將單筆 observation import UI 從內容欄移至操作欄
+3. 新增 `selectedAdIds` 與批次選取 state
+4. 實作前端批次匯入流程
+5. 補狀態摘要與列內 badge
+6. 執行 build 驗證並做手動操作檢查
+
+## 驗收標準
+
+完成後應符合：
+
+1. 使用者能一眼找到 `Meta Andromeda` 入口
+2. 使用者可一次匯入多筆 `ad`
+3. 不需要離開 `FB Ads Analytics` 即可完成 observation import
+4. 表格不因操作訊息而失去可讀性
+5. 權限不足或不可匯入列會被明確阻擋
+
+## 結論
+
+本次優化的重點不是增加更多功能，而是把既有 `Observation import` 從「已打通的功能入口」提升成「可順暢使用的營運操作」。
+
+建議採用：
+
+- `固定操作欄`
+- `多選批次匯入`
+- `摘要 + badge` 狀態回饋
+
+作為本次前端調整的基準方案。

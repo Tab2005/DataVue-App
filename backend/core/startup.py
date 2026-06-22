@@ -79,14 +79,21 @@ def run_migrations():
     Robust version for automated PaaS deployments (Zeabur).
     """
     try:
-        import alembic
-        import alembic.config
-        import alembic.command
         import os
-
+        import sys
+        
         # Get absolute path to alembic.ini relative to this file
         # This file is in backend/core/startup.py, alembic.ini is in backend/alembic.ini
         base_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        
+        # Ensure base_dir (backend) is in sys.path so env.py can import database
+        if base_dir not in sys.path:
+            sys.path.insert(0, base_dir)
+
+        import alembic
+        import alembic.config
+        import alembic.command
+
         ini_path = os.path.join(base_dir, "alembic.ini")
 
         if not os.path.exists(ini_path):
@@ -103,7 +110,6 @@ def run_migrations():
         alembic_cfg.set_main_option("script_location", alembic_dir)
         
         # Override sqlalchemy.url from environment if available
-        # This is already handled in env.py, but we can also set it here
         from database import DATABASE_URL
         if DATABASE_URL:
             # Ensure postgresql:// protocol for SQLAlchemy 2.0+
@@ -334,8 +340,17 @@ def run_startup_tasks():
         logger.critical(f"Database initialization failed: {e}")
         return False
     
-    # 4. Run migrations
-    run_migrations()
+    # 4. Run migrations unless deployment entrypoint already handled them.
+    skip_startup_migrations = os.getenv("DATAVUE_SKIP_STARTUP_MIGRATIONS", "").strip().lower() in {
+        "1",
+        "true",
+        "yes",
+        "on",
+    }
+    if skip_startup_migrations:
+        logger.info("Skipping startup migrations because DATAVUE_SKIP_STARTUP_MIGRATIONS is enabled.")
+    else:
+        run_migrations()
     
     # 5. Patch schema (Legacy fallback, should move to Alembic)
     patch_database_schema(engine)

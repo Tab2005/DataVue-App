@@ -47,11 +47,22 @@ MOCK_USER_ID = "test-google-sub-001"
 
 
 @pytest.mark.unit
-def test_token_status_no_integration_returns_false(client):
+def test_token_status_no_integration_returns_false(client, db):
     """
     當 user_integrations 沒有對應記錄時，
     token_exists 應回傳 False，且端點不應讀取 User.fb_access_token。
     """
+    from database.models.user import User, UserRole, UserStatus
+    user = User(
+        google_id=MOCK_USER_ID,
+        email="test-auth@example.com",
+        name="Test Auth User",
+        role=UserRole.VIEWER,
+        status=UserStatus.ACTIVE,
+    )
+    db.add(user)
+    db.commit()
+
     with patch(
         "routers.auth.verify_google_token_and_get_sub",
         return_value=MOCK_USER_ID,
@@ -72,11 +83,22 @@ def test_token_status_no_integration_returns_false(client):
 
 
 @pytest.mark.unit
-def test_token_status_with_valid_integration_returns_true(client):
+def test_token_status_with_valid_integration_returns_true(client, db):
     """
     當 user_integrations 有有效 Token 記錄時，
     token_exists 應回傳 True，且 is_expired 根據 token_expiry 計算。
     """
+    from database.models.user import User, UserRole, UserStatus
+    user = User(
+        google_id=MOCK_USER_ID,
+        email="test-auth@example.com",
+        name="Test Auth User",
+        role=UserRole.VIEWER,
+        status=UserStatus.ACTIVE,
+    )
+    db.add(user)
+    db.commit()
+
     future_expiry = datetime.now(timezone.utc) + timedelta(days=30)
     mock_integration = MagicMock()
     mock_integration.access_token = "encrypted_token_value"
@@ -103,10 +125,21 @@ def test_token_status_with_valid_integration_returns_true(client):
 
 
 @pytest.mark.unit
-def test_token_status_with_expired_integration(client):
+def test_token_status_with_expired_integration(client, db):
     """
     當 token_expiry 已過期時，is_expired 應回傳 True。
     """
+    from database.models.user import User, UserRole, UserStatus
+    user = User(
+        google_id=MOCK_USER_ID,
+        email="test-auth@example.com",
+        name="Test Auth User",
+        role=UserRole.VIEWER,
+        status=UserStatus.ACTIVE,
+    )
+    db.add(user)
+    db.commit()
+
     past_expiry = datetime.now(timezone.utc) - timedelta(days=5)
     mock_integration = MagicMock()
     mock_integration.access_token = "encrypted_old_token"

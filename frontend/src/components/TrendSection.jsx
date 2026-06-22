@@ -218,7 +218,7 @@ const TrendSection = ({ accountId, dateRange, prevDateRange, isCompareMode, sele
                                 borderRadius: '8px',
                                 background: 'rgba(255,255,255,0.05)',
                                 border: '1px solid var(--glass-border)',
-                                color: 'white',
+                                color: 'var(--text-primary)',
                                 minWidth: isMobile ? '100%' : '160px',
                                 width: isMobile ? '100%' : 'auto'
                             }}
@@ -242,7 +242,7 @@ const TrendSection = ({ accountId, dateRange, prevDateRange, isCompareMode, sele
                                 borderRadius: '8px',
                                 background: 'rgba(255,255,255,0.05)',
                                 border: '1px solid var(--glass-border)',
-                                color: 'white',
+                                color: 'var(--text-primary)',
                                 minWidth: isMobile ? '100%' : '160px',
                                 width: isMobile ? '100%' : 'auto'
                             }}
