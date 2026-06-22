@@ -682,19 +682,39 @@ class MetaAndromedaRepository:
         
         # 2. 逐筆進行 Prediction 匹配與比對
         for obs in observed_list:
-            if not obs.asset_uri:
-                continue
+            pred = None
+            
+            # 優先嘗試透過 asset.checksum_sha256 進行匹配 (避免因重新下載/上傳而產生的隨機 UUID asset_uri 不一致問題)
+            if obs.asset and obs.asset.checksum_sha256:
+                # 撈出所有 checksum 相同的 assets
+                sibling_assets = db.query(MetaAndromedaAsset.id).filter(
+                    MetaAndromedaAsset.checksum_sha256 == obs.asset.checksum_sha256
+                ).all()
+                sibling_asset_ids = [a[0] for a in sibling_assets] if sibling_assets else []
                 
-            # 尋找對應的 Completed ScoreEvent (以 asset_uri 關聯，取最新的成功預估)
-            pred = (
-                db.query(MetaAndromedaScoreEvent)
-                .filter(
-                    MetaAndromedaScoreEvent.asset_uri == obs.asset_uri,
-                    MetaAndromedaScoreEvent.status == "completed"
+                if sibling_asset_ids:
+                    pred = (
+                        db.query(MetaAndromedaScoreEvent)
+                        .filter(
+                            MetaAndromedaScoreEvent.asset_id.in_(sibling_asset_ids),
+                            MetaAndromedaScoreEvent.status == "completed"
+                        )
+                        .order_by(MetaAndromedaScoreEvent.completed_at.desc())
+                        .first()
+                    )
+            
+            # 若無 checksum 或沒配到，則 Fallback 使用傳統的 asset_uri 精確匹配
+            if not pred and obs.asset_uri:
+                pred = (
+                    db.query(MetaAndromedaScoreEvent)
+                    .filter(
+                        MetaAndromedaScoreEvent.asset_uri == obs.asset_uri,
+                        MetaAndromedaScoreEvent.status == "completed"
+                    )
+                    .order_by(MetaAndromedaScoreEvent.completed_at.desc())
+                    .first()
                 )
-                .order_by(MetaAndromedaScoreEvent.completed_at.desc())
-                .first()
-            )
+                
             if not pred:
                 continue
                 

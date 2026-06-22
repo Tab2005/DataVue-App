@@ -423,6 +423,89 @@ def test_meta_andromeda_drift_accuracy_and_mae_calculation(meta_andromeda_access
 
 
 @pytest.mark.unit
+def test_meta_andromeda_drift_matching_by_checksum(meta_andromeda_access, db):
+    from database.models.meta_andromeda import (
+        MetaAndromedaAsset,
+        MetaAndromedaObservedCreative,
+        MetaAndromedaScoreEvent
+    )
+    
+    db.query(MetaAndromedaObservedCreative).delete()
+    db.query(MetaAndromedaScoreEvent).delete()
+    db.query(MetaAndromedaAsset).delete()
+    db.commit()
+
+    checksums = ["sum_1", "sum_2", "sum_3", "sum_4", "sum_5"]
+    
+    for idx, cs in enumerate(checksums):
+        asset_obs = MetaAndromedaAsset(
+            id=f"ast_obs_{idx}",
+            asset_uri=f"storage://meta-andromeda/obs_{idx}.png",
+            storage_backend="filesystem",
+            storage_key=f"obs_{idx}.png",
+            asset_type="image",
+            source_filename=f"obs_{idx}.png",
+            checksum_sha256=cs,
+        )
+        asset_pred = MetaAndromedaAsset(
+            id=f"ast_pred_{idx}",
+            asset_uri=f"storage://meta-andromeda/pred_{idx}.png",
+            storage_backend="filesystem",
+            storage_key=f"pred_{idx}.png",
+            asset_type="image",
+            source_filename=f"pred_{idx}.png",
+            checksum_sha256=cs,
+        )
+        db.add(asset_obs)
+        db.add(asset_pred)
+        db.flush()
+
+        obs = MetaAndromedaObservedCreative(
+            id=f"test_obs_cs_{idx}",
+            asset_id=asset_obs.id,
+            asset_uri=asset_obs.asset_uri,
+            source_platform="facebook_ads",
+            source_account_id="act_12345",
+            ad_id=f"ad_cs_{idx}",
+            placement_family="feed",
+            market="TW",
+            media_type="image",
+            observation_window_kind="last_7d",
+            observation_window_start="2026-06-09",
+            observation_window_end="2026-06-16",
+            source_fetched_at="2026-06-16T12:00:00Z",
+            performance_snapshot={"roas": 2.0}
+        )
+        db.add(obs)
+
+        score_evt = MetaAndromedaScoreEvent(
+            id=f"test_score_cs_{idx}",
+            status="completed",
+            asset_id=asset_pred.id,
+            asset_uri=asset_pred.asset_uri,
+            asset_type="image",
+            request_mode="manual",
+            objective="CONVERSIONS",
+            placement_family="feed",
+            market="TW",
+            roas_band="mid"
+        )
+        db.add(score_evt)
+
+    db.commit()
+
+    response = meta_andromeda_access.post(
+        "/api/meta-andromeda/drift:trigger",
+        json={"window_kind": "last_7d", "note": "checksum match check"},
+    )
+    assert response.status_code == 201
+    payload = response.json()
+    assert payload["drift_status"] == "healthy"
+    assert payload["report_payload"]["total_matched"] == 5
+    assert payload["report_payload"]["accuracy"] == 1.0
+
+
+@pytest.mark.unit
 def test_meta_andromeda_monitoring_summary_does_not_reseed_read_path(meta_andromeda_access, db):
     from database.models.meta_andromeda import (
         MetaAndromedaDriftReport,
