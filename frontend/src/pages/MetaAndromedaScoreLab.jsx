@@ -374,8 +374,8 @@ const MetaAndromedaScoreLab = () => {
                                         <span>
                                             {scoreResult.lineage.scoring_mode === 'ai'
                                                 ? t(
-                                                    `OpenRouter (${scoreResult.lineage.provider_model || 'deepseek/deepseek-v4-flash'})`,
-                                                    `OpenRouter 聚合模型 (${scoreResult.lineage.provider_model || 'deepseek/deepseek-v4-flash'})`
+                                                    `OpenRouter (${scoreResult.lineage.provider_model || 'google/gemini-3.5-flash'})`,
+                                                    `OpenRouter 聚合模型 (${scoreResult.lineage.provider_model || 'google/gemini-3.5-flash'})`
                                                   )
                                                 : t('Heuristic Rule Engine', '啟發式模擬規則引擎')
                                             }

@@ -2226,3 +2226,107 @@ async def test_meta_andromeda_openrouter_invalid_schema_falls_back_to_heuristic(
 
     assert result["lineage"]["scoring_mode"] == "heuristic"
     assert "provider_fallback" in result["risk_tags"]
+
+
+@pytest.mark.asyncio
+async def test_meta_andromeda_storage_image_is_encoded_and_sent_as_data_uri(
+    db,
+    sample_admin_user,
+    tmp_path,
+    monkeypatch,
+):
+    from database.models.meta_andromeda import MetaAndromedaAsset
+    from modules.meta_andromeda.runtime import runtime_adapter
+    from services.ai.openrouter_client import OpenRouterClient
+
+    monkeypatch.setenv("META_ANDROMEDA_STORAGE_ROOT", str(tmp_path))
+    monkeypatch.setenv("OPENROUTER_API_KEY", "test-openrouter-key")
+    monkeypatch.setenv("META_ANDROMEDA_SCORING_PROVIDER", "openrouter")
+
+    storage_key = "uploads/test/base64-vision.png"
+    stored_path = tmp_path / storage_key
+    stored_path.parent.mkdir(parents=True, exist_ok=True)
+    stored_path.write_bytes(b"fake-image-bytes-for-base64")
+
+    asset = MetaAndromedaAsset(
+        id="asset_base64_multimodal",
+        asset_uri="storage://meta-andromeda/uploads/test/base64-vision.png",
+        storage_backend="filesystem",
+        storage_key=storage_key,
+        asset_type="image",
+        source_filename="base64-vision.png",
+        checksum_sha256="checksum-base64-vision",
+        file_size_bytes=len(b"fake-image-bytes-for-base64"),
+        uploaded_by=sample_admin_user.id,
+    )
+    db.add(asset)
+    db.commit()
+
+    class SessionProxy:
+        def __init__(self, session):
+            self._session = session
+
+        def __getattr__(self, name):
+            return getattr(self._session, name)
+
+        def close(self):
+            return None
+
+    monkeypatch.setattr("database.SessionLocal", lambda: SessionProxy(db))
+
+    captured = {}
+
+    def fake_init(self, api_key=None):
+        self.api_key = api_key or "test-openrouter-key"
+        self.client = object()
+        self.model_name = "google/gemini-3.5-flash"
+
+    def fake_generate_content(
+        self,
+        prompt,
+        model,
+        system_prompt,
+        temperature,
+        max_tokens,
+        timeout_seconds,
+        user_content,
+    ):
+        captured["model"] = model
+        captured["user_content"] = user_content
+        return json.dumps(
+            {
+                "overall_score": 83,
+                "roas_band": "high",
+                "top_positive_drivers": ["CTA 清楚"],
+                "top_negative_drivers": ["文案略多"],
+                "risk_tags": [],
+                "diagnostic_breakdown": {"cta_presence": "清楚"},
+                "summary": "模型已收到圖片資料。",
+            }
+        )
+
+    monkeypatch.setattr(OpenRouterClient, "__init__", fake_init)
+    monkeypatch.setattr(OpenRouterClient, "generate_content", fake_generate_content)
+
+    result = await runtime_adapter.generate_score_result(
+        {
+            "asset_id": asset.id,
+            "asset_uri": asset.asset_uri,
+            "asset_type": "image",
+            "request_mode": "auto",
+            "objective": "purchase",
+            "placement_family": "feed",
+            "market": "TW",
+            "request_context": {
+                "headline": "限時優惠",
+                "primary_text": "立即點擊",
+                "cta": "Shop Now",
+            },
+        }
+    )
+
+    assert result["status"] == "completed"
+    assert captured["model"]
+    image_parts = [part for part in captured["user_content"] if part.get("type") == "image_url"]
+    assert len(image_parts) == 1
+    assert image_parts[0]["image_url"]["url"].startswith("data:image/png;base64,")

@@ -175,7 +175,7 @@ class Settings:
 
     @property
     def META_ANDROMEDA_SCORING_MODEL(self) -> str:
-        return os.getenv("META_ANDROMEDA_SCORING_MODEL", "deepseek/deepseek-v4-flash")
+        return os.getenv("META_ANDROMEDA_SCORING_MODEL", "google/gemini-3.5-flash")
 
     @property
     def META_ANDROMEDA_SCORING_MODEL_VERSION(self) -> str:

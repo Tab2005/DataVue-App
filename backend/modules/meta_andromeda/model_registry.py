@@ -24,7 +24,7 @@ class MetaAndromedaModelRegistry:
             "prod_v2026_05_28": MetaAndromedaModelEntry(
                 model_version="prod_v2026_05_28",
                 provider="openrouter",
-                provider_model="deepseek/deepseek-v4-flash",
+                provider_model="openai/gpt-4o-mini",
                 scoring_profile="creative_scoring_v1",
                 feature_manifest_id="fm_prod_20260528",
                 release_channel="production",
@@ -42,7 +42,7 @@ class MetaAndromedaModelRegistry:
             "cand_v2026_06_05_a": MetaAndromedaModelEntry(
                 model_version="cand_v2026_06_05_a",
                 provider="openrouter",
-                provider_model="deepseek/deepseek-v4-flash",
+                provider_model="openai/gpt-4o-mini",
                 scoring_profile="creative_scoring_v2",
                 feature_manifest_id="fm_cand_20260605_a",
                 release_channel="candidate",
@@ -51,7 +51,7 @@ class MetaAndromedaModelRegistry:
             "cand_v2026_06_04_b": MetaAndromedaModelEntry(
                 model_version="cand_v2026_06_04_b",
                 provider="openrouter",
-                provider_model="deepseek/deepseek-v4-flash",
+                provider_model="openai/gpt-4o-mini",
                 scoring_profile="creative_scoring_v1",
                 feature_manifest_id="fm_cand_20260604_b",
                 release_channel="candidate",
