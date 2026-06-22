@@ -760,13 +760,20 @@ class MetaAndromedaRepository:
             total_completed_scores = db.query(MetaAndromedaScoreEvent).filter(
                 MetaAndromedaScoreEvent.status == "completed"
             ).count()
+            total_failed_scores = db.query(MetaAndromedaScoreEvent).filter(
+                MetaAndromedaScoreEvent.status == "failed"
+            ).count()
+            total_pending_scores = db.query(MetaAndromedaScoreEvent).filter(
+                MetaAndromedaScoreEvent.status.in_(["queued", "started", "processing"])
+            ).count()
             
             summary = (
                 f"數據量不足 (僅成功匹配 {total_matched} 筆)。"
                 f"診斷：區間內匯入廣告 {total_observed} 筆，"
-                f"其中 {obs_with_asset} 筆具有素材檔案，"
-                f"系統中共有 {total_completed_scores} 筆已完成的 AI 評分記錄。"
-                "請確認素材是否已在評分工作台完成評估，或匯入時是否有成功取得 Facebook 素材。"
+                f"其中 {obs_with_asset} 筆具有素材檔案。"
+                f"系統中 AI 評分記錄統計：{total_completed_scores} 筆已完成，"
+                f"{total_failed_scores} 筆失敗，{total_pending_scores} 筆處理/排隊中。"
+                "請確認素材是否已在評分工作台完成評估，或確認背景任務與 AI 服務是否正常運作。"
             )
         elif accuracy >= 0.75 and mae <= 0.35:
             drift_status = "healthy"
@@ -794,6 +801,8 @@ class MetaAndromedaRepository:
                 "total_matched": total_matched,
                 "obs_with_asset": sum(1 for obs in observed_list if obs.asset_id or obs.asset_uri),
                 "total_completed_scores": db.query(MetaAndromedaScoreEvent).filter(MetaAndromedaScoreEvent.status == "completed").count(),
+                "total_failed_scores": db.query(MetaAndromedaScoreEvent).filter(MetaAndromedaScoreEvent.status == "failed").count(),
+                "total_pending_scores": db.query(MetaAndromedaScoreEvent).filter(MetaAndromedaScoreEvent.status.in_(["queued", "started", "processing"])).count(),
                 "accuracy": round(accuracy, 4),
                 "mae": round(mae, 4),
                 "label_policy_version": LABEL_POLICY_VERSION,
