@@ -271,7 +271,7 @@ class OpenRouterScoringProvider(BaseScoringProvider):
                     registry_entry.provider_model,
                     system_prompt,
                     0.2,
-                    600,
+                    2048,
                     settings.META_ANDROMEDA_SCORE_TIMEOUT_SECONDS,
                     user_content,
                 )
