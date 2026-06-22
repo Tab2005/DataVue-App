@@ -499,6 +499,15 @@ class MetaAndromedaRepository:
         failed = sum(1 for row in score_rows if row.status == "failed")
         retrying = sum(1 for row in score_rows if row.attempt_count > 1)
         completed = len(completed_rows)
+        observed_total = db.query(MetaAndromedaObservedCreative).count()
+        observed_with_asset = (
+            db.query(MetaAndromedaObservedCreative)
+            .filter(
+                (MetaAndromedaObservedCreative.asset_id.isnot(None))
+                | (MetaAndromedaObservedCreative.asset_uri.isnot(None))
+            )
+            .count()
+        )
         feedback_events = db.query(MetaAndromedaFeedbackEvent).count()
         worker_events = (
             db.query(MetaAndromedaWorkerEvent)
@@ -517,6 +526,11 @@ class MetaAndromedaRepository:
             .order_by(MetaAndromedaDriftReport.created_at.desc())
             .limit(5)
             .all()
+        )
+        latest_calibration = (
+            db.query(MetaAndromedaCalibrationDataset)
+            .order_by(MetaAndromedaCalibrationDataset.created_at.desc())
+            .first()
         )
         def _to_naive(dt: datetime) -> datetime | None:
             if dt is None:
@@ -572,6 +586,10 @@ class MetaAndromedaRepository:
             for report in drift_reports
             if report.drift_status != "stable"
         ]
+        latest_drift_payload = deepcopy(drift_reports[0].report_payload) if drift_reports else {}
+        latest_matched = int(latest_drift_payload.get("total_matched") or 0)
+        latest_observed = int(latest_drift_payload.get("total_observed") or 0)
+        latest_calibration_candidates = int(latest_drift_payload.get("calibration_candidate_total") or 0)
         return {
             "jobs": {
                 "score-request": {
@@ -581,6 +599,16 @@ class MetaAndromedaRepository:
                     "queue_depth": {"current": queued, "peak": peak_depth},
                     "latency_ms": latency_metrics,
                 }
+            },
+            "observation_pipeline": {
+                "observed_total": observed_total,
+                "observed_with_asset": observed_with_asset,
+                "latest_matched_total": latest_matched,
+                "latest_match_rate": round(latest_matched / latest_observed, 4) if latest_observed > 0 else 0.0,
+                "latest_calibration_candidate_total": latest_calibration_candidates,
+                "latest_calibration_synced_total": latest_calibration.synced_count if latest_calibration else 0,
+                "latest_calibration_status": latest_calibration.status if latest_calibration else "not_started",
+                "latest_calibration_dataset_id": latest_calibration.id if latest_calibration else None,
             },
             "worker_host": {
                 "recent_events": [self._worker_event_to_dict(item) for item in worker_events],
@@ -596,10 +624,12 @@ class MetaAndromedaRepository:
             "latest_drift_reports": [self._drift_report_to_dict(item) for item in drift_reports],
             "notes": [
                 f"Score events persisted in DataVue DB: {total}",
+                f"Observed creatives persisted in DataVue DB: {observed_total} (observation pipeline only)",
                 f"Feedback events persisted in DataVue DB: {feedback_events}",
                 f"Retry-involved score events: {retrying}",
                 f"Calibration label policy version: {LABEL_POLICY_VERSION}",
                 f"Active scoring registry target: {model_registry.get_entry().model_version}",
+                "Observation pipeline metrics exclude manual Score Lab uploads unless they are explicitly matched by a drift report.",
                 "Monitoring timeline and drift trigger are now available from the shared DataVue host.",
             ],
         }
@@ -748,6 +778,7 @@ class MetaAndromedaRepository:
         total_matched = len(matched_pairs)
         accuracy = correct_count / total_matched if total_matched > 0 else 0.0
         mae = total_error / total_matched if total_matched > 0 else 0.0
+        calibration_candidate_total = sum(1 for item in matched_pairs if item["error"] > 0)
         
         # 4. 判定漂移健康度
         if total_matched < 5:
@@ -799,12 +830,14 @@ class MetaAndromedaRepository:
             report_payload={
                 "total_observed": len(observed_list),
                 "total_matched": total_matched,
+                "match_rate": round(total_matched / len(observed_list), 4) if observed_list else 0.0,
                 "obs_with_asset": sum(1 for obs in observed_list if obs.asset_id or obs.asset_uri),
                 "total_completed_scores": db.query(MetaAndromedaScoreEvent).filter(MetaAndromedaScoreEvent.status == "completed").count(),
                 "total_failed_scores": db.query(MetaAndromedaScoreEvent).filter(MetaAndromedaScoreEvent.status == "failed").count(),
                 "total_pending_scores": db.query(MetaAndromedaScoreEvent).filter(MetaAndromedaScoreEvent.status.in_(["queued", "started", "processing"])).count(),
                 "accuracy": round(accuracy, 4),
                 "mae": round(mae, 4),
+                "calibration_candidate_total": calibration_candidate_total,
                 "label_policy_version": LABEL_POLICY_VERSION,
                 "matched_details": matched_pairs,
                 "since": since,

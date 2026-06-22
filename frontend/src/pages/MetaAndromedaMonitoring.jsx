@@ -44,6 +44,20 @@ const MetaAndromedaMonitoring = () => {
                 return t('Completed Total', '累計完成數');
             case 'failure_total':
                 return t('Failure Total', '累計失敗數');
+            case 'observed_total':
+                return t('Observed Imported', '已匯入 Observation');
+            case 'observed_with_asset':
+                return t('Observed With Asset', '已有素材 Observation');
+            case 'latest_matched_total':
+                return t('Matched to Completed Score', '成功配對 Completed Score');
+            case 'latest_match_rate':
+                return t('Latest Match Rate', '最近配對率');
+            case 'latest_calibration_candidate_total':
+                return t('Calibration Candidates', '可校準偏差樣本');
+            case 'latest_calibration_synced_total':
+                return t('Calibration Synced', '已同步校準資料');
+            case 'latest_calibration_status':
+                return t('Calibration Status', '校準資料狀態');
             case 'queue_depth.current':
                 return t('Current Queue Depth', '當前佇列深度');
             case 'queue_depth.peak':
@@ -124,6 +138,12 @@ const MetaAndromedaMonitoring = () => {
             // 主機策略
             case 'shared_queue_host_adapter':
                 return t('Shared Queue Host Adapter', '共用佇列適配器');
+            case 'not_started':
+                return t('Not Started', '尚未開始');
+            case 'queued_for_calibration':
+                return t('Queued for Calibration', '已排入校準');
+            case 'no_data_to_sync':
+                return t('No Data to Sync', '沒有可同步資料');
 
             default:
                 return key;
@@ -438,6 +458,48 @@ const MetaAndromedaMonitoring = () => {
                         ))}
 
                         <section style={panelStyle}>
+                            <h2 style={sectionTitleStyle}>{t('Observation Pipeline', 'Observation 資料管線')}</h2>
+                            <div style={{ marginBottom: '12px', color: 'var(--text-secondary)', fontSize: '0.85rem', lineHeight: 1.6 }}>
+                                {t(
+                                    'These metrics only track the FB Ads observation import line. Manual Score Lab uploads are not counted here unless a drift report explicitly matches them.',
+                                    '這些指標僅統計 FB Ads observation 匯入這條線；Score Lab 手動上傳素材不會算在這裡，除非某次 drift 報告有明確配對到它們。'
+                                )}
+                            </div>
+                            <div style={metricGridStyle}>
+                                <Metric
+                                    label={getTranslation('observed_total')}
+                                    value={summary?.observation_pipeline?.observed_total}
+                                />
+                                <Metric
+                                    label={getTranslation('observed_with_asset')}
+                                    value={summary?.observation_pipeline?.observed_with_asset}
+                                />
+                                <Metric
+                                    label={getTranslation('latest_matched_total')}
+                                    value={summary?.observation_pipeline?.latest_matched_total}
+                                />
+                                <Metric
+                                    label={getTranslation('latest_match_rate')}
+                                    value={formatPercent(summary?.observation_pipeline?.latest_match_rate)}
+                                />
+                                <Metric
+                                    label={getTranslation('latest_calibration_candidate_total')}
+                                    value={summary?.observation_pipeline?.latest_calibration_candidate_total}
+                                />
+                                <Metric
+                                    label={getTranslation('latest_calibration_synced_total')}
+                                    value={summary?.observation_pipeline?.latest_calibration_synced_total}
+                                />
+                            </div>
+                            <div style={{ marginTop: '12px', color: 'var(--text-secondary)', fontSize: '0.85rem', lineHeight: 1.6 }}>
+                                {t('Calibration status', '校準狀態')}: {getTranslation(summary?.observation_pipeline?.latest_calibration_status)}
+                                {summary?.observation_pipeline?.latest_calibration_dataset_id
+                                    ? ` · Dataset: ${summary.observation_pipeline.latest_calibration_dataset_id}`
+                                    : ''}
+                            </div>
+                        </section>
+
+                        <section style={panelStyle}>
                             <h2 style={sectionTitleStyle}>{t('Drift Trigger', '預估偏差檢查')}</h2>
                             <form onSubmit={handleDriftTrigger} style={{ display: 'grid', gap: '12px' }}>
                                 <select value={driftWindowKind} onChange={(event) => setDriftWindowKind(event.target.value)} style={inputStyle}>
@@ -681,6 +743,9 @@ const MetaAndromedaMonitoring = () => {
                                     const accuracy = report.report_payload?.accuracy;
                                     const mae = report.report_payload?.mae;
                                     const details = report.report_payload?.matched_details || [];
+                                    const totalObserved = report.report_payload?.total_observed;
+                                    const totalMatched = report.report_payload?.total_matched;
+                                    const calibrationCandidates = report.report_payload?.calibration_candidate_total;
                                     const hasDetails = details.length > 0;
                                     
                                     // 狀態樣式與呼吸燈效果
@@ -732,6 +797,9 @@ const MetaAndromedaMonitoring = () => {
                                                             {t('Accuracy', '準確率')}: {(accuracy * 100).toFixed(1)}% | {t('MAE', '平均絕對偏差')}: {mae.toFixed(2)}
                                                         </span>
                                                     )}
+                                                    <span style={{ fontSize: '0.75rem', color: 'var(--text-secondary)' }}>
+                                                        {t('Observed', '匯入')}: {totalObserved ?? '--'} · {t('Matched', '配對成功')}: {totalMatched ?? '--'} · {t('Calibration Candidates', '可校準')}: {calibrationCandidates ?? '--'}
+                                                    </span>
                                                     <span style={{ fontSize: '0.75rem', color: 'var(--text-secondary)' }}>
                                                         {t('Run Time', '執行時間')}: {formatDateTime(report.created_at)}
                                                     </span>
@@ -862,8 +930,28 @@ const MetaAndromedaMonitoring = () => {
                                 flexDirection: 'column',
                                 gap: '8px'
                             }}>
+                                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '8px' }}>
+                                    <Metric
+                                        label={t('Observed', '匯入')}
+                                        value={selectedDriftReport.report_payload?.total_observed}
+                                    />
+                                    <Metric
+                                        label={t('Matched', '配對成功')}
+                                        value={selectedDriftReport.report_payload?.total_matched}
+                                    />
+                                    <Metric
+                                        label={t('Calibration Candidates', '可校準')}
+                                        value={selectedDriftReport.report_payload?.calibration_candidate_total}
+                                    />
+                                </div>
                                 <div style={{ fontSize: '0.85rem', color: 'var(--text-secondary)', lineHeight: 1.5 }}>
                                     {t('Package observed creatives with prediction errors into a dataset to calibrate Gemini runtime model.', '將有預測偏差的觀測素材打包同步為校準資料集，可用於微調與校準 Gemini 創意預估模型。')}
+                                </div>
+                                <div style={{ fontSize: '0.78rem', color: 'var(--text-secondary)', lineHeight: 1.5 }}>
+                                    {t(
+                                        'The counts above belong to the observation import line only and are separate from standalone Score Lab submissions.',
+                                        '上方這些數字只屬於 observation 匯入這條線，與 Score Lab 單獨送評的素材統計分開。'
+                                    )}
                                 </div>
                                 <button
                                     type="button"
@@ -1004,6 +1092,13 @@ const Metric = ({ label, value }) => (
         <div style={{ color: 'var(--text-primary)', fontWeight: 700 }}>{value ?? '--'}</div>
     </div>
 );
+
+const formatPercent = (value) => {
+    if (value === null || value === undefined) {
+        return '--';
+    }
+    return `${(Number(value) * 100).toFixed(1)}%`;
+};
 
 const badgeStyle = {
     padding: '3px 8px',
