@@ -50,7 +50,25 @@ def _should_stamp_legacy_database() -> bool:
 
     with engine.connect() as conn:
         version = conn.execute(text("SELECT version_num FROM alembic_version LIMIT 1")).scalar()
-        return version in (None, "")
+        if version in (None, ""):
+            return True
+
+        # 若 alembic_version 中記錄為舊版，但實際資料表中已存在 "modules" (即已被 init_db 或手動建表)，
+        # 我們直接將其 Stamp 至 PRE_META_ANDROMEDA_BASELINE 基線，避免 alembic upgrade 執行舊遷移產生 DuplicateTable 錯誤。
+        legacy_revisions = {
+            "fe8441e71f69",
+            "20260106",
+            "20260223_p3_integrations_indexes",
+            "20260224_fix_integrations_migration_compat",
+            "0303de3f01eb",
+            "230a10d75894_add_saved_views_table",
+            "20260331_add_weekly_reports",
+            "20260331_merge_all_heads"
+        }
+        if version in legacy_revisions and "modules" in existing_tables:
+            return True
+
+    return False
 
 
 def _ensure_alembic_version_column_capacity() -> None:
