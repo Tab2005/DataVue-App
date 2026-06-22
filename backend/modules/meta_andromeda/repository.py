@@ -654,15 +654,15 @@ class MetaAndromedaRepository:
         since: str | None = None,
         until: str | None = None,
     ):
-        # 1. 撈取該窗口的所有 Observed Creative
+        # 1. 撈取該窗口的所有 Observed Creative (改用區間重疊比對，避免因時區或邊界跨天導致資料遺漏)
         if window_kind == "custom" and since and until:
             range_str = f"[{since} ~ {until}]"
             note = f"{note} {range_str}" if note else range_str
             observed_list = (
                 db.query(MetaAndromedaObservedCreative)
                 .filter(
-                    MetaAndromedaObservedCreative.observation_window_start >= since,
-                    MetaAndromedaObservedCreative.observation_window_end <= until
+                    MetaAndromedaObservedCreative.observation_window_end >= since,
+                    MetaAndromedaObservedCreative.observation_window_start <= until
                 )
                 .all()
             )
