@@ -593,16 +593,25 @@ const Analytics = () => {
                 placement_family: 'feed',
             });
 
-            const message = `${language === 'zh' ? '已匯入' : 'Imported'}: ${response.observed_creative_id}`;
+            const message = response.score_event_id
+                ? `${language === 'zh' ? '已匯入並建立評分事件' : 'Imported and queued score event'}: ${response.observed_creative_id} / ${response.score_event_id}`
+                : `${language === 'zh' ? '已匯入' : 'Imported'}: ${response.observed_creative_id}`;
             setObservationImportState((prev) => ({
                 ...prev,
                 [row.id]: {
                     status: 'success',
                     message,
                     observedCreativeId: response.observed_creative_id,
+                    scoreEventId: response.score_event_id,
+                    scoreStatus: response.score_status,
                 },
             }));
-            return { ok: true, observedCreativeId: response.observed_creative_id };
+            return {
+                ok: true,
+                observedCreativeId: response.observed_creative_id,
+                scoreEventId: response.score_event_id,
+                scoreStatus: response.score_status,
+            };
         } catch (err) {
             const message = err?.message || (language === 'zh' ? '匯入失敗' : 'Import failed');
             setObservationImportState((prev) => ({

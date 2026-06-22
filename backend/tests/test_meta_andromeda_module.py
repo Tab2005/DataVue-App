@@ -1508,6 +1508,95 @@ def test_meta_andromeda_observation_import_persists_asset_and_observed_record(
 
 
 @pytest.mark.unit
+def test_meta_andromeda_observation_import_auto_creates_score_event(
+    meta_andromeda_access,
+    db,
+    monkeypatch,
+):
+    from database import MetaAndromedaScoreEvent
+    from modules.meta_andromeda.schemas import ObservedCreativeCandidate
+
+    async def fake_fetch_observed_creative_candidate(**kwargs):
+        payload = kwargs["payload"]
+        return ObservedCreativeCandidate(
+            source_platform="facebook_ads",
+            source_account_id=payload["account_id"],
+            campaign_id="120000000000010",
+            adset_id="120000000000011",
+            ad_id=payload["ad_id"],
+            ad_name="Auto Score Ad",
+            objective="OUTCOME_SALES",
+            placement_family=payload["placement_family"],
+            market=payload["market"],
+            primary_text="Primary copy",
+            headline="Headline copy",
+            cta="SHOP_NOW",
+            media_url="https://cdn.example.com/auto-score-ad.png",
+            media_type="image",
+            performance_snapshot={"roas": 2.85},
+            observation_window_kind="last_30d",
+            observation_window_start="2026-05-17",
+            observation_window_end="2026-06-15",
+            source_fetched_at="2026-06-15T00:00:00Z",
+        )
+
+    async def fake_download_observed_asset_snapshot(*, media_url: str, ad_id: str, media_type: str):
+        return {
+            "file_bytes": b"auto-score-image-bytes",
+            "source_filename": f"{ad_id}.png",
+            "content_type": "image/png",
+            "asset_type": media_type,
+        }
+
+    monkeypatch.setattr(
+        meta_andromeda_service_module.MetaAndromedaService,
+        "_fetch_observed_facebook_ad_candidate",
+        staticmethod(fake_fetch_observed_creative_candidate),
+    )
+    monkeypatch.setattr(
+        meta_andromeda_service_module.MetaAndromedaService,
+        "_download_observed_asset_snapshot",
+        staticmethod(fake_download_observed_asset_snapshot),
+    )
+    monkeypatch.setattr(
+        meta_andromeda_service_module.queue_host_adapter,
+        "enqueue_score_event",
+        lambda score_event_id, delay_seconds=1.0: {
+            "accepted": True,
+            "queue_host": "database_queue",
+            "dispatch_mode": "db_backlog",
+            "delay_seconds": delay_seconds,
+        },
+    )
+
+    response = meta_andromeda_access.post(
+        "/api/meta-andromeda/evaluations/import/facebook-ads",
+        json={
+            "account_id": "act_123456789",
+            "ad_id": "120000000000012",
+            "observation_window_kind": "last_30d",
+            "market": "TW",
+            "placement_family": "feed",
+        },
+    )
+
+    assert response.status_code == 202
+    payload = response.json()
+    assert payload["score_event_id"].startswith("ma_evt_")
+    assert payload["score_status"] == "queued"
+    assert payload["runtime_job_id"].startswith("ma_score_")
+
+    score_event = (
+        db.query(MetaAndromedaScoreEvent)
+        .filter(MetaAndromedaScoreEvent.id == payload["score_event_id"])
+        .one()
+    )
+    assert score_event.status == "queued"
+    assert score_event.asset_uri == payload["asset_uri"]
+    assert score_event.runtime_job_id == payload["runtime_job_id"]
+
+
+@pytest.mark.unit
 def test_meta_andromeda_observation_import_denies_without_fb_ads_module_access(
     meta_andromeda_permission_client,
     db,

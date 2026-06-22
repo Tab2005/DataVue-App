@@ -44,6 +44,8 @@ const MetaAndromedaMonitoring = () => {
                 return t('Completed Total', '累計完成數');
             case 'failure_total':
                 return t('Failure Total', '累計失敗數');
+            case 'score-request':
+                return t('Prediction / ScoreEvent Queue', 'Prediction / ScoreEvent 佇列');
             case 'observed_total':
                 return t('Observed Imported (Cumulative)', '已匯入 Observation（累積）');
             case 'latest_observed_total':

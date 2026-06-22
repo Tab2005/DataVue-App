@@ -250,6 +250,9 @@ class FacebookAdObservedImportResponse(BaseModel):
     observed_creative_id: str
     status: str
     asset_uri: str | None = None
+    score_event_id: str | None = None
+    score_status: str | None = None
+    runtime_job_id: str | None = None
     source: ObservationSourceResponse
     observation_window: ObservationWindowResponse
     performance_snapshot: dict = Field(default_factory=dict)

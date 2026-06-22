@@ -14,6 +14,7 @@ import httpx
 import logging
 
 from core.config import settings
+from core.scheduler import get_meta_andromeda_score_job_id
 from database import SessionLocal, User
 from .schemas import ObservedCreativeCandidate
 from .importers.facebook_ads_importer import fetch_observed_creative_candidate
@@ -553,10 +554,53 @@ class MetaAndromedaService:
             },
         )
 
+        score_event_id = None
+        score_status = "skipped_no_asset"
+        runtime_job_id = None
+
+        if observed_record.get("asset_uri") and observed_record.get("asset_id") and observed_record.get("media_type") in {"image", "video"}:
+            try:
+                created_score = MetaAndromedaService.create_score_event(
+                    db,
+                    {
+                        "asset_uri": observed_record["asset_uri"],
+                        "asset_type": observed_record["media_type"],
+                        "asset_id": observed_record["asset_id"],
+                        "request_mode": "auto",
+                        "objective": observed_record.get("objective") or "purchase",
+                        "placement_family": observed_record.get("placement_family") or "all",
+                        "market": observed_record.get("market") or "TW",
+                        "primary_text": observed_record.get("primary_text"),
+                        "headline": observed_record.get("headline"),
+                        "cta": observed_record.get("cta"),
+                    },
+                )
+                score_event_id = created_score["score_event_id"]
+                runtime_job_id = get_meta_andromeda_score_job_id(score_event_id)
+                MetaAndromedaService.assign_score_runtime_job(db, score_event_id, runtime_job_id)
+                queued_score = MetaAndromedaService.enqueue_score_event(
+                    db,
+                    score_event_id=score_event_id,
+                    runtime_job_id=runtime_job_id,
+                )
+                score_status = queued_score.get("status") or "queued"
+                runtime_job_id = queued_score.get("runtime_job_id") or runtime_job_id
+            except Exception as exc:
+                logger.warning(
+                    "[Observation Import] Auto score-event creation failed for observed_creative_id %s: %s",
+                    observed_record["observed_creative_id"],
+                    exc,
+                    exc_info=True,
+                )
+                score_status = "auto_score_failed"
+
         return {
             "observed_creative_id": observed_record["observed_creative_id"],
             "status": "accepted",
             "asset_uri": observed_record["asset_uri"],
+            "score_event_id": score_event_id,
+            "score_status": score_status,
+            "runtime_job_id": runtime_job_id,
             "source": {
                 "platform": candidate.source_platform,
                 "account_id": candidate.source_account_id,

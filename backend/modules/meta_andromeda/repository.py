@@ -803,7 +803,7 @@ class MetaAndromedaRepository:
                 f"數據量不足 (僅成功匹配 {total_matched} 筆)。"
                 f"診斷：區間內匯入廣告 {total_observed} 筆，"
                 f"其中 {obs_with_asset} 筆具有素材檔案。"
-                f"系統中 AI 評分記錄統計：{total_completed_scores} 筆已完成，"
+                f"Prediction / ScoreEvent 累積統計：{total_completed_scores} 筆已完成，"
                 f"{total_failed_scores} 筆失敗，{total_pending_scores} 筆處理/排隊中。"
                 "請確認素材是否已在評分工作台完成評估，或確認背景任務與 AI 服務是否正常運作。"
             )
