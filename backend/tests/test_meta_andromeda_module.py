@@ -1582,18 +1582,18 @@ def test_meta_andromeda_observation_import_auto_creates_score_event(
 
     assert response.status_code == 202
     payload = response.json()
-    assert payload["score_event_id"].startswith("ma_evt_")
-    assert payload["score_status"] == "queued"
-    assert payload["runtime_job_id"].startswith("ma_score_")
+    assert payload["score_event_id"] is None
+    assert payload["score_status"] == "queued_background"
+    assert payload["runtime_job_id"] is None
 
     score_event = (
         db.query(MetaAndromedaScoreEvent)
-        .filter(MetaAndromedaScoreEvent.id == payload["score_event_id"])
+        .filter(MetaAndromedaScoreEvent.asset_uri == payload["asset_uri"])
         .one()
     )
     assert score_event.status == "queued"
     assert score_event.asset_uri == payload["asset_uri"]
-    assert score_event.runtime_job_id == payload["runtime_job_id"]
+    assert score_event.runtime_job_id.startswith("ma_score_")
 
 
 @pytest.mark.unit

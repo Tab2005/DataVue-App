@@ -2,7 +2,7 @@
 Meta Andromeda Module - Router
 """
 
-from fastapi import APIRouter, Depends, File, Form, Header, HTTPException, Query, Request, UploadFile, status
+from fastapi import APIRouter, BackgroundTasks, Depends, File, Form, Header, HTTPException, Query, Request, UploadFile, status
 
 from core.scheduler import get_meta_andromeda_score_job_id
 from database import get_db
@@ -168,6 +168,7 @@ async def release_overview(
 )
 async def import_facebook_ad_observation(
     payload: FacebookAdObservedImportRequest,
+    background_tasks: BackgroundTasks,
     user=Depends(get_current_meta_andromeda_user),
     _access: bool = Depends(require_meta_andromeda_module),
     _fb_ads_access: bool = Depends(require_fb_ads_module),
@@ -176,12 +177,19 @@ async def import_facebook_ad_observation(
     db=Depends(get_db),
 ):
     try:
-        return await MetaAndromedaService.import_observed_facebook_ad(
+        response = await MetaAndromedaService.import_observed_facebook_ad(
             db,
             payload.model_dump(),
             user_id=getattr(user, "google_id", None) or getattr(user, "id", None),
             team_id=x_team_id,
         )
+        auto_score_payload = response.pop("_auto_score_payload", None)
+        if auto_score_payload:
+            background_tasks.add_task(
+                MetaAndromedaService.create_and_enqueue_score_event_for_observation,
+                auto_score_payload,
+            )
+        return response
     except MetaAndromedaValidationError as exc:
         raise HTTPException(status_code=exc.status_code, detail=exc.detail) from exc
 

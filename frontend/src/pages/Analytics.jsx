@@ -595,7 +595,9 @@ const Analytics = () => {
 
             const message = response.score_event_id
                 ? `${language === 'zh' ? '已匯入並建立評分事件' : 'Imported and queued score event'}: ${response.observed_creative_id} / ${response.score_event_id}`
-                : `${language === 'zh' ? '已匯入' : 'Imported'}: ${response.observed_creative_id}`;
+                : response.score_status === 'queued_background'
+                    ? `${language === 'zh' ? '已匯入，評分事件將由後端背景建立' : 'Imported. Score event will be created in backend background'}: ${response.observed_creative_id}`
+                    : `${language === 'zh' ? '已匯入' : 'Imported'}: ${response.observed_creative_id}`;
             setObservationImportState((prev) => ({
                 ...prev,
                 [row.id]: {

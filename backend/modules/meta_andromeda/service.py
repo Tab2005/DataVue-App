@@ -557,42 +557,23 @@ class MetaAndromedaService:
         score_event_id = None
         score_status = "skipped_no_asset"
         runtime_job_id = None
+        auto_score_payload = None
 
         if observed_record.get("asset_uri") and observed_record.get("asset_id") and observed_record.get("media_type") in {"image", "video"}:
-            try:
-                created_score = MetaAndromedaService.create_score_event(
-                    db,
-                    {
-                        "asset_uri": observed_record["asset_uri"],
-                        "asset_type": observed_record["media_type"],
-                        "asset_id": observed_record["asset_id"],
-                        "request_mode": "auto",
-                        "objective": observed_record.get("objective") or "purchase",
-                        "placement_family": observed_record.get("placement_family") or "all",
-                        "market": observed_record.get("market") or "TW",
-                        "primary_text": observed_record.get("primary_text"),
-                        "headline": observed_record.get("headline"),
-                        "cta": observed_record.get("cta"),
-                    },
-                )
-                score_event_id = created_score["score_event_id"]
-                runtime_job_id = get_meta_andromeda_score_job_id(score_event_id)
-                MetaAndromedaService.assign_score_runtime_job(db, score_event_id, runtime_job_id)
-                queued_score = MetaAndromedaService.enqueue_score_event(
-                    db,
-                    score_event_id=score_event_id,
-                    runtime_job_id=runtime_job_id,
-                )
-                score_status = queued_score.get("status") or "queued"
-                runtime_job_id = queued_score.get("runtime_job_id") or runtime_job_id
-            except Exception as exc:
-                logger.warning(
-                    "[Observation Import] Auto score-event creation failed for observed_creative_id %s: %s",
-                    observed_record["observed_creative_id"],
-                    exc,
-                    exc_info=True,
-                )
-                score_status = "auto_score_failed"
+            score_status = "queued_background"
+            auto_score_payload = {
+                "asset_uri": observed_record["asset_uri"],
+                "asset_type": observed_record["media_type"],
+                "asset_id": observed_record["asset_id"],
+                "request_mode": "auto",
+                "objective": observed_record.get("objective") or "purchase",
+                "placement_family": observed_record.get("placement_family") or "all",
+                "market": observed_record.get("market") or "TW",
+                "primary_text": observed_record.get("primary_text"),
+                "headline": observed_record.get("headline"),
+                "cta": observed_record.get("cta"),
+                "observed_creative_id": observed_record["observed_creative_id"],
+            }
 
         return {
             "observed_creative_id": observed_record["observed_creative_id"],
@@ -612,12 +593,52 @@ class MetaAndromedaService:
                 "end": candidate.observation_window_end,
             },
             "performance_snapshot": candidate.performance_snapshot,
+            "_auto_score_payload": auto_score_payload,
         }
 
     @staticmethod
     def create_score_event(db, payload: dict) -> dict:
         score_payload = runtime_adapter.build_score_submission(payload)
         return repository.create_score_event(db, score_payload)
+
+    @staticmethod
+    def create_and_enqueue_score_event_for_observation(auto_score_payload: dict | None) -> dict | None:
+        if not auto_score_payload:
+            return None
+
+        db = SessionLocal()
+        observed_creative_id = auto_score_payload.get("observed_creative_id") or "unknown_observation"
+        try:
+            payload = {
+                key: value
+                for key, value in auto_score_payload.items()
+                if key != "observed_creative_id"
+            }
+            created_score = MetaAndromedaService.create_score_event(db, payload)
+            score_event_id = created_score["score_event_id"]
+            runtime_job_id = get_meta_andromeda_score_job_id(score_event_id)
+            MetaAndromedaService.assign_score_runtime_job(db, score_event_id, runtime_job_id)
+            queued_score = MetaAndromedaService.enqueue_score_event(
+                db,
+                score_event_id=score_event_id,
+                runtime_job_id=runtime_job_id,
+            )
+            logger.info(
+                "[Observation Import] Background auto score-event queued for observed_creative_id %s: %s",
+                observed_creative_id,
+                score_event_id,
+            )
+            return queued_score
+        except Exception as exc:
+            logger.warning(
+                "[Observation Import] Background auto score-event creation failed for observed_creative_id %s: %s",
+                observed_creative_id,
+                exc,
+                exc_info=True,
+            )
+            return None
+        finally:
+            db.close()
 
     @staticmethod
     def assign_score_runtime_job(db, score_event_id: str, runtime_job_id: str) -> dict:
