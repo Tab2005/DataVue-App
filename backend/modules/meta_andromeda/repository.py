@@ -1002,6 +1002,45 @@ class MetaAndromedaRepository:
             "created_at": observed.created_at.isoformat() if observed.created_at else None,
         }
 
+    def get_observed_creative(self, db: Session, observed_creative_id: str):
+        observed = (
+            db.query(MetaAndromedaObservedCreative)
+            .filter(MetaAndromedaObservedCreative.id == observed_creative_id)
+            .first()
+        )
+        if observed is None:
+            return None
+        return {
+            "observed_creative_id": observed.id,
+            "asset_id": observed.asset_id,
+            "asset_uri": observed.asset_uri,
+            "media_type": observed.media_type,
+            "created_at": observed.created_at.isoformat() if observed.created_at else None,
+        }
+
+    def get_latest_score_event_for_observation(self, db: Session, observed_creative_id: str):
+        score = (
+            db.query(MetaAndromedaScoreEvent)
+            .filter(
+                MetaAndromedaScoreEvent.request_context["observed_creative_id"].as_string() == observed_creative_id
+            )
+            .order_by(MetaAndromedaScoreEvent.created_at.desc())
+            .first()
+        )
+        if score is None:
+            observed = self.get_observed_creative(db, observed_creative_id)
+            if not observed or not observed.get("asset_uri"):
+                return None
+            score = (
+                db.query(MetaAndromedaScoreEvent)
+                .filter(MetaAndromedaScoreEvent.asset_uri == observed["asset_uri"])
+                .order_by(MetaAndromedaScoreEvent.created_at.desc())
+                .first()
+            )
+            if score is None:
+                return None
+        return self._score_to_detail(score)
+
     def create_score_event(self, db: Session, score_payload: dict):
         score = MetaAndromedaScoreEvent(
             id=score_payload["score_event_id"],

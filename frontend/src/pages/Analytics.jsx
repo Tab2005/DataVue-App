@@ -12,7 +12,10 @@ import ReportModal from '../components/Analytics/ReportModal';
 // Import Metrics Registry for extended metrics support
 import { METRICS_REGISTRY, METRIC_CATEGORIES } from '../constants/metricsRegistry';
 import { useModuleAccess, usePermission } from '../hooks/usePermission';
-import { importMetaAndromedaObservedFacebookAd } from '../services/metaAndromedaWorkflowService';
+import {
+    fetchMetaAndromedaObservedImportStatus,
+    importMetaAndromedaObservedFacebookAd,
+} from '../services/metaAndromedaWorkflowService';
 
 // API constants
 const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:8000';
@@ -372,6 +375,32 @@ const Analytics = () => {
     const [observationImportState, setObservationImportState] = useState({});
     const [observationBatchSummary, setObservationBatchSummary] = useState(null);
 
+    const getObservationStatusText = useCallback((status) => {
+        const map = {
+            queued: language === 'zh' ? '排隊中' : 'Queued',
+            processing: language === 'zh' ? '背景處理中' : 'Processing',
+            completed: language === 'zh' ? '已匯入' : 'Imported',
+            failed: language === 'zh' ? '匯入失敗' : 'Import failed',
+            not_found: language === 'zh' ? '尚未建立' : 'Not found',
+        };
+        return map[status] || status || (language === 'zh' ? '未送出' : 'Idle');
+    }, [language]);
+
+    const getScoreStatusText = useCallback((status) => {
+        const map = {
+            pending_observation: language === 'zh' ? '等待匯入完成' : 'Waiting for import',
+            pending_score_event: language === 'zh' ? '等待建立評分事件' : 'Waiting for score event',
+            queued_background: language === 'zh' ? '背景建立中' : 'Creating in background',
+            queued: language === 'zh' ? '評分已排隊' : 'Queued',
+            processing: language === 'zh' ? '評分中' : 'Processing',
+            completed: language === 'zh' ? '評分完成' : 'Completed',
+            failed: language === 'zh' ? '評分失敗' : 'Failed',
+            skipped_no_asset: language === 'zh' ? '無素材，略過' : 'Skipped: no asset',
+            blocked_by_observation_failure: language === 'zh' ? '因匯入失敗未建立' : 'Blocked by import failure',
+        };
+        return map[status] || status || (language === 'zh' ? '未建立' : 'Not created');
+    }, [language]);
+
     // UI: Toggle Metric Panel
     const [showMetricPanel, setShowMetricPanel] = useState(false);
 
@@ -578,7 +607,9 @@ const Analytics = () => {
             ...prev,
             [row.id]: {
                 status: 'loading',
-                message: language === 'zh' ? '匯入中...' : 'Importing...',
+                observationStatus: 'queued',
+                scoreStatus: 'pending_observation',
+                message: language === 'zh' ? '已送出，等待背景處理。' : 'Submitted. Waiting for background processing.',
             },
         }));
 
@@ -593,19 +624,17 @@ const Analytics = () => {
                 placement_family: 'feed',
             });
 
-            const message = response.score_event_id
-                ? `${language === 'zh' ? '已匯入並建立評分事件' : 'Imported and queued score event'}: ${response.observed_creative_id} / ${response.score_event_id}`
-                : response.score_status === 'queued_background'
-                    ? `${language === 'zh' ? '已匯入，評分事件將由後端背景建立' : 'Imported. Score event will be created in backend background'}: ${response.observed_creative_id}`
-                    : `${language === 'zh' ? '已匯入' : 'Imported'}: ${response.observed_creative_id}`;
             setObservationImportState((prev) => ({
                 ...prev,
                 [row.id]: {
-                    status: 'success',
-                    message,
+                    status: 'accepted',
+                    observationStatus: 'queued',
+                    scoreStatus: response.score_status,
+                    message: language === 'zh'
+                        ? `已送出背景匯入: ${response.observed_creative_id}`
+                        : `Background import accepted: ${response.observed_creative_id}`,
                     observedCreativeId: response.observed_creative_id,
                     scoreEventId: response.score_event_id,
-                    scoreStatus: response.score_status,
                 },
             }));
             return {
@@ -625,7 +654,54 @@ const Analytics = () => {
             }));
             return { ok: false, message };
         }
-    }, [language, observationWindowKind, selectedAccountId]);
+    }, [dateRange.since, dateRange.until, language, observationWindowKind, selectedAccountId]);
+
+    useEffect(() => {
+        const pendingEntries = Object.entries(observationImportState).filter(([, state]) => {
+            return state?.observedCreativeId && !['success', 'error'].includes(state?.status);
+        });
+        if (!pendingEntries.length) {
+            return undefined;
+        }
+
+        const intervalId = window.setInterval(async () => {
+            for (const [rowId, state] of pendingEntries) {
+                try {
+                    const latest = await fetchMetaAndromedaObservedImportStatus(state.observedCreativeId);
+                    const observationDone = latest.observation_status === 'completed';
+                    const scoreDone = ['completed', 'failed', 'skipped_no_asset'].includes(latest.score_status);
+                    const hasTerminalFailure = latest.observation_status === 'failed';
+                    const isTerminal = hasTerminalFailure || (observationDone && scoreDone);
+
+                    setObservationImportState((prev) => ({
+                        ...prev,
+                        [rowId]: {
+                            ...prev[rowId],
+                            status: isTerminal ? (hasTerminalFailure ? 'error' : 'success') : 'polling',
+                            observationStatus: latest.observation_status,
+                            scoreStatus: latest.score_status,
+                            observedCreativeId: latest.observed_creative_id,
+                            scoreEventId: latest.score_event_id,
+                            runtimeJobId: latest.runtime_job_id,
+                            message: latest.observation_message
+                                ? `${getObservationStatusText(latest.observation_status)} / ${getScoreStatusText(latest.score_status)}`
+                                : prev[rowId]?.message,
+                        },
+                    }));
+                } catch (err) {
+                    setObservationImportState((prev) => ({
+                        ...prev,
+                        [rowId]: {
+                            ...prev[rowId],
+                            message: err?.message || prev[rowId]?.message,
+                        },
+                    }));
+                }
+            }
+        }, 4000);
+
+        return () => window.clearInterval(intervalId);
+    }, [getObservationStatusText, getScoreStatusText, observationImportState]);
 
     const handleObservationImport = useCallback(async (row) => {
         setObservationBatchSummary(null);
@@ -818,11 +894,11 @@ const Analytics = () => {
 
             // 3. Observation Filter (Only when level is 'ad')
             if (level === 'ad' && filterObservationImported !== 'all') {
-                const importState = observationImportState[row.id]?.status;
+                const importState = observationImportState[row.id]?.observationStatus;
                 if (filterObservationImported === 'imported') {
-                    if (importState !== 'success') return false;
+                    if (importState !== 'completed') return false;
                 } else if (filterObservationImported === 'not_imported') {
-                    if (importState === 'success') return false;
+                    if (importState === 'completed') return false;
                 }
             }
 
@@ -848,11 +924,11 @@ const Analytics = () => {
                 }
             }
             if (level === 'ad' && filterObservationImported !== 'all') {
-                const importState = observationImportState[row.id]?.status;
+                const importState = observationImportState[row.id]?.observationStatus;
                 if (filterObservationImported === 'imported') {
-                    if (importState !== 'success') return false;
+                    if (importState !== 'completed') return false;
                 } else if (filterObservationImported === 'not_imported') {
-                    if (importState === 'success') return false;
+                    if (importState === 'completed') return false;
                 }
             }
             return true;
@@ -934,8 +1010,8 @@ const Analytics = () => {
             successCount: 0,
             failureCount: 0,
             message: language === 'zh'
-                ? `批次匯入中，共 ${selectedObservationRows.length} 筆。`
-                : `Batch import in progress for ${selectedObservationRows.length} ads.`,
+                ? `批次送出中，共 ${selectedObservationRows.length} 筆。`
+                : `Batch submission in progress for ${selectedObservationRows.length} ads.`,
         });
 
         let successCount = 0;
@@ -956,8 +1032,8 @@ const Analytics = () => {
             successCount,
             failureCount,
             message: language === 'zh'
-                ? `批次匯入完成，成功 ${successCount} 筆，失敗 ${failureCount} 筆。`
-                : `Batch import completed: ${successCount} succeeded, ${failureCount} failed.`,
+                ? `批次送出完成，成功送出 ${successCount} 筆，失敗 ${failureCount} 筆。`
+                : `Batch submission completed: ${successCount} accepted, ${failureCount} failed.`,
         });
     }, [importObservationRow, language, selectedObservationRows]);
 
@@ -1912,7 +1988,7 @@ const Analytics = () => {
                                 </div>
                                 <div style={observationStatCardStyle}>
                                     <div style={observationStatLabelStyle}>
-                                        {language === 'zh' ? '本次匯入成功' : 'Succeeded'}
+                                        {language === 'zh' ? '本次送出成功' : 'Accepted'}
                                     </div>
                                     <div style={{ ...observationStatValueStyle, color: '#34d399' }}>
                                         {observationBatchSummary.successCount ?? '--'}
@@ -1920,7 +1996,7 @@ const Analytics = () => {
                                 </div>
                                 <div style={observationStatCardStyle}>
                                     <div style={observationStatLabelStyle}>
-                                        {language === 'zh' ? '本次匯入失敗' : 'Failed'}
+                                        {language === 'zh' ? '本次送出失敗' : 'Failed'}
                                     </div>
                                     <div style={{ ...observationStatValueStyle, color: observationBatchSummary.failureCount > 0 ? '#fbbf24' : 'var(--text-primary)' }}>
                                         {observationBatchSummary.failureCount ?? '--'}
@@ -2367,7 +2443,7 @@ const Analytics = () => {
                                                             <button
                                                                 type="button"
                                                                 onClick={() => handleObservationImport(row)}
-                                                                disabled={observationImportState[row.id]?.status === 'loading'}
+                                                                disabled={['loading', 'accepted', 'polling'].includes(observationImportState[row.id]?.status)}
                                                                 title={
                                                                     observationWindowKind === 'custom'
                                                                         ? (language === 'zh'
@@ -2386,46 +2462,61 @@ const Analytics = () => {
                                                                     color: 'var(--accent-primary)',
                                                                     fontSize: '0.78rem',
                                                                     fontWeight: 600,
-                                                                    cursor: observationImportState[row.id]?.status === 'loading' ? 'wait' : 'pointer',
+                                                                    cursor: ['loading', 'accepted', 'polling'].includes(observationImportState[row.id]?.status) ? 'wait' : 'pointer',
                                                                     whiteSpace: 'nowrap'
                                                                 }}
                                                             >
-                                                                {observationImportState[row.id]?.status === 'loading'
-                                                                    ? (language === 'zh' ? '匯入中' : 'Importing')
+                                                                {['loading', 'accepted', 'polling'].includes(observationImportState[row.id]?.status)
+                                                                    ? (language === 'zh' ? '處理中' : 'Processing')
                                                                     : (language === 'zh' ? '送出' : 'Send')}
                                                             </button>
-                                                            <div style={{
-                                                                display: 'inline-flex',
-                                                                alignItems: 'center',
-                                                                width: 'fit-content',
-                                                                maxWidth: '100%',
-                                                                padding: '4px 8px',
-                                                                borderRadius: '999px',
-                                                                fontSize: '0.72rem',
-                                                                fontWeight: 600,
-                                                                background: observationImportState[row.id]?.status === 'success'
-                                                                    ? 'rgba(52, 211, 153, 0.12)'
-                                                                    : observationImportState[row.id]?.status === 'error'
-                                                                        ? 'rgba(248, 113, 113, 0.12)'
-                                                                        : observationImportState[row.id]?.status === 'loading'
-                                                                            ? 'rgba(96, 165, 250, 0.12)'
+                                                            <div style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', flexWrap: 'wrap' }}>
+                                                                <div style={{
+                                                                    display: 'inline-flex',
+                                                                    alignItems: 'center',
+                                                                    width: 'fit-content',
+                                                                    maxWidth: '100%',
+                                                                    padding: '4px 8px',
+                                                                    borderRadius: '999px',
+                                                                    fontSize: '0.72rem',
+                                                                    fontWeight: 600,
+                                                                    background: observationImportState[row.id]?.observationStatus === 'completed'
+                                                                        ? 'rgba(52, 211, 153, 0.12)'
+                                                                        : observationImportState[row.id]?.observationStatus === 'failed'
+                                                                            ? 'rgba(248, 113, 113, 0.12)'
+                                                                            : 'rgba(96, 165, 250, 0.12)',
+                                                                    color: observationImportState[row.id]?.observationStatus === 'completed'
+                                                                        ? '#34d399'
+                                                                        : observationImportState[row.id]?.observationStatus === 'failed'
+                                                                            ? '#f87171'
+                                                                            : '#60a5fa',
+                                                                    whiteSpace: 'nowrap'
+                                                                }}>
+                                                                    {`Obs: ${getObservationStatusText(observationImportState[row.id]?.observationStatus)}`}
+                                                                </div>
+                                                                <div style={{
+                                                                    display: 'inline-flex',
+                                                                    alignItems: 'center',
+                                                                    width: 'fit-content',
+                                                                    maxWidth: '100%',
+                                                                    padding: '4px 8px',
+                                                                    borderRadius: '999px',
+                                                                    fontSize: '0.72rem',
+                                                                    fontWeight: 600,
+                                                                    background: observationImportState[row.id]?.scoreStatus === 'completed'
+                                                                        ? 'rgba(52, 211, 153, 0.12)'
+                                                                        : ['failed', 'blocked_by_observation_failure'].includes(observationImportState[row.id]?.scoreStatus)
+                                                                            ? 'rgba(248, 113, 113, 0.12)'
                                                                             : 'rgba(255,255,255,0.06)',
-                                                                color: observationImportState[row.id]?.status === 'success'
-                                                                    ? '#34d399'
-                                                                    : observationImportState[row.id]?.status === 'error'
-                                                                        ? '#f87171'
-                                                                        : observationImportState[row.id]?.status === 'loading'
-                                                                            ? '#60a5fa'
+                                                                    color: observationImportState[row.id]?.scoreStatus === 'completed'
+                                                                        ? '#34d399'
+                                                                        : ['failed', 'blocked_by_observation_failure'].includes(observationImportState[row.id]?.scoreStatus)
+                                                                            ? '#f87171'
                                                                             : 'var(--text-secondary)',
-                                                                whiteSpace: 'nowrap'
-                                                            }}>
-                                                                {observationImportState[row.id]?.status === 'success'
-                                                                    ? (language === 'zh' ? '已送出' : 'Imported')
-                                                                    : observationImportState[row.id]?.status === 'error'
-                                                                        ? (language === 'zh' ? '失敗' : 'Failed')
-                                                                        : observationImportState[row.id]?.status === 'loading'
-                                                                            ? (language === 'zh' ? '匯入中' : 'Importing')
-                                                                            : (language === 'zh' ? '未送出' : 'Not imported')}
+                                                                    whiteSpace: 'nowrap'
+                                                                }}>
+                                                                    {`Score: ${getScoreStatusText(observationImportState[row.id]?.scoreStatus)}`}
+                                                                </div>
                                                             </div>
                                                         </div>
                                                         {observationImportState[row.id]?.message && (

@@ -5,6 +5,7 @@ Meta Andromeda Module - Service
 import asyncio
 import hashlib
 import hmac
+import threading
 from datetime import UTC, datetime
 from mimetypes import guess_extension
 from pathlib import Path
@@ -26,6 +27,9 @@ from .storage import storage_adapter
 from redis_cache import get_redis_client
 
 logger = logging.getLogger(__name__)
+
+_observation_import_statuses: dict[str, dict] = {}
+_observation_import_status_lock = threading.Lock()
 
 
 class MetaAndromedaValidationError(ValueError):
@@ -432,6 +436,56 @@ class MetaAndromedaService:
         )
 
     @staticmethod
+    def build_observed_creative_id(ad_id: str, observation_window_kind: str) -> str:
+        today = datetime.now(UTC).date()
+        return f"ma_obs_{today.strftime('%Y%m%d')}_{ad_id[-6:]}_{observation_window_kind}"
+
+    @staticmethod
+    def _set_observation_import_status(observed_creative_id: str, **updates) -> dict:
+        timestamp = datetime.now(UTC).isoformat()
+        with _observation_import_status_lock:
+            current = _observation_import_statuses.get(observed_creative_id, {})
+            current.update(updates)
+            current["updated_at"] = timestamp
+            _observation_import_statuses[observed_creative_id] = current
+            return dict(current)
+
+    @staticmethod
+    def queue_observed_facebook_ad_import(payload: dict) -> dict:
+        observed_creative_id = MetaAndromedaService.build_observed_creative_id(
+            payload["ad_id"],
+            payload["observation_window_kind"],
+        )
+        MetaAndromedaService._set_observation_import_status(
+            observed_creative_id,
+            observation_status="queued",
+            observation_message="Observation import queued",
+            asset_uri=None,
+            score_event_id=None,
+            score_status="pending_observation",
+            runtime_job_id=None,
+        )
+        return {
+            "observed_creative_id": observed_creative_id,
+            "status": "accepted",
+            "asset_uri": None,
+            "score_event_id": None,
+            "score_status": "pending_observation",
+            "runtime_job_id": None,
+            "source": {
+                "platform": "facebook_ads",
+                "account_id": payload["account_id"],
+                "ad_id": payload["ad_id"],
+            },
+            "observation_window": {
+                "kind": payload["observation_window_kind"],
+                "start": payload.get("since") or "",
+                "end": payload.get("until") or "",
+            },
+            "performance_snapshot": {},
+        }
+
+    @staticmethod
     async def _download_observed_asset_snapshot(
         *,
         media_url: str,
@@ -490,8 +544,10 @@ class MetaAndromedaService:
         db_user = db.query(User).filter(User.google_id == user_id).first()
         user_db_id = db_user.id if db_user else user_id
 
-        today = datetime.now(UTC).date()
-        observed_creative_id = f"ma_obs_{today.strftime('%Y%m%d')}_{candidate.ad_id[-6:]}_{candidate.observation_window_kind}"
+        observed_creative_id = MetaAndromedaService.build_observed_creative_id(
+            candidate.ad_id,
+            candidate.observation_window_kind,
+        )
         stored_asset = None
 
         if candidate.media_url and candidate.media_type in {"image", "video"}:
@@ -599,6 +655,8 @@ class MetaAndromedaService:
     @staticmethod
     def create_score_event(db, payload: dict) -> dict:
         score_payload = runtime_adapter.build_score_submission(payload)
+        if payload.get("request_context"):
+            score_payload.setdefault("request_context", {}).update(payload["request_context"])
         return repository.create_score_event(db, score_payload)
 
     @staticmethod
@@ -614,6 +672,8 @@ class MetaAndromedaService:
                 for key, value in auto_score_payload.items()
                 if key != "observed_creative_id"
             }
+            payload.setdefault("request_context", {})
+            payload["request_context"]["observed_creative_id"] = observed_creative_id
             created_score = MetaAndromedaService.create_score_event(db, payload)
             score_event_id = created_score["score_event_id"]
             runtime_job_id = get_meta_andromeda_score_job_id(score_event_id)
@@ -628,6 +688,12 @@ class MetaAndromedaService:
                 observed_creative_id,
                 score_event_id,
             )
+            MetaAndromedaService._set_observation_import_status(
+                observed_creative_id,
+                score_event_id=score_event_id,
+                score_status=queued_score.get("status") or "queued",
+                runtime_job_id=queued_score.get("runtime_job_id") or runtime_job_id,
+            )
             return queued_score
         except Exception as exc:
             logger.warning(
@@ -636,9 +702,120 @@ class MetaAndromedaService:
                 exc,
                 exc_info=True,
             )
+            MetaAndromedaService._set_observation_import_status(
+                observed_creative_id,
+                score_status="failed",
+                observation_message=str(exc),
+            )
             return None
         finally:
             db.close()
+
+    @staticmethod
+    def run_observed_facebook_ad_import_job(payload: dict, *, user_id: str, team_id: str | None = None) -> None:
+        observed_creative_id = MetaAndromedaService.build_observed_creative_id(
+            payload["ad_id"],
+            payload["observation_window_kind"],
+        )
+        MetaAndromedaService._set_observation_import_status(
+            observed_creative_id,
+            observation_status="processing",
+            observation_message="Observation import processing",
+            score_status="pending_observation",
+        )
+
+        async def _run() -> None:
+            db = SessionLocal()
+            try:
+                response = await MetaAndromedaService.import_observed_facebook_ad(
+                    db,
+                    payload,
+                    user_id=user_id,
+                    team_id=team_id,
+                )
+                auto_score_payload = response.pop("_auto_score_payload", None)
+                MetaAndromedaService._set_observation_import_status(
+                    observed_creative_id,
+                    observation_status="completed",
+                    observation_message="Observation imported",
+                    asset_uri=response.get("asset_uri"),
+                    score_status=response.get("score_status"),
+                    runtime_job_id=response.get("runtime_job_id"),
+                    score_event_id=response.get("score_event_id"),
+                )
+                if auto_score_payload:
+                    MetaAndromedaService.create_and_enqueue_score_event_for_observation(auto_score_payload)
+                elif response.get("score_status") == "skipped_no_asset":
+                    MetaAndromedaService._set_observation_import_status(
+                        observed_creative_id,
+                        score_status="skipped_no_asset",
+                    )
+            except Exception as exc:
+                logger.warning(
+                    "[Observation Import] Background observation import failed for %s: %s",
+                    observed_creative_id,
+                    exc,
+                    exc_info=True,
+                )
+                MetaAndromedaService._set_observation_import_status(
+                    observed_creative_id,
+                    observation_status="failed",
+                    observation_message=str(exc),
+                    score_status="blocked_by_observation_failure",
+                )
+            finally:
+                db.close()
+
+        asyncio.run(_run())
+
+    @staticmethod
+    def get_observed_facebook_ad_import_status(db, observed_creative_id: str) -> dict:
+        observed = repository.get_observed_creative(db, observed_creative_id)
+        memory_status = _observation_import_statuses.get(observed_creative_id, {})
+        if observed is None:
+            if memory_status:
+                return {
+                    "observed_creative_id": observed_creative_id,
+                    "observation_status": memory_status.get("observation_status", "queued"),
+                    "observation_message": memory_status.get("observation_message"),
+                    "asset_uri": memory_status.get("asset_uri"),
+                    "score_event_id": memory_status.get("score_event_id"),
+                    "score_status": memory_status.get("score_status"),
+                    "runtime_job_id": memory_status.get("runtime_job_id"),
+                    "updated_at": memory_status.get("updated_at"),
+                }
+            return {
+                "observed_creative_id": observed_creative_id,
+                "observation_status": "not_found",
+                "observation_message": "Observation import not found",
+                "asset_uri": None,
+                "score_event_id": None,
+                "score_status": None,
+                "runtime_job_id": None,
+                "updated_at": None,
+            }
+
+        latest_score = repository.get_latest_score_event_for_observation(db, observed_creative_id)
+        memory_score_status = memory_status.get("score_status")
+        if latest_score:
+            score_status = latest_score.get("status")
+            score_event_id = latest_score.get("score_event_id")
+            runtime_job_id = latest_score.get("runtime_job_id")
+        else:
+            score_status = memory_score_status or ("pending_score_event" if observed.get("asset_uri") else "skipped_no_asset")
+            score_event_id = memory_status.get("score_event_id")
+            runtime_job_id = memory_status.get("runtime_job_id")
+
+        return {
+            "observed_creative_id": observed_creative_id,
+            "observation_status": "completed",
+            "observation_message": memory_status.get("observation_message") or "Observation imported",
+            "asset_uri": observed.get("asset_uri"),
+            "score_event_id": score_event_id,
+            "score_status": score_status,
+            "runtime_job_id": runtime_job_id,
+            "updated_at": memory_status.get("updated_at") or observed.get("created_at"),
+        }
 
     @staticmethod
     def assign_score_runtime_job(db, score_event_id: str, runtime_job_id: str) -> dict:

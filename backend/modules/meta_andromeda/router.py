@@ -25,6 +25,7 @@ from .schemas import (
     ExternalWorkerCallbackResponse,
     FacebookAdObservedImportRequest,
     FacebookAdObservedImportResponse,
+    FacebookAdObservedImportStatusResponse,
     FeedbackEntryResponse,
     FeedbackListResponse,
     FeedbackSubmitRequest,
@@ -177,21 +178,32 @@ async def import_facebook_ad_observation(
     db=Depends(get_db),
 ):
     try:
-        response = await MetaAndromedaService.import_observed_facebook_ad(
-            db,
-            payload.model_dump(),
+        request_payload = payload.model_dump()
+        accepted = MetaAndromedaService.queue_observed_facebook_ad_import(request_payload)
+        background_tasks.add_task(
+            MetaAndromedaService.run_observed_facebook_ad_import_job,
+            request_payload,
             user_id=getattr(user, "google_id", None) or getattr(user, "id", None),
             team_id=x_team_id,
         )
-        auto_score_payload = response.pop("_auto_score_payload", None)
-        if auto_score_payload:
-            background_tasks.add_task(
-                MetaAndromedaService.create_and_enqueue_score_event_for_observation,
-                auto_score_payload,
-            )
-        return response
+        return accepted
     except MetaAndromedaValidationError as exc:
         raise HTTPException(status_code=exc.status_code, detail=exc.detail) from exc
+
+
+@router.get(
+    "/evaluations/import/facebook-ads/{observed_creative_id}/status",
+    response_model=FacebookAdObservedImportStatusResponse,
+)
+async def get_facebook_ad_observation_import_status(
+    observed_creative_id: str,
+    _user=Depends(get_current_meta_andromeda_user),
+    _access: bool = Depends(require_meta_andromeda_module),
+    _fb_ads_access: bool = Depends(require_fb_ads_module),
+    _fb_ads_permission: bool = Depends(require_fb_ads_analytics_view),
+    db=Depends(get_db),
+):
+    return MetaAndromedaService.get_observed_facebook_ad_import_status(db, observed_creative_id)
 
 
 @router.post(
