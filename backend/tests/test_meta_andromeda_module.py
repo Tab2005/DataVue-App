@@ -2330,3 +2330,38 @@ async def test_meta_andromeda_storage_image_is_encoded_and_sent_as_data_uri(
     image_parts = [part for part in captured["user_content"] if part.get("type") == "image_url"]
     assert len(image_parts) == 1
     assert image_parts[0]["image_url"]["url"].startswith("data:image/png;base64,")
+
+
+def test_meta_andromeda_image_auto_compression():
+    import io
+    from PIL import Image, ImageDraw
+    from modules.meta_andromeda.service import MetaAndromedaService
+
+    # 1. 生成一個大於 400KB 的大圖片以觸發壓縮
+    img = Image.new("RGB", (1500, 1500), color="blue")
+    draw = ImageDraw.Draw(img)
+    # 加入高頻噪點線條使檔案增大
+    for i in range(0, 1500, 4):
+        draw.line((0, i, 1500, i), fill="red", width=2)
+        draw.line((i, 0, i, 1500), fill="green", width=2)
+        
+    buf = io.BytesIO()
+    img.save(buf, format="JPEG", quality=95)
+    large_bytes = buf.getvalue()
+    
+    # 確保產生的測試圖大於 400KB
+    assert len(large_bytes) > 400 * 1024
+
+    # 2. 調用壓縮功能
+    compressed_bytes = MetaAndromedaService._compress_image(
+        large_bytes, "test_large.jpg", "image/jpeg"
+    )
+
+    # 3. 驗證壓縮結果
+    assert len(compressed_bytes) < len(large_bytes)
+    
+    # 讀取壓縮後的圖片，確認尺寸最長邊被限制在 1200 像素以內
+    compressed_img = Image.open(io.BytesIO(compressed_bytes))
+    width, height = compressed_img.size
+    assert max(width, height) <= 1200
+

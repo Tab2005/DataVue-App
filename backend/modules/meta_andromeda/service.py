@@ -11,6 +11,7 @@ from pathlib import Path
 from urllib.parse import urlparse
 
 import httpx
+import logging
 
 from core.config import settings
 from database import SessionLocal, User
@@ -22,6 +23,8 @@ from .repository import repository
 from .runtime import runtime_adapter
 from .storage import storage_adapter
 from redis_cache import get_redis_client
+
+logger = logging.getLogger(__name__)
 
 
 class MetaAndromedaValidationError(ValueError):
@@ -266,6 +269,10 @@ class MetaAndromedaService:
         uploaded_by: str | None = None,
         content_type: str | None = None,
     ) -> dict:
+        # 自動壓縮圖片素材，避免過大導致 AI 服務超載或超時
+        if asset_type == "image":
+            file_bytes = MetaAndromedaService._compress_image(file_bytes, source_filename, content_type)
+
         MetaAndromedaService._validate_uploaded_asset(
             file_bytes=file_bytes,
             asset_type=asset_type,
@@ -280,6 +287,81 @@ class MetaAndromedaService:
             content_type=content_type,
         )
         return repository.create_uploaded_asset(db, asset_record=asset_record)
+
+    @staticmethod
+    def _compress_image(file_bytes: bytes, filename: str, content_type: str | None = None) -> bytes:
+        import io
+        from PIL import Image
+        from pathlib import Path
+
+        # 如果檔案本身就小於 400KB，直接保留原圖以保證最高精度與速度
+        if len(file_bytes) < 400 * 1024:
+            logger.info("[MetaAndromeda] Image size is %d bytes (<400KB), skipping compression.", len(file_bytes))
+            return file_bytes
+
+        try:
+            img = Image.open(io.BytesIO(file_bytes))
+            orig_format = img.format
+            width, height = img.size
+            
+            fmt_lower = (orig_format or "").lower()
+            if not fmt_lower:
+                suffix = Path(filename).suffix.lower()
+                if suffix in (".jpg", ".jpeg"):
+                    fmt_lower = "jpeg"
+                elif suffix == ".webp":
+                    fmt_lower = "webp"
+                else:
+                    fmt_lower = "png"
+
+            # 設定最長邊最大寬高為 1200 像素
+            max_size = 1200
+            if width > max_size or height > max_size:
+                if width > height:
+                    new_width = max_size
+                    new_height = int(height * (max_size / width))
+                else:
+                    new_height = max_size
+                    new_width = int(width * (max_size / height))
+                
+                logger.info(
+                    "[MetaAndromeda] Resizing image from %dx%d to %dx%d (max_size=%d)",
+                    width, height, new_width, new_height, max_size
+                )
+                img = img.resize((new_width, new_height), Image.Resampling.LANCZOS)
+
+            out_buf = io.BytesIO()
+            save_kwargs = {}
+            
+            if fmt_lower in ("jpeg", "jpg"):
+                if img.mode in ("RGBA", "LA", "P"):
+                    img = img.convert("RGB")
+                save_kwargs = {"quality": 85, "optimize": True}
+                save_format = "JPEG"
+            elif fmt_lower == "webp":
+                save_kwargs = {"quality": 85, "method": 6}
+                save_format = "WEBP"
+            else:
+                save_kwargs = {"optimize": True}
+                save_format = "PNG"
+
+            img.save(out_buf, format=save_format, **save_kwargs)
+            compressed_bytes = out_buf.getvalue()
+            
+            logger.info(
+                "[MetaAndromeda] Image compressed. Before: %d bytes, After: %d bytes (Ratio: %.1f%%)",
+                len(file_bytes), len(compressed_bytes), (len(compressed_bytes) / len(file_bytes)) * 100
+            )
+            
+            if len(compressed_bytes) >= len(file_bytes):
+                logger.info("[MetaAndromeda] Compressed image is larger or equal, keeping original.")
+                return file_bytes
+                
+            return compressed_bytes
+
+        except Exception as e:
+            logger.warning("[MetaAndromeda] Image compression failed: %s. Using original bytes.", e)
+            return file_bytes
 
     @staticmethod
     def _validate_uploaded_asset(
