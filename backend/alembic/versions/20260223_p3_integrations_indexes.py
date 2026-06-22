@@ -29,40 +29,45 @@ depends_on = None
 
 def upgrade() -> None:
     # ── 5.1：建立 user_integrations 表 ───────────────────────────────────
-    op.create_table(
-        "user_integrations",
-        sa.Column("id", sa.String(), primary_key=True, nullable=False),
-        sa.Column(
-            "user_id",
-            sa.String(),
-            sa.ForeignKey("users.id", ondelete="CASCADE"),
-            nullable=False,
-        ),
-        sa.Column("provider", sa.String(50), nullable=False),
-        sa.Column("access_token", sa.Text(), nullable=True),
-        sa.Column("refresh_token", sa.Text(), nullable=True),
-        sa.Column("token_expiry", sa.DateTime(), nullable=True),
-        sa.Column("extra_data", sa.JSON(), nullable=True),
-        sa.Column(
-            "created_at",
-            sa.DateTime(),
-            nullable=False,
-            server_default=sa.text("CURRENT_TIMESTAMP"),
-        ),
-        sa.Column("updated_at", sa.DateTime(), nullable=True),
-        sa.UniqueConstraint(
-            "user_id", "provider",
-            name="uq_user_integration_provider",
-        ),
-    )
+    conn = op.get_bind()
+    inspector = sa.inspect(conn)
+    existing_tables = inspector.get_table_names()
 
-    # 主要查詢複合索引
-    op.create_index(
-        "ix_user_integrations_lookup",
-        "user_integrations",
-        ["user_id", "provider"],
-        unique=True,
-    )
+    if "user_integrations" not in existing_tables:
+        op.create_table(
+            "user_integrations",
+            sa.Column("id", sa.String(), primary_key=True, nullable=False),
+            sa.Column(
+                "user_id",
+                sa.String(),
+                sa.ForeignKey("users.id", ondelete="CASCADE"),
+                nullable=False,
+            ),
+            sa.Column("provider", sa.String(50), nullable=False),
+            sa.Column("access_token", sa.Text(), nullable=True),
+            sa.Column("refresh_token", sa.Text(), nullable=True),
+            sa.Column("token_expiry", sa.DateTime(), nullable=True),
+            sa.Column("extra_data", sa.JSON(), nullable=True),
+            sa.Column(
+                "created_at",
+                sa.DateTime(),
+                nullable=False,
+                server_default=sa.text("CURRENT_TIMESTAMP"),
+            ),
+            sa.Column("updated_at", sa.DateTime(), nullable=True),
+            sa.UniqueConstraint(
+                "user_id", "provider",
+                name="uq_user_integration_provider",
+            ),
+        )
+
+        # 主要查詢複合索引
+        op.create_index(
+            "ix_user_integrations_lookup",
+            "user_integrations",
+            ["user_id", "provider"],
+            unique=True,
+        )
 
     # ── 注意：Token 資料遷移已移至 20260224_fix_integrations_migration_compat.py ──
     # 原本此處使用 SQLite 專用的 randomblob() / hex() / json_object() 函式，

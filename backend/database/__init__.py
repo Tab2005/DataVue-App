@@ -121,10 +121,16 @@ def init_db():
         missing = [t for t in required_tables if t not in existing_tables]
         
         if missing:
-            logger.warning(f"Production safety check: Tables {missing} are missing! Running emergency create_all...")
-            # create_all 僅會建立「不存在」的表，對現有資料安全
-            Base.metadata.create_all(bind=engine)
-            logger.info("✅ Missing tables created successfully.")
+            if engine.dialect.name == "sqlite":
+                logger.warning(f"Production safety check: Tables {missing} are missing! Running emergency create_all on SQLite...")
+                Base.metadata.create_all(bind=engine)
+                logger.info("✅ Missing tables created successfully via SQLite fallback.")
+            else:
+                logger.warning(
+                    f"Production safety check: PostgreSQL tables {missing} are missing. "
+                    "Skipping emergency create_all to prevent Alembic DuplicateTable conflict. "
+                    "Schema upgrades must be managed via 'run_migration.py' (alembic upgrade head)."
+                )
         else:
             logger.info("Production Mode: Verified all required tables exist.")
             
