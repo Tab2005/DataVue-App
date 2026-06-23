@@ -187,7 +187,7 @@ class Settings:
 
     @property
     def META_ANDROMEDA_SCORE_TIMEOUT_SECONDS(self) -> float:
-        return float(os.getenv("META_ANDROMEDA_SCORE_TIMEOUT_SECONDS", "20"))
+        return float(os.getenv("META_ANDROMEDA_SCORE_TIMEOUT_SECONDS", "90"))
 
     @property
     def META_ANDROMEDA_SCORE_MAX_ATTEMPTS(self) -> int:

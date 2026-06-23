@@ -24,12 +24,23 @@ def _clip(value: str | None, limit: int = 140) -> str:
     return value.strip()[:limit]
 
 
+def _strip_reasoning_blocks(text: str) -> str:
+    """Strip <think>...</think> and <thinking>...</thinking> blocks from reasoning model output."""
+    text = re.sub(r"<think>.*?</think>", "", text, flags=re.DOTALL | re.IGNORECASE)
+    text = re.sub(r"<thinking>.*?</thinking>", "", text, flags=re.DOTALL | re.IGNORECASE)
+    return text.strip()
+
+
 def _extract_json_payload(raw_text: str) -> dict:
     if not raw_text or not raw_text.strip():
         logger.error("[MetaAndromeda] Raw text from AI provider is empty.")
         raise ValueError("API returned an empty response.")
 
-    candidate = raw_text.strip()
+    candidate = _strip_reasoning_blocks(raw_text).strip()
+    if not candidate:
+        logger.error("[MetaAndromeda] Response was empty after stripping reasoning blocks. Raw: %r", raw_text[:200])
+        raise ValueError("API returned only reasoning blocks with no JSON payload.")
+
     if "```" in candidate:
         block_match = re.search(r"```(?:json)?\s*(.*?)\s*```", candidate, re.DOTALL)
         if block_match:
