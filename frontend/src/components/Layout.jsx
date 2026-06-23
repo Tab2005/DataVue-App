@@ -2,7 +2,6 @@ import React, { useState, useEffect } from 'react';
 import { Outlet } from 'react-router-dom';
 import Sidebar from './Sidebar';
 import Header from './Header';
-import { TeamService } from '../services/teamService';
 
 const SELECTED_TEAM_EVENT = 'datavue:selected-team-changed';
 
@@ -27,38 +26,24 @@ const Layout = () => {
         const handleResize = () => {
             const mobile = window.innerWidth < 768;
             setIsMobile(mobile);
-            // Auto-collapse on mobile if resizing down
             if (mobile && !isSidebarCollapsed) {
                 setIsSidebarCollapsed(true);
             }
         };
 
         window.addEventListener('resize', handleResize);
-        handleResize(); // Init
+        handleResize();
 
         return () => window.removeEventListener('resize', handleResize);
     }, []);
 
-    // Fetch Teams Logic
     useEffect(() => {
-        const fetchTeams = async () => {
-            try {
-                const myTeams = await TeamService.getMyTeams();
-                setTeams(myTeams);
+        const savedTeamId = localStorage.getItem('selected_team_id');
+        if (savedTeamId) {
+            setSelectedTeamId(savedTeamId);
+        }
+    }, []);
 
-                // Restore selection or default to Personal (empty string)
-                const savedTeamId = localStorage.getItem('selected_team_id');
-                if (savedTeamId && myTeams.find(t => t.id === savedTeamId)) {
-                    setSelectedTeamId(savedTeamId);
-                }
-            } catch (err) {
-                console.error("Failed to fetch teams", err);
-            }
-        };
-        fetchTeams();
-    }, [user.access_token]); // Re-fetch when user/token changes
-
-    // Persist Team Selection
     useEffect(() => {
         if (selectedTeamId) {
             localStorage.setItem('selected_team_id', selectedTeamId);
@@ -71,7 +56,6 @@ const Layout = () => {
         }));
     }, [selectedTeamId]);
 
-    // Fetch Accounts Logic (Moved from Dashboard)
     const fetchAccounts = async (retries = 3) => {
         const apiUrl = import.meta.env.VITE_API_URL || 'http://localhost:8000';
         const token = localStorage.getItem('google_token');
@@ -89,7 +73,7 @@ const Layout = () => {
                         avatar: parsedUser.picture || parsedUser.avatar || ''
                     };
                 } catch (e) {
-                    console.error("Failed to parse user info", e);
+                    console.error('Failed to parse user info', e);
                 }
             }
             setUser(prev => ({ ...prev, ...userData }));
@@ -109,7 +93,7 @@ const Layout = () => {
 
             if (!response.ok) {
                 if (response.status === 401) {
-                    console.warn("Token expired or invalid in Layout, logging out...");
+                    console.warn('Token expired or invalid in Layout, logging out...');
                     handleLogout();
                     return;
                 }
@@ -121,7 +105,6 @@ const Layout = () => {
             if (Array.isArray(accList)) {
                 setAccounts(accList);
                 if (accList.length > 0) {
-                    // Reset selection on account list refresh
                     setSelectedAccountId(accList[0].id);
                 } else {
                     setSelectedAccountId('');
@@ -129,7 +112,7 @@ const Layout = () => {
             }
         } catch (err) {
             console.error(`Failed to fetch accounts (Retries left: ${retries})`, err);
-            setVisibleError(`Account Fetch Error: ${err.message}`); // Show error to user
+            setVisibleError(`Account Fetch Error: ${err.message}`);
             if (retries > 0) {
                 setTimeout(() => fetchAccounts(retries - 1), 1500);
             }
@@ -137,11 +120,9 @@ const Layout = () => {
     };
 
     useEffect(() => {
-
         fetchAccounts();
-    }, [selectedTeamId, user.access_token]); // Re-fetch on Team Change or Token Change
+    }, [selectedTeamId, user.access_token]);
 
-    // Fetch Real User Profile (Backend)
     useEffect(() => {
         if (user.access_token) {
             const fetchUserProfile = async () => {
@@ -152,19 +133,18 @@ const Layout = () => {
                     });
                     if (response.ok) {
                         const profile = await response.json();
-                        console.log("👤 [LAYOUT_AUTH] Profile fetched successfully:", {
+                        console.log('👤 [LAYOUT_AUTH] Profile fetched successfully:', {
                             email: profile.email,
                             is_super_admin: profile.is_super_admin,
                             role: profile.role
                         });
-                        // Update user with backend data (role, is_super_admin)
                         setUser(prev => ({ ...prev, ...profile }));
                     } else {
-                        console.error("❌ [LAYOUT_AUTH] Fetch Profile Failed:", response.status);
+                        console.error('❌ [LAYOUT_AUTH] Fetch Profile Failed:', response.status);
                         setVisibleError(`Fetch Profile Failed: ${response.status}`);
                     }
                 } catch (err) {
-                    console.error("Failed to fetch user profile", err);
+                    console.error('Failed to fetch user profile', err);
                     setVisibleError(`Fetch Profile Error: ${err.message}`);
                 }
             };
@@ -175,7 +155,6 @@ const Layout = () => {
     const handleLogout = () => {
         localStorage.removeItem('google_token');
         localStorage.removeItem('selected_account_id');
-        // Optional: clear user info if stored elsewhere
         window.location.href = '/login';
     };
 
@@ -189,10 +168,9 @@ const Layout = () => {
                 isMobile={isMobile}
                 selectedTeamId={selectedTeamId}
                 selectedTeamName={teams.find(t => t.id === selectedTeamId)?.name}
-                // New Props for Switcher
                 teams={teams}
                 setSelectedTeamId={setSelectedTeamId}
-                onRefresh={() => fetchAccounts()} // Pass fetch trigger
+                onRefresh={() => fetchAccounts()}
             />
             <div className="main-content" style={{
                 flex: 1,
@@ -204,18 +182,15 @@ const Layout = () => {
                 maxWidth: isMobile ? '100vw' : 'calc(100vw - ' + (isSidebarCollapsed ? '80px' : '240px') + ')',
                 overflow: 'hidden'
             }}>
-                {console.log("🛠️ [LAYOUT_RENDER] Passing user to Header:", { email: user.email, is_super_admin: user.is_super_admin })}
                 <Header
                     language={language}
                     setLanguage={setLanguage}
                     accounts={accounts}
                     selectedAccountId={selectedAccountId}
                     setSelectedAccountId={setSelectedAccountId}
-                    // Team Props
                     teams={teams}
                     selectedTeamId={selectedTeamId}
                     setSelectedTeamId={setSelectedTeamId}
-
                     onGenerateReport={() => { }}
                     isSidebarCollapsed={isSidebarCollapsed}
                     setIsSidebarCollapsed={setIsSidebarCollapsed}
@@ -227,7 +202,6 @@ const Layout = () => {
                 <div style={{ padding: '0', flex: 1, marginTop: '70px', minWidth: 0, width: '100%', maxWidth: '100%', overflowX: 'auto', boxSizing: 'border-box' }}>
                     <Outlet context={{ selectedAccountId, user, accounts, language, isSidebarCollapsed, isMobile, teams, setTeams, selectedTeamId, setSelectedTeamId }} />
                 </div>
-
             </div>
         </div>
     );
