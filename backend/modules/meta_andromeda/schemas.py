@@ -397,3 +397,24 @@ class ReleaseActionResponse(BaseModel):
     actor: str
     created_at: str
     note: str | None = None
+
+
+class MaintenanceCleanupRequest(BaseModel):
+    older_than_minutes: int | None = Field(default=None, ge=5, le=10080)
+    include_queued: bool = True
+    purge_worker_events: bool = False
+    purge_dead_letters: bool = False
+    limit: int = Field(default=500, ge=1, le=5000)
+
+
+class MaintenanceCleanupResponse(BaseModel):
+    cleaned_total: int
+    cleaned_score_event_ids: list[str]
+    include_statuses: list[str]
+    older_than_minutes: int
+    cutoff_timestamp: str
+    removed_scheduler_jobs: int
+    cleared_memory_statuses: int
+    deleted_worker_events: int
+    deleted_dead_letters: int
+    notes: list[str]

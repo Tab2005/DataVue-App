@@ -6,7 +6,7 @@ import asyncio
 import hashlib
 import hmac
 import threading
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from mimetypes import guess_extension
 from pathlib import Path
 from urllib.parse import urlparse
@@ -15,8 +15,9 @@ import httpx
 import logging
 
 from core.config import settings
-from core.scheduler import get_meta_andromeda_score_job_id
+from core.scheduler import get_meta_andromeda_score_job_id, scheduler
 from database import SessionLocal, User
+from database.models.meta_andromeda import MetaAndromedaDeadLetter, MetaAndromedaScoreEvent, MetaAndromedaWorkerEvent
 from .schemas import ObservedCreativeCandidate
 from .importers.facebook_ads_importer import fetch_observed_creative_candidate
 from .model_registry import model_registry
@@ -1197,6 +1198,124 @@ class MetaAndromedaService:
                 return completed
             finally:
                 db.close()
+
+    @staticmethod
+    def _clear_observation_import_status_entries(score_event_ids: set[str]) -> int:
+        removed = 0
+        if not score_event_ids:
+            return removed
+        with _observation_import_status_lock:
+            for observed_creative_id, payload in list(_observation_import_statuses.items()):
+                if payload.get("score_event_id") in score_event_ids:
+                    _observation_import_statuses.pop(observed_creative_id, None)
+                    removed += 1
+        return removed
+
+    @staticmethod
+    def cleanup_stale_score_events(
+        db,
+        *,
+        older_than_minutes: int | None = None,
+        include_queued: bool = True,
+        purge_worker_events: bool = False,
+        purge_dead_letters: bool = False,
+        limit: int = 500,
+        reason: str = "maintenance_cleanup",
+    ) -> dict:
+        older_than = older_than_minutes or settings.META_ANDROMEDA_STALE_PROCESSING_MINUTES
+        cutoff = datetime.now(UTC) - timedelta(minutes=older_than)
+        statuses = ["processing"]
+        if include_queued:
+            statuses.append("queued")
+
+        rows = (
+            db.query(MetaAndromedaScoreEvent)
+            .filter(
+                MetaAndromedaScoreEvent.status.in_(statuses),
+                MetaAndromedaScoreEvent.updated_at < cutoff,
+            )
+            .order_by(MetaAndromedaScoreEvent.updated_at.asc())
+            .limit(limit)
+            .all()
+        )
+
+        now = datetime.now(UTC)
+        cleaned_ids: list[str] = []
+        scheduler_job_ids: list[str] = []
+        deleted_worker_events = 0
+        deleted_dead_letters = 0
+
+        for row in rows:
+            cleaned_ids.append(row.id)
+            scheduler_job_ids.append(row.runtime_job_id or get_meta_andromeda_score_job_id(row.id))
+
+            if purge_worker_events:
+                deleted_worker_events += (
+                    db.query(MetaAndromedaWorkerEvent)
+                    .filter(MetaAndromedaWorkerEvent.score_event_id == row.id)
+                    .delete(synchronize_session=False)
+                )
+            if purge_dead_letters:
+                deleted_dead_letters += (
+                    db.query(MetaAndromedaDeadLetter)
+                    .filter(MetaAndromedaDeadLetter.score_event_id == row.id)
+                    .delete(synchronize_session=False)
+                )
+
+            previous_status = row.status
+            row.status = "failed"
+            row.failed_at = now
+            row.updated_at = now
+            row.error_message = f"{reason}:{previous_status}:stale_after_{older_than}m"
+            db.add(row)
+
+            if not purge_worker_events:
+                db.add(
+                    MetaAndromedaWorkerEvent(
+                        score_event_id=row.id,
+                        event_type="maintenance_cancelled",
+                        queue_host="maintenance",
+                        runtime_job_id=row.runtime_job_id,
+                        status="failed",
+                        attempt_count=row.attempt_count,
+                        message=row.error_message,
+                        event_payload={
+                            "reason": reason,
+                            "previous_status": previous_status,
+                            "older_than_minutes": older_than,
+                        },
+                    )
+                )
+
+        db.commit()
+
+        removed_scheduler_jobs = 0
+        for job_id in scheduler_job_ids:
+            try:
+                if scheduler.get_job(job_id):
+                    scheduler.remove_job(job_id)
+                    removed_scheduler_jobs += 1
+            except Exception:
+                continue
+
+        cleared_memory_statuses = MetaAndromedaService._clear_observation_import_status_entries(set(cleaned_ids))
+
+        return {
+            "cleaned_total": len(cleaned_ids),
+            "cleaned_score_event_ids": cleaned_ids,
+            "include_statuses": statuses,
+            "older_than_minutes": older_than,
+            "cutoff_timestamp": cutoff.isoformat(),
+            "removed_scheduler_jobs": removed_scheduler_jobs,
+            "cleared_memory_statuses": cleared_memory_statuses,
+            "deleted_worker_events": deleted_worker_events,
+            "deleted_dead_letters": deleted_dead_letters,
+            "notes": [
+                "Only stale queued/processing score events were terminated.",
+                "Completed score history and observed creatives were preserved.",
+                "Use include_queued=false for automatic reconciliation of stuck processing items only.",
+            ],
+        }
 
     @staticmethod
     def get_score_detail(db, score_event_id: str) -> dict:

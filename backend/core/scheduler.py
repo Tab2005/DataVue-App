@@ -359,9 +359,25 @@ async def process_meta_andromeda_score_event(score_event_id: str, queue_host: st
 async def sweep_meta_andromeda_queue() -> None:
     """Sweep queued Meta Andromeda records for database-backed queue hosting."""
     from database.models.meta_andromeda import MetaAndromedaScoreEvent
+    from modules.meta_andromeda.service import MetaAndromedaService
 
     db = SessionLocal()
     try:
+        cleanup_summary = MetaAndromedaService.cleanup_stale_score_events(
+            db,
+            older_than_minutes=settings.META_ANDROMEDA_STALE_PROCESSING_MINUTES,
+            include_queued=False,
+            purge_worker_events=False,
+            purge_dead_letters=False,
+            limit=200,
+            reason="automatic_stale_processing_reconcile",
+        )
+        if cleanup_summary.get("cleaned_total"):
+            logger.warning(
+                "⏰ [MetaAndromeda] Reconciled %s stale processing score event(s) before queue sweep.",
+                cleanup_summary["cleaned_total"],
+            )
+
         queued_score_events = (
             db.query(MetaAndromedaScoreEvent)
             .filter(MetaAndromedaScoreEvent.status == "queued")

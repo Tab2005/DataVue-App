@@ -29,6 +29,8 @@ from .schemas import (
     FeedbackEntryResponse,
     FeedbackListResponse,
     FeedbackSubmitRequest,
+    MaintenanceCleanupRequest,
+    MaintenanceCleanupResponse,
     MonitoringTimelineResponse,
     OverviewResponse,
     PingResponse,
@@ -123,6 +125,23 @@ async def monitoring_timeline(
             status_code=status.HTTP_404_NOT_FOUND,
             detail=f"Score event not found: {score_event_id}",
         ) from exc
+
+
+@router.post("/maintenance/cleanup-stale-score-events", response_model=MaintenanceCleanupResponse)
+async def cleanup_stale_score_events(
+    payload: MaintenanceCleanupRequest,
+    _user=Depends(get_current_meta_andromeda_user),
+    _access: bool = Depends(require_meta_andromeda_operate),
+    db=Depends(get_db),
+):
+    return MetaAndromedaService.cleanup_stale_score_events(
+        db,
+        older_than_minutes=payload.older_than_minutes,
+        include_queued=payload.include_queued,
+        purge_worker_events=payload.purge_worker_events,
+        purge_dead_letters=payload.purge_dead_letters,
+        limit=payload.limit,
+    )
 
 
 @router.post("/drift:trigger", response_model=DriftReportResponse, status_code=status.HTTP_201_CREATED)
