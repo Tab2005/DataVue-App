@@ -7,26 +7,46 @@ import { useState, useEffect, useCallback } from 'react';
 const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000';
 const SELECTED_TEAM_STORAGE_KEY = 'selected_team_id';
 const SELECTED_TEAM_EVENT = 'datavue:selected-team-changed';
+const RETRYABLE_STATUSES = new Set([502, 503, 504]);
+const RETRY_ATTEMPTS = 3;
+const RETRY_DELAY_MS = 1200;
 
 const readSelectedTeamId = () => localStorage.getItem(SELECTED_TEAM_STORAGE_KEY) || null;
+const buildModulesCacheKey = (teamId) => `datavue:user-modules:${teamId || 'personal'}`;
 
-/**
- * 取得 API 請求 headers
- */
+const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+
+const fetchWithRetry = async (url, options, retries = RETRY_ATTEMPTS) => {
+    let lastError = null;
+
+    for (let attempt = 0; attempt < retries; attempt += 1) {
+        try {
+            const res = await fetch(url, options);
+            if (RETRYABLE_STATUSES.has(res.status) && attempt < retries - 1) {
+                await sleep(RETRY_DELAY_MS * (attempt + 1));
+                continue;
+            }
+            return res;
+        } catch (err) {
+            lastError = err;
+            if (attempt < retries - 1) {
+                await sleep(RETRY_DELAY_MS * (attempt + 1));
+                continue;
+            }
+        }
+    }
+
+    throw lastError || new Error('Request failed');
+};
+
 const getAuthHeaders = () => {
     const token = localStorage.getItem('google_token');
     return {
-        'Authorization': `Bearer ${token}`,
+        Authorization: `Bearer ${token}`,
         'Content-Type': 'application/json'
     };
 };
 
-/**
- * useSelectedTeamId Hook
- * 取得並追蹤目前工作區 team id。
- *
- * 回傳 null 代表個人工作區。
- */
 export const useSelectedTeamId = () => {
     const [selectedTeamId, setSelectedTeamId] = useState(readSelectedTeamId);
 
@@ -54,18 +74,6 @@ export const useSelectedTeamId = () => {
     return selectedTeamId;
 };
 
-/**
- * useModuleAccess Hook
- * 檢查使用者是否可存取指定模組
- * 
- * @param {string} moduleKey - 模組 key (如 'fb_ads', 'gsc', 'ga4')
- * @param {string|null} teamId - 團隊 ID (null = 個人工作區)
- * @returns {{ hasAccess: boolean, loading: boolean, error: string|null }}
- * 
- * @example
- * const { hasAccess, loading } = useModuleAccess('gsc');
- * if (!hasAccess) return <AccessDenied />;
- */
 export const useModuleAccess = (moduleKey, teamId) => {
     const [hasAccess, setHasAccess] = useState(false);
     const [loading, setLoading] = useState(true);
@@ -85,18 +93,17 @@ export const useModuleAccess = (moduleKey, teamId) => {
                     ? `${API_URL}/api/permissions/me/module/${moduleKey}?team_id=${resolvedTeamId}`
                     : `${API_URL}/api/permissions/me/module/${moduleKey}`;
 
-                const res = await fetch(url, { headers: getAuthHeaders() });
+                const res = await fetchWithRetry(url, { headers: getAuthHeaders() });
 
                 if (res.ok) {
                     const data = await res.json();
                     setHasAccess(data.has_access);
+                    setError(null);
                 } else {
-                    setHasAccess(false);
                     setError('Failed to check module access');
                 }
             } catch (err) {
                 console.error('Module access check failed:', err);
-                setHasAccess(false);
                 setError(err.message);
             } finally {
                 setLoading(false);
@@ -109,18 +116,6 @@ export const useModuleAccess = (moduleKey, teamId) => {
     return { hasAccess, loading, error };
 };
 
-/**
- * usePermission Hook
- * 檢查使用者是否有指定權限
- * 
- * @param {string} permissionKey - 權限 key (如 'fb_ads:analytics:view')
- * @param {string|null} teamId - 團隊 ID
- * @returns {{ hasPermission: boolean, loading: boolean, error: string|null }}
- * 
- * @example
- * const { hasPermission } = usePermission('fb_ads:ai:use');
- * if (!hasPermission) return <UpgradePrompt />;
- */
 export const usePermission = (permissionKey, teamId) => {
     const [hasPermission, setHasPermission] = useState(false);
     const [loading, setLoading] = useState(true);
@@ -140,18 +135,17 @@ export const usePermission = (permissionKey, teamId) => {
                     ? `${API_URL}/api/permissions/me/check/${permissionKey}?team_id=${resolvedTeamId}`
                     : `${API_URL}/api/permissions/me/check/${permissionKey}`;
 
-                const res = await fetch(url, { headers: getAuthHeaders() });
+                const res = await fetchWithRetry(url, { headers: getAuthHeaders() });
 
                 if (res.ok) {
                     const data = await res.json();
                     setHasPermission(data.has_permission);
+                    setError(null);
                 } else {
-                    setHasPermission(false);
                     setError('Failed to check permission');
                 }
             } catch (err) {
                 console.error('Permission check failed:', err);
-                setHasPermission(false);
                 setError(err.message);
             } finally {
                 setLoading(false);
@@ -164,23 +158,20 @@ export const usePermission = (permissionKey, teamId) => {
     return { hasPermission, loading, error };
 };
 
-/**
- * useUserModules Hook
- * 取得使用者可存取的所有模組列表
- * 
- * @param {string|null} teamId - 團隊 ID
- * @returns {{ modules: string[], loading: boolean, error: string|null, refetch: Function }}
- * 
- * @example
- * const { modules } = useUserModules();
- * // modules = ['fb_ads', 'gsc']
- */
 export const useUserModules = (teamId) => {
-    const [modules, setModules] = useState([]);
-    const [loading, setLoading] = useState(true);
-    const [error, setError] = useState(null);
     const selectedTeamId = useSelectedTeamId();
     const resolvedTeamId = teamId === undefined ? selectedTeamId : teamId;
+    const cacheKey = buildModulesCacheKey(resolvedTeamId);
+    const [modules, setModules] = useState(() => {
+        try {
+            const cached = sessionStorage.getItem(cacheKey);
+            return cached ? JSON.parse(cached) : [];
+        } catch {
+            return [];
+        }
+    });
+    const [loading, setLoading] = useState(true);
+    const [error, setError] = useState(null);
 
     const fetchModules = useCallback(async () => {
         setLoading(true);
@@ -189,23 +180,24 @@ export const useUserModules = (teamId) => {
                 ? `${API_URL}/api/permissions/me/modules?team_id=${resolvedTeamId}`
                 : `${API_URL}/api/permissions/me/modules`;
 
-            const res = await fetch(url, { headers: getAuthHeaders() });
+            const res = await fetchWithRetry(url, { headers: getAuthHeaders() });
 
             if (res.ok) {
                 const data = await res.json();
-                setModules(data.modules || []);
+                const nextModules = data.modules || [];
+                setModules(nextModules);
+                sessionStorage.setItem(cacheKey, JSON.stringify(nextModules));
+                setError(null);
             } else {
-                setModules([]);
                 setError('Failed to fetch modules');
             }
         } catch (err) {
             console.error('Fetch modules failed:', err);
-            setModules([]);
             setError(err.message);
         } finally {
             setLoading(false);
         }
-    }, [resolvedTeamId]);
+    }, [cacheKey, resolvedTeamId]);
 
     useEffect(() => {
         fetchModules();
@@ -214,13 +206,6 @@ export const useUserModules = (teamId) => {
     return { modules, loading, error, refetch: fetchModules };
 };
 
-/**
- * useUserPermissions Hook
- * 取得使用者的所有權限列表
- * 
- * @param {string|null} teamId - 團隊 ID
- * @returns {{ permissions: string[], loading: boolean, error: string|null, refetch: Function }}
- */
 export const useUserPermissions = (teamId) => {
     const [permissions, setPermissions] = useState([]);
     const [loading, setLoading] = useState(true);
@@ -235,18 +220,17 @@ export const useUserPermissions = (teamId) => {
                 ? `${API_URL}/api/permissions/me/permissions?team_id=${resolvedTeamId}`
                 : `${API_URL}/api/permissions/me/permissions`;
 
-            const res = await fetch(url, { headers: getAuthHeaders() });
+            const res = await fetchWithRetry(url, { headers: getAuthHeaders() });
 
             if (res.ok) {
                 const data = await res.json();
                 setPermissions(data.permissions || []);
+                setError(null);
             } else {
-                setPermissions([]);
                 setError('Failed to fetch permissions');
             }
         } catch (err) {
             console.error('Fetch permissions failed:', err);
-            setPermissions([]);
             setError(err.message);
         } finally {
             setLoading(false);
@@ -260,15 +244,6 @@ export const useUserPermissions = (teamId) => {
     return { permissions, loading, error, refetch: fetchPermissions };
 };
 
-/**
- * ProtectedModule Component
- * 模組存取保護組件
- * 
- * @example
- * <ProtectedModule module="gsc" fallback={<UpgradePrompt />}>
- *   <GSCDashboard />
- * </ProtectedModule>
- */
 export const ProtectedModule = ({ module, teamId, fallback = null, children }) => {
     const { hasAccess, loading } = useModuleAccess(module, teamId);
 
@@ -306,23 +281,11 @@ export const ProtectedModule = ({ module, teamId, fallback = null, children }) =
     return children;
 };
 
-/**
- * ProtectedPermission Component
- * 權限保護組件
- * 
- * @example
- * <ProtectedPermission permission="fb_ads:ai:use" fallback={<UpgradeButton />}>
- *   <AIAnalystButton />
- * </ProtectedPermission>
- */
 export const ProtectedPermission = ({ permission, teamId, fallback = null, children }) => {
     const { hasPermission, loading } = usePermission(permission, teamId);
 
-    if (loading) return null; // 不顯示 loading 狀態
-
-    if (!hasPermission) {
-        return fallback || null; // 沒有權限時隱藏或顯示 fallback
-    }
+    if (loading) return null;
+    if (!hasPermission) return fallback || null;
 
     return children;
 };
