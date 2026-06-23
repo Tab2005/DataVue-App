@@ -28,8 +28,9 @@ from redis_cache import get_redis_client
 
 logger = logging.getLogger(__name__)
 
-_observation_import_statuses: dict[str, dict] = {}
+_observation_import_statuses: dict[str, dict] = {} 
 _observation_import_status_lock = threading.Lock()
+_score_event_semaphore = asyncio.Semaphore(settings.META_ANDROMEDA_SCORE_MAX_CONCURRENCY)
 
 
 class MetaAndromedaValidationError(ValueError):
@@ -1079,22 +1080,29 @@ class MetaAndromedaService:
 
     @staticmethod
     async def process_score_event(score_event_id: str, queue_host: str = "unknown") -> dict:
-        db = SessionLocal()
-        try:
-            current = repository.mark_score_processing(db, score_event_id)
-            if current is None:
-                return repository.get_review_queue_detail(db, score_event_id)
-            repository.log_worker_event(
-                db,
-                score_event_id=score_event_id,
-                event_type="processing_started",
-                queue_host=queue_host,
-                runtime_job_id=current["runtime_job_id"],
-                status="processing",
-                attempt_count=current["attempt_count"],
-                message="worker started",
-                event_payload={"queue_host": queue_host},
-            )
+        async with _score_event_semaphore:
+            db = SessionLocal()
+            try:
+                current = repository.mark_score_processing(db, score_event_id)
+                if current is None:
+                    return repository.get_review_queue_detail(db, score_event_id)
+                repository.log_worker_event(
+                    db,
+                    score_event_id=score_event_id,
+                    event_type="processing_started",
+                    queue_host=queue_host,
+                    runtime_job_id=current["runtime_job_id"],
+                    status="processing",
+                    attempt_count=current["attempt_count"],
+                    message="worker started",
+                    event_payload={
+                        "queue_host": queue_host,
+                        "max_concurrency": settings.META_ANDROMEDA_SCORE_MAX_CONCURRENCY,
+                    },
+                )
+            finally:
+                db.close()
+
             try:
                 result = await asyncio.wait_for(
                     runtime_adapter.generate_score_result(current),
@@ -1104,83 +1112,91 @@ class MetaAndromedaService:
                 raise TimeoutError(
                     f"score runtime timed out after {settings.META_ANDROMEDA_SCORE_TIMEOUT_SECONDS:.2f}s"
                 ) from exc
-            completed = repository.mark_score_completed(db, score_event_id, result)
-            repository.log_worker_event(
-                db,
-                score_event_id=score_event_id,
-                event_type="completed",
-                queue_host=queue_host,
-                runtime_job_id=completed["runtime_job_id"],
-                status="completed",
-                attempt_count=completed["attempt_count"],
-                message="worker completed",
-                event_payload={"queue_host": queue_host, "model_version": completed["model_version"]},
-            )
-            return completed
-        except Exception as exc:
-            latest = repository.get_review_queue_detail(db, score_event_id)
-            error_message = str(exc)
-            if latest["attempt_count"] < settings.META_ANDROMEDA_SCORE_MAX_ATTEMPTS:
-                queued = repository.requeue_score_event(db, score_event_id, error_message)
+            except Exception as exc:
+                error_message = str(exc)
+                db = SessionLocal()
+                try:
+                    latest = repository.get_review_queue_detail(db, score_event_id)
+                    if latest["attempt_count"] < settings.META_ANDROMEDA_SCORE_MAX_ATTEMPTS:
+                        queued = repository.requeue_score_event(db, score_event_id, error_message)
+                        repository.log_worker_event(
+                            db,
+                            score_event_id=score_event_id,
+                            event_type="retry_scheduled",
+                            queue_host=queue_host,
+                            runtime_job_id=queued["runtime_job_id"],
+                            status="queued",
+                            attempt_count=queued["attempt_count"],
+                            message=error_message,
+                            event_payload={"retry_delay_seconds": settings.META_ANDROMEDA_SCORE_RETRY_DELAY_SECONDS},
+                        )
+                        self_dispatch = MetaAndromedaService.enqueue_score_event(
+                            db,
+                            score_event_id=score_event_id,
+                            runtime_job_id=queued["runtime_job_id"],
+                            delay_seconds=settings.META_ANDROMEDA_SCORE_RETRY_DELAY_SECONDS,
+                            event_type="retry_dispatch_requested",
+                        )
+                        return self_dispatch
+
+                    failed = repository.mark_score_failed(db, score_event_id, error_message)
+                    repository.log_worker_event(
+                        db,
+                        score_event_id=score_event_id,
+                        event_type="failed",
+                        queue_host=queue_host,
+                        runtime_job_id=failed["runtime_job_id"],
+                        status="failed",
+                        attempt_count=failed["attempt_count"],
+                        message=error_message,
+                        event_payload={"queue_host": queue_host},
+                    )
+                    repository.create_dead_letter(
+                        db,
+                        score_event_id=score_event_id,
+                        queue_host=queue_host,
+                        runtime_job_id=failed["runtime_job_id"],
+                        failure_stage="runtime",
+                        attempt_count=failed["attempt_count"],
+                        final_error_message=error_message,
+                        dead_letter_payload={
+                            "queue_host": queue_host,
+                            "attempt_count": failed["attempt_count"],
+                            "runtime_job_id": failed["runtime_job_id"],
+                        },
+                    )
+                    repository.log_worker_event(
+                        db,
+                        score_event_id=score_event_id,
+                        event_type="dead_lettered",
+                        queue_host=queue_host,
+                        runtime_job_id=failed["runtime_job_id"],
+                        status="failed",
+                        attempt_count=failed["attempt_count"],
+                        message=error_message,
+                        event_payload={"failure_stage": "runtime"},
+                    )
+                    return failed
+                finally:
+                    db.close()
+
+            db = SessionLocal()
+            try:
+                completed = repository.mark_score_completed(db, score_event_id, result)
                 repository.log_worker_event(
                     db,
                     score_event_id=score_event_id,
-                    event_type="retry_scheduled",
+                    event_type="completed",
                     queue_host=queue_host,
-                    runtime_job_id=queued["runtime_job_id"],
-                    status="queued",
-                    attempt_count=queued["attempt_count"],
-                    message=error_message,
-                    event_payload={"retry_delay_seconds": settings.META_ANDROMEDA_SCORE_RETRY_DELAY_SECONDS},
+                    runtime_job_id=completed["runtime_job_id"],
+                    status="completed",
+                    attempt_count=completed["attempt_count"],
+                    message="worker completed",
+                    event_payload={"queue_host": queue_host, "model_version": completed["model_version"]},
                 )
-                self_dispatch = MetaAndromedaService.enqueue_score_event(
-                    db,
-                    score_event_id=score_event_id,
-                    runtime_job_id=queued["runtime_job_id"],
-                    delay_seconds=settings.META_ANDROMEDA_SCORE_RETRY_DELAY_SECONDS,
-                    event_type="retry_dispatch_requested",
-                )
-                return self_dispatch
-            failed = repository.mark_score_failed(db, score_event_id, error_message)
-            repository.log_worker_event(
-                db,
-                score_event_id=score_event_id,
-                event_type="failed",
-                queue_host=queue_host,
-                runtime_job_id=failed["runtime_job_id"],
-                status="failed",
-                attempt_count=failed["attempt_count"],
-                message=error_message,
-                event_payload={"queue_host": queue_host},
-            )
-            repository.create_dead_letter(
-                db,
-                score_event_id=score_event_id,
-                queue_host=queue_host,
-                runtime_job_id=failed["runtime_job_id"],
-                failure_stage="runtime",
-                attempt_count=failed["attempt_count"],
-                final_error_message=error_message,
-                dead_letter_payload={
-                    "queue_host": queue_host,
-                    "attempt_count": failed["attempt_count"],
-                    "runtime_job_id": failed["runtime_job_id"],
-                },
-            )
-            repository.log_worker_event(
-                db,
-                score_event_id=score_event_id,
-                event_type="dead_lettered",
-                queue_host=queue_host,
-                runtime_job_id=failed["runtime_job_id"],
-                status="failed",
-                attempt_count=failed["attempt_count"],
-                message=error_message,
-                event_payload={"failure_stage": "runtime"},
-            )
-            return failed
-        finally:
-            db.close()
+                return completed
+            finally:
+                db.close()
 
     @staticmethod
     def get_score_detail(db, score_event_id: str) -> dict:

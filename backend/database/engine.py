@@ -24,13 +24,10 @@ def _normalize_sqlite_url(url: str) -> str:
     if not url or not url.startswith("sqlite:///"):
         return url
 
-    # 已是絕對路徑
     if ":/" in url[10:] or url.startswith("sqlite:////"):
         return url
 
     rel = url[len("sqlite:///"):].lstrip("./")
-
-    # 容許舊版 backend/ 前置詞
     rel_norm = rel.replace("\\", "/")
     if rel_norm.startswith("backend/"):
         rel_norm = rel_norm[len("backend/"):]
@@ -39,30 +36,51 @@ def _normalize_sqlite_url(url: str) -> str:
     return _to_sqlite_url(os.path.abspath(abs_path))
 
 
-# 預設 SQLite 路徑（本地開發）
-SQLITE_DATABASE_URL = _normalize_sqlite_url("sqlite:///./facebook_dashboard.db")
+def _env_int(name: str, default: int, minimum: int = 0) -> int:
+    try:
+        return max(minimum, int(os.getenv(name, str(default))))
+    except (TypeError, ValueError):
+        return max(minimum, default)
 
-# 生產環境由環境變數覆蓋
+
+def _env_bool(name: str, default: bool) -> bool:
+    raw = os.getenv(name)
+    if raw is None:
+        return default
+    return raw.strip().lower() in {"1", "true", "yes", "on"}
+
+
+SQLITE_DATABASE_URL = _normalize_sqlite_url("sqlite:///./facebook_dashboard.db")
 DATABASE_URL = os.getenv("DATABASE_URL")
 
 
 def get_engine():
     """建立並回傳資料庫引擎（自動判斷 SQLite / PostgreSQL）"""
     url = os.getenv("DATABASE_URL")
-    
-    # 支援 postgres:// 和 postgresql:// 前綴（Zeabur/Heroku 常用）
+
     if url and (url.startswith("postgresql://") or url.startswith("postgres://")):
         if url.startswith("postgres://"):
             url = url.replace("postgres://", "postgresql://", 1)
-        return create_engine(url)
+        pool_size = _env_int("DB_POOL_SIZE", 10, minimum=1)
+        max_overflow = _env_int("DB_MAX_OVERFLOW", 20, minimum=0)
+        pool_timeout = _env_int("DB_POOL_TIMEOUT", 30, minimum=1)
+        pool_recycle = _env_int("DB_POOL_RECYCLE", 1800, minimum=30)
+        pool_pre_ping = _env_bool("DB_POOL_PRE_PING", True)
+        return create_engine(
+            url,
+            pool_size=pool_size,
+            max_overflow=max_overflow,
+            pool_timeout=pool_timeout,
+            pool_recycle=pool_recycle,
+            pool_pre_ping=pool_pre_ping,
+            pool_use_lifo=True,
+        )
 
-    # Fallback 至 SQLite
     sqlite_url = os.getenv("SQLITE_DATABASE_URL") or SQLITE_DATABASE_URL
     return create_engine(sqlite_url, connect_args={"check_same_thread": False})
 
 
 engine = get_engine()
-
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 
 
@@ -87,7 +105,6 @@ def get_db():
         db.close()
 
 
-# 模組載入時驗證連線
 if check_db_connection():
     safe_url = str(engine.url).split("@")[-1] if "@" in str(engine.url) else "Database"
     logger.info(f"Database connected successfully: {safe_url}")
