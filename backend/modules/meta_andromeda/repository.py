@@ -899,6 +899,7 @@ class MetaAndromedaRepository:
             err = abs(band_score.get(pred_band, 1) - band_score.get(real_band, 1))
             total_error += err
             
+            real_spend = float((obs.performance_snapshot or {}).get("spend", 0) or 0)
             matched_pairs.append({
                 "id": obs.id,
                 "ad_id": obs.ad_id,
@@ -906,6 +907,7 @@ class MetaAndromedaRepository:
                 "prediction_band": pred_band,
                 "observed_band": real_band,
                 "real_roas": real_roas,
+                "real_spend": real_spend,
                 "overall_score": pred.overall_score,
                 "primary_metric": label_detail["metric"],
                 "primary_metric_value": label_detail["value"],

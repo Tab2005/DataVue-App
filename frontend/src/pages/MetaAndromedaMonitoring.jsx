@@ -1759,8 +1759,20 @@ const MetaAndromedaMonitoring = () => {
                                                     {t('Obs: ', '實際: ')}{getTranslation(item.observed_band)}
                                                 </div>
 
-                                                <span style={{ fontSize: '0.8rem', color: 'var(--text-secondary)', marginLeft: 'auto' }}>
-                                                    ROAS: {item.real_roas.toFixed(2)}
+                                                <span style={{ fontSize: '0.8rem', marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                                                    <span style={{ color: 'var(--text-secondary)' }}>
+                                                        ROAS: {typeof item.real_roas === 'number' ? item.real_roas.toFixed(2) : '—'}
+                                                    </span>
+                                                    {item.real_spend !== undefined && (
+                                                        <span style={{
+                                                            color: item.real_spend <= 0 ? '#ef4444' : 'var(--text-secondary)',
+                                                            fontSize: '0.75rem',
+                                                        }}>
+                                                            {item.real_spend <= 0
+                                                                ? t('spend=$0 ⚠', '花費=$0 ⚠')
+                                                                : `spend=$${item.real_spend.toFixed(0)}`}
+                                                        </span>
+                                                    )}
                                                 </span>
                                             </div>
 
