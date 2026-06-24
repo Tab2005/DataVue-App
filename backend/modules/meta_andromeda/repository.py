@@ -818,7 +818,11 @@ class MetaAndromedaRepository:
             )
         if account_id:
             q = q.filter(MetaAndromedaObservedCreative.source_account_id == account_id)
-        observed_list = q.all()
+        # 排除 spend=0 的記錄（未實際投放），避免污染 Spearman 相關計算
+        observed_list = [
+            obs for obs in q.all()
+            if float((obs.performance_snapshot or {}).get("spend", 0) or 0) > 0
+        ]
         
         matched_pairs = []
         correct_count = 0
@@ -1607,6 +1611,9 @@ class MetaAndromedaRepository:
         # 2. 篩選有偏差且未被排除的進行標記
         for obs in observed_list:
             if obs.id in excluded_observed_ids:
+                continue
+            # 排除 spend=0 的記錄（廣告未實際投放，成效數據無意義）
+            if float((obs.performance_snapshot or {}).get("spend", 0) or 0) <= 0:
                 continue
             if not obs.asset_uri:
                 continue
