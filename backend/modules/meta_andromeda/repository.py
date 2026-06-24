@@ -32,7 +32,15 @@ def _objective_key(value: str | None) -> str:
     return (value or "").strip().lower()
 
 
-def _resolve_observed_band(objective: str | None, performance_snapshot: dict | None) -> tuple[str, dict]:
+_ROAS_FALLBACK_LOW = 3.0
+_ROAS_FALLBACK_HIGH = 6.0
+
+
+def _resolve_observed_band(
+    objective: str | None,
+    performance_snapshot: dict | None,
+    roas_thresholds: tuple[float, float] | None = None,
+) -> tuple[str, dict]:
     snapshot = performance_snapshot or {}
     objective_key = _objective_key(objective)
 
@@ -57,11 +65,10 @@ def _resolve_observed_band(objective: str | None, performance_snapshot: dict | N
     roas = snapshot.get("roas")
     if roas is not None:
         value = float(roas)
-        # Thresholds calibrated to account baseline (avg ROAS 3.68–4.91):
-        # < 3.0 = underperforming, 3.0–6.0 = normal range, ≥ 6.0 = exceptional
-        if value < 3.0:
+        low_threshold, high_threshold = roas_thresholds if roas_thresholds else (_ROAS_FALLBACK_LOW, _ROAS_FALLBACK_HIGH)
+        if value < low_threshold:
             return "low", {"metric": "roas", "value": value}
-        if value < 6.0:
+        if value < high_threshold:
             return "mid", {"metric": "roas", "value": value}
         return "high", {"metric": "roas", "value": value}
 
@@ -710,10 +717,26 @@ class MetaAndromedaRepository:
         matched_pairs = []
         correct_count = 0
         total_error = 0.0
-        
+
         # 區間映射字典
         band_score = {"low": 1, "mid": 2, "high": 3}
-        
+
+        # 動態 ROAS 門檻：從本批次所有 observed 的實際 ROAS 分布計算 P33/P67
+        # 樣本 < 5 時回退到固定門檻，避免小樣本雜訊
+        _roas_values = sorted(
+            float(obs.performance_snapshot["roas"])
+            for obs in observed_list
+            if obs.performance_snapshot and obs.performance_snapshot.get("roas") is not None
+        )
+        if len(_roas_values) >= 5:
+            _p33 = _roas_values[int(len(_roas_values) * 0.33)]
+            _p67 = _roas_values[int(len(_roas_values) * 0.67)]
+            roas_thresholds: tuple[float, float] | None = (_p33, _p67)
+            roas_threshold_method = "percentile_p33_p67"
+        else:
+            roas_thresholds = None
+            roas_threshold_method = "fixed_fallback"
+
         # 2. 逐筆進行 Prediction 匹配與比對
         for obs in observed_list:
             pred = None
@@ -752,8 +775,8 @@ class MetaAndromedaRepository:
             if not pred:
                 continue
                 
-            # 提取真實 ROAS 并轉成 Band
-            real_band, label_detail = _resolve_observed_band(obs.objective, obs.performance_snapshot)
+            # 提取真實 ROAS 并轉成 Band（使用本批次動態門檻）
+            real_band, label_detail = _resolve_observed_band(obs.objective, obs.performance_snapshot, roas_thresholds)
             real_roas = obs.performance_snapshot.get("roas", 0.0) if obs.performance_snapshot else 0.0
                 
             pred_band = pred.roas_band or "low"
@@ -843,6 +866,12 @@ class MetaAndromedaRepository:
                 "mae": round(mae, 4),
                 "calibration_candidate_total": calibration_candidate_total,
                 "label_policy_version": LABEL_POLICY_VERSION,
+                "roas_band_thresholds": {
+                    "low_below": round(roas_thresholds[0], 2) if roas_thresholds else _ROAS_FALLBACK_LOW,
+                    "high_above": round(roas_thresholds[1], 2) if roas_thresholds else _ROAS_FALLBACK_HIGH,
+                    "method": roas_threshold_method,
+                    "sample_count": len(_roas_values),
+                },
                 "matched_details": matched_pairs,
                 "since": since,
                 "until": until,

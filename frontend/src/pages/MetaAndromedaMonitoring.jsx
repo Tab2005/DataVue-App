@@ -855,6 +855,7 @@ const MetaAndromedaMonitoring = () => {
                                     const totalObserved = report.report_payload?.total_observed;
                                     const totalMatched = report.report_payload?.total_matched;
                                     const calibrationCandidates = report.report_payload?.calibration_candidate_total;
+                                    const roasThresholds = report.report_payload?.roas_band_thresholds;
                                     const hasDetails = details.length > 0;
                                     
                                     // 狀態樣式與呼吸燈效果
@@ -909,6 +910,14 @@ const MetaAndromedaMonitoring = () => {
                                                     <span style={{ fontSize: '0.75rem', color: 'var(--text-secondary)' }}>
                                                         {t('Observed', '匯入')}: {totalObserved ?? '--'} · {t('Matched', '配對成功')}: {totalMatched ?? '--'} · {t('Calibration Candidates', '可校準')}: {calibrationCandidates ?? '--'}
                                                     </span>
+                                                    {roasThresholds && (
+                                                        <span style={{ fontSize: '0.75rem', color: 'var(--text-secondary)' }}>
+                                                            {t('ROAS Band', 'ROAS 門檻')}: low &lt; {roasThresholds.low_below} · mid {roasThresholds.low_below}–{roasThresholds.high_above} · high ≥ {roasThresholds.high_above}
+                                                            {roasThresholds.method === 'percentile_p33_p67'
+                                                                ? ` (P33/P67, n=${roasThresholds.sample_count})`
+                                                                : ` (${t('fixed fallback', '固定門檻')})`}
+                                                        </span>
+                                                    )}
                                                     <span style={{ fontSize: '0.75rem', color: 'var(--text-secondary)' }}>
                                                         {t('Run Time', '執行時間')}: {formatDateTime(report.created_at)}
                                                     </span>
