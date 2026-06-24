@@ -442,3 +442,25 @@ class ScoringProfilePromoteResponse(BaseModel):
     profile_name: str
     is_promoted: bool
     promoted_at: str
+
+
+class DriftTrendEntry(BaseModel):
+    drift_report_id: str
+    window_kind: str
+    drift_status: str
+    note: str | None = None
+    spearman_r: float | None = None
+    perf_median: float | None = None
+    dominant_metric: str | None = None
+    period_state: str | None = None
+    period_label: str | None = None
+    creative_explained_variance: float | None = None
+    total_matched: int | None = None
+    since: str | None = None
+    until: str | None = None
+    created_at: str | None = None
+
+
+class DriftTrendResponse(BaseModel):
+    entries: list[DriftTrendEntry]
+    total: int

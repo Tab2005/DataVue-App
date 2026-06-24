@@ -28,10 +28,15 @@ export const promoteScoringProfile = async (profileName) => {
     return apiClient.post(`/api/meta-andromeda/monitoring/scoring-profiles/${encodeURIComponent(profileName)}/promote`, {});
 };
 
+export const fetchDriftTrend = async (limit = 20) => {
+    return apiClient.get('/api/meta-andromeda/monitoring/drift-trend', { params: { limit } });
+};
+
 export default {
     fetchMetaAndromedaMonitoringSummary,
     fetchMetaAndromedaMonitoringTimeline,
     triggerMetaAndromedaDriftReport,
     syncMetaAndromedaCalibrationDataset,
     cleanupStaleScoreEvents,
+    fetchDriftTrend,
 };

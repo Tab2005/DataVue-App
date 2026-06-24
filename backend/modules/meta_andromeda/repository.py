@@ -1647,6 +1647,37 @@ class MetaAndromedaRepository:
         }
 
     @staticmethod
+    def get_drift_trend(db: Session, limit: int = 20) -> list[dict]:
+        rows = (
+            db.query(MetaAndromedaDriftReport)
+            .order_by(MetaAndromedaDriftReport.created_at.desc())
+            .limit(limit)
+            .all()
+        )
+        rows = list(reversed(rows))
+        result = []
+        for r in rows:
+            p = r.report_payload or {}
+            diagnosis = p.get("period_diagnosis") or {}
+            result.append({
+                "drift_report_id": r.id,
+                "window_kind": r.window_kind,
+                "drift_status": r.drift_status,
+                "note": r.note,
+                "spearman_r": p.get("spearman_r"),
+                "perf_median": p.get("perf_median"),
+                "dominant_metric": p.get("dominant_metric"),
+                "period_state": diagnosis.get("state"),
+                "period_label": diagnosis.get("label"),
+                "creative_explained_variance": diagnosis.get("creative_explained_variance"),
+                "total_matched": p.get("total_matched"),
+                "since": p.get("since"),
+                "until": p.get("until"),
+                "created_at": r.created_at.isoformat() if r.created_at else None,
+            })
+        return result
+
+    @staticmethod
     def list_scoring_profiles(db: Session) -> list[dict]:
         rows = (
             db.query(MetaAndromedaScoringProfile)

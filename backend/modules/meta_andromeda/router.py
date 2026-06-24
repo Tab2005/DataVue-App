@@ -20,6 +20,7 @@ from .schemas import (
     CalibrationSyncRequest,
     CalibrationSyncResponse,
     DriftReportResponse,
+    DriftTrendResponse,
     DriftTriggerRequest,
     ExternalWorkerCallbackRequest,
     ExternalWorkerCallbackResponse,
@@ -127,6 +128,18 @@ async def monitoring_timeline(
             status_code=status.HTTP_404_NOT_FOUND,
             detail=f"Score event not found: {score_event_id}",
         ) from exc
+
+
+@router.get("/monitoring/drift-trend", response_model=DriftTrendResponse)
+async def monitoring_drift_trend(
+    _user=Depends(get_current_meta_andromeda_user),
+    _access: bool = Depends(require_meta_andromeda_module),
+    db=Depends(get_db),
+    limit: int = Query(default=20, ge=1, le=100),
+):
+    from .repository import repository as _repo
+    entries = _repo.get_drift_trend(db, limit=limit)
+    return {"entries": entries, "total": len(entries)}
 
 
 @router.get("/monitoring/scoring-profiles", response_model=ScoringProfileListResponse)
