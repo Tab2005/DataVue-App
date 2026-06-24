@@ -29,9 +29,10 @@ from redis_cache import get_redis_client
 
 logger = logging.getLogger(__name__)
 
-_observation_import_statuses: dict[str, dict] = {} 
+_observation_import_statuses: dict[str, dict] = {}
 _observation_import_status_lock = threading.Lock()
 _score_event_semaphore = asyncio.Semaphore(settings.META_ANDROMEDA_SCORE_MAX_CONCURRENCY)
+_observation_import_semaphore = asyncio.Semaphore(settings.META_ANDROMEDA_OBSERVATION_MAX_CONCURRENCY)
 
 
 class MetaAndromedaValidationError(ValueError):
@@ -714,19 +715,25 @@ class MetaAndromedaService:
             db.close()
 
     @staticmethod
-    def run_observed_facebook_ad_import_job(payload: dict, *, user_id: str, team_id: str | None = None) -> None:
+    async def run_observed_facebook_ad_import_job(payload: dict, *, user_id: str, team_id: str | None = None) -> None:
         observed_creative_id = MetaAndromedaService.build_observed_creative_id(
             payload["ad_id"],
             payload["observation_window_kind"],
         )
         MetaAndromedaService._set_observation_import_status(
             observed_creative_id,
-            observation_status="processing",
-            observation_message="Observation import processing",
+            observation_status="queued",
+            observation_message="Observation import queued, waiting for concurrency slot",
             score_status="pending_observation",
         )
 
-        async def _run() -> None:
+        async with _observation_import_semaphore:
+            MetaAndromedaService._set_observation_import_status(
+                observed_creative_id,
+                observation_status="processing",
+                observation_message="Observation import processing",
+                score_status="pending_observation",
+            )
             db = SessionLocal()
             try:
                 response = await MetaAndromedaService.import_observed_facebook_ad(
@@ -767,8 +774,6 @@ class MetaAndromedaService:
                 )
             finally:
                 db.close()
-
-        asyncio.run(_run())
 
     @staticmethod
     def get_observed_facebook_ad_import_status(db, observed_creative_id: str) -> dict:

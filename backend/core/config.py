@@ -202,6 +202,10 @@ class Settings:
         return max(1, int(os.getenv("META_ANDROMEDA_SCORE_MAX_CONCURRENCY", "2")))
 
     @property
+    def META_ANDROMEDA_OBSERVATION_MAX_CONCURRENCY(self) -> int:
+        return max(1, int(os.getenv("META_ANDROMEDA_OBSERVATION_MAX_CONCURRENCY", "5")))
+
+    @property
     def META_ANDROMEDA_STALE_PROCESSING_MINUTES(self) -> int:
         return max(5, int(os.getenv("META_ANDROMEDA_STALE_PROCESSING_MINUTES", "30")))
 
