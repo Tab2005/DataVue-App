@@ -293,6 +293,10 @@ const MetaAndromedaRelease = () => {
 
                                             <div style={metricGridStyle}>
                                                 <Metric
+                                                    label={t('Ranking Correlation (ρ)', '排名相關係數 (ρ)')}
+                                                    value={driftReport.report_payload?.spearman_r !== undefined ? driftReport.report_payload.spearman_r.toFixed(3) : '--'}
+                                                />
+                                                <Metric
                                                     label={t('Accuracy', '預測準確率')}
                                                     value={driftReport.report_payload?.accuracy !== undefined ? `${(driftReport.report_payload.accuracy * 100).toFixed(1)}%` : '--'}
                                                 />
@@ -318,8 +322,8 @@ const MetaAndromedaRelease = () => {
                                                     border: '1px solid rgba(239, 68, 68, 0.15)'
                                                 }}>
                                                     ⚠️ {t(
-                                                        'Online model detected significant drift. Release functionality is locked to prevent degraded inference quality. Please perform calibration inside the Monitoring Console first.',
-                                                        '線上模型已檢測出顯著預估偏差。為了避免劣質預估，已自動鎖定發佈。請先進入監控工作台執行「資料校準」。'
+                                                        `Ranking correlation has dropped to ρ=${(driftReport?.report_payload?.spearman_r ?? 0).toFixed(3)} (threshold: 0.10). Creative scores no longer predict relative ROAS performance. Release is locked to prevent degraded predictions. Please run drift check and calibration in the Monitoring Console first.`,
+                                                        `排名相關係數已降至 ρ=${(driftReport?.report_payload?.spearman_r ?? 0).toFixed(3)}（門檻：0.10），創意評分無法有效預測相對 ROAS 表現。為避免劣質預估，已自動鎖定發佈。請先至監控工作台執行偏差檢查與資料校準。`
                                                     )}
                                                 </div>
                                             )}
@@ -391,8 +395,8 @@ const MetaAndromedaRelease = () => {
                                                             alignSelf: 'stretch'
                                                         }}>
                                                             ⚠️ {t(
-                                                                `Online model detected significant drift (Accuracy: ${(driftReport?.report_payload?.accuracy * 100).toFixed(1)}% < 60%). Release has been automatically locked to prevent poor predictions. Please run "Data Calibration" in the monitoring workshop before approving new models.`,
-                                                                `線上模型已檢測出顯著預估偏差 (Accuracy: ${(driftReport?.report_payload?.accuracy * 100).toFixed(1)}% < 60%)。為了避免劣質預估，已自動鎖定發佈。請先進入監控工作台執行「資料校準」，再行核准新模型。`
+                                                                `Ranking correlation ρ=${(driftReport?.report_payload?.spearman_r ?? 0).toFixed(3)} is below threshold (0.10). Release is locked. Please run drift check in the Monitoring Console first.`,
+                                                                `排名相關係數 ρ=${(driftReport?.report_payload?.spearman_r ?? 0).toFixed(3)} 低於門檻（0.10），已自動鎖定發佈。請先至監控工作台執行偏差檢查，再行核准新模型。`
                                                             )}
                                                         </div>
                                                     )}
