@@ -240,23 +240,48 @@ period_diagnosis = _classify_period_state(perf_median, perf_median, spearman_r, 
 
 | 欄位 | 說明 |
 |---|---|
+| `account_id` | 廣告帳號 ID（隔離多帳號資料） |
 | `period` | 報告時間窗口 |
 | `spearman_r` | 創意影響力 |
-| `roas_median` | ROAS 中位數 |
+| `perf_median` | 主指標 P50 中位數 |
 | `period_state` | 象限分類 |
 | `creative_explained_variance` | ρ² |
 
-**API：** 新增 `GET /monitoring/drift-trend`，回傳歷史 Drift 報告摘要列表。
+**API：** 新增 `GET /monitoring/drift-trend?account_id=&limit=`，回傳歷史 Drift 報告摘要列表。
 
-**前端：** 監控工作台新增「投放趨勢」section，顯示各期象限變化時間軸。
+**前端：** 監控工作台新增「投放趨勢」section，顯示各期象限變化時間軸；支援依帳號篩選。
+
+#### 趨勢資料過濾規則
+
+只納入符合以下條件的 Drift 報告：
+- `drift_status != "insufficient_data"`（配對數 ≥ 5）
+- `period_diagnosis.state` 不為 null（Phase 1 之後建立）
+
+不符合條件的舊報告（無象限診斷）自動排除，不顯示於趨勢時間軸。
+
+#### 多帳號注意事項（重要）
+
+`MetaAndromedaDriftReport` 本身無帳號欄位。帳號隔離透過以下機制實現：
+
+1. **執行 Drift Check 時**：`DriftTriggerRequest.account_id`（選填）傳入後，查詢 `MetaAndromedaObservedCreative` 時加 `.filter(source_account_id == account_id)` 篩選，`report_payload.account_id` 記錄執行時的帳號。
+2. **查詢趨勢時**：`GET /monitoring/drift-trend?account_id=` 在 Python 層比對 `report_payload.account_id`，回傳指定帳號的報告。
+3. **留空行為**：`account_id` 留空時涵蓋所有帳號（向後相容單帳號使用情境）。
+
+> **若未來要嚴格隔離**（多租戶場景），應在 `meta_andromeda_drift_reports` 表新增 `account_id` 欄位（需 Alembic migration），並改為 DB 層過濾。目前的 `report_payload` 方案不需 migration，但查詢效能略遜於 DB 索引方案。
 
 ---
 
 ### Phase 5：象限切換自動告警（後端）
 
-當最新 Drift 報告的象限與前一筆不同時，寫入 `active_alerts`，提醒操作者投放環境已發生結構性變化。
+當最新 Drift 報告的象限與前一筆不同時，動態插入 `active_alerts`，提醒操作者投放環境已發生結構性變化。
 
-例：從「市場護航（B）」切換到「創意突圍（C）」→ 告警「市場順風期結束，創意品質重新成為關鍵，建議調整投放策略。」
+**實作方式：** 不寫入 DB，在 `get_monitoring_summary()` 計算時比對最新兩筆 drift report 的 `period_diagnosis.state`，若不同則插入告警（與現有 drift status 告警共用同一個 `active_alerts` 陣列）。
+
+**12 種轉換對應訊息：** 定義於 `_TRANSITION_MESSAGES` 常數，涵蓋所有象限組合，無對應組合使用通用後備訊息。
+
+**前端呈現：** `period_state_transition` 告警使用特殊卡片樣式，顯示前後象限彩色 badge + 箭頭 + 操作建議。
+
+例：「市場護航 → 創意突圍」→「市場護航期結束，創意品質重新成為關鍵差異因子。建議積極優化素材，高分素材加速擴量，低分素材快速汰換。」
 
 ---
 
@@ -280,10 +305,19 @@ period_diagnosis = _classify_period_state(perf_median, perf_median, spearman_r, 
 | 1 | 後端修改 | `backend/modules/meta_andromeda/repository.py` |
 | 2 | 前端修改 | `frontend/src/pages/MetaAndromedaMonitoring.jsx` |
 | 3 | 前端修改 | `frontend/src/pages/MetaAndromedaRelease.jsx` |
-| 4 | 後端新增 | `backend/modules/meta_andromeda/router.py`（新增 drift-trend endpoint） |
+| 4 | 後端新增 | `backend/modules/meta_andromeda/schemas.py`（DriftTrendEntry / DriftTrendResponse） |
+| 4 | 後端新增 | `backend/modules/meta_andromeda/router.py`（drift-trend endpoint） |
+| 4 | 後端修改 | `backend/modules/meta_andromeda/repository.py`（get_drift_trend） |
 | 4 | 前端修改 | `frontend/src/pages/MetaAndromedaMonitoring.jsx`（趨勢 section） |
-| 4 | 前端修改 | `frontend/src/services/metaAndromedaMonitoringService.js`（新增 API call） |
-| 5 | 後端修改 | `backend/modules/meta_andromeda/repository.py`（告警邏輯） |
+| 4 | 前端修改 | `frontend/src/services/metaAndromedaMonitoringService.js`（fetchDriftTrend） |
+| 4-補 | 後端修改 | `backend/modules/meta_andromeda/schemas.py`（DriftTriggerRequest 加 account_id） |
+| 4-補 | 後端修改 | `backend/modules/meta_andromeda/repository.py`（create_drift_report 帳號隔離） |
+| 4-補 | 後端修改 | `backend/modules/meta_andromeda/service.py`（trigger_drift_report 傳 account_id） |
+| 4-補 | 後端修改 | `backend/modules/meta_andromeda/router.py`（drift-trend 加 account_id query param） |
+| 4-補 | 前端修改 | `frontend/src/pages/MetaAndromedaMonitoring.jsx`（帳號輸入欄位與趨勢篩選） |
+| 4-補 | 前端修改 | `frontend/src/services/metaAndromedaMonitoringService.js`（fetchDriftTrend 加 account_id） |
+| 5 | 後端修改 | `backend/modules/meta_andromeda/repository.py`（_TRANSITION_MESSAGES + 告警邏輯） |
+| 5 | 前端修改 | `frontend/src/pages/MetaAndromedaMonitoring.jsx`（period_state_transition 告警卡片） |
 
 ---
 
@@ -293,7 +327,7 @@ period_diagnosis = _classify_period_state(perf_median, perf_median, spearman_r, 
 Phase 1（後端診斷邏輯）
     → Phase 2（監控頁顯示）
         → Phase 3（版本總覽整合）
-            → Phase 4（趨勢追蹤）
+            → Phase 4（趨勢追蹤 + 帳號隔離）
                 → Phase 5（告警機制）
 ```
 

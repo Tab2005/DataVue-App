@@ -28,8 +28,14 @@ export const promoteScoringProfile = async (profileName) => {
     return apiClient.post(`/api/meta-andromeda/monitoring/scoring-profiles/${encodeURIComponent(profileName)}/promote`, {});
 };
 
-export const fetchDriftTrend = async (limit = 20) => {
-    return apiClient.get('/api/meta-andromeda/monitoring/drift-trend', { params: { limit } });
+export const fetchDriftTrend = async (limit = 20, account_id = null) => {
+    const params = { limit };
+    if (account_id) params.account_id = account_id;
+    return apiClient.get('/api/meta-andromeda/monitoring/drift-trend', { params });
+};
+
+export const fetchObservedAccounts = async () => {
+    return apiClient.get('/api/meta-andromeda/monitoring/observed-accounts');
 };
 
 export default {
@@ -39,4 +45,5 @@ export default {
     syncMetaAndromedaCalibrationDataset,
     cleanupStaleScoreEvents,
     fetchDriftTrend,
+    fetchObservedAccounts,
 };

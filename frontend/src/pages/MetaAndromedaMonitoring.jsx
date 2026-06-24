@@ -11,6 +11,7 @@ import {
     fetchScoringProfiles,
     promoteScoringProfile,
     fetchDriftTrend,
+    fetchObservedAccounts,
 } from '../services/metaAndromedaMonitoringService';
 
 const MetaAndromedaMonitoring = () => {
@@ -30,6 +31,8 @@ const MetaAndromedaMonitoring = () => {
     const [driftSince, setDriftSince] = useState(searchParams.get('since') || '');
     const [driftUntil, setDriftUntil] = useState(searchParams.get('until') || '');
     const [driftNote, setDriftNote] = useState('');
+    const [driftAccountId, setDriftAccountId] = useState('');
+    const [trendAccountId, setTrendAccountId] = useState('');
     const [selectedDriftReport, setSelectedDriftReport] = useState(null);
     const [excludedObsIds, setExcludedObsIds] = useState(new Set());
     const [syncingCal, setSyncingCal] = useState(false);
@@ -40,6 +43,7 @@ const MetaAndromedaMonitoring = () => {
     const [promotingProfile, setPromotingProfile] = useState(null);
     const [driftTrend, setDriftTrend] = useState(null);
     const [loadingTrend, setLoadingTrend] = useState(false);
+    const [observedAccounts, setObservedAccounts] = useState([]);
     const { hasAccess, loading: loadingModuleAccess } = useModuleAccess('meta_andromeda', selectedTeamId);
 
     const t = (en, zh) => (language === 'en' ? en : zh);
@@ -224,7 +228,7 @@ const MetaAndromedaMonitoring = () => {
         }
         loadSummary();
         loadProfiles();
-        loadDriftTrend();
+        loadObservedAccounts();
     }, [hasAccess]);
 
     useEffect(() => {
@@ -299,6 +303,7 @@ const MetaAndromedaMonitoring = () => {
                 note: driftNote.trim() || null,
                 since: driftWindowKind === 'custom' ? driftSince : null,
                 until: driftWindowKind === 'custom' ? driftUntil : null,
+                account_id: driftAccountId.trim() || null,
             });
             setDriftNote('');
             await loadSummary();
@@ -345,10 +350,29 @@ const MetaAndromedaMonitoring = () => {
         }
     };
 
-    const loadDriftTrend = async () => {
+    const loadObservedAccounts = async () => {
+        try {
+            const data = await fetchObservedAccounts();
+            const accounts = data?.accounts || [];
+            setObservedAccounts(accounts);
+            // 只有一個帳號時自動預選；多帳號時預設「全部」
+            const autoId = accounts.length === 1 ? accounts[0].account_id : '';
+            if (accounts.length === 1) {
+                setDriftAccountId(autoId);
+                setTrendAccountId(autoId);
+            }
+            // 帳號清單載入後再拉趨勢，確保帶入正確 account_id
+            await loadDriftTrend(autoId || null);
+        } catch (err) {
+            // non-fatal：即使帳號清單失敗也嘗試載入趨勢
+            await loadDriftTrend(null);
+        }
+    };
+
+    const loadDriftTrend = async (accountId = trendAccountId) => {
         setLoadingTrend(true);
         try {
-            const data = await fetchDriftTrend(30);
+            const data = await fetchDriftTrend(30, accountId || null);
             setDriftTrend(data);
         } catch (err) {
             // non-fatal: trend section shows empty state
@@ -613,10 +637,39 @@ const MetaAndromedaMonitoring = () => {
                                         </div>
                                     </div>
                                 )}
+                                <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                                    <span style={{ fontSize: '0.8rem', color: 'var(--text-secondary)' }}>
+                                        {t('Ad Account', '廣告帳號')}
+                                    </span>
+                                    {observedAccounts.length > 0 ? (
+                                        <select
+                                            value={driftAccountId}
+                                            onChange={(e) => setDriftAccountId(e.target.value)}
+                                            style={inputStyle}
+                                        >
+                                            <option value="">{t('All accounts', '全部帳號')}</option>
+                                            {observedAccounts.map((acc) => (
+                                                <option key={acc.account_id} value={acc.account_id}>
+                                                    {acc.account_id}
+                                                    {acc.platform !== 'facebook_ads' ? ` (${acc.platform})` : ''}
+                                                    {' '}· {acc.total_creatives} {t('creatives', '筆素材')}
+                                                </option>
+                                            ))}
+                                        </select>
+                                    ) : (
+                                        <input
+                                            type="text"
+                                            value={driftAccountId}
+                                            onChange={(e) => setDriftAccountId(e.target.value)}
+                                            placeholder={t('No accounts imported yet', '尚未匯入任何帳號資料')}
+                                            style={inputStyle}
+                                        />
+                                    )}
+                                </div>
                                 <textarea
                                     value={driftNote}
                                     onChange={(event) => setDriftNote(event.target.value)}
-                                    rows={3}
+                                    rows={2}
                                     placeholder={t('Optional operator note', '可選操作備註')}
                                     style={inputStyle}
                                 />
@@ -1255,18 +1308,68 @@ const MetaAndromedaMonitoring = () => {
 
                 return (
                     <section style={{ ...panelStyle, marginTop: '16px' }}>
-                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
-                            <h2 style={sectionTitleStyle}>{t('Campaign Environment Trend', '投放趨勢')}</h2>
-                            <button type="button" onClick={loadDriftTrend} style={actionButtonStyle}>
-                                {t('Refresh', '重整')}
-                            </button>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px', flexWrap: 'wrap', gap: '10px' }}>
+                            <h2 style={{ ...sectionTitleStyle, margin: 0 }}>{t('Campaign Environment Trend', '投放趨勢')}</h2>
+                            <div style={{ display: 'flex', gap: '8px', alignItems: 'center', flexWrap: 'wrap' }}>
+                                {observedAccounts.length > 0 ? (
+                                    <select
+                                        value={trendAccountId}
+                                        onChange={(e) => {
+                                            setTrendAccountId(e.target.value);
+                                            loadDriftTrend(e.target.value || null);
+                                        }}
+                                        style={{ ...inputStyle, width: '260px', padding: '8px 12px', fontSize: '0.82rem' }}
+                                    >
+                                        <option value="">{t('All accounts', '全部帳號')}</option>
+                                        {observedAccounts.map((acc) => (
+                                            <option key={acc.account_id} value={acc.account_id}>
+                                                {acc.account_id}
+                                                {acc.platform !== 'facebook_ads' ? ` (${acc.platform})` : ''}
+                                                {' '}· {acc.total_creatives} {t('creatives', '筆')}
+                                            </option>
+                                        ))}
+                                    </select>
+                                ) : (
+                                    <>
+                                        <input
+                                            type="text"
+                                            value={trendAccountId}
+                                            onChange={(e) => setTrendAccountId(e.target.value)}
+                                            placeholder={t('Filter by account ID', '依帳號 ID 篩選')}
+                                            style={{ ...inputStyle, width: '220px', padding: '8px 12px', fontSize: '0.82rem' }}
+                                        />
+                                        <button
+                                            type="button"
+                                            onClick={() => loadDriftTrend(trendAccountId || null)}
+                                            style={actionButtonStyle}
+                                        >
+                                            {t('Apply', '套用')}
+                                        </button>
+                                    </>
+                                )}
+                            </div>
                         </div>
+                        {trendAccountId && observedAccounts.length > 1 && (
+                            <div style={{ fontSize: '0.78rem', color: '#60a5fa', marginBottom: '12px' }}>
+                                {t('Showing trend for account:', '目前顯示帳號：')} <strong>{trendAccountId}</strong>
+                                <button
+                                    type="button"
+                                    onClick={() => { setTrendAccountId(''); loadDriftTrend(''); }}
+                                    style={{ marginLeft: '8px', background: 'none', border: 'none', color: 'var(--text-secondary)', cursor: 'pointer', fontSize: '0.78rem' }}
+                                >
+                                    {t('Clear', '清除篩選')}
+                                </button>
+                            </div>
+                        )}
 
                         {loadingTrend ? (
                             <div style={emptyStateStyle}>{t('Loading trend data...', '載入趨勢資料中...')}</div>
                         ) : trendEntries.length === 0 ? (
                             <div style={emptyStateStyle}>
-                                {t('No drift reports yet. Run a drift check to start tracking campaign environment trends.', '尚無預估偏差報告。執行預估偏差檢查以開始追蹤投放環境趨勢。')}
+                                {t(
+                                    'No trend data yet. Run a drift check with sufficient matched data (≥5 pairs) to start tracking campaign environment quadrant history.',
+                                    '尚無趨勢資料。執行預估偏差檢查且配對成功 ≥5 筆後，投放環境象限歷史會顯示於此。'
+                                )}
                             </div>
                         ) : (
                             <>
@@ -1331,37 +1434,20 @@ const MetaAndromedaMonitoring = () => {
 
                                                         {/* 節點資訊 */}
                                                         <div style={{ marginTop: '10px', textAlign: 'center', padding: '0 4px' }}>
-                                                            {entry.period_label ? (
-                                                                <div style={{
-                                                                    display: 'inline-block',
-                                                                    padding: '2px 8px',
-                                                                    borderRadius: '6px',
-                                                                    background: c.bg,
-                                                                    border: `1px solid ${c.border}`,
-                                                                    color: c.text,
-                                                                    fontWeight: 700,
-                                                                    fontSize: '0.72rem',
-                                                                    marginBottom: '4px',
-                                                                    whiteSpace: 'nowrap',
-                                                                }}>
-                                                                    {entry.period_label}
-                                                                </div>
-                                                            ) : (
-                                                                <div style={{
-                                                                    display: 'inline-block',
-                                                                    padding: '2px 8px',
-                                                                    borderRadius: '6px',
-                                                                    background: 'rgba(107,114,128,0.1)',
-                                                                    border: '1px solid rgba(107,114,128,0.2)',
-                                                                    color: '#6b7280',
-                                                                    fontWeight: 600,
-                                                                    fontSize: '0.72rem',
-                                                                    marginBottom: '4px',
-                                                                    whiteSpace: 'nowrap',
-                                                                }}>
-                                                                    {t('No Data', '資料不足')}
-                                                                </div>
-                                                            )}
+                                                            <div style={{
+                                                                display: 'inline-block',
+                                                                padding: '2px 8px',
+                                                                borderRadius: '6px',
+                                                                background: c.bg,
+                                                                border: `1px solid ${c.border}`,
+                                                                color: c.text,
+                                                                fontWeight: 700,
+                                                                fontSize: '0.72rem',
+                                                                marginBottom: '4px',
+                                                                whiteSpace: 'nowrap',
+                                                            }}>
+                                                                {entry.period_label}
+                                                            </div>
                                                             <div style={{ fontSize: '0.7rem', color: dColor, fontWeight: 600, marginBottom: '2px' }}>
                                                                 {entry.spearman_r != null ? `ρ=${entry.spearman_r.toFixed(3)}` : '--'}
                                                             </div>
@@ -1484,6 +1570,11 @@ const MetaAndromedaMonitoring = () => {
                                                         </div>
                                                     </div>
                                                     <div style={{ flex: '0 0 auto', textAlign: 'right' }}>
+                                                        {entry.account_id && (
+                                                            <div style={{ fontSize: '0.68rem', color: 'var(--text-secondary)', marginBottom: '2px', fontFamily: 'monospace' }}>
+                                                                {entry.account_id}
+                                                            </div>
+                                                        )}
                                                         <div style={{ fontSize: '0.72rem', color: 'var(--text-secondary)' }}>
                                                             [{windowLabel(entry.window_kind)}] {formatEntryDate(entry)}
                                                         </div>

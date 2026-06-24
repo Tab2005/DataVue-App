@@ -132,6 +132,7 @@ class MetaAndromedaService:
         note: str | None = None,
         since: str | None = None,
         until: str | None = None,
+        account_id: str | None = None,
     ) -> dict:
         return repository.create_drift_report(
             db,
@@ -140,6 +141,7 @@ class MetaAndromedaService:
             note=note,
             since=since,
             until=until,
+            account_id=account_id,
         )
 
     @staticmethod

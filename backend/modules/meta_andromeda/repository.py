@@ -802,25 +802,23 @@ class MetaAndromedaRepository:
         note: str | None = None,
         since: str | None = None,
         until: str | None = None,
+        account_id: str | None = None,
     ):
         # 1. 撈取該窗口的所有 Observed Creative (改用區間重疊比對，避免因時區或邊界跨天導致資料遺漏)
         if window_kind == "custom" and since and until:
             range_str = f"[{since} ~ {until}]"
             note = f"{note} {range_str}" if note else range_str
-            observed_list = (
-                db.query(MetaAndromedaObservedCreative)
-                .filter(
-                    MetaAndromedaObservedCreative.observation_window_end >= since,
-                    MetaAndromedaObservedCreative.observation_window_start <= until
-                )
-                .all()
+            q = db.query(MetaAndromedaObservedCreative).filter(
+                MetaAndromedaObservedCreative.observation_window_end >= since,
+                MetaAndromedaObservedCreative.observation_window_start <= until,
             )
         else:
-            observed_list = (
-                db.query(MetaAndromedaObservedCreative)
-                .filter(MetaAndromedaObservedCreative.observation_window_kind == window_kind)
-                .all()
+            q = db.query(MetaAndromedaObservedCreative).filter(
+                MetaAndromedaObservedCreative.observation_window_kind == window_kind,
             )
+        if account_id:
+            q = q.filter(MetaAndromedaObservedCreative.source_account_id == account_id)
+        observed_list = q.all()
         
         matched_pairs = []
         correct_count = 0
@@ -1035,6 +1033,7 @@ class MetaAndromedaRepository:
                 "matched_details": matched_pairs,
                 "since": since,
                 "until": until,
+                "account_id": account_id,
             }
         )
         db.add(report)
@@ -1683,27 +1682,66 @@ class MetaAndromedaRepository:
         }
 
     @staticmethod
-    def get_drift_trend(db: Session, limit: int = 20) -> list[dict]:
+    def list_observed_accounts(db: Session) -> list[dict]:
+        from sqlalchemy import func
+        rows = (
+            db.query(
+                MetaAndromedaObservedCreative.source_account_id,
+                MetaAndromedaObservedCreative.source_platform,
+                func.count(MetaAndromedaObservedCreative.id).label("total_creatives"),
+                func.max(MetaAndromedaObservedCreative.created_at).label("last_imported_at"),
+            )
+            .group_by(
+                MetaAndromedaObservedCreative.source_account_id,
+                MetaAndromedaObservedCreative.source_platform,
+            )
+            .order_by(func.max(MetaAndromedaObservedCreative.created_at).desc())
+            .all()
+        )
+        return [
+            {
+                "account_id": r.source_account_id,
+                "platform": r.source_platform,
+                "total_creatives": r.total_creatives,
+                "last_imported_at": r.last_imported_at.isoformat() if r.last_imported_at else None,
+            }
+            for r in rows
+        ]
+
+    @staticmethod
+    def get_drift_trend(db: Session, limit: int = 20, account_id: str | None = None) -> list[dict]:
+        # 只取有足夠資料完成象限診斷的報告，排除：
+        # 1. insufficient_data（配對數 < 5，無法計算 ρ）
+        # 2. Phase 1 之前的舊報告（report_payload 無 period_diagnosis）
         rows = (
             db.query(MetaAndromedaDriftReport)
+            .filter(MetaAndromedaDriftReport.drift_status != "insufficient_data")
             .order_by(MetaAndromedaDriftReport.created_at.desc())
-            .limit(limit)
+            .limit(limit * 3)  # 多撈一些以確保 account 過濾後仍有足夠筆數
             .all()
         )
         rows = list(reversed(rows))
         result = []
         for r in rows:
             p = r.report_payload or {}
+            # account_id 隔離：若指定帳號則只回傳該帳號的報告
+            if account_id and p.get("account_id") != account_id:
+                continue
             diagnosis = p.get("period_diagnosis") or {}
+            period_state = diagnosis.get("state")
+            # 跳過無象限診斷的舊報告（Phase 1 前建立）
+            if not period_state:
+                continue
             result.append({
                 "drift_report_id": r.id,
                 "window_kind": r.window_kind,
                 "drift_status": r.drift_status,
                 "note": r.note,
+                "account_id": p.get("account_id"),
                 "spearman_r": p.get("spearman_r"),
                 "perf_median": p.get("perf_median"),
                 "dominant_metric": p.get("dominant_metric"),
-                "period_state": diagnosis.get("state"),
+                "period_state": period_state,
                 "period_label": diagnosis.get("label"),
                 "creative_explained_variance": diagnosis.get("creative_explained_variance"),
                 "total_matched": p.get("total_matched"),
@@ -1711,7 +1749,7 @@ class MetaAndromedaRepository:
                 "until": p.get("until"),
                 "created_at": r.created_at.isoformat() if r.created_at else None,
             })
-        return result
+        return result[:limit]
 
     @staticmethod
     def list_scoring_profiles(db: Session) -> list[dict]:

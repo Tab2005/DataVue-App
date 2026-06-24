@@ -96,6 +96,7 @@ class DriftTriggerRequest(BaseModel):
     since: str | None = None
     until: str | None = None
     note: str | None = None
+    account_id: str | None = None
 
 
 class CalibrationSyncRequest(BaseModel):
@@ -444,11 +445,24 @@ class ScoringProfilePromoteResponse(BaseModel):
     promoted_at: str
 
 
+class ObservedAccountEntry(BaseModel):
+    account_id: str
+    platform: str
+    total_creatives: int
+    last_imported_at: str | None = None
+
+
+class ObservedAccountListResponse(BaseModel):
+    accounts: list[ObservedAccountEntry]
+    total: int
+
+
 class DriftTrendEntry(BaseModel):
     drift_report_id: str
     window_kind: str
     drift_status: str
     note: str | None = None
+    account_id: str | None = None
     spearman_r: float | None = None
     perf_median: float | None = None
     dominant_metric: str | None = None

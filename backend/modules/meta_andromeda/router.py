@@ -22,6 +22,7 @@ from .schemas import (
     DriftReportResponse,
     DriftTrendResponse,
     DriftTriggerRequest,
+    ObservedAccountListResponse,
     ExternalWorkerCallbackRequest,
     ExternalWorkerCallbackResponse,
     FacebookAdObservedImportRequest,
@@ -130,15 +131,27 @@ async def monitoring_timeline(
         ) from exc
 
 
+@router.get("/monitoring/observed-accounts", response_model=ObservedAccountListResponse)
+async def list_observed_accounts(
+    _user=Depends(get_current_meta_andromeda_user),
+    _access: bool = Depends(require_meta_andromeda_module),
+    db=Depends(get_db),
+):
+    from .repository import repository as _repo
+    accounts = _repo.list_observed_accounts(db)
+    return {"accounts": accounts, "total": len(accounts)}
+
+
 @router.get("/monitoring/drift-trend", response_model=DriftTrendResponse)
 async def monitoring_drift_trend(
     _user=Depends(get_current_meta_andromeda_user),
     _access: bool = Depends(require_meta_andromeda_module),
     db=Depends(get_db),
     limit: int = Query(default=20, ge=1, le=100),
+    account_id: str | None = Query(default=None),
 ):
     from .repository import repository as _repo
-    entries = _repo.get_drift_trend(db, limit=limit)
+    entries = _repo.get_drift_trend(db, limit=limit, account_id=account_id)
     return {"entries": entries, "total": len(entries)}
 
 
@@ -204,6 +217,7 @@ async def trigger_drift_report(
         note=payload.note,
         since=payload.since,
         until=payload.until,
+        account_id=payload.account_id,
     )
 
 
