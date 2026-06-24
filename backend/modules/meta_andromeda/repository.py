@@ -64,6 +64,21 @@ _METRIC_LABEL: dict[str, str] = {
     "cpa":  "CPA",
 }
 
+_TRANSITION_MESSAGES: dict[tuple[str, str], str] = {
+    ("market_driven",    "creative_critical"): "市場護航期結束，創意品質重新成為關鍵差異因子。建議積極優化素材，高分素材加速擴量，低分素材快速汰換。",
+    ("market_driven",    "needs_review"):      "市場護航期結束且整體表現轉弱。建議系統性檢視：受眾定向精準度、出價策略、素材是否已疲乏。",
+    ("market_driven",    "dual_advantage"):    "創意影響力明顯提升，進入雙重有利期。建議把握時機擴大預算規模，維持高品質素材供應節奏。",
+    ("dual_advantage",   "market_driven"):     "創意影響力下滑，整體表現現由市場/定向因素主導。勿過度依賴創意優化，優先鞏固定向與競價策略。",
+    ("dual_advantage",   "creative_critical"): "整體績效下滑但創意仍是關鍵差異因子。維持創意優化投入，高分素材積極保量避免縮量。",
+    ("dual_advantage",   "needs_review"):      "雙重有利期結束，表現全面走弱。建議系統性檢視所有影響因子，避免繼續擴量。",
+    ("creative_critical","dual_advantage"):    "市場環境改善，創意品質持續有效，進入雙重有利期。可適度擴大預算並維持高品質素材供應。",
+    ("creative_critical","market_driven"):     "市場環境好轉拉動整體表現，但創意影響力相對下降。優先鞏固定向與競價優勢，創意達標即可。",
+    ("creative_critical","needs_review"):      "創意影響力也開始弱化，整體陷入全面檢視狀態。建議優先排查根本問題再考慮調整投放策略。",
+    ("needs_review",     "creative_critical"): "創意品質開始發揮影響力，從全面檢視期進入創意突圍階段。持續優化高分素材，快速汰換低分素材。",
+    ("needs_review",     "market_driven"):     "市場/定向因素開始拉動整體表現，從全面檢視期逐步回穩。鞏固定向與競價優勢，謹慎恢復預算。",
+    ("needs_review",     "dual_advantage"):    "強勁復甦，直接進入雙重有利期。建議積極擴量並保持當前創意策略。",
+}
+
 
 def _classify_period_state(spearman_r: float, perf_is_high: bool, dominant_metric: str) -> dict:
     metric_label = _METRIC_LABEL.get(dominant_metric, dominant_metric.upper())
@@ -666,8 +681,29 @@ class MetaAndromedaRepository:
                 "window_kind": report.window_kind,
             }
             for report in drift_reports
-            if report.drift_status != "stable"
+            if report.drift_status not in ("stable", "healthy")
         ]
+
+        # Phase 5: 象限切換告警
+        if len(drift_reports) >= 2:
+            _latest_diag = (drift_reports[0].report_payload or {}).get("period_diagnosis") or {}
+            _prev_diag   = (drift_reports[1].report_payload or {}).get("period_diagnosis") or {}
+            _latest_state = _latest_diag.get("state")
+            _prev_state   = _prev_diag.get("state")
+            if _latest_state and _prev_state and _latest_state != _prev_state:
+                _latest_label = _latest_diag.get("label", _latest_state)
+                _prev_label   = _prev_diag.get("label", _prev_state)
+                _transition_msg = _TRANSITION_MESSAGES.get(
+                    (_prev_state, _latest_state),
+                    "投放環境象限發生切換，請留意是否需要調整投放策略。",
+                )
+                active_alerts.insert(0, {
+                    "severity": "medium",
+                    "code": "period_state_transition",
+                    "message": f"【象限切換】{_prev_label} → {_latest_label}。{_transition_msg}",
+                    "from_state": _prev_state,
+                    "to_state": _latest_state,
+                })
         latest_drift_payload = deepcopy(drift_reports[0].report_payload) if drift_reports else {}
         latest_matched = int(latest_drift_payload.get("total_matched") or 0)
         latest_observed = int(latest_drift_payload.get("total_observed") or 0)

@@ -1157,14 +1157,68 @@ const MetaAndromedaMonitoring = () => {
                             >
                                 {(summary?.active_alerts || []).length === 0 ? (
                                     <div style={emptyStateStyle}>{t('No active alerts.', '目前沒有告警。')}</div>
-                                ) : (summary?.active_alerts || []).map((alert, index) => (
-                                    <div key={index} style={detailCardStyle}>
-                                        <div style={{ color: 'var(--accent-primary)', fontWeight: 700, marginBottom: '6px' }}>
-                                            {getTranslation(alert.severity)} · {alert.code}
+                                ) : (summary?.active_alerts || []).map((alert, index) => {
+                                    const isTransition = alert.code === 'period_state_transition';
+                                    const transitionStateColors = {
+                                        dual_advantage:   { bg: 'rgba(16,185,129,0.12)',  border: 'rgba(16,185,129,0.4)',  text: '#34d399' },
+                                        market_driven:    { bg: 'rgba(59,130,246,0.12)',  border: 'rgba(59,130,246,0.4)',  text: '#60a5fa' },
+                                        creative_critical:{ bg: 'rgba(245,158,11,0.12)',  border: 'rgba(245,158,11,0.4)',  text: '#f59e0b' },
+                                        needs_review:     { bg: 'rgba(239,68,68,0.12)',   border: 'rgba(239,68,68,0.4)',   text: '#f87171' },
+                                    };
+                                    const severityColor = { high: '#f87171', medium: '#f59e0b', info: '#60a5fa' };
+                                    const headerColor = severityColor[alert.severity] || 'var(--accent-primary)';
+
+                                    if (isTransition) {
+                                        const fromC = transitionStateColors[alert.from_state] || transitionStateColors.needs_review;
+                                        const toC = transitionStateColors[alert.to_state] || transitionStateColors.needs_review;
+                                        const toCardBorder = toC.border;
+                                        return (
+                                            <div key={index} style={{
+                                                ...detailCardStyle,
+                                                borderColor: toCardBorder,
+                                                background: `linear-gradient(135deg, ${fromC.bg}, ${toC.bg})`,
+                                            }}>
+                                                <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '8px', flexWrap: 'wrap' }}>
+                                                    <span style={{ fontSize: '0.72rem', color: '#f59e0b', fontWeight: 700, letterSpacing: '0.05em' }}>
+                                                        {t('QUADRANT SHIFT', '象限切換')}
+                                                    </span>
+                                                    <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                                                        <span style={{
+                                                            padding: '2px 8px', borderRadius: '5px',
+                                                            background: fromC.bg, border: `1px solid ${fromC.border}`,
+                                                            color: fromC.text, fontWeight: 700, fontSize: '0.78rem', whiteSpace: 'nowrap',
+                                                        }}>
+                                                            {alert.from_state ? alert.from_state.replace(/_/g, ' ') : '--'}
+                                                        </span>
+                                                        <span style={{ color: 'var(--text-secondary)' }}>→</span>
+                                                        <span style={{
+                                                            padding: '2px 8px', borderRadius: '5px',
+                                                            background: toC.bg, border: `1px solid ${toC.border}`,
+                                                            color: toC.text, fontWeight: 700, fontSize: '0.78rem', whiteSpace: 'nowrap',
+                                                        }}>
+                                                            {alert.to_state ? alert.to_state.replace(/_/g, ' ') : '--'}
+                                                        </span>
+                                                    </div>
+                                                </div>
+                                                <div style={{ color: 'var(--text-secondary)', lineHeight: 1.7, fontSize: '0.85rem' }}>
+                                                    {alert.message.replace(/^【象限切換】[^。]+。/, '')}
+                                                </div>
+                                            </div>
+                                        );
+                                    }
+
+                                    return (
+                                        <div key={index} style={{
+                                            ...detailCardStyle,
+                                            borderColor: alert.severity === 'high' ? 'rgba(239,68,68,0.3)' : 'var(--glass-border)',
+                                        }}>
+                                            <div style={{ color: headerColor, fontWeight: 700, marginBottom: '6px', fontSize: '0.85rem' }}>
+                                                {getTranslation(alert.severity)} · {alert.code}
+                                            </div>
+                                            <div style={{ color: 'var(--text-secondary)', lineHeight: 1.6 }}>{alert.message}</div>
                                         </div>
-                                        <div style={{ color: 'var(--text-secondary)', lineHeight: 1.6 }}>{alert.message}</div>
-                                    </div>
-                                ))}
+                                    );
+                                })}
                             </div>
                         </section>
                     </div>
