@@ -133,6 +133,13 @@ async def fetch_observed_creative_candidate(
     if target_row is None:
         raise ValidationError(f"該廣告目前在 Facebook 尚未產生任何投放數據，無法匯入漂移診斷。")
 
+    spend = float(target_row.get("spend", 0) or 0)
+    if spend <= 0:
+        raise ValidationError(
+            "該廣告在觀測期間花費為零（廣告可能已暫停或停止投放），"
+            "無有效成效數據，無法匯入診斷分析。"
+        )
+
     source_fetched_at = datetime.now(UTC).replace(microsecond=0).isoformat().replace("+00:00", "Z")
     return normalize_facebook_ad_row(
         row=target_row,

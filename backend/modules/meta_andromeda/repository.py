@@ -1713,20 +1713,24 @@ class MetaAndromedaRepository:
         # 只取有足夠資料完成象限診斷的報告，排除：
         # 1. insufficient_data（配對數 < 5，無法計算 ρ）
         # 2. Phase 1 之前的舊報告（report_payload 無 period_diagnosis）
+        query = db.query(MetaAndromedaDriftReport).filter(
+            MetaAndromedaDriftReport.drift_status != "insufficient_data"
+        )
+        # account_id 隔離：在 DB 層過濾，確保無 account_id 的舊報告不會洩漏
+        if account_id:
+            query = query.filter(
+                MetaAndromedaDriftReport.report_payload["account_id"].as_string() == account_id
+            )
         rows = (
-            db.query(MetaAndromedaDriftReport)
-            .filter(MetaAndromedaDriftReport.drift_status != "insufficient_data")
+            query
             .order_by(MetaAndromedaDriftReport.created_at.desc())
-            .limit(limit * 3)  # 多撈一些以確保 account 過濾後仍有足夠筆數
+            .limit(limit * 3)
             .all()
         )
         rows = list(reversed(rows))
         result = []
         for r in rows:
             p = r.report_payload or {}
-            # account_id 隔離：若指定帳號則只回傳該帳號的報告
-            if account_id and p.get("account_id") != account_id:
-                continue
             diagnosis = p.get("period_diagnosis") or {}
             period_state = diagnosis.get("state")
             # 跳過無象限診斷的舊報告（Phase 1 前建立）
