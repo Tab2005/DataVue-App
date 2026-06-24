@@ -120,24 +120,83 @@ def _classify_period_state(roas_median: float, roas_p50_baseline: float, spearma
     }
 ```
 
-計算 ROAS P50 並加入 `report_payload`：
+#### Spearman ρ 改用 objective 主指標（跨產業支援）
 
+現有實作寫死使用 `real_roas`，導致 lead gen 等非 ROAS 帳戶計算結果無意義。
+改為從 `matched_pairs` 的 `primary_metric` / `primary_metric_value` 欄位取值，
+以**同一主指標最多筆的那組**計算 ρ，其餘指標群組標注於報告中。
+
+`matched_pairs` 新增欄位（從 `label_detail` 取得，`_resolve_observed_band` 已回傳）：
 ```python
-roas_median = _roas_values[len(_roas_values) // 2] if _roas_values else 0.0
-period_diagnosis = _classify_period_state(roas_median, roas_median, spearman_r)
+matched_pairs.append({
+    ...
+    "primary_metric":        label_detail["metric"],   # "roas" / "cvr" / "cpa" / "cpl"
+    "primary_metric_value":  label_detail["value"],    # 實際數值，用於 ρ 計算
+    "real_roas": real_roas,                            # 保留供前端顯示
+})
 ```
 
-**注意**：P50 基準線設計有兩種選擇：
-- 以**當期自身 P50** 為基準（相對判定）
-- 以**歷史跨期 P50 均值** 為基準（絕對判定）
+ρ 計算邏輯改為：
+```python
+from collections import Counter
 
-Phase 1 先用當期自身 P50，Phase 2 再引入歷史基準。
+dominant_metric = Counter(
+    p["primary_metric"] for p in matched_pairs
+    if p.get("primary_metric") and p.get("primary_metric_value") is not None
+).most_common(1)
+dominant_metric = dominant_metric[0][0] if dominant_metric else "roas"
+
+_scores = [float(p["overall_score"])        for p in matched_pairs
+           if p.get("primary_metric") == dominant_metric and p.get("overall_score") is not None]
+_perf   = [float(p["primary_metric_value"]) for p in matched_pairs
+           if p.get("primary_metric") == dominant_metric and p.get("overall_score") is not None]
+spearman_r = _spearman_r(_scores, _perf) if len(_scores) >= 3 else 0.0
+```
+
+`report_payload` 新增 `dominant_metric` 與各指標筆數，供前端顯示依據說明：
+```python
+"dominant_metric": dominant_metric,
+"metric_distribution": dict(Counter(p["primary_metric"] for p in matched_pairs
+                                    if p.get("primary_metric"))),
+```
+
+**各帳戶類型對應：**
+
+| 帳戶類型 | objective | ρ 計算用指標 | 需手動設定 |
+|---|---|---|---|
+| 電商 | purchase | ROAS | 否 |
+| 潛客 | lead / cpl | CVR 或 CPL | 否 |
+| 品牌 / App | 其他 | CPA | 否 |
+| 混合目標 | 多種 | 最多筆的指標為主，其餘標注 | 否 |
+
+---
+
+#### 投放狀態分類與 P50 基準
+
+計算主指標 P50 並分類象限：
+
+```python
+_perf_all = sorted(
+    float(p["primary_metric_value"]) for p in matched_pairs
+    if p.get("primary_metric") == dominant_metric and p.get("primary_metric_value") is not None
+)
+perf_median = _perf_all[len(_perf_all) // 2] if _perf_all else 0.0
+period_diagnosis = _classify_period_state(perf_median, perf_median, spearman_r, dominant_metric)
+```
+
+`_classify_period_state` 加入 `dominant_metric` 參數，讓建議文字能夠對應正確指標名稱（例如 lead gen 帳戶建議文字改為「CVR」而非「ROAS」）。
+
+**注意**：P50 基準線設計有兩種選擇：
+- 以**當期自身 P50** 為基準（相對判定，Phase 1 採用）
+- 以**歷史跨期 P50 均值** 為基準（絕對判定，Phase 4 引入）
 
 `report_payload` 新增欄位：
 ```python
 "period_diagnosis": period_diagnosis,
-"roas_median": round(roas_median, 4),
-"roas_std": round(statistics.stdev(_roas_values), 4) if len(_roas_values) >= 2 else 0.0,
+"perf_median": round(perf_median, 4),
+"perf_std": round(statistics.stdev(_perf_all), 4) if len(_perf_all) >= 2 else 0.0,
+"dominant_metric": dominant_metric,
+"metric_distribution": dict(Counter(p["primary_metric"] for p in matched_pairs if p.get("primary_metric"))),
 ```
 
 ---
