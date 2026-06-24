@@ -852,6 +852,9 @@ const MetaAndromedaMonitoring = () => {
                                     const accuracy = report.report_payload?.accuracy;
                                     const mae = report.report_payload?.mae;
                                     const spearmanR = report.report_payload?.spearman_r;
+                                    const periodDiagnosis = report.report_payload?.period_diagnosis;
+                                    const dominantMetric = report.report_payload?.dominant_metric;
+                                    const metricDistribution = report.report_payload?.metric_distribution;
                                     const details = report.report_payload?.matched_details || [];
                                     const totalObserved = report.report_payload?.total_observed;
                                     const totalMatched = report.report_payload?.total_matched;
@@ -927,9 +930,46 @@ const MetaAndromedaMonitoring = () => {
                                                     {roasThresholds.method === 'percentile_p33_p67'
                                                         ? ` (P33/P67, n=${roasThresholds.sample_count})`
                                                         : ` (${t('fixed fallback', '固定門檻')})`}
+                                                    {dominantMetric && dominantMetric !== 'roas' && (
+                                                        <span> · {t('Primary metric', '主指標')}: {dominantMetric.toUpperCase()}</span>
+                                                    )}
+                                                    {metricDistribution && Object.keys(metricDistribution).length > 1 && (
+                                                        <span> · {t('Mixed objectives', '混合目標')}: {Object.entries(metricDistribution).map(([k, v]) => `${k.toUpperCase()}×${v}`).join(', ')}</span>
+                                                    )}
                                                 </div>
                                             )}
                                             <div style={{ color: 'var(--text-secondary)', lineHeight: 1.6, fontSize: '0.88rem', marginBottom: '8px' }}>{report.summary}</div>
+                                            {periodDiagnosis && (() => {
+                                                const stateColors = {
+                                                    dual_advantage:  { bg: 'rgba(16,185,129,0.07)',  border: 'rgba(16,185,129,0.3)',  text: '#34d399' },
+                                                    market_driven:   { bg: 'rgba(59,130,246,0.07)',  border: 'rgba(59,130,246,0.3)',  text: '#60a5fa' },
+                                                    creative_critical:{ bg: 'rgba(245,158,11,0.07)', border: 'rgba(245,158,11,0.3)', text: '#f59e0b' },
+                                                    needs_review:    { bg: 'rgba(239,68,68,0.07)',   border: 'rgba(239,68,68,0.3)',   text: '#f87171' },
+                                                };
+                                                const c = stateColors[periodDiagnosis.state] || stateColors.needs_review;
+                                                return (
+                                                    <div style={{
+                                                        marginBottom: '8px',
+                                                        padding: '10px 14px',
+                                                        borderRadius: '10px',
+                                                        background: c.bg,
+                                                        border: `1px solid ${c.border}`,
+                                                    }}>
+                                                        <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '6px' }}>
+                                                            <span style={{ fontWeight: 700, fontSize: '0.85rem', color: c.text }}>
+                                                                {t('Campaign State', '投放狀態')}: {periodDiagnosis.label}
+                                                            </span>
+                                                            <span style={{ fontSize: '0.72rem', color: 'var(--text-secondary)' }}>
+                                                                ρ² = {(periodDiagnosis.creative_explained_variance * 100).toFixed(1)}%
+                                                                {t(' of performance variance explained by creative', ' 的績效差異由創意品質解釋')}
+                                                            </span>
+                                                        </div>
+                                                        <div style={{ fontSize: '0.82rem', color: 'var(--text-secondary)', lineHeight: 1.6 }}>
+                                                            {periodDiagnosis.recommendation}
+                                                        </div>
+                                                    </div>
+                                                );
+                                            })()}
                                             
                                             {hasDetails && (
                                                 <button

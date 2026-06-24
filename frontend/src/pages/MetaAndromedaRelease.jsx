@@ -306,6 +306,26 @@ const MetaAndromedaRelease = () => {
                                                 />
                                             </div>
 
+                                            {driftReport.report_payload?.period_diagnosis && (() => {
+                                                const pd = driftReport.report_payload.period_diagnosis;
+                                                const stateColors = {
+                                                    dual_advantage:    '#34d399',
+                                                    market_driven:     '#60a5fa',
+                                                    creative_critical: '#f59e0b',
+                                                    needs_review:      '#f87171',
+                                                };
+                                                return (
+                                                    <div style={{ marginTop: '10px', padding: '10px', borderRadius: '8px', background: 'rgba(255,255,255,0.03)', border: '1px solid var(--glass-border)' }}>
+                                                        <div style={{ fontWeight: 700, fontSize: '0.85rem', color: stateColors[pd.state] || 'var(--text-primary)', marginBottom: '4px' }}>
+                                                            {t('Campaign State', '投放狀態')}: {pd.label}
+                                                            <span style={{ marginLeft: '8px', fontWeight: 400, fontSize: '0.75rem', color: 'var(--text-secondary)' }}>
+                                                                ρ² = {(pd.creative_explained_variance * 100).toFixed(1)}%
+                                                            </span>
+                                                        </div>
+                                                        <div style={{ fontSize: '0.8rem', color: 'var(--text-secondary)', lineHeight: 1.6 }}>{pd.recommendation}</div>
+                                                    </div>
+                                                );
+                                            })()}
                                             <div style={{ marginTop: '10px', fontSize: '0.8rem', color: 'var(--text-secondary)' }}>
                                                 {t('Triggered by: ', '觸發人員: ')}{driftReport.triggered_by} · {formatDateTime(driftReport.created_at)}
                                             </div>

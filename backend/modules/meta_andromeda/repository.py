@@ -2,9 +2,11 @@
 Meta Andromeda Module - DB-backed repository
 """
 
+from collections import Counter
 from copy import deepcopy
 from datetime import datetime, timezone
 import math
+import statistics
 from sqlalchemy.orm import Session
 
 from database.models.meta_andromeda import (
@@ -53,6 +55,57 @@ def _spearman_r(x: list[float], y: list[float]) -> float:
     d_sq = sum((rx[i] - ry[i]) ** 2 for i in range(n))
     denom = n * (n * n - 1)
     return 1.0 - (6.0 * d_sq / denom) if denom else 0.0
+
+
+_METRIC_LABEL: dict[str, str] = {
+    "roas": "ROAS",
+    "cvr":  "CVR",
+    "cpl":  "CPL",
+    "cpa":  "CPA",
+}
+
+
+def _classify_period_state(spearman_r: float, perf_is_high: bool, dominant_metric: str) -> dict:
+    metric_label = _METRIC_LABEL.get(dominant_metric, dominant_metric.upper())
+    creative_is_effective = spearman_r >= 0.30
+
+    if perf_is_high and creative_is_effective:
+        state, label = "dual_advantage", "雙重有利"
+        recommendation = (
+            f"創意品質與市場環境同步有利（ρ={spearman_r:.3f}），"
+            f"{metric_label} 整體表現佳且與創意評分正相關。"
+            "維持現有創意策略，可考慮擴大投放預算。"
+        )
+    elif perf_is_high and not creative_is_effective:
+        state, label = "market_driven", "市場護航"
+        recommendation = (
+            f"整體 {metric_label} 由市場/定向/競價因素拉高（ρ={spearman_r:.3f}），"
+            "創意品質影響力偏弱。優先鞏固受眾定向與競價策略；"
+            "創意達標即可，勿過度投資創意優化。"
+        )
+    elif not perf_is_high and creative_is_effective:
+        state, label = "creative_critical", "創意突圍"
+        recommendation = (
+            f"市場環境困難，創意品質是主要差異因子（ρ={spearman_r:.3f}）。"
+            f"積極擴量高分素材，快速汰換低分素材，"
+            "創意優化的投資報酬率在此階段最高。"
+        )
+    else:
+        state, label = "needs_review", "全面檢視"
+        recommendation = (
+            f"創意品質與整體 {metric_label} 同步偏弱（ρ={spearman_r:.3f}），"
+            "需系統性檢視：產品競爭力、受眾定向精準度、出價策略、素材是否已疲乏。"
+        )
+
+    return {
+        "state": state,
+        "label": label,
+        "creative_is_effective": creative_is_effective,
+        "perf_is_high": perf_is_high,
+        "dominant_metric": dominant_metric,
+        "creative_explained_variance": round(spearman_r ** 2, 4),
+        "recommendation": recommendation,
+    }
 
 
 def _resolve_observed_band(
@@ -816,6 +869,8 @@ class MetaAndromedaRepository:
                 "observed_band": real_band,
                 "real_roas": real_roas,
                 "overall_score": pred.overall_score,
+                "primary_metric": label_detail["metric"],
+                "primary_metric_value": label_detail["value"],
                 "error": err,
                 "label_policy_version": LABEL_POLICY_VERSION,
                 "label_metric": label_detail["metric"],
@@ -827,11 +882,38 @@ class MetaAndromedaRepository:
         mae = total_error / total_matched if total_matched > 0 else 0.0
         calibration_candidate_total = sum(1 for item in matched_pairs if item["error"] > 0)
 
-        # Spearman ρ：AI overall_score 排名 vs 實際 ROAS 排名的相關性
-        # 比準確率更合理：不要求精確分類，只問模型有沒有正確排出相對順序
-        _scores = [float(p["overall_score"]) for p in matched_pairs if p.get("overall_score") is not None]
-        _roas   = [float(p["real_roas"])     for p in matched_pairs if p.get("overall_score") is not None]
-        spearman_r = _spearman_r(_scores, _roas) if len(_scores) >= 3 else 0.0
+        # Spearman ρ：AI overall_score 排名 vs 主指標排名的相關性
+        # 以各廣告的 primary_metric 判斷帳戶類型（purchase→ROAS, lead→CVR/CPL, 其他→CPA）
+        # 混合 objective 帳戶以最多筆的指標群組為主
+        _metric_counter = Counter(
+            p["primary_metric"] for p in matched_pairs
+            if p.get("primary_metric") and p.get("primary_metric_value") is not None
+        )
+        dominant_metric = _metric_counter.most_common(1)[0][0] if _metric_counter else "roas"
+        metric_distribution = dict(_metric_counter)
+
+        _eligible = [
+            p for p in matched_pairs
+            if p.get("primary_metric") == dominant_metric
+            and p.get("primary_metric_value") is not None
+            and p.get("overall_score") is not None
+        ]
+        _scores = [float(p["overall_score"])        for p in _eligible]
+        _perf   = [float(p["primary_metric_value"]) for p in _eligible]
+        spearman_r = _spearman_r(_scores, _perf) if len(_scores) >= 3 else 0.0
+
+        # 主指標分布（用於象限判定的 P50 基準）
+        _perf_all = sorted(
+            float(p["primary_metric_value"]) for p in matched_pairs
+            if p.get("primary_metric") == dominant_metric
+            and p.get("primary_metric_value") is not None
+        )
+        perf_median = _perf_all[len(_perf_all) // 2] if _perf_all else 0.0
+        perf_std = statistics.stdev(_perf_all) if len(_perf_all) >= 2 else 0.0
+        perf_is_high = perf_median >= (sum(_perf_all) / len(_perf_all)) if _perf_all else False
+
+        period_diagnosis = _classify_period_state(spearman_r, perf_is_high, dominant_metric)
+        metric_label = _METRIC_LABEL.get(dominant_metric, dominant_metric.upper())
 
         # 4. 判定漂移健康度（主判據：Spearman ρ；輔助資訊：accuracy/MAE）
         if total_matched < 5:
@@ -861,15 +943,26 @@ class MetaAndromedaRepository:
         elif spearman_r >= 0.30:
             drift_status = "healthy"
             severity = "info"
-            summary = f"模型排名能力穩定 (ρ={spearman_r:.3f}, Accuracy: {accuracy:.1%})，創意評分與實際 ROAS 排名具正相關，目前無顯著漂移。"
+            summary = (
+                f"模型排名能力穩定 (ρ={spearman_r:.3f}, Accuracy: {accuracy:.1%})，"
+                f"創意評分與實際 {metric_label} 排名具正相關，"
+                f"投放狀態：{period_diagnosis['label']}。"
+            )
         elif spearman_r >= 0.10:
             drift_status = "warning"
             severity = "medium"
-            summary = f"模型排名能力偏弱 (ρ={spearman_r:.3f}, Accuracy: {accuracy:.1%})，創意評分與 ROAS 排名相關性不足，請密切關注。"
+            summary = (
+                f"模型排名能力偏弱 (ρ={spearman_r:.3f}, Accuracy: {accuracy:.1%})，"
+                f"創意評分與 {metric_label} 排名相關性不足，"
+                f"投放狀態：{period_diagnosis['label']}。請密切關注。"
+            )
         else:
             drift_status = "drifted"
             severity = "high"
-            summary = f"模型排名能力已失效 (ρ={spearman_r:.3f}, Accuracy: {accuracy:.1%})，創意評分無法有效預測相對 ROAS 表現，建議進行資料校準。"
+            summary = (
+                f"模型排名能力已失效 (ρ={spearman_r:.3f}, Accuracy: {accuracy:.1%})，"
+                f"創意評分無法有效預測相對 {metric_label} 表現，建議進行資料校準。"
+            )
     
         # 5. 寫入資料庫
         report = MetaAndromedaDriftReport(
@@ -890,6 +983,11 @@ class MetaAndromedaRepository:
                 "accuracy": round(accuracy, 4),
                 "mae": round(mae, 4),
                 "spearman_r": round(spearman_r, 4),
+                "dominant_metric": dominant_metric,
+                "metric_distribution": metric_distribution,
+                "perf_median": round(perf_median, 4),
+                "perf_std": round(perf_std, 4),
+                "period_diagnosis": period_diagnosis,
                 "calibration_candidate_total": calibration_candidate_total,
                 "label_policy_version": LABEL_POLICY_VERSION,
                 "roas_band_thresholds": {
