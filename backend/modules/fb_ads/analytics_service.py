@@ -243,6 +243,7 @@ async def get_custom_report(
         api_fields = (
             "campaign_id,adset_id,ad_id,"
             "campaign_name,adset_name,ad_name,"
+            "objective,"
             "spend,impressions,reach,frequency,cpm,cpc,ctr,inline_link_clicks,clicks,unique_clicks,"
             "unique_ctr,inline_link_click_ctr,outbound_clicks,outbound_clicks_ctr,"
             "instant_experience_clicks_to_open,instant_experience_clicks_to_start,"
