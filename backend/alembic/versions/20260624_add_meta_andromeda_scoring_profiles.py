@@ -72,7 +72,7 @@ def upgrade() -> None:
             sa.Column("source", sa.String(length=30), nullable=False, server_default="seed"),
             sa.Column("base_profile_name", sa.String(), nullable=True),
             sa.Column("calibration_dataset_id", sa.String(), nullable=True),
-            sa.Column("is_promoted", sa.Boolean(), nullable=False, server_default=sa.text("0")),
+            sa.Column("is_promoted", sa.Boolean(), nullable=False, server_default=sa.text("false")),
             sa.Column("promoted_at", sa.DateTime(), nullable=True),
             sa.Column("created_at", sa.DateTime(), server_default=sa.text("CURRENT_TIMESTAMP"), nullable=True),
             sa.ForeignKeyConstraint(
