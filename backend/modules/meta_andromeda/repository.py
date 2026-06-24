@@ -36,6 +36,25 @@ _ROAS_FALLBACK_LOW = 3.0
 _ROAS_FALLBACK_HIGH = 6.0
 
 
+def _spearman_r(x: list[float], y: list[float]) -> float:
+    """Spearman rank correlation between two equal-length lists. Returns 0.0 if n < 3."""
+    n = len(x)
+    if n < 3:
+        return 0.0
+
+    def _rank(values: list[float]) -> list[float]:
+        order = sorted(range(n), key=lambda i: values[i])
+        ranks = [0.0] * n
+        for pos, idx in enumerate(order):
+            ranks[idx] = float(pos + 1)
+        return ranks
+
+    rx, ry = _rank(x), _rank(y)
+    d_sq = sum((rx[i] - ry[i]) ** 2 for i in range(n))
+    denom = n * (n * n - 1)
+    return 1.0 - (6.0 * d_sq / denom) if denom else 0.0
+
+
 def _resolve_observed_band(
     objective: str | None,
     performance_snapshot: dict | None,
@@ -796,6 +815,7 @@ class MetaAndromedaRepository:
                 "prediction_band": pred_band,
                 "observed_band": real_band,
                 "real_roas": real_roas,
+                "overall_score": pred.overall_score,
                 "error": err,
                 "label_policy_version": LABEL_POLICY_VERSION,
                 "label_metric": label_detail["metric"],
@@ -806,13 +826,18 @@ class MetaAndromedaRepository:
         accuracy = correct_count / total_matched if total_matched > 0 else 0.0
         mae = total_error / total_matched if total_matched > 0 else 0.0
         calibration_candidate_total = sum(1 for item in matched_pairs if item["error"] > 0)
-        
-        # 4. 判定漂移健康度
+
+        # Spearman ρ：AI overall_score 排名 vs 實際 ROAS 排名的相關性
+        # 比準確率更合理：不要求精確分類，只問模型有沒有正確排出相對順序
+        _scores = [float(p["overall_score"]) for p in matched_pairs if p.get("overall_score") is not None]
+        _roas   = [float(p["real_roas"])     for p in matched_pairs if p.get("overall_score") is not None]
+        spearman_r = _spearman_r(_scores, _roas) if len(_scores) >= 3 else 0.0
+
+        # 4. 判定漂移健康度（主判據：Spearman ρ；輔助資訊：accuracy/MAE）
         if total_matched < 5:
             drift_status = "insufficient_data"
             severity = "info"
-            
-            # 建立詳細的診斷指標，回饋給前端或報告
+
             total_observed = len(observed_list)
             obs_with_asset = sum(1 for obs in observed_list if obs.asset_id or obs.asset_uri)
             total_completed_scores = db.query(MetaAndromedaScoreEvent).filter(
@@ -824,7 +849,7 @@ class MetaAndromedaRepository:
             total_pending_scores = db.query(MetaAndromedaScoreEvent).filter(
                 MetaAndromedaScoreEvent.status.in_(["queued", "started", "processing"])
             ).count()
-            
+
             summary = (
                 f"數據量不足 (僅成功匹配 {total_matched} 筆)。"
                 f"診斷：區間內匯入廣告 {total_observed} 筆，"
@@ -833,18 +858,18 @@ class MetaAndromedaRepository:
                 f"{total_failed_scores} 筆失敗，{total_pending_scores} 筆處理/排隊中。"
                 "請確認素材是否已在評分工作台完成評估，或確認背景任務與 AI 服務是否正常運作。"
             )
-        elif accuracy >= 0.75 and mae <= 0.35:
+        elif spearman_r >= 0.30:
             drift_status = "healthy"
             severity = "info"
-            summary = f"模型表現穩定 (Accuracy: {accuracy:.1%}, MAE: {mae:.2f})，目前無顯著漂移。"
-        elif accuracy >= 0.60 and mae <= 0.50:
+            summary = f"模型排名能力穩定 (ρ={spearman_r:.3f}, Accuracy: {accuracy:.1%})，創意評分與實際 ROAS 排名具正相關，目前無顯著漂移。"
+        elif spearman_r >= 0.10:
             drift_status = "warning"
             severity = "medium"
-            summary = f"模型出現輕微偏差 (Accuracy: {accuracy:.1%}, MAE: {mae:.2f})，請密切關注。"
+            summary = f"模型排名能力偏弱 (ρ={spearman_r:.3f}, Accuracy: {accuracy:.1%})，創意評分與 ROAS 排名相關性不足，請密切關注。"
         else:
             drift_status = "drifted"
             severity = "high"
-            summary = f"模型預估已出現顯著漂移！(Accuracy: {accuracy:.1%}, MAE: {mae:.2f})，建議進行資料校準。"
+            summary = f"模型排名能力已失效 (ρ={spearman_r:.3f}, Accuracy: {accuracy:.1%})，創意評分無法有效預測相對 ROAS 表現，建議進行資料校準。"
     
         # 5. 寫入資料庫
         report = MetaAndromedaDriftReport(
@@ -864,6 +889,7 @@ class MetaAndromedaRepository:
                 "total_pending_scores": db.query(MetaAndromedaScoreEvent).filter(MetaAndromedaScoreEvent.status.in_(["queued", "started", "processing"])).count(),
                 "accuracy": round(accuracy, 4),
                 "mae": round(mae, 4),
+                "spearman_r": round(spearman_r, 4),
                 "calibration_candidate_total": calibration_candidate_total,
                 "label_policy_version": LABEL_POLICY_VERSION,
                 "roas_band_thresholds": {

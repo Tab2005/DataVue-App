@@ -851,6 +851,7 @@ const MetaAndromedaMonitoring = () => {
                                 {(summary?.latest_drift_reports || []).map((report) => {
                                     const accuracy = report.report_payload?.accuracy;
                                     const mae = report.report_payload?.mae;
+                                    const spearmanR = report.report_payload?.spearman_r;
                                     const details = report.report_payload?.matched_details || [];
                                     const totalObserved = report.report_payload?.total_observed;
                                     const totalMatched = report.report_payload?.total_matched;
@@ -902,7 +903,12 @@ const MetaAndromedaMonitoring = () => {
                                                     })()} · {getTranslation(report.drift_status)}
                                                 </div>
                                                 <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: '4px' }}>
-                                                    {accuracy !== undefined && (
+                                                    {spearmanR !== undefined && spearmanR !== null && (
+                                                        <span style={{ fontSize: '0.8rem', color: 'var(--text-secondary)' }}>
+                                                            ρ = {spearmanR.toFixed(3)} · {t('Accuracy', '準確率')}: {(accuracy * 100).toFixed(1)}% | {t('MAE', '平均絕對偏差')}: {mae.toFixed(2)}
+                                                        </span>
+                                                    )}
+                                                    {(spearmanR === undefined || spearmanR === null) && accuracy !== undefined && (
                                                         <span style={{ fontSize: '0.8rem', color: 'var(--text-secondary)' }}>
                                                             {t('Accuracy', '準確率')}: {(accuracy * 100).toFixed(1)}% | {t('MAE', '平均絕對偏差')}: {mae.toFixed(2)}
                                                         </span>
@@ -910,19 +916,19 @@ const MetaAndromedaMonitoring = () => {
                                                     <span style={{ fontSize: '0.75rem', color: 'var(--text-secondary)' }}>
                                                         {t('Observed', '匯入')}: {totalObserved ?? '--'} · {t('Matched', '配對成功')}: {totalMatched ?? '--'} · {t('Calibration Candidates', '可校準')}: {calibrationCandidates ?? '--'}
                                                     </span>
-                                                    {roasThresholds && (
-                                                        <span style={{ fontSize: '0.75rem', color: 'var(--text-secondary)' }}>
-                                                            {t('ROAS Band', 'ROAS 門檻')}: low &lt; {roasThresholds.low_below} · mid {roasThresholds.low_below}–{roasThresholds.high_above} · high ≥ {roasThresholds.high_above}
-                                                            {roasThresholds.method === 'percentile_p33_p67'
-                                                                ? ` (P33/P67, n=${roasThresholds.sample_count})`
-                                                                : ` (${t('fixed fallback', '固定門檻')})`}
-                                                        </span>
-                                                    )}
                                                     <span style={{ fontSize: '0.75rem', color: 'var(--text-secondary)' }}>
                                                         {t('Run Time', '執行時間')}: {formatDateTime(report.created_at)}
                                                     </span>
                                                 </div>
                                             </div>
+                                            {roasThresholds && (
+                                                <div style={{ fontSize: '0.72rem', color: 'var(--text-secondary)', marginBottom: '6px' }}>
+                                                    {t('ROAS Band', 'ROAS 門檻')}: low &lt; {roasThresholds.low_below} · mid {roasThresholds.low_below}–{roasThresholds.high_above} · high ≥ {roasThresholds.high_above}
+                                                    {roasThresholds.method === 'percentile_p33_p67'
+                                                        ? ` (P33/P67, n=${roasThresholds.sample_count})`
+                                                        : ` (${t('fixed fallback', '固定門檻')})`}
+                                                </div>
+                                            )}
                                             <div style={{ color: 'var(--text-secondary)', lineHeight: 1.6, fontSize: '0.88rem', marginBottom: '8px' }}>{report.summary}</div>
                                             
                                             {hasDetails && (
