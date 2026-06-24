@@ -57,9 +57,11 @@ def _resolve_observed_band(objective: str | None, performance_snapshot: dict | N
     roas = snapshot.get("roas")
     if roas is not None:
         value = float(roas)
-        if value < 1.5:
+        # Thresholds calibrated to account baseline (avg ROAS 3.68–4.91):
+        # < 3.0 = underperforming, 3.0–6.0 = normal range, ≥ 6.0 = exceptional
+        if value < 3.0:
             return "low", {"metric": "roas", "value": value}
-        if value < 3.5:
+        if value < 6.0:
             return "mid", {"metric": "roas", "value": value}
         return "high", {"metric": "roas", "value": value}
 
