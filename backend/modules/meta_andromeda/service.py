@@ -1365,13 +1365,37 @@ class MetaAndromedaService:
         )
 
     @staticmethod
+    def list_scoring_profiles(db) -> dict:
+        return {"profiles": repository.list_scoring_profiles(db), "total": len(repository.list_scoring_profiles(db))}
+
+    @staticmethod
+    def promote_scoring_profile(db, profile_name: str) -> dict:
+        return repository.promote_scoring_profile(db, profile_name)
+
+    @staticmethod
     def sync_calibration_dataset(
         db,
         window_kind: str,
         excluded_observed_ids: list[str],
     ) -> dict:
-        return repository.sync_calibration_dataset(
+        result = repository.sync_calibration_dataset(
             db,
             window_kind=window_kind,
             excluded_observed_ids=excluded_observed_ids,
         )
+        synced_count = result.get("synced_count", 0)
+        dataset_id = result.get("dataset_id")
+        if synced_count >= 10 and dataset_id:
+            try:
+                from core.scheduler import add_meta_andromeda_calibration_job
+                from core.config import settings as _settings
+                base_profile = _settings.META_ANDROMEDA_SCORING_MODEL_VERSION
+                add_meta_andromeda_calibration_job(dataset_id, base_profile)
+            except Exception as exc:
+                import logging as _logging
+                _logging.getLogger(__name__).warning(
+                    "[MetaAndromeda] Failed to enqueue calibration job for dataset %s: %s",
+                    dataset_id,
+                    exc,
+                )
+        return result

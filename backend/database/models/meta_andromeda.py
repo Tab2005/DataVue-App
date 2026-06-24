@@ -238,3 +238,27 @@ class MetaAndromedaCalibrationItem(Base):
     dataset = relationship("MetaAndromedaCalibrationDataset", backref="items")
     observed_creative = relationship("MetaAndromedaObservedCreative")
     score_event = relationship("MetaAndromedaScoreEvent")
+
+
+class MetaAndromedaScoringProfile(Base):
+    __tablename__ = "meta_andromeda_scoring_profiles"
+
+    id = Column(String, primary_key=True, default=lambda: f"sp_{uuid.uuid4().hex[:12]}")
+    profile_name = Column(String, nullable=False, unique=True, index=True)
+    user_prompt_template = Column(Text, nullable=False)
+    system_prompt = Column(Text, nullable=False)
+    calibration_guidance = Column(Text, nullable=True)
+    few_shot_examples = Column(JSON, nullable=False, default=list)
+    bias_summary = Column(JSON, nullable=True)
+    source = Column(String(30), nullable=False, default="seed")
+    base_profile_name = Column(String, nullable=True)
+    calibration_dataset_id = Column(
+        String,
+        ForeignKey("meta_andromeda_calibration_datasets.id"),
+        nullable=True,
+    )
+    is_promoted = Column(Boolean, nullable=False, default=False)
+    promoted_at = Column(DateTime, nullable=True)
+    created_at = Column(DateTime, default=text("CURRENT_TIMESTAMP"))
+
+    calibration_dataset = relationship("MetaAndromedaCalibrationDataset")

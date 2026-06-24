@@ -6,6 +6,7 @@ import asyncio
 import json
 import logging
 import re
+import threading
 from datetime import datetime, timezone
 from uuid import uuid4
 
@@ -16,6 +17,93 @@ from .model_registry import MetaAndromedaModelEntry, model_registry
 logger = logging.getLogger(__name__)
 VALID_ROAS_BANDS = {"high", "mid", "low"}
 LABEL_POLICY_VERSION = "ma_label_policy_v1"
+
+_prompt_profile_cache: dict[str, dict] = {}
+_profile_cache_lock = threading.Lock()
+
+_FALLBACK_USER_PROMPT_TEMPLATE = (
+    "You are the Meta Andromeda creative scoring runtime, an expert in mobile ad conversion optimization (CRO) and ad design.\n"
+    "Analyze both the provided ad image (via image_url) and the text metadata details to evaluate the overall performance.\n\n"
+    "CRITICAL EVALUATION CRITERIA:\n"
+    "1. Visual Focus & Hierarchy: Is the product/subject clear? Is the background clean and supportive?\n"
+    "2. Text Ratio & Legibility: Are copy elements in the image readable? Is the text-to-image ratio balanced (avoiding overloaded text)?\n"
+    "3. CTA Prominence: Is there a clear visual CTA in the image, and does it align with the text CTA?\n"
+    "4. Relevance & Consistency: Does the visual style connect tightly with the Headline and Primary text?\n\n"
+    "Return JSON only with keys: overall_score, roas_band, top_positive_drivers, "
+    "top_negative_drivers, risk_tags, diagnostic_breakdown, summary.\n"
+    "Use overall_score as integer 0-100. Be critical and conservative—do not give high scores (>80) unless the creative is truly premium and highly optimized.\n"
+    "Use roas_band as one of high/mid/low/null.\n"
+    "The diagnostic_breakdown object MUST contain exactly these keys with short Chinese evaluation:\n"
+    "  - visual_appeal: Evaluates composition, focal point, and aesthetics.\n"
+    "  - copywriting: Evaluates headline and primary text persuasiveness.\n"
+    "  - cta_clarity: Evaluates CTA prominence and action clarity.\n"
+    "  - relevance: Evaluates the consistency between the image and texts.\n\n"
+    "All textual outputs (summary, top_positive_drivers, top_negative_drivers, diagnostic_breakdown values) MUST be in Traditional Chinese (繁體中文).\n"
+    "Asset type: {asset_type}\n"
+    "Objective: {objective}\n"
+    "Placement family: {placement_family}\n"
+    "Market: {market}\n"
+    "Request mode: {request_mode}\n"
+    "Headline: {headline}\n"
+    "Primary text: {primary_text}\n"
+    "CTA: {cta}\n"
+)
+
+_FALLBACK_SYSTEM_PROMPT = (
+    "You are an elite performance marketing creative auditor. Score ad creatives conservatively based on CRO best practices.\n"
+    "Always inspect the image details if available. Give objective, realistic scores. Do not sugarcoat.\n"
+    "All explanations, summaries, and breakdowns MUST be written in Traditional Chinese (繁體中文)."
+)
+
+
+def _load_scoring_profile(profile_name: str) -> dict:
+    with _profile_cache_lock:
+        if profile_name in _prompt_profile_cache:
+            return _prompt_profile_cache[profile_name]
+
+    try:
+        from database import SessionLocal
+        from database.models.meta_andromeda import MetaAndromedaScoringProfile
+        db = SessionLocal()
+        try:
+            row = db.query(MetaAndromedaScoringProfile).filter(
+                MetaAndromedaScoringProfile.profile_name == profile_name
+            ).first()
+            if row is not None:
+                profile = {
+                    "user_prompt_template": row.user_prompt_template,
+                    "system_prompt": row.system_prompt,
+                    "calibration_guidance": row.calibration_guidance or "",
+                    "few_shot_examples": row.few_shot_examples or [],
+                }
+                with _profile_cache_lock:
+                    _prompt_profile_cache[profile_name] = profile
+                logger.info("[MetaAndromeda] Loaded scoring profile '%s' from DB.", profile_name)
+                return profile
+        finally:
+            db.close()
+    except Exception as exc:
+        logger.warning("[MetaAndromeda] Could not load profile '%s' from DB: %s. Using fallback.", profile_name, exc)
+
+    fallback = {
+        "user_prompt_template": _FALLBACK_USER_PROMPT_TEMPLATE,
+        "system_prompt": _FALLBACK_SYSTEM_PROMPT,
+        "calibration_guidance": "",
+        "few_shot_examples": [],
+    }
+    with _profile_cache_lock:
+        _prompt_profile_cache[profile_name] = fallback
+    return fallback
+
+
+def invalidate_prompt_cache(profile_name: str | None = None) -> None:
+    with _profile_cache_lock:
+        if profile_name is None:
+            _prompt_profile_cache.clear()
+            logger.info("[MetaAndromeda] Prompt profile cache fully cleared.")
+        else:
+            _prompt_profile_cache.pop(profile_name, None)
+            logger.info("[MetaAndromeda] Prompt profile cache cleared for '%s'.", profile_name)
 
 
 def _clip(value: str | None, limit: int = 140) -> str:
@@ -238,38 +326,25 @@ class OpenRouterScoringProvider(BaseScoringProvider):
 
         request_context = score_payload.get("request_context", {})
         request_mode = score_payload.get("request_mode", "auto")
-        prompt = (
-            "You are the Meta Andromeda creative scoring runtime, an expert in mobile ad conversion optimization (CRO) and ad design.\n"
-            "Analyze both the provided ad image (via image_url) and the text metadata details to evaluate the overall performance.\n\n"
-            "CRITICAL EVALUATION CRITERIA:\n"
-            "1. Visual Focus & Hierarchy: Is the product/subject clear? Is the background clean and supportive?\n"
-            "2. Text Ratio & Legibility: Are copy elements in the image readable? Is the text-to-image ratio balanced (avoiding overloaded text)?\n"
-            "3. CTA Prominence: Is there a clear visual CTA in the image, and does it align with the text CTA?\n"
-            "4. Relevance & Consistency: Does the visual style connect tightly with the Headline and Primary text?\n\n"
-            "Return JSON only with keys: overall_score, roas_band, top_positive_drivers, "
-            "top_negative_drivers, risk_tags, diagnostic_breakdown, summary.\n"
-            "Use overall_score as integer 0-100. Be critical and conservative—do not give high scores (>80) unless the creative is truly premium and highly optimized.\n"
-            "Use roas_band as one of high/mid/low/null.\n"
-            "The diagnostic_breakdown object MUST contain exactly these keys with short Chinese evaluation:\n"
-            "  - visual_appeal: Evaluates composition, focal point, and aesthetics.\n"
-            "  - copywriting: Evaluates headline and primary text persuasiveness.\n"
-            "  - cta_clarity: Evaluates CTA prominence and action clarity.\n"
-            "  - relevance: Evaluates the consistency between the image and texts.\n\n"
-            "All textual outputs (summary, top_positive_drivers, top_negative_drivers, diagnostic_breakdown values) MUST be in Traditional Chinese (繁體中文).\n"
-            f"Asset type: {score_payload['asset_type']}\n"
-            f"Objective: {score_payload.get('objective', 'purchase')}\n"
-            f"Placement family: {score_payload.get('placement_family', 'all')}\n"
-            f"Market: {score_payload.get('market', 'TW')}\n"
-            f"Request mode: {request_mode}\n"
-            f"Headline: {_clip(request_context.get('headline'))}\n"
-            f"Primary text: {_clip(request_context.get('primary_text'))}\n"
-            f"CTA: {_clip(request_context.get('cta'))}\n"
-        )
-        system_prompt = (
-            "You are an elite performance marketing creative auditor. Score ad creatives conservatively based on CRO best practices.\n"
-            "Always inspect the image details if available. Give objective, realistic scores. Do not sugarcoat.\n"
-            "All explanations, summaries, and breakdowns MUST be written in Traditional Chinese (繁體中文)."
-        )
+
+        scoring_profile = _load_scoring_profile(registry_entry.scoring_profile)
+        _fmt = {
+            "asset_type": score_payload.get("asset_type", "image"),
+            "objective": score_payload.get("objective", "purchase"),
+            "placement_family": score_payload.get("placement_family", "all"),
+            "market": score_payload.get("market", "TW"),
+            "request_mode": request_mode,
+            "headline": _clip(request_context.get("headline")),
+            "primary_text": _clip(request_context.get("primary_text")),
+            "cta": _clip(request_context.get("cta")),
+        }
+        prompt = scoring_profile["user_prompt_template"].format_map(_fmt)
+        if scoring_profile.get("calibration_guidance"):
+            prompt += f"\n\n{scoring_profile['calibration_guidance']}"
+        if scoring_profile.get("few_shot_examples"):
+            from .calibration_pipeline import _format_few_shot_block
+            prompt += _format_few_shot_block(scoring_profile["few_shot_examples"])
+        system_prompt = scoring_profile["system_prompt"]
         user_content = _build_multimodal_user_content(prompt, score_payload)
         raw = None
         max_retries = 3

@@ -18,6 +18,7 @@ from database.models.meta_andromeda import (
     MetaAndromedaReleaseEvent,
     MetaAndromedaReleaseRecord,
     MetaAndromedaScoreEvent,
+    MetaAndromedaScoringProfile,
     MetaAndromedaWorkerEvent,
 )
 from .model_registry import model_registry
@@ -1488,6 +1489,57 @@ class MetaAndromedaRepository:
             "status": dataset.status,
             "item_count": synced_count,
             "label_policy_version": LABEL_POLICY_VERSION,
+        }
+
+    @staticmethod
+    def list_scoring_profiles(db: Session) -> list[dict]:
+        rows = (
+            db.query(MetaAndromedaScoringProfile)
+            .order_by(MetaAndromedaScoringProfile.created_at.desc())
+            .all()
+        )
+        return [
+            {
+                "profile_name": r.profile_name,
+                "source": r.source,
+                "base_profile_name": r.base_profile_name,
+                "calibration_dataset_id": r.calibration_dataset_id,
+                "is_promoted": r.is_promoted,
+                "promoted_at": r.promoted_at.isoformat() if r.promoted_at else None,
+                "bias_summary": r.bias_summary,
+                "calibration_guidance": r.calibration_guidance,
+                "few_shot_example_count": len(r.few_shot_examples or []),
+                "created_at": r.created_at.isoformat() if r.created_at else None,
+            }
+            for r in rows
+        ]
+
+    @staticmethod
+    def promote_scoring_profile(db: Session, profile_name: str) -> dict:
+        from datetime import datetime, timezone
+        target = db.query(MetaAndromedaScoringProfile).filter(
+            MetaAndromedaScoringProfile.profile_name == profile_name
+        ).first()
+        if target is None:
+            raise KeyError(f"Scoring profile not found: {profile_name}")
+
+        db.query(MetaAndromedaScoringProfile).filter(
+            MetaAndromedaScoringProfile.is_promoted == True  # noqa: E712
+        ).update({"is_promoted": False, "promoted_at": None}, synchronize_session=False)
+
+        now = datetime.now(timezone.utc)
+        target.is_promoted = True
+        target.promoted_at = now
+        db.add(target)
+        db.commit()
+
+        from .runtime import invalidate_prompt_cache
+        invalidate_prompt_cache(profile_name)
+
+        return {
+            "profile_name": target.profile_name,
+            "is_promoted": True,
+            "promoted_at": now.isoformat(),
         }
 
 

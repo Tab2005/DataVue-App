@@ -498,6 +498,63 @@ def add_meta_andromeda_score_job(score_event_id: str, delay_seconds: float = 1, 
     return job
 
 
+async def run_meta_andromeda_calibration_pipeline(dataset_id: str, base_profile_name: str) -> None:
+    """Run the prompt calibration pipeline for a completed calibration dataset."""
+    from modules.meta_andromeda.calibration_pipeline import generate_calibrated_profile
+    from database import SessionLocal
+    db = SessionLocal()
+    try:
+        new_profile = generate_calibrated_profile(db, dataset_id, base_profile_name)
+        if new_profile:
+            logger.info(
+                "⏰ [MetaAndromeda] Calibration pipeline completed. New profile: %s",
+                new_profile,
+            )
+        else:
+            logger.info(
+                "⏰ [MetaAndromeda] Calibration pipeline skipped for dataset %s (insufficient samples).",
+                dataset_id,
+            )
+    except Exception as exc:
+        logger.error(
+            "⏰ [MetaAndromeda] Calibration pipeline failed for dataset %s: %s",
+            dataset_id,
+            exc,
+        )
+    finally:
+        db.close()
+
+
+def add_meta_andromeda_calibration_job(dataset_id: str, base_profile_name: str):
+    """Enqueue a one-off prompt calibration job for the given calibration dataset."""
+    if not is_scheduler_enabled() or not scheduler.running:
+        logger.info(
+            "⏰ [MetaAndromeda] Scheduler unavailable. Skipping calibration job for dataset %s.",
+            dataset_id,
+        )
+        return None
+    run_at = datetime.now(_LOCAL_TIMEZONE) + timedelta(seconds=5)
+    job_id = f"ma_cal_{dataset_id}"
+    job = scheduler.add_job(
+        run_meta_andromeda_calibration_pipeline,
+        trigger="date",
+        run_date=run_at,
+        args=[dataset_id, base_profile_name],
+        id=job_id,
+        replace_existing=True,
+        misfire_grace_time=DEFAULT_MISFIRE_GRACE_TIME,
+        coalesce=True,
+        max_instances=1,
+    )
+    logger.info(
+        "⏰ [MetaAndromeda] Calibration job enqueued: %s for dataset %s (base=%s).",
+        job_id,
+        dataset_id,
+        base_profile_name,
+    )
+    return job
+
+
 def add_meta_andromeda_queue_sweeper_job():
     """Register periodic queue sweep for database-backed queue host."""
     job = scheduler.add_job(

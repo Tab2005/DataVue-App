@@ -7,6 +7,9 @@ import {
     fetchMetaAndromedaMonitoringTimeline,
     triggerMetaAndromedaDriftReport,
     syncMetaAndromedaCalibrationDataset,
+    cleanupStaleScoreEvents,
+    fetchScoringProfiles,
+    promoteScoringProfile,
 } from '../services/metaAndromedaMonitoringService';
 
 const MetaAndromedaMonitoring = () => {
@@ -29,6 +32,11 @@ const MetaAndromedaMonitoring = () => {
     const [selectedDriftReport, setSelectedDriftReport] = useState(null);
     const [excludedObsIds, setExcludedObsIds] = useState(new Set());
     const [syncingCal, setSyncingCal] = useState(false);
+    const [cleanupResult, setCleanupResult] = useState(null);
+    const [runningCleanup, setRunningCleanup] = useState(false);
+    const [scoringProfiles, setScoringProfiles] = useState(null);
+    const [loadingProfiles, setLoadingProfiles] = useState(false);
+    const [promotingProfile, setPromotingProfile] = useState(null);
     const { hasAccess, loading: loadingModuleAccess } = useModuleAccess('meta_andromeda', selectedTeamId);
 
     const t = (en, zh) => (language === 'en' ? en : zh);
@@ -212,6 +220,7 @@ const MetaAndromedaMonitoring = () => {
             return;
         }
         loadSummary();
+        loadProfiles();
     }, [hasAccess]);
 
     useEffect(() => {
@@ -298,6 +307,56 @@ const MetaAndromedaMonitoring = () => {
 
     const handleSelectTimeline = (scoreEventId) => {
         setSelectedScoreEventId(scoreEventId);
+    };
+
+    const handleCleanupStale = async () => {
+        if (!window.confirm(language === 'zh'
+            ? '確定要清除所有超過 30 分鐘仍卡在 queued / processing 的評分任務？\n\n此操作會將這些任務標記為 failed，不可回復。'
+            : 'Clear all score events stuck in queued/processing for more than 30 minutes?\n\nThey will be marked as failed. This cannot be undone.')) {
+            return;
+        }
+        setRunningCleanup(true);
+        setCleanupResult(null);
+        setError(null);
+        try {
+            const result = await cleanupStaleScoreEvents({ include_queued: true });
+            setCleanupResult(result);
+            await loadSummary();
+        } catch (err) {
+            setError(err.message || 'Cleanup failed');
+        } finally {
+            setRunningCleanup(false);
+        }
+    };
+
+    const loadProfiles = async () => {
+        setLoadingProfiles(true);
+        try {
+            const data = await fetchScoringProfiles();
+            setScoringProfiles(data);
+        } catch (err) {
+            setError(err.message || 'Failed to load scoring profiles');
+        } finally {
+            setLoadingProfiles(false);
+        }
+    };
+
+    const handlePromoteProfile = async (profileName) => {
+        if (!window.confirm(language === 'zh'
+            ? `確定要將 "${profileName}" 設為生效中的 Scoring Profile？\n目前生效的 profile 會被取消。`
+            : `Promote "${profileName}" as the active Scoring Profile?\nThe current active profile will be deactivated.`)) {
+            return;
+        }
+        setPromotingProfile(profileName);
+        setError(null);
+        try {
+            await promoteScoringProfile(profileName);
+            await loadProfiles();
+        } catch (err) {
+            setError(err.message || 'Promote failed');
+        } finally {
+            setPromotingProfile(null);
+        }
     };
 
     const handleToggleExcludeObs = (obsId) => {
@@ -563,6 +622,48 @@ const MetaAndromedaMonitoring = () => {
                                 <Metric label={t('active_host', '目前主機')} value={summary?.worker_host?.active_host} />
                                 <Metric label={t('host_strategy', '主機策略')} value={getTranslation(summary?.worker_host?.host_strategy)} />
                                 <Metric label={t('dead_letter_count', '異常任務數量')} value={summary?.worker_host?.dead_letter_count} />
+                            </div>
+
+                            <div style={{ marginBottom: '16px', display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                                <button
+                                    type="button"
+                                    onClick={handleCleanupStale}
+                                    disabled={runningCleanup}
+                                    style={{
+                                        padding: '10px 16px',
+                                        borderRadius: '10px',
+                                        border: '1px solid rgba(239, 68, 68, 0.3)',
+                                        background: runningCleanup ? 'rgba(239, 68, 68, 0.05)' : 'rgba(239, 68, 68, 0.08)',
+                                        color: runningCleanup ? 'var(--text-secondary)' : '#f87171',
+                                        fontWeight: 600,
+                                        fontSize: '0.88rem',
+                                        cursor: runningCleanup ? 'wait' : 'pointer',
+                                        textAlign: 'left',
+                                    }}
+                                >
+                                    {runningCleanup
+                                        ? t('Cleaning up...', '清除中...')
+                                        : t('Clear Stuck Score Events (queued / processing > 30 min)', '清除卡死評分任務（queued / processing 超過 30 分鐘）')}
+                                </button>
+                                {cleanupResult && (
+                                    <div style={{
+                                        padding: '12px 14px',
+                                        borderRadius: '10px',
+                                        border: '1px solid rgba(52, 211, 153, 0.25)',
+                                        background: 'rgba(52, 211, 153, 0.06)',
+                                        color: 'var(--text-secondary)',
+                                        fontSize: '0.85rem',
+                                        lineHeight: 1.7,
+                                    }}>
+                                        <strong style={{ color: '#34d399' }}>
+                                            {t('Cleanup complete', '清除完成')} · {cleanupResult.cleaned_total} {t('events terminated', '筆任務已終止')}
+                                        </strong>
+                                        <div>{t('Cutoff', '截止時間')}: {formatDateTime(cleanupResult.cutoff_timestamp)}</div>
+                                        {cleanupResult.removed_scheduler_jobs > 0 && (
+                                            <div>{t('Scheduler jobs removed', '已移除排程工作')}: {cleanupResult.removed_scheduler_jobs}</div>
+                                        )}
+                                    </div>
+                                )}
                             </div>
 
                             <div style={{ marginBottom: '14px' }}>
@@ -847,6 +948,125 @@ const MetaAndromedaMonitoring = () => {
                                 {(summary?.notes || []).map((note, index) => (
                                     <div key={index} style={{ color: 'var(--text-secondary)', lineHeight: 1.6 }}>
                                         {note}
+                                    </div>
+                                ))}
+                            </div>
+                        </section>
+
+                        <section style={panelStyle}>
+                            <h2 style={sectionTitleStyle}>{t('Scoring Profiles', 'Scoring Profiles 管理')}</h2>
+                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
+                                <div style={{ color: 'var(--text-secondary)', fontSize: '0.85rem' }}>
+                                    {t('Manage prompt profiles used by the AI scoring model. Calibration auto-generates new profiles after syncing ≥10 mismatch items.', '管理 AI 評分模型使用的 Prompt Profile。校準資料集同步後（≥10 筆誤判），系統自動生成新 profile 待審核。')}
+                                </div>
+                                <button type="button" onClick={loadProfiles} style={actionButtonStyle}>
+                                    {t('Refresh', '重整')}
+                                </button>
+                            </div>
+
+                            {(() => {
+                                const pending = (scoringProfiles?.profiles || []).filter(
+                                    (p) => p.source === 'calibration_auto' && !p.is_promoted
+                                );
+                                if (pending.length === 0) return null;
+                                return (
+                                    <div style={{
+                                        marginBottom: '16px',
+                                        padding: '14px',
+                                        borderRadius: '12px',
+                                        background: 'rgba(245, 158, 11, 0.06)',
+                                        border: '1px solid rgba(245, 158, 11, 0.3)',
+                                    }}>
+                                        <div style={{ fontWeight: 700, color: '#f59e0b', marginBottom: '8px' }}>
+                                            {t(`${pending.length} new calibration profile(s) pending review`, `${pending.length} 個新版校準 Profile 待審核`)}
+                                        </div>
+                                        {pending.map((p) => (
+                                            <div key={p.profile_name} style={{ display: 'flex', flexDirection: 'column', gap: '6px', marginBottom: '10px' }}>
+                                                <div style={{ fontSize: '0.88rem', color: 'var(--text-primary)', fontWeight: 600 }}>{p.profile_name}</div>
+                                                {p.bias_summary && (
+                                                    <div style={{ fontSize: '0.8rem', color: 'var(--text-secondary)' }}>
+                                                        {t('Bias', '偏差方向')}: <strong style={{ color: '#f59e0b' }}>{p.bias_summary.dominant_bias}</strong>
+                                                        {' · '}{t('Items', '樣本')}: {p.bias_summary.total_items}
+                                                        {' · '}{t('Over-predict', '預估偏高')}: {p.bias_summary.over_predict_count}
+                                                        {' · '}{t('Under-predict', '預估偏低')}: {p.bias_summary.under_predict_count}
+                                                    </div>
+                                                )}
+                                                {p.calibration_guidance && (
+                                                    <div style={{ fontSize: '0.78rem', color: '#f59e0b', fontStyle: 'italic', lineHeight: 1.5 }}>
+                                                        {p.calibration_guidance.slice(0, 180)}{p.calibration_guidance.length > 180 ? '...' : ''}
+                                                    </div>
+                                                )}
+                                                <button
+                                                    type="button"
+                                                    onClick={() => handlePromoteProfile(p.profile_name)}
+                                                    disabled={promotingProfile === p.profile_name}
+                                                    style={{
+                                                        alignSelf: 'flex-start',
+                                                        padding: '7px 14px',
+                                                        borderRadius: '8px',
+                                                        border: 'none',
+                                                        background: promotingProfile === p.profile_name ? 'rgba(245,158,11,0.3)' : '#f59e0b',
+                                                        color: 'white',
+                                                        fontWeight: 600,
+                                                        fontSize: '0.82rem',
+                                                        cursor: promotingProfile === p.profile_name ? 'wait' : 'pointer',
+                                                    }}
+                                                >
+                                                    {promotingProfile === p.profile_name
+                                                        ? t('Promoting...', '套用中...')
+                                                        : t('Promote This Profile', '套用此 Profile')}
+                                                </button>
+                                            </div>
+                                        ))}
+                                    </div>
+                                );
+                            })()}
+
+                            <div
+                                className="queue-scroll-box"
+                                style={{ display: 'grid', gap: '10px', maxHeight: '320px', overflowY: 'auto', paddingRight: '6px' }}
+                            >
+                                {loadingProfiles ? (
+                                    <div style={emptyStateStyle}>{t('Loading profiles...', '載入 Profiles 中...')}</div>
+                                ) : (scoringProfiles?.profiles || []).length === 0 ? (
+                                    <div style={emptyStateStyle}>{t('No scoring profiles found.', '尚無 Scoring Profile 記錄。')}</div>
+                                ) : (scoringProfiles?.profiles || []).map((p) => (
+                                    <div key={p.profile_name} style={{
+                                        ...detailCardStyle,
+                                        borderColor: p.is_promoted ? 'rgba(52, 211, 153, 0.4)' : 'var(--glass-border)',
+                                        background: p.is_promoted ? 'rgba(52, 211, 153, 0.04)' : 'rgba(255,255,255,0.02)',
+                                    }}>
+                                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', flexWrap: 'wrap', gap: '6px' }}>
+                                            <div style={{ fontWeight: 700, color: p.is_promoted ? '#34d399' : 'var(--text-primary)', fontSize: '0.88rem' }}>
+                                                {p.profile_name}
+                                                {p.is_promoted && (
+                                                    <span style={{ marginLeft: '8px', fontSize: '0.72rem', background: 'rgba(52,211,153,0.15)', color: '#34d399', padding: '2px 6px', borderRadius: '4px', fontWeight: 600 }}>
+                                                        {t('ACTIVE', '生效中')}
+                                                    </span>
+                                                )}
+                                            </div>
+                                            <div style={{ display: 'flex', gap: '6px' }}>
+                                                <span style={{
+                                                    fontSize: '0.72rem',
+                                                    padding: '2px 8px',
+                                                    borderRadius: '4px',
+                                                    fontWeight: 600,
+                                                    background: p.source === 'calibration_auto' ? 'rgba(99,102,241,0.15)' : 'rgba(107,114,128,0.15)',
+                                                    color: p.source === 'calibration_auto' ? '#818cf8' : '#9ca3af',
+                                                }}>
+                                                    {p.source === 'calibration_auto' ? t('auto', '自動校準') : t('seed', '初始')}
+                                                </span>
+                                            </div>
+                                        </div>
+                                        <div style={{ fontSize: '0.78rem', color: 'var(--text-secondary)', marginTop: '6px' }}>
+                                            {t('Created', '建立時間')}: {formatDateTime(p.created_at)}
+                                            {p.is_promoted && p.promoted_at && (
+                                                <span> · {t('Promoted', '套用時間')}: {formatDateTime(p.promoted_at)}</span>
+                                            )}
+                                            {p.few_shot_example_count > 0 && (
+                                                <span> · {p.few_shot_example_count} {t('few-shot examples', '示範案例')}</span>
+                                            )}
+                                        </div>
                                     </div>
                                 ))}
                             </div>

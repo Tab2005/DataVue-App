@@ -32,6 +32,8 @@ from .schemas import (
     MaintenanceCleanupRequest,
     MaintenanceCleanupResponse,
     MonitoringTimelineResponse,
+    ScoringProfileListResponse,
+    ScoringProfilePromoteResponse,
     OverviewResponse,
     PingResponse,
     ReleaseActionRequest,
@@ -124,6 +126,37 @@ async def monitoring_timeline(
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail=f"Score event not found: {score_event_id}",
+        ) from exc
+
+
+@router.get("/monitoring/scoring-profiles", response_model=ScoringProfileListResponse)
+async def list_scoring_profiles(
+    _user=Depends(get_current_meta_andromeda_user),
+    _access: bool = Depends(require_meta_andromeda_module),
+    db=Depends(get_db),
+):
+    from .repository import repository as _repo
+    profiles = _repo.list_scoring_profiles(db)
+    return {"profiles": profiles, "total": len(profiles)}
+
+
+@router.post(
+    "/monitoring/scoring-profiles/{profile_name}/promote",
+    response_model=ScoringProfilePromoteResponse,
+)
+async def promote_scoring_profile(
+    profile_name: str,
+    _user=Depends(get_current_meta_andromeda_user),
+    _access: bool = Depends(require_meta_andromeda_operate),
+    db=Depends(get_db),
+):
+    try:
+        from .repository import repository as _repo
+        return _repo.promote_scoring_profile(db, profile_name)
+    except KeyError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=str(exc),
         ) from exc
 
 

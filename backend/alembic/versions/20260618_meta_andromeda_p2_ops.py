@@ -23,6 +23,10 @@ def _index_names(inspector: sa.Inspector, table_name: str) -> set[str]:
     return {index["name"] for index in inspector.get_indexes(table_name)}
 
 
+def _column_names(inspector: sa.Inspector, table_name: str) -> set[str]:
+    return {col["name"] for col in inspector.get_columns(table_name)}
+
+
 def upgrade() -> None:
     bind = op.get_bind()
     inspector = sa.inspect(bind)
@@ -105,27 +109,31 @@ def upgrade() -> None:
 
     inspector = sa.inspect(bind)
     score_indexes = _index_names(inspector, "meta_andromeda_score_events")
+    score_columns = _column_names(inspector, "meta_andromeda_score_events")
     if "ix_meta_andromeda_score_events_status_reviewed_created_at" not in score_indexes:
-        op.create_index(
-            "ix_meta_andromeda_score_events_status_reviewed_created_at",
-            "meta_andromeda_score_events",
-            ["status", "reviewed", "created_at"],
-            unique=False,
-        )
+        if "reviewed" in score_columns and "created_at" in score_columns:
+            op.create_index(
+                "ix_meta_andromeda_score_events_status_reviewed_created_at",
+                "meta_andromeda_score_events",
+                ["status", "reviewed", "created_at"],
+                unique=False,
+            )
     if "ix_meta_andromeda_score_events_status_queued_at" not in score_indexes:
-        op.create_index(
-            "ix_meta_andromeda_score_events_status_queued_at",
-            "meta_andromeda_score_events",
-            ["status", "queued_at"],
-            unique=False,
-        )
+        if "queued_at" in score_columns:
+            op.create_index(
+                "ix_meta_andromeda_score_events_status_queued_at",
+                "meta_andromeda_score_events",
+                ["status", "queued_at"],
+                unique=False,
+            )
     if "ix_meta_andromeda_score_events_asset_uri_status_completed_at" not in score_indexes:
-        op.create_index(
-            "ix_meta_andromeda_score_events_asset_uri_status_completed_at",
-            "meta_andromeda_score_events",
-            ["asset_uri", "status", "completed_at"],
-            unique=False,
-        )
+        if "asset_uri" in score_columns and "completed_at" in score_columns:
+            op.create_index(
+                "ix_meta_andromeda_score_events_asset_uri_status_completed_at",
+                "meta_andromeda_score_events",
+                ["asset_uri", "status", "completed_at"],
+                unique=False,
+            )
 
     worker_indexes = _index_names(inspector, "meta_andromeda_worker_events")
     if "ix_meta_andromeda_worker_events_score_event_id_created_at" not in worker_indexes:

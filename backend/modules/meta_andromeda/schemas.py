@@ -418,3 +418,27 @@ class MaintenanceCleanupResponse(BaseModel):
     deleted_worker_events: int
     deleted_dead_letters: int
     notes: list[str]
+
+
+class ScoringProfileEntry(BaseModel):
+    profile_name: str
+    source: str
+    base_profile_name: str | None = None
+    calibration_dataset_id: str | None = None
+    is_promoted: bool
+    promoted_at: str | None = None
+    bias_summary: dict | None = None
+    calibration_guidance: str | None = None
+    few_shot_example_count: int
+    created_at: str | None = None
+
+
+class ScoringProfileListResponse(BaseModel):
+    profiles: list[ScoringProfileEntry]
+    total: int
+
+
+class ScoringProfilePromoteResponse(BaseModel):
+    profile_name: str
+    is_promoted: bool
+    promoted_at: str
