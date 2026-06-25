@@ -335,6 +335,8 @@ class OpenRouterScoringProvider(BaseScoringProvider):
             raise RuntimeError("OpenRouter client is not configured")
 
         request_context = score_payload.get("request_context", {})
+        if not isinstance(request_context, dict):
+            request_context = {}
         request_mode = score_payload.get("request_mode", "auto")
 
         scoring_profile = _load_scoring_profile(registry_entry.scoring_profile)

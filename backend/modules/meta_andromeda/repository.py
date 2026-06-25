@@ -553,6 +553,21 @@ class MetaAndromedaRepository:
         }
 
     @staticmethod
+    def _safe_json_dict(value) -> dict:
+        """Safely coerce a DB JSON column value to a Python dict."""
+        if isinstance(value, dict):
+            return value
+        if isinstance(value, str):
+            import json as _json
+            try:
+                parsed = _json.loads(value)
+                if isinstance(parsed, dict):
+                    return parsed
+            except Exception:
+                pass
+        return {}
+
+    @staticmethod
     def _score_to_detail(score: MetaAndromedaScoreEvent) -> dict:
         payload = MetaAndromedaRepository._score_to_list_item(score)
         payload.update(
@@ -564,7 +579,7 @@ class MetaAndromedaRepository:
                 "top_negative_drivers": score.top_negative_drivers or [],
                 "explanations": score.explanations,
                 "lineage": score.lineage or {},
-                "request_context": score.request_context or {},
+                "request_context": MetaAndromedaRepository._safe_json_dict(score.request_context),
             }
         )
         return payload
