@@ -73,27 +73,34 @@ async def get_models(
 
 @router.post("/test-connection")
 async def test_connection(
-    request: TestConnectionRequest, 
+    request: TestConnectionRequest,
     user: User = Depends(get_current_user)
 ):
     """
     Test connectivity to the AI Service.
     """
+    api_key = request.api_key
+
+    # 若前端送 null（例如欄位顯示 '********'），從 DB 讀使用者儲存的 key 作為 fallback
+    if not api_key:
+        provider_key = "openrouter" if request.provider in ("openrouter", "gemini", "google_gemini") else "zeabur"
+        api_key = TokenManager.get_ai_api_key(user.google_id, provider=provider_key)
+
     success = AIService.test_connection(
-        api_key=request.api_key,
+        api_key=api_key,
         provider=request.provider,
         model=request.model
     )
     if success:
         return {
-            "status": "ok", 
+            "status": "ok",
             "message": "AI Service Connected Successfully",
             "provider": request.provider,
             "model": request.model
         }
     else:
         raise HTTPException(
-            status_code=400, 
+            status_code=400,
             detail=f"Failed to connect to AI Service (provider: {request.provider}). Check Key or configuration."
         )
 
