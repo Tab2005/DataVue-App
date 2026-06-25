@@ -180,7 +180,34 @@ if _is_traffic_objective(objective_key):
 
 **檔案：** `backend/modules/meta_andromeda/repository.py`（`create_drift_report`）
 
-與 ROAS 使用 P33/P67 的邏輯完全相同，但只對流量/互動廣告的資料集計算：
+#### P33/P67 機制說明
+
+P33/P67 是**百分位數**，不是固定數值。以這批廣告的實際分布為基準，動態計算門檻。
+
+**以 10 筆廣告的 CTR 為例：**
+
+```
+排序後：[0.8%, 1.1%, 1.5%, 1.9%, 2.2%, 2.6%, 3.1%, 3.8%, 4.5%, 5.2%]
+                  ↑ P33 ≈ 1.5%                  ↑ P67 ≈ 3.1%
+
+CTR < 1.5%  → "low"（後段 33%）
+CTR 1.5–3.1% → "mid"（中間）
+CTR ≥ 3.1%  → "high"（前段 33%）
+```
+
+換一個帳號、換一個時期，門檻數值就完全不同。這樣設計的原因是 CTR/CPC 沒有通用絕對門檻：Stories 廣告 CTR 1% 可能已算高，Feed 廣告 CTR 5% 可能只是普通；台灣 CPC $3 與美國 CPC $3 意義截然不同。相對排名（在這批廣告裡是否表現突出）才有診斷意義。
+
+**三個指標的方向差異：**
+
+| 指標 | 方向 | P33/P67 邏輯 | 樣本不足時 Fallback |
+|---|---|---|---|
+| ROAS | 越高越好 | `thresholds = (P33, P67)`，≥ P67 → "high" | 固定 3.0 / 6.0 |
+| CTR | 越高越好 | `thresholds = (P33, P67)`，≥ P67 → "high" | 無（回傳 fallback_traffic） |
+| CPC | 越低越好 | `thresholds = (P67, P33)`，**≤ P33 → "high"**（低成本 = 好） | 無（回傳 fallback_traffic） |
+
+ROAS 有固定 fallback（3.0/6.0）是因為業界存在粗略的絕對基準；CTR/CPC 沒有通用基準，樣本 < 5 時直接標記為 fallback_traffic，不強行評等。
+
+只對流量/互動廣告的資料集計算：
 
 ```python
 # 分群計算門檻

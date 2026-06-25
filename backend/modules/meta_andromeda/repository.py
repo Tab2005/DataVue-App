@@ -37,6 +37,20 @@ def _objective_key(value: str | None) -> str:
 _ROAS_FALLBACK_LOW = 3.0
 _ROAS_FALLBACK_HIGH = 6.0
 
+# 流量/互動/知名度廣告 objective 關鍵詞清單
+# 這類廣告不追求購買轉換，ROAS 永遠為 0，應改用 CTR/CPC 評估
+_TRAFFIC_OBJECTIVE_TOKENS = (
+    "traffic", "engagement", "awareness", "reach", "video",
+    "outcome_traffic", "outcome_engagement", "outcome_awareness",
+    # 舊帳號代碼相容
+    "link_clicks", "post_engagement", "page_likes",
+    "brand_awareness", "video_views",
+)
+
+
+def _is_traffic_objective(objective_key: str) -> bool:
+    return any(token in objective_key for token in _TRAFFIC_OBJECTIVE_TOKENS)
+
 
 def _spearman_r(x: list[float], y: list[float]) -> float:
     """Spearman rank correlation between two equal-length lists. Returns 0.0 if n < 3."""
@@ -58,10 +72,13 @@ def _spearman_r(x: list[float], y: list[float]) -> float:
 
 
 _METRIC_LABEL: dict[str, str] = {
-    "roas": "ROAS",
-    "cvr":  "CVR",
-    "cpl":  "CPL",
-    "cpa":  "CPA",
+    "roas":             "ROAS",
+    "cvr":              "CVR",
+    "cpl":              "CPL",
+    "cpa":              "CPA",
+    "ctr":              "CTR",
+    "cpc":              "CPC",
+    "fallback_traffic": "CTR/CPC",
 }
 
 _TRANSITION_MESSAGES: dict[tuple[str, str], str] = {
@@ -127,10 +144,13 @@ def _resolve_observed_band(
     objective: str | None,
     performance_snapshot: dict | None,
     roas_thresholds: tuple[float, float] | None = None,
+    ctr_thresholds: tuple[float, float] | None = None,
+    cpc_thresholds: tuple[float, float] | None = None,
 ) -> tuple[str, dict]:
     snapshot = performance_snapshot or {}
     objective_key = _objective_key(objective)
 
+    # 潛在客戶廣告：CVR / CPL 評估
     if any(token in objective_key for token in ("lead", "cpl")):
         cvr = snapshot.get("cvr")
         if cvr is not None:
@@ -149,6 +169,32 @@ def _resolve_observed_band(
                 return "mid", {"metric": "cpl", "value": value}
             return "low", {"metric": "cpl", "value": value}
 
+    # 流量 / 互動 / 知名度廣告：CTR 或 CPC 評估（ROAS 對此類廣告無意義）
+    if _is_traffic_objective(objective_key):
+        ctr = snapshot.get("ctr")
+        if ctr is not None and ctr_thresholds:
+            value = float(ctr)
+            low_t, high_t = ctr_thresholds
+            if value >= high_t:
+                return "high", {"metric": "ctr", "value": value}
+            if value >= low_t:
+                return "mid", {"metric": "ctr", "value": value}
+            return "low", {"metric": "ctr", "value": value}
+
+        cpc = snapshot.get("cpc")
+        if cpc is not None and cpc_thresholds and float(cpc) > 0:
+            value = float(cpc)
+            # cpc_thresholds = (P67, P33)：CPC 越低越好，P33 側 → "high"
+            low_t, high_t = cpc_thresholds
+            if value <= high_t:
+                return "high", {"metric": "cpc", "value": value}
+            if value <= low_t:
+                return "mid", {"metric": "cpc", "value": value}
+            return "low", {"metric": "cpc", "value": value}
+
+        return "low", {"metric": "fallback_traffic", "value": None}
+
+    # 轉換廣告（預設）：ROAS 評估
     roas = snapshot.get("roas")
     if roas is not None:
         value = float(roas)
@@ -831,12 +877,14 @@ class MetaAndromedaRepository:
         # 區間映射字典
         band_score = {"low": 1, "mid": 2, "high": 3}
 
-        # 動態 ROAS 門檻：從本批次所有 observed 的實際 ROAS 分布計算 P33/P67
-        # 樣本 < 5 時回退到固定門檻，避免小樣本雜訊
+        # 動態 ROAS 門檻：只從轉換廣告（非流量/互動/知名度）計算 P33/P67
+        # 排除流量廣告，避免大量 ROAS=0 拉低分位數；樣本 < 5 時回退固定門檻
         _roas_values = sorted(
             float(obs.performance_snapshot["roas"])
             for obs in observed_list
-            if obs.performance_snapshot and obs.performance_snapshot.get("roas") is not None
+            if obs.performance_snapshot
+            and obs.performance_snapshot.get("roas") is not None
+            and not _is_traffic_objective(_objective_key(obs.objective))
         )
         if len(_roas_values) >= 5:
             _p33 = _roas_values[int(len(_roas_values) * 0.33)]
@@ -846,6 +894,37 @@ class MetaAndromedaRepository:
         else:
             roas_thresholds = None
             roas_threshold_method = "fixed_fallback"
+
+        # 動態 CTR/CPC 門檻：只從流量/互動/知名度廣告計算 P33/P67；樣本 < 5 時不設門檻
+        _traffic_obs = [
+            obs for obs in observed_list
+            if _is_traffic_objective(_objective_key(obs.objective))
+        ]
+        ctr_thresholds: tuple[float, float] | None = None
+        cpc_thresholds: tuple[float, float] | None = None
+        _ctr_values = sorted(
+            float(obs.performance_snapshot["ctr"])
+            for obs in _traffic_obs
+            if obs.performance_snapshot and obs.performance_snapshot.get("ctr")
+        )
+        if len(_ctr_values) >= 5:
+            ctr_thresholds = (
+                _ctr_values[int(len(_ctr_values) * 0.33)],
+                _ctr_values[int(len(_ctr_values) * 0.67)],
+            )
+        _cpc_values = sorted(
+            float(obs.performance_snapshot["cpc"])
+            for obs in _traffic_obs
+            if obs.performance_snapshot
+            and obs.performance_snapshot.get("cpc")
+            and float(obs.performance_snapshot["cpc"]) > 0
+        )
+        if len(_cpc_values) >= 5:
+            # CPC 越低越好：P67（貴的那側）作為 Low/Mid 邊界，P33（便宜的那側）作為 Mid/High 邊界
+            cpc_thresholds = (
+                _cpc_values[int(len(_cpc_values) * 0.67)],
+                _cpc_values[int(len(_cpc_values) * 0.33)],
+            )
 
         # 2. 逐筆進行 Prediction 匹配與比對
         for obs in observed_list:
@@ -885,8 +964,14 @@ class MetaAndromedaRepository:
             if not pred:
                 continue
                 
-            # 提取真實 ROAS 并轉成 Band（使用本批次動態門檻）
-            real_band, label_detail = _resolve_observed_band(obs.objective, obs.performance_snapshot, roas_thresholds)
+            # 提取真實成效 Band（依 objective 路由至對應指標，使用本批次動態門檻）
+            real_band, label_detail = _resolve_observed_band(
+                obs.objective,
+                obs.performance_snapshot,
+                roas_thresholds,
+                ctr_thresholds=ctr_thresholds,
+                cpc_thresholds=cpc_thresholds,
+            )
             real_roas = obs.performance_snapshot.get("roas", 0.0) if obs.performance_snapshot else 0.0
                 
             pred_band = pred.roas_band or "low"
@@ -1036,6 +1121,17 @@ class MetaAndromedaRepository:
                     "method": roas_threshold_method,
                     "sample_count": len(_roas_values),
                 },
+                "ctr_band_thresholds": {
+                    "low_below": round(ctr_thresholds[0], 4) if ctr_thresholds else None,
+                    "high_above": round(ctr_thresholds[1], 4) if ctr_thresholds else None,
+                    "sample_count": len(_ctr_values),
+                },
+                "cpc_band_thresholds": {
+                    "low_above": round(cpc_thresholds[0], 2) if cpc_thresholds else None,
+                    "high_below": round(cpc_thresholds[1], 2) if cpc_thresholds else None,
+                    "sample_count": len(_cpc_values),
+                },
+                "traffic_ad_total": len(_traffic_obs),
                 "matched_details": matched_pairs,
                 "since": since,
                 "until": until,
