@@ -97,8 +97,9 @@ META_ANDROMEDA_STORAGE_PUBLIC_BASE_URL=https://assets.sitetegy.com/meta-andromed
 | :--- | :--- | :--- |
 | `META_ANDROMEDA_STORAGE_BACKEND` | 素材儲存後端，可選 `filesystem` 或 `s3_compatible` | `filesystem` |
 | `META_ANDROMEDA_STORAGE_ROOT` | 本地素材落檔根目錄，必須指向持久化磁碟掛載路徑 | `/app/backend/storage/meta_andromeda` |
-| `META_ANDROMEDA_SCORING_PROVIDER` | 評分模組運行者，可選 `auto`, `heuristic` 或 `openrouter` | `auto` |
-| `META_ANDROMEDA_SCORING_MODEL` | 評分模型，預設採用 Gemini | `google/gemini-3.5-flash` |
+| `META_ANDROMEDA_SCORING_PROVIDER` | 評分模組運行者。**生產環境必須設為 `openrouter`**，否則強制走啟發式備用，AI 評分永遠不執行。`auto` 模式需同時設定 `META_ANDROMEDA_SCORING_MODEL` 才會走 AI。本地開發可設 `heuristic` 避免消耗 API 額度。 | `openrouter` |
+| `META_ANDROMEDA_SCORING_MODEL` | 評分使用的 OpenRouter 模型 ID | `nvidia/nemotron-3-nano-omni-30b-a3b-reasoning:free` |
+| `META_ANDROMEDA_SCORING_ALLOW_FALLBACK` | AI 呼叫失敗時是否自動降級為啟發式備用 | `true` |
 | `META_ANDROMEDA_QUEUE_HOST` | 自動評分事件佇列，預設 `auto`（自動選擇），生產環境建議配合 Worker 使用 `database_queue` | `auto` |
 | `META_ANDROMEDA_STORAGE_S3_BUCKET` | S3 儲存桶名稱 (方案 B) | `datavue-assets` |
 | `META_ANDROMEDA_STORAGE_S3_ACCESS_KEY_ID` | S3 連線 Key ID (方案 B) | `YOUR_S3_ACCESS_KEY` |
@@ -145,3 +146,38 @@ alembic upgrade head
 > **觀察事實素材下載與儲存失敗？**
 > * **S3 權限或 Volume 權限**：檢查後端日誌是否有 `[Observation Import] Failed to download or store asset` 警告。
 > * **容錯保護**：後端已在 [service.py](file:///C:/Users/BWM2/Documents/python/DataVue-App/backend/modules/meta_andromeda/service.py) 實作下載與 S3 寫入的 try-except 容錯。就算 S3 金鑰失效或本地儲存寫入失敗，廣告績效與文字數據依然能正常匯入，僅實體圖片會回退讀取 FB 的原始網址。
+
+> [!CAUTION]
+> **Meta Andromeda 批次評分全部走啟發式備用（AI 未執行）？**
+>
+> **最常見原因：`META_ANDROMEDA_SCORING_PROVIDER` 未在 Zeabur 設定，或設成 `heuristic`。**
+>
+> 本地 `.env` 預設為 `heuristic`（節省開發成本），但 Zeabur 若未覆寫此變數，部署後所有評分均會強制使用備用模式，與 OpenRouter API Key 是否設定無關。
+>
+> **排查步驟：**
+> 1. Zeabur 後端服務 → Variables → 確認 `META_ANDROMEDA_SCORING_PROVIDER=openrouter`
+> 2. 後台設定頁 → 輸入 OpenRouter API Key → 儲存 → 確認 Response 中 `has_openrouter_key: true`
+> 3. 部署後可查看 Zeabur 日誌，搜尋 `generate_score_result` 行，確認 `DB Key present: True` 且 `provider_override: openrouter`
+>
+> **AI 評分的 Key 查找優先順序：**
+>
+> 批次匯入觀察廣告時，系統依下列順序取得 OpenRouter API Key：
+> 1. **後台個人設定**（後台 → AI 設定 → OpenRouter Key）→ 加密存在 PostgreSQL users 表
+> 2. **環境變數** `OPENROUTER_API_KEY`（Zeabur Variables）
+>
+> 若使用後台個人設定，不需要設定 `OPENROUTER_API_KEY` 環境變數。但 `META_ANDROMEDA_SCORING_PROVIDER=openrouter` **無論如何都必須設定**。
+>
+> **後台設定頁連線測試失敗（400）？**
+>
+> 連線測試 `POST /api/ai/test-connection` 當欄位顯示 `'********'` 時，前端送出 `api_key: null`。後端會自動從 DB 讀取已儲存的個人 Key 來測試，不需要另外設定環境變數。若測試仍失敗，代表 DB 中沒有有效的 Key，需重新在後台設定頁儲存。
+
+> [!WARNING]
+> **後台設定頁儲存 API Key 後，重開頁面 Key 消失？**
+>
+> 若儲存時回傳 `{"success": true}` 但 `settings.has_openrouter_key: false`，代表加密失敗（Key 存成 NULL）。
+> 檢查 Zeabur Variables 中 `ENCRYPTION_KEY` 是否存在且格式正確（44 字元的 Fernet Base64 Key）。
+> 可用以下指令產生新金鑰：
+> ```bash
+> python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"
+> ```
+> ⚠️ 若更換新的 `ENCRYPTION_KEY`，所有使用者先前儲存的加密 Key（FB Token、AI Key）將全部失效，需重新設定。
