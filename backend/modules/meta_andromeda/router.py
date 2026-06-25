@@ -34,6 +34,7 @@ from .schemas import (
     MaintenanceCleanupRequest,
     MaintenanceCleanupResponse,
     MonitoringTimelineResponse,
+    AiReadyResponse,
     ScoringProfileListResponse,
     ScoringProfilePromoteResponse,
     OverviewResponse,
@@ -229,6 +230,54 @@ async def runtime_health(
 ):
     """Shared-runtime readiness summary for Meta Andromeda on the current host."""
     return MetaAndromedaService.get_runtime_health(db)
+
+
+@router.get("/runtime/ai-ready", response_model=AiReadyResponse)
+async def runtime_ai_ready(
+    _user=Depends(get_current_meta_andromeda_user),
+    _access: bool = Depends(require_meta_andromeda_module),
+):
+    """輕量連線確認：檢查 AI 評分設定是否正常，不實際呼叫 AI 模型。"""
+    import os
+    from core.config import settings
+
+    provider = settings.META_ANDROMEDA_SCORING_PROVIDER
+    allow_fallback = settings.META_ANDROMEDA_SCORING_ALLOW_FALLBACK
+    api_key_configured = bool(os.getenv("OPENROUTER_API_KEY", ""))
+
+    if provider == "heuristic":
+        return AiReadyResponse(
+            ready=False,
+            provider="heuristic",
+            api_key_configured=False,
+            allow_fallback=allow_fallback,
+            warning="評分服務設定為啟發式備用模式，批次評分不會使用 AI 模型。",
+        )
+
+    if provider == "openrouter" or provider == "auto":
+        if not api_key_configured:
+            return AiReadyResponse(
+                ready=False,
+                provider=provider,
+                api_key_configured=False,
+                allow_fallback=allow_fallback,
+                warning="未設定 OpenRouter API Key，批次評分將使用啟發式備用模式，評分準確度較低。",
+            )
+        return AiReadyResponse(
+            ready=True,
+            provider=provider,
+            api_key_configured=True,
+            allow_fallback=allow_fallback,
+            warning=None,
+        )
+
+    return AiReadyResponse(
+        ready=False,
+        provider=provider,
+        api_key_configured=api_key_configured,
+        allow_fallback=allow_fallback,
+        warning=f"未知的評分 Provider：{provider}，批次評分將使用備用模式。",
+    )
 
 
 @router.get("/release/overview", response_model=ReleaseOverviewResponse)

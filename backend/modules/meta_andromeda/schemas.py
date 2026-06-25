@@ -47,6 +47,14 @@ class RuntimeHealthResponse(BaseModel):
     notes: list[str]
 
 
+class AiReadyResponse(BaseModel):
+    ready: bool
+    provider: str
+    api_key_configured: bool
+    allow_fallback: bool
+    warning: str | None = None
+
+
 class MonitoringWorkerEventResponse(BaseModel):
     worker_event_id: str
     score_event_id: str

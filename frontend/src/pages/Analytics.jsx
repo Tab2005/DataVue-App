@@ -13,6 +13,7 @@ import ReportModal from '../components/Analytics/ReportModal';
 import { METRICS_REGISTRY, METRIC_CATEGORIES } from '../constants/metricsRegistry';
 import { useModuleAccess, usePermission } from '../hooks/usePermission';
 import {
+    fetchMetaAndromedaAiReady,
     fetchMetaAndromedaObservedImportStatus,
     importMetaAndromedaObservedFacebookAd,
 } from '../services/metaAndromedaWorkflowService';
@@ -1002,6 +1003,23 @@ const Analytics = () => {
     const handleBatchObservationImport = useCallback(async () => {
         if (!selectedObservationRows.length) {
             return;
+        }
+
+        // Pre-flight AI readiness check
+        try {
+            const aiStatus = await fetchMetaAndromedaAiReady();
+            if (aiStatus && !aiStatus.ready && aiStatus.warning) {
+                const continueAnyway = window.confirm(
+                    (language === 'zh' ? '⚠️ AI 評分連線異常\n\n' : '⚠️ AI Scoring Unavailable\n\n') +
+                    aiStatus.warning +
+                    (language === 'zh'
+                        ? '\n\n是否仍要繼續批次匯入？（評分將使用啟發式備用模式）'
+                        : '\n\nContinue with batch import anyway? (Scoring will use heuristic fallback)')
+                );
+                if (!continueAnyway) return;
+            }
+        } catch {
+            // AI check failed → proceed silently (don't block import)
         }
 
         setObservationBatchSummary({

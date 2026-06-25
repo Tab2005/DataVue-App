@@ -51,6 +51,10 @@ export const fetchMetaAndromedaObservedImportStatus = async (observedCreativeId)
     return apiClient.get(`/api/meta-andromeda/evaluations/import/facebook-ads/${observedCreativeId}/status`);
 };
 
+export const fetchMetaAndromedaAiReady = async () => {
+    return apiClient.get('/api/meta-andromeda/runtime/ai-ready');
+};
+
 export default {
     uploadMetaAndromedaAsset,
     submitMetaAndromedaScore,
@@ -59,4 +63,5 @@ export default {
     submitMetaAndromedaFeedback,
     importMetaAndromedaObservedFacebookAd,
     fetchMetaAndromedaObservedImportStatus,
+    fetchMetaAndromedaAiReady,
 };
