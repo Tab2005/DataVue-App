@@ -138,7 +138,14 @@ def _extract_json_payload(raw_text: str) -> dict:
             candidate = re.sub(r"\s*```$", "", candidate).strip()
 
     try:
-        return json.loads(candidate)
+        result = json.loads(candidate)
+        # Reasoning models sometimes double-encode JSON (return a JSON string containing another JSON)
+        if isinstance(result, str):
+            logger.warning("[MetaAndromeda] Parsed JSON is a string, attempting double-decode. Value: %r", result[:200])
+            result = json.loads(result)
+        if not isinstance(result, dict):
+            raise ValueError(f"AI response parsed to {type(result).__name__}, expected dict.")
+        return result
     except json.JSONDecodeError as e:
         logger.warning("[MetaAndromeda] Failed to parse JSON directly: %s. Attempting regex extract. Candidate: %r", e, candidate)
         match = re.search(r"\{.*\}", candidate, re.DOTALL)
@@ -146,7 +153,10 @@ def _extract_json_payload(raw_text: str) -> dict:
             logger.error("[MetaAndromeda] Regex extraction failed. No braces found in text: %r", raw_text)
             raise ValueError(f"AI response is not valid JSON. Raw: {raw_text[:200]}") from e
         try:
-            return json.loads(match.group(0))
+            result = json.loads(match.group(0))
+            if not isinstance(result, dict):
+                raise ValueError(f"Regex-extracted JSON is {type(result).__name__}, expected dict.")
+            return result
         except json.JSONDecodeError as inner_e:
             logger.error("[MetaAndromeda] Failed to parse extracted braces text: %r. Error: %s", match.group(0), inner_e)
             raise ValueError(f"AI response JSON structure is broken. Extracted: {match.group(0)[:200]}") from inner_e
