@@ -564,6 +564,7 @@ class MetaAndromedaRepository:
                 "top_negative_drivers": score.top_negative_drivers or [],
                 "explanations": score.explanations,
                 "lineage": score.lineage or {},
+                "request_context": score.request_context or {},
             }
         )
         return payload

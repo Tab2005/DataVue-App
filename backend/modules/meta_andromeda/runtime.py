@@ -625,7 +625,7 @@ class MetaAndromedaRuntimeAdapter:
             except Exception as e:
                 logger.error(f"[MetaAndromeda] Failed to retrieve DB API key for asset {asset_id}: {e}")
 
-        openrouter_key = db_key or os.getenv("OPENROUTER_API_KEY")
+        openrouter_key = db_key or settings.OPENROUTER_API_KEY
         zeabur_key = os.getenv("ZEABUR_AI_HUB_API_KEY")
 
         logger.warning(
