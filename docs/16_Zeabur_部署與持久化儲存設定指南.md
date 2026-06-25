@@ -154,16 +154,47 @@ alembic upgrade head
 >
 > 本地 `.env` 預設為 `heuristic`（節省開發成本），但 Zeabur 若未覆寫此變數，部署後所有評分均會強制使用備用模式，與 OpenRouter API Key 是否設定無關。
 >
-> **排查步驟：**
+> **第一步排查（環境設定）：**
 > 1. Zeabur 後端服務 → Variables → 確認 `META_ANDROMEDA_SCORING_PROVIDER=openrouter`
 > 2. 後台設定頁 → 輸入 OpenRouter API Key → 儲存 → 確認 Response 中 `has_openrouter_key: true`
 > 3. 部署後可查看 Zeabur 日誌，搜尋 `generate_score_result` 行，確認 `DB Key present: True` 且 `provider_override: openrouter`
+>
+> **若環境設定正確但 OpenRouter 後台仍看不到任何 API 請求（代表錯誤發生在送出請求之前）：**
+>
+> 啟用完整 traceback 日誌：確認 `runtime.py` 的 `except Exception as exc:` 有加 `exc_info=True`，部署後日誌會顯示精確的錯誤行號。以下是三個已確認過的隱藏陷阱：
+>
+> **陷阱 1：`few_shot_examples` 型別錯誤**
+>
+> Alembic migration 若使用 `json.dumps([])` 將 `few_shot_examples` 寫入 JSON 欄位，SQLAlchemy 讀回時可能返回字串 `'[]'` 而非 list。`_load_scoring_profile` 未做型別檢查時，字串會直接傳入 `_format_few_shot_block()`，導致函數對字元迭代（`'['.get(...)`）而非 dict 元素，拋出 `AttributeError: 'str' object has no attribute 'get'`，在 API 請求送出前即觸發 fallback。
+>
+> 修正方式：migration 中 `few_shot_examples` 欄位直接使用 `[]`（Python list），不使用 `json.dumps([])`；`_load_scoring_profile` 中讀取後加型別檢查：
+> ```python
+> few_shot_raw = row.few_shot_examples
+> if isinstance(few_shot_raw, str):
+>     try:
+>         few_shot_raw = json.loads(few_shot_raw)
+>     except Exception:
+>         few_shot_raw = []
+> if not isinstance(few_shot_raw, list):
+>     few_shot_raw = []
+> ```
+>
+> **陷阱 2：`request_context` 未包含在 score payload 中**
+>
+> `repository.py` 的 `_score_to_detail()` 若缺少 `"request_context"` 欄位，AI Prompt 中的 `Headline`、`Primary text`、`CTA` 全為空字串。模型仍會回傳 JSON，但評分依據不完整，品質偏低。修正方式：確認 `_score_to_detail` 包含 `"request_context": _safe_json_dict(score.request_context)`。`_safe_json_dict` 需能處理 JSON 欄位返回字串的情形（`isinstance(value, str)` → `json.loads`）。
+>
+> **陷阱 3：推理模型 `max_tokens` 不足導致 JSON 截斷**
+>
+> 使用 `nvidia/nemotron-*-reasoning` 等推理模型時，模型的 chain-of-thought 思考過程與實際輸出共享同一個 `max_tokens` 預算。當 prompt 包含真實廣告文案時，思考鏈會變長，剩餘給 JSON 輸出的 token 不足，導致回應中途截斷，`_extract_json_payload` 解析失敗並觸發 fallback（錯誤訊息："AI response JSON structure is broken. Extracted: { "overall_score": ..."）。
+>
+> 修正方式：`runtime.py` 中 `generate_content` 呼叫的 `max_tokens` 設為 `4096`（而非 `2048`）。
 >
 > **AI 評分的 Key 查找優先順序：**
 >
 > 批次匯入觀察廣告時，系統依下列順序取得 OpenRouter API Key：
 > 1. **後台個人設定**（後台 → AI 設定 → OpenRouter Key）→ 加密存在 PostgreSQL users 表
 > 2. **環境變數** `OPENROUTER_API_KEY`（Zeabur Variables）
+> 3. **環境變數** `ZEABUR_AI_HUB_API_KEY`（備用）
 >
 > 若使用後台個人設定，不需要設定 `OPENROUTER_API_KEY` 環境變數。但 `META_ANDROMEDA_SCORING_PROVIDER=openrouter` **無論如何都必須設定**。
 >
