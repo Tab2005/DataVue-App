@@ -70,11 +70,19 @@ def _load_scoring_profile(profile_name: str) -> dict:
                 MetaAndromedaScoringProfile.profile_name == profile_name
             ).first()
             if row is not None:
+                few_shot_raw = row.few_shot_examples
+                if isinstance(few_shot_raw, str):
+                    try:
+                        few_shot_raw = json.loads(few_shot_raw)
+                    except Exception:
+                        few_shot_raw = []
+                if not isinstance(few_shot_raw, list):
+                    few_shot_raw = []
                 profile = {
                     "user_prompt_template": row.user_prompt_template,
                     "system_prompt": row.system_prompt,
                     "calibration_guidance": row.calibration_guidance or "",
-                    "few_shot_examples": row.few_shot_examples or [],
+                    "few_shot_examples": few_shot_raw,
                 }
                 with _profile_cache_lock:
                     _prompt_profile_cache[profile_name] = profile
@@ -353,9 +361,10 @@ class OpenRouterScoringProvider(BaseScoringProvider):
         prompt = scoring_profile["user_prompt_template"].format_map(_fmt)
         if scoring_profile.get("calibration_guidance"):
             prompt += f"\n\n{scoring_profile['calibration_guidance']}"
-        if scoring_profile.get("few_shot_examples"):
+        few_shot_examples = scoring_profile.get("few_shot_examples")
+        if few_shot_examples and isinstance(few_shot_examples, list):
             from .calibration_pipeline import _format_few_shot_block
-            prompt += _format_few_shot_block(scoring_profile["few_shot_examples"])
+            prompt += _format_few_shot_block(few_shot_examples)
         system_prompt = scoring_profile["system_prompt"]
         user_content = _build_multimodal_user_content(prompt, score_payload)
         raw = None
@@ -665,7 +674,7 @@ class MetaAndromedaRuntimeAdapter:
         try:
             return await provider.score(score_payload, registry_entry)
         except Exception as exc:
-            logger.warning("Meta Andromeda scoring provider failed: %s", exc)
+            logger.warning("Meta Andromeda scoring provider failed: %s", exc, exc_info=True)
             if not settings.META_ANDROMENS_SCORING_ALLOW_FALLBACK if hasattr(settings, "META_ANDROMENS_SCORING_ALLOW_FALLBACK") else not settings.META_ANDROMEDA_SCORING_ALLOW_FALLBACK:
                 raise
             fallback_entry = model_registry.get_entry("candidate_v0")
