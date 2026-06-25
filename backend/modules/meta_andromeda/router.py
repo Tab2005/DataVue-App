@@ -238,12 +238,22 @@ async def runtime_ai_ready(
     _access: bool = Depends(require_meta_andromeda_module),
 ):
     """輕量連線確認：檢查 AI 評分設定是否正常，不實際呼叫 AI 模型。"""
-    import os
     from core.config import settings
+    from modules.auth.service import TokenManager
 
     provider = settings.META_ANDROMEDA_SCORING_PROVIDER
     allow_fallback = settings.META_ANDROMEDA_SCORING_ALLOW_FALLBACK
-    api_key_configured = bool(os.getenv("OPENROUTER_API_KEY", ""))
+
+    # 優先查後台個人設定的 API Key（與實際評分流程一致）
+    db_key = None
+    if _user and _user.google_id:
+        try:
+            db_key = TokenManager.get_ai_api_key(_user.google_id, provider="openrouter")
+        except Exception:
+            pass
+
+    # 再 fallback 至環境變數（OPENROUTER_API_KEY 或 ZEABUR_AI_HUB_API_KEY）
+    api_key_configured = bool(db_key) or bool(settings.OPENROUTER_API_KEY)
 
     if provider == "heuristic":
         return AiReadyResponse(
