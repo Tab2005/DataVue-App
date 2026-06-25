@@ -196,9 +196,22 @@ async def save_ai_settings(
             ai_provider=request.ai_provider,
             ai_model=request.ai_model
         )
-        
+
         # Return updated settings
         settings = TokenManager.get_ai_settings(user.google_id)
+
+        # 驗證 key 確實已加密儲存（若加密功能異常會靜默存 NULL）
+        if request.openrouter_api_key and not settings.get("has_openrouter_key"):
+            raise HTTPException(
+                status_code=500,
+                detail="API Key 加密失敗，Key 未能儲存。請確認伺服器的 ENCRYPTION_KEY 環境變數已正確設定。"
+            )
+        if request.zeabur_api_key and not settings.get("has_zeabur_key"):
+            raise HTTPException(
+                status_code=500,
+                detail="API Key 加密失敗，Key 未能儲存。請確認伺服器的 ENCRYPTION_KEY 環境變數已正確設定。"
+            )
+
         logger.info(f"[AI API] Settings saved.")
         return {
             "success": True,
