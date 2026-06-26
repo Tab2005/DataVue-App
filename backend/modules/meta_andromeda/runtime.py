@@ -166,6 +166,22 @@ def _extract_json_payload(raw_text: str) -> dict:
                 raise ValueError(f"Regex-extracted JSON is {type(result).__name__}, expected dict.")
             return result
         except json.JSONDecodeError as inner_e:
+            # Last resort: try to repair truncated JSON by closing unclosed braces/brackets
+            truncated = match.group(0)
+            open_braces = truncated.count('{') - truncated.count('}')
+            open_brackets = truncated.count('[') - truncated.count(']')
+            repaired = truncated.rstrip().rstrip(',').rstrip('"').rstrip("'")
+            if open_brackets > 0:
+                repaired += ']' * open_brackets
+            if open_braces > 0:
+                repaired += '}' * open_braces
+            try:
+                result = json.loads(repaired)
+                if isinstance(result, dict):
+                    logger.warning("[MetaAndromeda] Repaired truncated JSON (open_braces=%d, open_brackets=%d).", open_braces, open_brackets)
+                    return result
+            except json.JSONDecodeError:
+                pass
             logger.error("[MetaAndromeda] Failed to parse extracted braces text: %r. Error: %s", match.group(0), inner_e)
             raise ValueError(f"AI response JSON structure is broken. Extracted: {match.group(0)[:200]}") from inner_e
 
@@ -378,7 +394,7 @@ class OpenRouterScoringProvider(BaseScoringProvider):
                     registry_entry.provider_model,
                     system_prompt,
                     0.2,
-                    4096,
+                    8192,
                     settings.META_ANDROMEDA_SCORE_TIMEOUT_SECONDS,
                     user_content,
                 )
