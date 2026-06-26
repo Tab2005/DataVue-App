@@ -189,8 +189,11 @@ def _extract_json_payload(raw_text: str) -> dict:
 def _normalize_string_list(value, field_name: str, *, limit: int | None = None) -> list[str]:
     if value is None:
         return []
+    if isinstance(value, str):
+        value = [item.strip() for item in re.split(r"[,;\n]+", value) if item.strip()]
     if not isinstance(value, (list, tuple)):
-        raise ValueError(f"{field_name}_must_be_list")
+        logger.warning("[MetaAndromeda] %s is %s, expected list — coercing to empty list.", field_name, type(value).__name__)
+        return []
     normalized = [str(item).strip() for item in value if str(item).strip()]
     return normalized[:limit] if limit is not None else normalized
 
@@ -199,8 +202,17 @@ def _normalize_diagnostic_breakdown(value) -> dict[str, str]:
     if value is None:
         return {}
     if not isinstance(value, dict):
-        raise ValueError("diagnostic_breakdown_must_be_object")
-    return {str(key): str(item) for key, item in value.items()}
+        logger.warning("[MetaAndromeda] diagnostic_breakdown is %s, expected dict — returning empty.", type(value).__name__)
+        return {}
+    result = {}
+    for key, item in value.items():
+        if isinstance(item, dict):
+            score = item.get("score", "")
+            reasoning = item.get("reasoning", "")
+            result[str(key)] = f"{score}: {reasoning}".strip(": ") if (score or reasoning) else ""
+        else:
+            result[str(key)] = str(item)
+    return result
 
 
 def _build_multimodal_user_content(prompt: str, score_payload: dict) -> list[dict]:
