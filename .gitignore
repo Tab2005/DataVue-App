@@ -41,6 +41,8 @@ test-results/
 backend/tokens.json
 backend/__pycache__/
 backend/venv/
+backend/cachetools/
+backend/cachetools-*.dist-info/
 
 # 資料庫文件
 *.db
