@@ -40,12 +40,15 @@ const MetaAndromedaReviewQueue = () => {
     const [statusFilter, setStatusFilter] = useState('completed');
     const [observationFilter, setObservationFilter] = useState('all');
     const [queueItems, setQueueItems] = useState([]);
+    const [hasMore, setHasMore] = useState(false);
+    const [loadingMore, setLoadingMore] = useState(false);
     const [selectedId, setSelectedId] = useState(null);
     const [detail, setDetail] = useState(null);
     const [loadingQueue, setLoadingQueue] = useState(true);
     const [loadingDetail, setLoadingDetail] = useState(false);
     const [error, setError] = useState(null);
     const [searchTerm, setSearchTerm] = useState('');
+    const PAGE_SIZE = 50;
 
     const t = (en, zh) => (language === 'en' ? en : zh);
 
@@ -60,21 +63,24 @@ const MetaAndromedaReviewQueue = () => {
         }
     };
 
+    const buildObsParam = () =>
+        observationFilter === 'matched' ? true
+        : observationFilter === 'unmatched' ? false
+        : null;
+
     const loadQueue = async ({ preserveSelection = true } = {}) => {
         setLoadingQueue(true);
         setError(null);
         try {
-            const has_observation =
-                observationFilter === 'matched' ? true
-                : observationFilter === 'unmatched' ? false
-                : null;
             const data = await fetchMetaAndromedaReviewQueue({
                 status: statusFilter === 'all' ? null : statusFilter,
-                has_observation,
-                limit: 50,
+                has_observation: buildObsParam(),
+                limit: PAGE_SIZE,
+                offset: 0,
             });
             const items = data.items || [];
             setQueueItems(items);
+            setHasMore(data.summary?.has_more ?? false);
             setSelectedId((current) => {
                 if (preserveSelection && current && items.some((item) => item.score_event_id === current)) {
                     return current;
@@ -85,6 +91,25 @@ const MetaAndromedaReviewQueue = () => {
             setError(err.message || t('Failed to load records', '載入評估紀錄失敗'));
         } finally {
             setLoadingQueue(false);
+        }
+    };
+
+    const loadMore = async () => {
+        setLoadingMore(true);
+        try {
+            const data = await fetchMetaAndromedaReviewQueue({
+                status: statusFilter === 'all' ? null : statusFilter,
+                has_observation: buildObsParam(),
+                limit: PAGE_SIZE,
+                offset: queueItems.length,
+            });
+            const newItems = data.items || [];
+            setQueueItems((prev) => [...prev, ...newItems]);
+            setHasMore(data.summary?.has_more ?? false);
+        } catch (err) {
+            setError(err.message || t('Failed to load more', '載入更多失敗'));
+        } finally {
+            setLoadingMore(false);
         }
     };
 
@@ -288,6 +313,31 @@ const MetaAndromedaReviewQueue = () => {
                                     </button>
                                 );
                             })}
+                        </div>
+                    )}
+
+                    {/* 載入更多 */}
+                    {hasMore && !loadingQueue && (
+                        <button
+                            type="button"
+                            onClick={loadMore}
+                            disabled={loadingMore}
+                            style={{
+                                marginTop: '12px', width: '100%',
+                                padding: '10px', borderRadius: '10px',
+                                border: '1px solid var(--glass-border)',
+                                background: 'rgba(255,255,255,0.02)',
+                                color: 'var(--text-secondary)',
+                                cursor: loadingMore ? 'not-allowed' : 'pointer',
+                                fontSize: '0.85rem',
+                            }}
+                        >
+                            {loadingMore ? t('Loading...', '載入中...') : t('Load More', '載入更多')}
+                        </button>
+                    )}
+                    {!hasMore && queueItems.length > 0 && !loadingQueue && (
+                        <div style={{ textAlign: 'center', color: 'var(--text-secondary)', fontSize: '0.78rem', marginTop: '12px' }}>
+                            {t(`Total ${queueItems.length} records`, `共 ${queueItems.length} 筆紀錄`)}
                         </div>
                     )}
                 </section>

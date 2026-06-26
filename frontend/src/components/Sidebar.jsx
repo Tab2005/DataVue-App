@@ -40,7 +40,7 @@ const Sidebar = ({ user, language, isCollapsed, setIsCollapsed, isMobile, select
             requiredModule: 'meta_andromeda',
             children: [
                 { label: t('Module Overview', '模組總覽'), path: '/meta-andromeda' },
-                { label: t('Review Queue', '審核佇列'), path: '/meta-andromeda/review-queue' },
+                { label: t('Evaluation Records', '評估紀錄'), path: '/meta-andromeda/review-queue' },
                 { label: t('Monitoring', '監控總覽'), path: '/meta-andromeda/monitoring' },
                 { label: t('Release Console', '版本總覽'), path: '/meta-andromeda/release' },
                 { label: t('Score Lab', '評分工作台'), path: '/meta-andromeda/score-lab' },

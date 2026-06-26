@@ -104,9 +104,10 @@ class MetaAndromedaService:
         db,
         status: str | None = None,
         has_observation: bool | None = None,
-        limit: int = 30,
+        limit: int = 50,
+        offset: int = 0,
     ) -> dict:
-        return repository.list_review_queue(db, status=status, has_observation=has_observation, limit=limit)
+        return repository.list_review_queue(db, status=status, has_observation=has_observation, limit=limit, offset=offset)
 
     @staticmethod
     def get_review_queue_detail(db, score_event_id: str) -> dict:

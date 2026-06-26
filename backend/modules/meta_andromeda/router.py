@@ -78,7 +78,8 @@ async def review_queue(
     db=Depends(get_db),
     status_filter: str | None = Query(default=None, alias="status"),
     has_observation: bool | None = Query(default=None),
-    limit: int = Query(default=30, ge=1, le=100),
+    limit: int = Query(default=50, ge=1, le=500),
+    offset: int = Query(default=0, ge=0),
 ):
     """Evaluation record list endpoint — returns scored assets with observation match status."""
     return MetaAndromedaService.list_review_queue(
@@ -86,6 +87,7 @@ async def review_queue(
         status=status_filter,
         has_observation=has_observation,
         limit=limit,
+        offset=offset,
     )
 
 
