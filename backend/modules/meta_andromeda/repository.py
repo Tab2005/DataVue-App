@@ -708,7 +708,35 @@ class MetaAndromedaRepository:
                 "observation_window_end": obs.observation_window_end if obs else None,
             }
         else:
-            detail["observation"] = None
+            # 若此 ScoreEvent 由成效分析匯入自動建立，request_context 會帶有 observed_creative_id
+            # 直接從 ObservedCreative 取得實際成效，不必等 CalibrationItem 同步
+            rc = self._safe_json_dict(row.request_context)
+            linked_obs_id = rc.get("observed_creative_id")
+            obs = None
+            if linked_obs_id:
+                obs = (
+                    db.query(MetaAndromedaObservedCreative)
+                    .filter(MetaAndromedaObservedCreative.id == linked_obs_id)
+                    .first()
+                )
+            if obs and obs.performance_snapshot and float((obs.performance_snapshot or {}).get("spend", 0) or 0) > 0:
+                pred_band = row.roas_band or "low"
+                real_band, _ = _resolve_observed_band(obs.objective, obs.performance_snapshot)
+                _band_score = {"low": 1, "mid": 2, "high": 3}
+                err = abs(_band_score.get(pred_band, 1) - _band_score.get(real_band, 1))
+                detail["observation"] = {
+                    "prediction_band": pred_band,
+                    "observed_band": real_band,
+                    "error": float(err),
+                    "performance_snapshot": deepcopy(obs.performance_snapshot or {}),
+                    "ad_name": obs.ad_name,
+                    "ad_id": obs.ad_id,
+                    "observation_window_kind": obs.observation_window_kind,
+                    "observation_window_start": obs.observation_window_start,
+                    "observation_window_end": obs.observation_window_end,
+                }
+            else:
+                detail["observation"] = None
         return detail
 
     def get_monitoring_summary(self, db: Session):
