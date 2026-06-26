@@ -627,20 +627,47 @@ class MetaAndromedaRepository:
             "created_at": report.created_at.isoformat() if report.created_at else None,
         }
 
-    def list_review_queue(self, db: Session, status=None, reviewed=None, limit=30):
+    def list_review_queue(self, db: Session, status=None, has_observation=None, limit=30):
         query = db.query(MetaAndromedaScoreEvent)
         if status:
             query = query.filter(MetaAndromedaScoreEvent.status == status)
-        if reviewed is not None:
-            query = query.filter(MetaAndromedaScoreEvent.reviewed == reviewed)
+        if has_observation is True:
+            cal_exists = (
+                db.query(MetaAndromedaCalibrationItem.score_event_id)
+                .filter(MetaAndromedaCalibrationItem.score_event_id == MetaAndromedaScoreEvent.id)
+                .correlate(MetaAndromedaScoreEvent)
+                .exists()
+            )
+            query = query.filter(cal_exists)
+        elif has_observation is False:
+            cal_exists = (
+                db.query(MetaAndromedaCalibrationItem.score_event_id)
+                .filter(MetaAndromedaCalibrationItem.score_event_id == MetaAndromedaScoreEvent.id)
+                .correlate(MetaAndromedaScoreEvent)
+                .exists()
+            )
+            query = query.filter(~cal_exists)
         rows = query.order_by(MetaAndromedaScoreEvent.created_at.desc()).limit(limit).all()
-        items = [self._score_to_list_item(row) for row in rows]
+        # Batch-check which score events have calibration/observation data
+        cal_ids: set[str] = set()
+        if rows:
+            matched = (
+                db.query(MetaAndromedaCalibrationItem.score_event_id)
+                .filter(MetaAndromedaCalibrationItem.score_event_id.in_([r.id for r in rows]))
+                .all()
+            )
+            cal_ids = {m.score_event_id for m in matched}
+        items = []
+        for row in rows:
+            item = self._score_to_list_item(row)
+            item["has_observation"] = row.id in cal_ids
+            items.append(item)
         return {
             "items": items,
             "summary": {
                 "total": query.count(),
                 "status_filter": status,
-                "reviewed_filter": reviewed,
+                "has_observation_filter": has_observation,
             },
         }
 
@@ -648,7 +675,32 @@ class MetaAndromedaRepository:
         row = db.query(MetaAndromedaScoreEvent).filter(MetaAndromedaScoreEvent.id == score_event_id).first()
         if row is None:
             raise KeyError(score_event_id)
-        return self._score_to_detail(row)
+        detail = self._score_to_detail(row)
+        cal_item = (
+            db.query(MetaAndromedaCalibrationItem)
+            .filter(MetaAndromedaCalibrationItem.score_event_id == score_event_id)
+            .first()
+        )
+        if cal_item:
+            obs = (
+                db.query(MetaAndromedaObservedCreative)
+                .filter(MetaAndromedaObservedCreative.id == cal_item.observed_creative_id)
+                .first()
+            )
+            detail["observation"] = {
+                "prediction_band": cal_item.prediction_band,
+                "observed_band": cal_item.observed_band,
+                "error": cal_item.error,
+                "performance_snapshot": deepcopy(cal_item.performance_snapshot or {}),
+                "ad_name": obs.ad_name if obs else None,
+                "ad_id": obs.ad_id if obs else None,
+                "observation_window_kind": obs.observation_window_kind if obs else None,
+                "observation_window_start": obs.observation_window_start if obs else None,
+                "observation_window_end": obs.observation_window_end if obs else None,
+            }
+        else:
+            detail["observation"] = None
+        return detail
 
     def get_monitoring_summary(self, db: Session):
         score_rows = db.query(MetaAndromedaScoreEvent).all()

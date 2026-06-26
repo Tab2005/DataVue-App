@@ -142,18 +142,20 @@ class ReviewQueueItemResponse(BaseModel):
     overall_score: int | None
     roas_band: str | None
     model_version: str | None
-    reviewed: bool
-    feedback_count: int
-    latest_feedback_decision: str | None
+    reviewed: bool = False
+    feedback_count: int = 0
+    latest_feedback_decision: str | None = None
     feature_manifest_id: str | None
     error_message: str | None
     attempt_count: int
+    has_observation: bool = False
 
 
 class ReviewQueueListSummaryResponse(BaseModel):
     total: int
     status_filter: str | None
-    reviewed_filter: bool | None
+    reviewed_filter: bool | None = None
+    has_observation_filter: bool | None = None
 
 
 class ReviewQueueListResponse(BaseModel):
@@ -173,6 +175,18 @@ class ScoreExplanationResponse(BaseModel):
     top_positive_drivers: list[str]
     top_risks: list[str]
     diagnostic_evidence: dict[str, Any]
+
+
+class ObservationResponse(BaseModel):
+    prediction_band: str
+    observed_band: str
+    error: float
+    performance_snapshot: dict[str, Any]
+    ad_name: str | None = None
+    ad_id: str | None = None
+    observation_window_kind: str | None = None
+    observation_window_start: str | None = None
+    observation_window_end: str | None = None
 
 
 class ReviewQueueDetailResponse(BaseModel):
@@ -197,6 +211,8 @@ class ReviewQueueDetailResponse(BaseModel):
     explanations: ScoreExplanationResponse | None
     model_version: str | None
     feature_manifest_id: str | None
+    observation: ObservationResponse | None = None
+    request_context: dict[str, Any] | None = None
     lineage: dict[str, str | None]
     error_message: str | None
     attempt_count: int

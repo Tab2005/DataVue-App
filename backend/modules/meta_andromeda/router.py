@@ -77,14 +77,14 @@ async def review_queue(
     _access: bool = Depends(require_meta_andromeda_module),
     db=Depends(get_db),
     status_filter: str | None = Query(default=None, alias="status"),
-    reviewed: bool | None = Query(default=None),
+    has_observation: bool | None = Query(default=None),
     limit: int = Query(default=30, ge=1, le=100),
 ):
-    """Read-only review queue endpoint for the third integration slice."""
+    """Evaluation record list endpoint — returns scored assets with observation match status."""
     return MetaAndromedaService.list_review_queue(
         db,
         status=status_filter,
-        reviewed=reviewed,
+        has_observation=has_observation,
         limit=limit,
     )
 

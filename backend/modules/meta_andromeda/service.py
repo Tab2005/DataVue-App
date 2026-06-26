@@ -103,10 +103,10 @@ class MetaAndromedaService:
     def list_review_queue(
         db,
         status: str | None = None,
-        reviewed: bool | None = None,
+        has_observation: bool | None = None,
         limit: int = 30,
     ) -> dict:
-        return repository.list_review_queue(db, status=status, reviewed=reviewed, limit=limit)
+        return repository.list_review_queue(db, status=status, has_observation=has_observation, limit=limit)
 
     @staticmethod
     def get_review_queue_detail(db, score_event_id: str) -> dict:

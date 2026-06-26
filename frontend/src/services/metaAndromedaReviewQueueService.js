@@ -1,9 +1,9 @@
 import apiClient from './apiClient';
 
-export const fetchMetaAndromedaReviewQueue = async ({ status, reviewed, limit = 30 } = {}) => {
+export const fetchMetaAndromedaReviewQueue = async ({ status, has_observation, limit = 50 } = {}) => {
     const params = new URLSearchParams();
     if (status) params.set('status', status);
-    if (reviewed !== undefined && reviewed !== null) params.set('reviewed', String(reviewed));
+    if (has_observation !== undefined && has_observation !== null) params.set('has_observation', String(has_observation));
     params.set('limit', String(limit));
 
     const query = params.toString();
@@ -14,17 +14,7 @@ export const fetchMetaAndromedaReviewDetail = async (scoreEventId) => {
     return apiClient.get(`/api/meta-andromeda/review-queue/${scoreEventId}`);
 };
 
-export const fetchMetaAndromedaReviewFeedback = async (scoreEventId) => {
-    return apiClient.get(`/api/meta-andromeda/scores/${scoreEventId}/feedback`);
-};
-
-export const submitMetaAndromedaReviewFeedback = async (scoreEventId, payload) => {
-    return apiClient.post(`/api/meta-andromeda/scores/${scoreEventId}/feedback`, payload);
-};
-
 export default {
     fetchMetaAndromedaReviewQueue,
     fetchMetaAndromedaReviewDetail,
-    fetchMetaAndromedaReviewFeedback,
-    submitMetaAndromedaReviewFeedback,
 };
