@@ -627,10 +627,12 @@ class MetaAndromedaRepository:
             "created_at": report.created_at.isoformat() if report.created_at else None,
         }
 
-    def list_review_queue(self, db: Session, status=None, has_observation=None, limit=50, offset=0):
+    def list_review_queue(self, db: Session, status=None, has_observation=None, roas_band=None, limit=25, page=1):
         query = db.query(MetaAndromedaScoreEvent)
         if status:
             query = query.filter(MetaAndromedaScoreEvent.status == status)
+        if roas_band:
+            query = query.filter(MetaAndromedaScoreEvent.roas_band == roas_band)
         if has_observation is True:
             cal_exists = (
                 db.query(MetaAndromedaCalibrationItem.score_event_id)
@@ -648,8 +650,10 @@ class MetaAndromedaRepository:
             )
             query = query.filter(~cal_exists)
         total = query.count()
+        page = max(1, page)
+        offset = (page - 1) * limit
+        total_pages = max(1, math.ceil(total / limit))
         rows = query.order_by(MetaAndromedaScoreEvent.created_at.desc()).offset(offset).limit(limit).all()
-        # Batch-check which score events have calibration/observation data
         cal_ids: set[str] = set()
         if rows:
             matched = (
@@ -667,9 +671,11 @@ class MetaAndromedaRepository:
             "items": items,
             "summary": {
                 "total": total,
-                "offset": offset,
-                "has_more": offset + limit < total,
+                "page": page,
+                "total_pages": total_pages,
+                "page_size": limit,
                 "status_filter": status,
+                "roas_band_filter": roas_band,
                 "has_observation_filter": has_observation,
             },
         }

@@ -1,11 +1,12 @@
 import apiClient from './apiClient';
 
-export const fetchMetaAndromedaReviewQueue = async ({ status, has_observation, limit = 50, offset = 0 } = {}) => {
+export const fetchMetaAndromedaReviewQueue = async ({ status, has_observation, roas_band, page = 1, page_size = 25 } = {}) => {
     const params = new URLSearchParams();
     if (status) params.set('status', status);
     if (has_observation !== undefined && has_observation !== null) params.set('has_observation', String(has_observation));
-    params.set('limit', String(limit));
-    params.set('offset', String(offset));
+    if (roas_band) params.set('roas_band', roas_band);
+    params.set('page', String(page));
+    params.set('page_size', String(page_size));
 
     const query = params.toString();
     return apiClient.get(`/api/meta-andromeda/review-queue${query ? `?${query}` : ''}`);

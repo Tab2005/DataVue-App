@@ -153,9 +153,11 @@ class ReviewQueueItemResponse(BaseModel):
 
 class ReviewQueueListSummaryResponse(BaseModel):
     total: int
-    offset: int = 0
-    has_more: bool = False
+    page: int = 1
+    total_pages: int = 1
+    page_size: int = 25
     status_filter: str | None
+    roas_band_filter: str | None = None
     reviewed_filter: bool | None = None
     has_observation_filter: bool | None = None
 
