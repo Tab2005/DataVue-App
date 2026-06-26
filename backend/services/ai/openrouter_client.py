@@ -176,9 +176,9 @@ class OpenRouterClient:
                 model=model_to_use,
                 messages=messages,
                 temperature=temperature,
-                max_tokens=max_tokens or 4096
+                max_tokens=max_tokens or 8192
             )
-            
+
             if not response.choices:
                 logger.warning("[OpenRouterClient] API response returned no choices: %s", response)
                 return ""
@@ -213,7 +213,7 @@ class OpenRouterClient:
                 model=model_to_use,
                 messages=messages,
                 temperature=temperature,
-                max_tokens=max_tokens or 4096,
+                max_tokens=max_tokens or 8192,
                 stream=True
             )
             for chunk in response:

@@ -61,8 +61,8 @@ def get_engine():
     if url and (url.startswith("postgresql://") or url.startswith("postgres://")):
         if url.startswith("postgres://"):
             url = url.replace("postgres://", "postgresql://", 1)
-        pool_size = _env_int("DB_POOL_SIZE", 10, minimum=1)
-        max_overflow = _env_int("DB_MAX_OVERFLOW", 20, minimum=0)
+        pool_size = _env_int("DB_POOL_SIZE", 3, minimum=1)
+        max_overflow = _env_int("DB_MAX_OVERFLOW", 5, minimum=0)
         pool_timeout = _env_int("DB_POOL_TIMEOUT", 30, minimum=1)
         pool_recycle = _env_int("DB_POOL_RECYCLE", 1800, minimum=30)
         pool_pre_ping = _env_bool("DB_POOL_PRE_PING", True)
