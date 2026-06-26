@@ -498,12 +498,15 @@ const MetaAndromedaMonitoring = () => {
             </div>
 
             <div style={{
-                ...panelStyle,
                 marginBottom: '16px',
                 display: 'grid',
                 gridTemplateColumns: isMobile ? '1fr' : '1.1fr 0.8fr auto',
-                gap: '12px',
+                gap: '10px',
                 alignItems: 'center',
+                padding: '14px 18px',
+                background: 'var(--bg-secondary)',
+                border: '1px solid var(--glass-border)',
+                borderRadius: '14px',
             }}>
                 <input
                     type="text"
@@ -538,9 +541,33 @@ const MetaAndromedaMonitoring = () => {
                 <div style={panelStyle}>{t('Loading monitoring summary...', '正在載入監控資料...')}</div>
             ) : (
                 <>
+                    {/* Alert Banner */}
+                    {(summary?.active_alerts || []).length > 0 && (
+                        <div style={{
+                            marginBottom: '14px',
+                            padding: '12px 16px',
+                            borderRadius: '12px',
+                            background: 'rgba(239, 68, 68, 0.08)',
+                            border: '1px solid rgba(239, 68, 68, 0.3)',
+                            display: 'flex',
+                            alignItems: 'center',
+                            gap: '12px',
+                            flexWrap: 'wrap',
+                        }}>
+                            <div style={{ width: '8px', height: '8px', borderRadius: '50%', background: '#ef4444', boxShadow: '0 0 8px #ef4444', flexShrink: 0, animation: 'pulse 1.5s infinite' }} />
+                            <span style={{ fontWeight: 700, color: '#f87171', fontSize: '0.88rem' }}>
+                                {summary.active_alerts.length} {t('active alert(s)', '條告警中')}
+                            </span>
+                            <span style={{ color: 'var(--text-secondary)', fontSize: '0.82rem' }}>
+                                {summary.active_alerts.slice(0, 2).map((a) => a.message || a.code || '').filter(Boolean).join(' · ')}
+                                {summary.active_alerts.length > 2 && ` ··· +${summary.active_alerts.length - 2}`}
+                            </span>
+                        </div>
+                    )}
+
                     <div style={{
                         display: 'grid',
-                        gridTemplateColumns: isMobile ? '1fr' : 'repeat(2, 1fr)',
+                        gridTemplateColumns: isMobile ? '1fr' : 'repeat(3, 1fr)',
                         gap: '16px',
                         marginBottom: '16px'
                     }}>
@@ -562,11 +589,8 @@ const MetaAndromedaMonitoring = () => {
 
                         <section style={panelStyle}>
                             <h2 style={sectionTitleStyle}>{t('Observation Pipeline', 'Observation 資料管線')}</h2>
-                            <div style={{ marginBottom: '12px', color: 'var(--text-secondary)', fontSize: '0.85rem', lineHeight: 1.6 }}>
-                                {t(
-                                    'These metrics only track the FB Ads observation import line. Manual Score Lab uploads are not counted here unless a drift report explicitly matches them.',
-                                    '這些指標僅統計 FB Ads observation 匯入這條線；Score Lab 手動上傳素材不會算在這裡，除非某次 drift 報告有明確配對到它們。'
-                                )}
+                            <div style={{ marginBottom: '12px', color: 'var(--text-secondary)', fontSize: '0.78rem', lineHeight: 1.5 }}>
+                                {t('FB Ads import line only. Score Lab uploads excluded unless matched by a drift report.', '僅統計 FB Ads 匯入線，Score Lab 上傳不計入。')}
                             </div>
                             <div style={metricGridStyle}>
                                 <Metric
@@ -598,10 +622,10 @@ const MetaAndromedaMonitoring = () => {
                                     value={summary?.observation_pipeline?.latest_calibration_synced_total}
                                 />
                             </div>
-                            <div style={{ marginTop: '12px', color: 'var(--text-secondary)', fontSize: '0.85rem', lineHeight: 1.6 }}>
-                                {t('Calibration status', '校準狀態')}: {getTranslation(summary?.observation_pipeline?.latest_calibration_status)}
+                            <div style={{ marginTop: '10px', color: 'var(--text-secondary)', fontSize: '0.78rem', lineHeight: 1.5 }}>
+                                {t('Calibration', '校準狀態')}: {getTranslation(summary?.observation_pipeline?.latest_calibration_status)}
                                 {summary?.observation_pipeline?.latest_calibration_dataset_id
-                                    ? ` · Dataset: ${summary.observation_pipeline.latest_calibration_dataset_id}`
+                                    ? ` · ${summary.observation_pipeline.latest_calibration_dataset_id}`
                                     : ''}
                             </div>
                         </section>
@@ -682,15 +706,24 @@ const MetaAndromedaMonitoring = () => {
 
                     <div style={{
                         display: 'grid',
-                        gridTemplateColumns: isMobile ? '1fr' : 'repeat(2, 1fr)',
+                        gridTemplateColumns: isMobile ? '1fr' : 'repeat(3, 1fr)',
                         gap: '16px'
                     }}>
                         <section style={panelStyle}>
                             <h2 style={sectionTitleStyle}>{t('Worker Host', 'Worker 主機')}</h2>
-                            <div style={{ display: 'grid', gap: '12px', marginBottom: '16px' }}>
-                                <Metric label={t('active_host', '目前主機')} value={summary?.worker_host?.active_host} />
-                                <Metric label={t('host_strategy', '主機策略')} value={getTranslation(summary?.worker_host?.host_strategy)} />
-                                <Metric label={t('dead_letter_count', '異常任務數量')} value={summary?.worker_host?.dead_letter_count} />
+                            <div style={{ display: 'flex', gap: '12px', marginBottom: '14px', flexWrap: 'wrap' }}>
+                                <div style={{ flex: '1 1 auto', minWidth: 0, padding: '8px 12px', borderRadius: '8px', background: 'rgba(255,255,255,0.04)', border: '1px solid var(--glass-border)' }}>
+                                    <div style={{ fontSize: '0.72rem', color: 'var(--text-secondary)', marginBottom: '2px' }}>{t('Host', '主機')}</div>
+                                    <div style={{ fontWeight: 700, color: 'var(--text-primary)', fontSize: '0.85rem', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{summary?.worker_host?.active_host || '--'}</div>
+                                </div>
+                                <div style={{ flex: '0 0 auto', padding: '8px 12px', borderRadius: '8px', background: 'rgba(255,255,255,0.04)', border: '1px solid var(--glass-border)' }}>
+                                    <div style={{ fontSize: '0.72rem', color: 'var(--text-secondary)', marginBottom: '2px' }}>{t('Strategy', '策略')}</div>
+                                    <div style={{ fontWeight: 700, color: 'var(--text-primary)', fontSize: '0.85rem' }}>{getTranslation(summary?.worker_host?.host_strategy) || '--'}</div>
+                                </div>
+                                <div style={{ flex: '0 0 auto', padding: '8px 12px', borderRadius: '8px', background: (summary?.worker_host?.dead_letter_count || 0) > 0 ? 'rgba(239,68,68,0.08)' : 'rgba(255,255,255,0.04)', border: `1px solid ${(summary?.worker_host?.dead_letter_count || 0) > 0 ? 'rgba(239,68,68,0.3)' : 'var(--glass-border)'}` }}>
+                                    <div style={{ fontSize: '0.72rem', color: 'var(--text-secondary)', marginBottom: '2px' }}>{t('Dead Letters', '異常任務')}</div>
+                                    <div style={{ fontWeight: 700, color: (summary?.worker_host?.dead_letter_count || 0) > 0 ? '#f87171' : 'var(--text-primary)', fontSize: '0.85rem' }}>{summary?.worker_host?.dead_letter_count ?? '--'}</div>
+                                </div>
                             </div>
 
                             <div style={{ marginBottom: '16px', display: 'flex', flexDirection: 'column', gap: '10px' }}>
@@ -835,7 +868,7 @@ const MetaAndromedaMonitoring = () => {
                             </div>
                         </section>
 
-                        <section style={panelStyle}>
+                        <section style={{ ...panelStyle, gridColumn: isMobile ? undefined : 'span 2' }}>
                             <h2 style={sectionTitleStyle}>{t('Event Timeline', '事件時間軸')}</h2>
                             {!selectedScoreEventId ? (
                                 <div style={emptyStateStyle}>{t('Select a worker event or dead letter to inspect the full timeline.', '請先選擇一筆 worker event 或異常任務以查看完整時間軸。')}</div>
@@ -894,17 +927,40 @@ const MetaAndromedaMonitoring = () => {
 
                         <section style={panelStyle}>
                             <h2 style={sectionTitleStyle}>{t('Prediction Distribution', '預測分布')}</h2>
-                            <div style={{ display: 'grid', gap: '10px' }}>
-                                {Object.entries(summary?.prediction_distribution || {}).map(([band, count]) => (
-                                    <div key={band} style={rowStyle}>
-                                        <span style={{ color: 'var(--text-secondary)' }}>{getTranslation(band)}</span>
-                                        <strong style={{ color: 'var(--text-primary)' }}>{count}</strong>
+                            {(() => {
+                                const dist = summary?.prediction_distribution || {};
+                                const total = Object.values(dist).reduce((s, v) => s + (v || 0), 0);
+                                const bandColors = { high: '#10b981', mid: '#f59e0b', low: '#ef4444' };
+                                const bandOrder = ['high', 'mid', 'low'];
+                                return (
+                                    <div style={{ display: 'grid', gap: '12px' }}>
+                                        {bandOrder.map((band) => {
+                                            const count = dist[band] ?? 0;
+                                            const pct = total > 0 ? (count / total) * 100 : 0;
+                                            const color = bandColors[band] || 'var(--accent-primary)';
+                                            return (
+                                                <div key={band}>
+                                                    <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '5px' }}>
+                                                        <span style={{ color: 'var(--text-secondary)', fontSize: '0.85rem' }}>{getTranslation(band)}</span>
+                                                        <span style={{ fontWeight: 700, color: 'var(--text-primary)', fontSize: '0.85rem' }}>{count} <span style={{ fontWeight: 400, color: 'var(--text-secondary)', fontSize: '0.78rem' }}>({pct.toFixed(0)}%)</span></span>
+                                                    </div>
+                                                    <div style={{ height: '6px', borderRadius: '3px', background: 'rgba(255,255,255,0.08)' }}>
+                                                        <div style={{ height: '100%', borderRadius: '3px', background: color, width: `${pct}%`, transition: 'width 0.4s ease' }} />
+                                                    </div>
+                                                </div>
+                                            );
+                                        })}
+                                        {total > 0 && (
+                                            <div style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', textAlign: 'right' }}>
+                                                {t('Total', '合計')} {total} {t('predictions', '筆預測')}
+                                            </div>
+                                        )}
                                     </div>
-                                ))}
-                            </div>
+                                );
+                            })()}
                         </section>
 
-                        <section style={panelStyle}>
+                        <section style={{ ...panelStyle, gridColumn: isMobile ? undefined : 'span 2' }}>
                             <h2 style={sectionTitleStyle}>{t('Latest Drift Reports', '最近預估偏差報告')}</h2>
                             <div 
                                 className="queue-scroll-box"
@@ -1068,22 +1124,15 @@ const MetaAndromedaMonitoring = () => {
                                     );
                                 })}
                             </div>
-                            <div style={{ display: 'grid', gap: '8px' }}>
-                                {(summary?.notes || []).map((note, index) => (
-                                    <div key={index} style={{ color: 'var(--text-secondary)', lineHeight: 1.6 }}>
-                                        {note}
-                                    </div>
-                                ))}
-                            </div>
                         </section>
 
-                        <section style={panelStyle}>
+                        <section style={{ ...panelStyle, gridColumn: isMobile ? undefined : 'span 2' }}>
                             <h2 style={sectionTitleStyle}>{t('Scoring Profiles', 'Scoring Profiles 管理')}</h2>
-                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
+                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px', gap: '12px' }}>
                                 <div style={{ color: 'var(--text-secondary)', fontSize: '0.85rem' }}>
-                                    {t('Manage prompt profiles used by the AI scoring model. Calibration auto-generates new profiles after syncing ≥10 mismatch items.', '管理 AI 評分模型使用的 Prompt Profile。校準資料集同步後（≥10 筆誤判），系統自動生成新 profile 待審核。')}
+                                    {t('AI scoring prompt profiles. Calibration auto-generates new profiles when ≥10 mismatch items are synced — review and promote here.', 'AI 評分使用的 Prompt Profile 管理。校準後（≥10 筆誤判）自動生成待審核 profile，在此審核並套用。')}
                                 </div>
-                                <button type="button" onClick={loadProfiles} style={actionButtonStyle}>
+                                <button type="button" onClick={loadProfiles} style={{ ...actionButtonStyle, flexShrink: 0 }}>
                                     {t('Refresh', '重整')}
                                 </button>
                             </div>
@@ -1148,12 +1197,12 @@ const MetaAndromedaMonitoring = () => {
 
                             <div
                                 className="queue-scroll-box"
-                                style={{ display: 'grid', gap: '10px', maxHeight: '320px', overflowY: 'auto', paddingRight: '6px' }}
+                                style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : 'repeat(2, 1fr)', gap: '10px', maxHeight: '320px', overflowY: 'auto', paddingRight: '6px' }}
                             >
                                 {loadingProfiles ? (
-                                    <div style={emptyStateStyle}>{t('Loading profiles...', '載入 Profiles 中...')}</div>
+                                    <div style={{ ...emptyStateStyle, gridColumn: '1 / -1' }}>{t('Loading profiles...', '載入 Profiles 中...')}</div>
                                 ) : (scoringProfiles?.profiles || []).length === 0 ? (
-                                    <div style={emptyStateStyle}>{t('No scoring profiles found.', '尚無 Scoring Profile 記錄。')}</div>
+                                    <div style={{ ...emptyStateStyle, gridColumn: '1 / -1' }}>{t('No scoring profiles found.', '尚無 Scoring Profile 記錄。')}</div>
                                 ) : (scoringProfiles?.profiles || []).map((p) => (
                                     <div key={p.profile_name} style={{
                                         ...detailCardStyle,
