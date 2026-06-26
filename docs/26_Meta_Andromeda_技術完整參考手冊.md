@@ -597,8 +597,8 @@ GET /evaluations/import/facebook-ads/{observed_creative_id}/status
 | 頁面檔案 | 功能說明 |
 |---|---|
 | `MetaAndromeda.jsx` | 模組總覽頁，顯示整合狀態、功能能力列表與說明備註 |
-| `MetaAndromedaScoreLab.jsx` | 評分工作台，上傳素材、設定參數、提交評分、查看結果 |
-| `MetaAndromedaReviewQueue.jsx` | 評估紀錄，列出所有已評估素材，支援 status/observation 篩選，右側詳情顯示預測 vs 實際成效對照（需有 CalibrationItem 匹配） |
+| `MetaAndromedaScoreLab.jsx` | 評分工作台。功能：拖放上傳（含即時縮圖預覽）、下拉選單（objective / placement / market / request_mode）、送出評分、完整結果面板（評分圓環、ROAS Band、驅動因素、診斷細項、風險標籤）、Session 評分歷史（最多 10 筆，不跨重整持久化）、評分完成後「前往評估紀錄」快捷連結 |
+| `MetaAndromedaReviewQueue.jsx` | 評估紀錄，列出所有已評估素材，支援 status / roas_band / has_observation 篩選，每頁 25 筆分頁導航，右側詳情顯示預測 vs 實際成效對照（成效分析匯入的素材直接從 ObservedCreative 顯示，不需 CalibrationItem 同步） |
 | `MetaAndromedaMonitoring.jsx` | 監控總覽，顯示評分任務狀態統計與 Worker 時間軸 |
 | `MetaAndromedaRelease.jsx` | 版本控台，管理模型版本的核准/拒絕/回滾 |
 

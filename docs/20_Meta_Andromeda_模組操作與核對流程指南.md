@@ -20,34 +20,73 @@
    * 點選素材後，右側顯示評估明細（評分、ROAS 預測、診斷細項、廣告文案），以及「等待實際成效匹配」提示卡（尚無實際數據時）。
    * **核對項**：批次匯入實際廣告數據後，該素材的「實際成效對照」卡片會出現，顯示預測 ROAS band vs 實際 ROAS band 與誤差值。
 
-### 附錄：評分工作台欄位說明與填寫建議
+### 附錄 A：評分工作台介面說明
 
-評分工作台的核心是上傳**圖片或影片素材**，但表單中的文案與情境欄位對評分結果有直接影響，非裝飾性欄位。
+#### A.1 頁面佈局
 
-#### 欄位與圖片評分的關係
+評分工作台分為三個區域：
+
+| 區域 | 位置 | 說明 |
+|---|---|---|
+| **上傳與送出** | 左側面板 | 素材上傳拖放區 + 評分參數設定 |
+| **評分結果** | 右側面板 | 完整評分結果，含評分圓環、驅動因素、診斷細項 |
+| **Session 歷史** | 頁面底部 | 本次瀏覽期間所有評分記錄（最多 10 筆） |
+
+#### A.2 素材上傳
+
+- 支援拖放（drag & drop）或點擊選取，格式：`PNG`、`JPG`、`WEBP`、`MP4`、`MOV`
+- 選取後**即時顯示縮圖或影片預覽**，上傳成功顯示綠色「✓ 上傳成功」
+- 上傳失敗時出現紅色重試按鈕，不需重新整理頁面
+- 點「移除」可清除已選素材並重新選擇
+
+#### A.3 評分參數（下拉選單）
+
+以下欄位均為下拉選單，防止輸入無效值：
+
+| 欄位 | 合法選項 | 對評分的影響 |
+|---|---|---|
+| **評分模式 (Request Mode)** | `auto`（自動）、`diagnostic_plus_roas`（診斷+ROAS）、`diagnostic_only`（僅診斷） | 決定評分引擎輸出內容 |
+| **行銷目標 (Objective)** | `purchase`、`lead`、`traffic`、`engagement`、`awareness`、`reach`、`video_views` | 調整評分嚴格度；`purchase` 對 CTA 清晰度要求最高。**重要**：`traffic` / `engagement` / `awareness` 等目標會切換至 CTR/CPC 指標路由（而非 ROAS） |
+| **版位 (Placement)** | `all`、`feed`、`reels`、`stories`、`search`、`instream` | 調整構圖評分基準（直式 Reels vs 橫式 Feed） |
+| **目標市場 (Market)** | `TW`、`US`、`JP`、`HK`、`SG`、`MY`、`TH`、`ID`、`VN`、`PH` | 目前主要作為 metadata 記錄；未來擴充市場特定評分標準 |
+
+#### A.4 廣告文案欄位（選填，強烈建議填寫）
+
+文案欄位（Headline / CTA / Primary Text）**不是對圖片內文字的重複輸入**，而是讓 AI 評估圖片與廣告文案的**一致性**：
 
 | 欄位 | 對評分的影響 | 重要程度 |
 |---|---|---|
-| **廣告標題 (Headline)** | AI 評估圖片與標題的語意一致性（`relevance` 維度）；啟發式：有值 +8 分 | ★★★ 重要 |
-| **廣告主要文字 (Primary Text)** | 影響 `copywriting` 維度評分；啟發式：有值 +8 分 | ★★★ 重要 |
-| **行動呼籲 (CTA)** | 評估圖片內視覺 CTA 與文字 CTA 的一致性（`cta_clarity` 維度）；啟發式：有值 +10 分 | ★★★ 重要 |
-| **行銷目標 (Objective)** | 調整評分嚴格度（purchase 目標對 CTA 清晰度要求最高）；啟發式：purchase +3 分 | ★★ 有效 |
-| **版位系列 (Placement Family)** | 調整構圖評分基準（直式 Reels 與橫式 Feed 標準不同）；啟發式：適合版位 +4 分 | ★★ 有效 |
-| **目標市場 (Market)** | 目前 AI 模型利用率偏低，主要作為 metadata 記錄 | ★ 低 |
+| **廣告標題 (Headline)** | AI 評估圖片與標題語意一致性（`relevance` 維度）；啟發式：有值 +8 分 | ★★★ 重要 |
+| **行動呼籲 (CTA)** | 評估視覺 CTA 與文字 CTA 一致性（`cta_clarity` 維度）；啟發式：有值 +10 分 | ★★★ 重要 |
+| **主要文字 (Primary Text)** | 影響 `copywriting` 維度；啟發式：有值 +8 分 | ★★★ 重要 |
 
-#### 核心概念
+若文案欄位留空，AI 無法評估 `copywriting` 與 `relevance` 兩個維度，等同盲評。
 
-文案欄位（Headline / Primary Text / CTA）**不是對圖片內文字的重複輸入**，而是讓 AI 能夠評估圖片與廣告文案的**一致性**。例如：
-- 圖片主色為冷色系，但標題強調「暖心限定」→ 相關性（relevance）分數低
-- 圖片有明顯購買按鈕，CTA 填「了解更多」→ CTA 一致性分數低
+#### A.5 評分結果面板
 
-若文案欄位留空，AI 無法評估這些維度，整體評分準確性會下降，`copywriting` 和 `relevance` 兩個維度等同盲評。
+評分完成後右側顯示：
 
-#### AI 評分 vs 啟發式評分的欄位利用差異
+- **評分圓環**：0–100 分，綠色（≥75）/ 橙色（≥50）/ 紅色（<50）
+- **ROAS Band 徽章**：`HIGH`（綠）/ `MID`（橙）/ `LOW`（紅）
+- **評估核心**：🤖 OpenRouter AI 模型名稱，或 ⚙️ 啟發式規則引擎（含 fallback 原因）
+- **→ 前往評估紀錄**：評分完成後出現快捷連結，可直接跳轉至評估紀錄頁查看歷史
+- **AI 評分摘要**：自然語言解釋評分理由
+- **風險標籤**：紅色徽章列表（如 `hook_not_sharp_enough`、`text_density_watch`）
+- **正向因素 / 風險因素**：左右並排列表
+- **診斷細項**：各維度的具體診斷文字
 
-**AI 評分**（`scoring_mode: ai`）：Prompt 中包含所有欄位值，模型綜合圖片視覺與文案語意評分。`diagnostic_breakdown` 的四個維度（`visual_appeal` / `copywriting` / `cta_clarity` / `relevance`）均被評估。
+#### A.6 Session 歷史記錄
 
-**啟發式評分**（`scoring_mode: heuristic`）：僅檢查欄位是否有值（純計分制，不分析內容），與圖片本身無關。基礎分 56（圖片）/ 52（影片），有 Headline +8、Primary Text +8、CTA +10、purchase +3、適合版位 +4，上限 88 分。
+- 本次 Session（不跨頁面重整）最多保留 10 筆評分記錄
+- 顯示 Score Event ID、objective、placement、market，以及評分和 ROAS Band 徽章
+- 點選任一歷史記錄，可將其評分結果載回右側面板查看
+- 「清除記錄」按鈕可清空本次 Session 的歷史
+
+#### A.7 AI 評分 vs 啟發式評分的欄位利用差異
+
+**AI 評分**（`scoring_mode: ai`）：Prompt 包含所有欄位值，模型綜合圖片視覺與文案語意。`diagnostic_breakdown` 的四個維度（`visual_appeal` / `copywriting` / `cta_clarity` / `relevance`）均被評估。
+
+**啟發式評分**（`scoring_mode: heuristic`）：僅檢查欄位是否有值（純計分制），基礎分 56（圖片）/ 52（影片），有 Headline +8、Primary Text +8、CTA +10、purchase +3、適合版位 +4，上限 88 分。
 
 ---
 
