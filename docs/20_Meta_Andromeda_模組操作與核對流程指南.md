@@ -20,6 +20,35 @@
    * 點選該素材進入細節頁面，在底部填寫備註或提交 Reviewer 審查回饋。
    * **核對項**：回饋成功寫入，且時間軸 (Timeline) 正常更新。
 
+### 附錄：評分工作台欄位說明與填寫建議
+
+評分工作台的核心是上傳**圖片或影片素材**，但表單中的文案與情境欄位對評分結果有直接影響，非裝飾性欄位。
+
+#### 欄位與圖片評分的關係
+
+| 欄位 | 對評分的影響 | 重要程度 |
+|---|---|---|
+| **廣告標題 (Headline)** | AI 評估圖片與標題的語意一致性（`relevance` 維度）；啟發式：有值 +8 分 | ★★★ 重要 |
+| **廣告主要文字 (Primary Text)** | 影響 `copywriting` 維度評分；啟發式：有值 +8 分 | ★★★ 重要 |
+| **行動呼籲 (CTA)** | 評估圖片內視覺 CTA 與文字 CTA 的一致性（`cta_clarity` 維度）；啟發式：有值 +10 分 | ★★★ 重要 |
+| **行銷目標 (Objective)** | 調整評分嚴格度（purchase 目標對 CTA 清晰度要求最高）；啟發式：purchase +3 分 | ★★ 有效 |
+| **版位系列 (Placement Family)** | 調整構圖評分基準（直式 Reels 與橫式 Feed 標準不同）；啟發式：適合版位 +4 分 | ★★ 有效 |
+| **目標市場 (Market)** | 目前 AI 模型利用率偏低，主要作為 metadata 記錄 | ★ 低 |
+
+#### 核心概念
+
+文案欄位（Headline / Primary Text / CTA）**不是對圖片內文字的重複輸入**，而是讓 AI 能夠評估圖片與廣告文案的**一致性**。例如：
+- 圖片主色為冷色系，但標題強調「暖心限定」→ 相關性（relevance）分數低
+- 圖片有明顯購買按鈕，CTA 填「了解更多」→ CTA 一致性分數低
+
+若文案欄位留空，AI 無法評估這些維度，整體評分準確性會下降，`copywriting` 和 `relevance` 兩個維度等同盲評。
+
+#### AI 評分 vs 啟發式評分的欄位利用差異
+
+**AI 評分**（`scoring_mode: ai`）：Prompt 中包含所有欄位值，模型綜合圖片視覺與文案語意評分。`diagnostic_breakdown` 的四個維度（`visual_appeal` / `copywriting` / `cta_clarity` / `relevance`）均被評估。
+
+**啟發式評分**（`scoring_mode: heuristic`）：僅檢查欄位是否有值（純計分制，不分析內容），與圖片本身無關。基礎分 56（圖片）/ 52（影片），有 Headline +8、Primary Text +8、CTA +10、purchase +3、適合版位 +4，上限 88 分。
+
 ---
 
 ## 流程二：投放觀測與數據匯入流 (Post-launch Observation Flow)
