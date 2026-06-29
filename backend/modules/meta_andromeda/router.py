@@ -80,6 +80,7 @@ async def review_queue(
     has_observation: bool | None = Query(default=None),
     roas_band: str | None = Query(default=None),
     search: str | None = Query(default=None),
+    source: str | None = Query(default=None),
     page: int = Query(default=1, ge=1),
     page_size: int = Query(default=25, ge=1, le=100),
 ):
@@ -92,6 +93,7 @@ async def review_queue(
         limit=page_size,
         page=page,
         search=search or None,
+        source=source or None,
     )
 
 

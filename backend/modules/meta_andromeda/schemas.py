@@ -150,6 +150,7 @@ class ReviewQueueItemResponse(BaseModel):
     attempt_count: int
     has_observation: bool = False
     ad_name: str | None = None
+    source: str = "score_lab"
 
 
 class ReviewQueueListSummaryResponse(BaseModel):

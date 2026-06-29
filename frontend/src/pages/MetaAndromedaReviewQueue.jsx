@@ -22,6 +22,17 @@ const roasBandColor = {
     low: '#ef4444',
 };
 
+const sourceMeta = {
+    analytics: {
+        bg: 'rgba(59,130,246,0.15)',
+        color: '#60a5fa',
+    },
+    score_lab: {
+        bg: 'rgba(139,92,246,0.15)',
+        color: '#a78bfa',
+    },
+};
+
 const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000';
 
 const resolvePreviewUrl = (item) => {
@@ -90,6 +101,7 @@ const MetaAndromedaReviewQueue = () => {
     const [statusFilter, setStatusFilter] = useState('completed');
     const [observationFilter, setObservationFilter] = useState('all');
     const [roasBandFilter, setRoasBandFilter] = useState('all');
+    const [sourceFilter, setSourceFilter] = useState('all');
     const [page, setPage] = useState(1);
     const [totalPages, setTotalPages] = useState(1);
     const [totalCount, setTotalCount] = useState(0);
@@ -128,6 +140,7 @@ const MetaAndromedaReviewQueue = () => {
                 status: statusFilter === 'all' ? null : statusFilter,
                 has_observation,
                 roas_band: roasBandFilter === 'all' ? null : roasBandFilter,
+                source: sourceFilter === 'all' ? null : sourceFilter,
                 search: searchValue.trim() || null,
                 page: targetPage,
                 page_size: PAGE_SIZE,
@@ -154,7 +167,7 @@ const MetaAndromedaReviewQueue = () => {
     useEffect(() => {
         setPage(1);
         loadQueue(1);
-    }, [statusFilter, observationFilter, roasBandFilter]);
+    }, [statusFilter, observationFilter, roasBandFilter, sourceFilter]);
 
     const handleSearchChange = (e) => {
         const val = e.target.value;
@@ -228,6 +241,11 @@ const MetaAndromedaReviewQueue = () => {
 
                 {/* 篩選器列 */}
                 <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap', alignItems: 'center' }}>
+                    <select value={sourceFilter} onChange={(e) => setSourceFilter(e.target.value)} style={selectStyle}>
+                        <option value="all">{t('All Sources', '全部來源')}</option>
+                        <option value="analytics">{t('Analytics Import', '成效分析匯入')}</option>
+                        <option value="score_lab">{t('Score Lab', '評分工作台')}</option>
+                    </select>
                     <select value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)} style={selectStyle}>
                         <option value="all">{t('All Statuses', '全部狀態')}</option>
                         <option value="completed">{t('Completed', '已完成')}</option>
@@ -327,7 +345,18 @@ const MetaAndromedaReviewQueue = () => {
                                                     {item.ad_name}
                                                 </div>
                                             )}
-                                            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '0.72rem' }}>
+                                            <div style={{ display: 'flex', alignItems: 'center', gap: '6px', fontSize: '0.72rem', flexWrap: 'wrap' }}>
+                                                {(() => {
+                                                    const sm = sourceMeta[item.source] || sourceMeta.score_lab;
+                                                    const sourceLabel = item.source === 'analytics'
+                                                        ? t('Analytics', '成效分析')
+                                                        : t('Score Lab', '評分工作台');
+                                                    return (
+                                                        <span style={{ padding: '1px 7px', borderRadius: '999px', background: sm.bg, color: sm.color, fontWeight: 600 }}>
+                                                            {sourceLabel}
+                                                        </span>
+                                                    );
+                                                })()}
                                                 <span style={{ color: 'var(--text-secondary)' }}>
                                                     {t('Score', '評分')}: <strong style={{ color: 'var(--text-primary)' }}>{item.overall_score ?? '--'}</strong>
                                                 </span>

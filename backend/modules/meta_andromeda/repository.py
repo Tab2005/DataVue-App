@@ -522,6 +522,7 @@ class MetaAndromedaRepository:
 
     @staticmethod
     def _score_to_list_item(score: MetaAndromedaScoreEvent) -> dict:
+        rc = MetaAndromedaRepository._safe_json_dict(score.request_context)
         return {
             "score_event_id": score.id,
             "status": score.status,
@@ -550,6 +551,7 @@ class MetaAndromedaRepository:
             "feature_manifest_id": score.feature_manifest_id,
             "error_message": score.error_message,
             "attempt_count": score.attempt_count,
+            "source": "analytics" if rc.get("observed_creative_id") else "score_lab",
         }
 
     @staticmethod
@@ -627,13 +629,21 @@ class MetaAndromedaRepository:
             "created_at": report.created_at.isoformat() if report.created_at else None,
         }
 
-    def list_review_queue(self, db: Session, status=None, has_observation=None, roas_band=None, limit=25, page=1, search=None):
+    def list_review_queue(self, db: Session, status=None, has_observation=None, roas_band=None, limit=25, page=1, search=None, source=None):
         from sqlalchemy import or_
         query = db.query(MetaAndromedaScoreEvent)
         if status:
             query = query.filter(MetaAndromedaScoreEvent.status == status)
         if roas_band:
             query = query.filter(MetaAndromedaScoreEvent.roas_band == roas_band)
+        if source == "analytics":
+            query = query.filter(
+                MetaAndromedaScoreEvent.request_context["observed_creative_id"].isnot(None)
+            )
+        elif source == "score_lab":
+            query = query.filter(
+                MetaAndromedaScoreEvent.request_context["observed_creative_id"].is_(None)
+            )
         if has_observation is True:
             cal_exists = (
                 db.query(MetaAndromedaCalibrationItem.score_event_id)

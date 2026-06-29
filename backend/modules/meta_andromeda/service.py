@@ -119,8 +119,9 @@ class MetaAndromedaService:
         limit: int = 25,
         page: int = 1,
         search: str | None = None,
+        source: str | None = None,
     ) -> dict:
-        return repository.list_review_queue(db, status=status, has_observation=has_observation, roas_band=roas_band, limit=limit, page=page, search=search)
+        return repository.list_review_queue(db, status=status, has_observation=has_observation, roas_band=roas_band, limit=limit, page=page, search=search, source=source)
 
     @staticmethod
     def get_review_queue_detail(db, score_event_id: str) -> dict:
