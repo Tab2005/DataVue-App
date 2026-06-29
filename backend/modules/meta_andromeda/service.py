@@ -60,11 +60,11 @@ class MetaAndromedaService:
                 "key": "meta_andromeda",
                 "name": "Meta Andromeda",
                 "status": "active",
-                "phase": "phase_2_workflow_actions",
+                "phase": "phase_3_prompt_calibration",
             },
             "summary": {
                 "integration_status": "in_progress",
-                "current_slice": "queue_host_observability_enabled",
+                "current_slice": "db_backed_scoring_profiles_and_calibration_pipeline",
                 "next_slice": "external_queue_host_and_shared_storage_rollout",
             },
             "capabilities": [
@@ -88,13 +88,24 @@ class MetaAndromedaService:
                     "label": "Release Console",
                     "status": "registry_aware",
                 },
+                {
+                    "key": "calibration",
+                    "label": "Drift Calibration",
+                    "status": "active",
+                },
+                {
+                    "key": "scoring_profiles",
+                    "label": "Scoring Profiles",
+                    "status": "db_backed_promotable",
+                },
             ],
             "notes": [
                 "Meta Andromeda is being integrated into DataVue incrementally.",
                 "Overview, review queue, monitoring, and release paths are mounted in DataVue.",
-                "Feedback, release actions, filesystem storage, and queued scoring are active.",
-                "Scoring runtime now resolves provider/model metadata from the local Meta Andromeda registry.",
-                "Queue host dispatch, worker audit, and dead-letter observability are now persisted in DataVue DB.",
+                "Scoring runtime resolves provider and model metadata from the local Meta Andromeda registry.",
+                "Queue host dispatch, worker audit, and dead-letter observability are persisted in DataVue DB.",
+                "Scoring profiles are stored in DB and dynamically loaded at runtime; the promoted profile is used globally.",
+                "Calibration pipeline auto-generates corrected profiles when ≥10 mismatch items are synced.",
                 "Shared object storage and external worker deployment are still pending host alignment.",
             ],
         }
@@ -107,8 +118,9 @@ class MetaAndromedaService:
         roas_band: str | None = None,
         limit: int = 25,
         page: int = 1,
+        search: str | None = None,
     ) -> dict:
-        return repository.list_review_queue(db, status=status, has_observation=has_observation, roas_band=roas_band, limit=limit, page=page)
+        return repository.list_review_queue(db, status=status, has_observation=has_observation, roas_band=roas_band, limit=limit, page=page, search=search)
 
     @staticmethod
     def get_review_queue_detail(db, score_event_id: str) -> dict:

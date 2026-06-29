@@ -66,7 +66,12 @@ def _load_scoring_profile(profile_name: str) -> dict:
         from database.models.meta_andromeda import MetaAndromedaScoringProfile
         db = SessionLocal()
         try:
-            row = db.query(MetaAndromedaScoringProfile).filter(
+            # Prefer the globally promoted profile; fall back to named profile
+            row = (
+                db.query(MetaAndromedaScoringProfile)
+                .filter(MetaAndromedaScoringProfile.is_promoted == True)  # noqa: E712
+                .first()
+            ) or db.query(MetaAndromedaScoringProfile).filter(
                 MetaAndromedaScoringProfile.profile_name == profile_name
             ).first()
             if row is not None:

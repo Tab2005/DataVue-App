@@ -149,6 +149,7 @@ class ReviewQueueItemResponse(BaseModel):
     error_message: str | None
     attempt_count: int
     has_observation: bool = False
+    ad_name: str | None = None
 
 
 class ReviewQueueListSummaryResponse(BaseModel):

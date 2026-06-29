@@ -79,6 +79,7 @@ async def review_queue(
     status_filter: str | None = Query(default=None, alias="status"),
     has_observation: bool | None = Query(default=None),
     roas_band: str | None = Query(default=None),
+    search: str | None = Query(default=None),
     page: int = Query(default=1, ge=1),
     page_size: int = Query(default=25, ge=1, le=100),
 ):
@@ -90,6 +91,7 @@ async def review_queue(
         roas_band=roas_band,
         limit=page_size,
         page=page,
+        search=search or None,
     )
 
 

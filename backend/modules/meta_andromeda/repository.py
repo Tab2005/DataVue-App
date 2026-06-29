@@ -627,7 +627,8 @@ class MetaAndromedaRepository:
             "created_at": report.created_at.isoformat() if report.created_at else None,
         }
 
-    def list_review_queue(self, db: Session, status=None, has_observation=None, roas_band=None, limit=25, page=1):
+    def list_review_queue(self, db: Session, status=None, has_observation=None, roas_band=None, limit=25, page=1, search=None):
+        from sqlalchemy import or_
         query = db.query(MetaAndromedaScoreEvent)
         if status:
             query = query.filter(MetaAndromedaScoreEvent.status == status)
@@ -649,6 +650,25 @@ class MetaAndromedaRepository:
                 .exists()
             )
             query = query.filter(~cal_exists)
+        if search:
+            pat = f"%{search}%"
+            ad_name_match = (
+                db.query(MetaAndromedaCalibrationItem.score_event_id)
+                .join(MetaAndromedaObservedCreative, MetaAndromedaCalibrationItem.observed_creative_id == MetaAndromedaObservedCreative.id)
+                .filter(MetaAndromedaObservedCreative.ad_name.ilike(pat))
+                .filter(MetaAndromedaCalibrationItem.score_event_id == MetaAndromedaScoreEvent.id)
+                .correlate(MetaAndromedaScoreEvent)
+                .exists()
+            )
+            query = query.filter(
+                or_(
+                    MetaAndromedaScoreEvent.id.ilike(pat),
+                    MetaAndromedaScoreEvent.objective.ilike(pat),
+                    MetaAndromedaScoreEvent.placement_family.ilike(pat),
+                    MetaAndromedaScoreEvent.market.ilike(pat),
+                    ad_name_match,
+                )
+            )
         total = query.count()
         page = max(1, page)
         offset = (page - 1) * limit
@@ -662,10 +682,20 @@ class MetaAndromedaRepository:
                 .all()
             )
             cal_ids = {m.score_event_id for m in matched}
+        ad_name_map: dict[str, str] = {}
+        if cal_ids:
+            obs_rows = (
+                db.query(MetaAndromedaCalibrationItem.score_event_id, MetaAndromedaObservedCreative.ad_name)
+                .join(MetaAndromedaObservedCreative, MetaAndromedaCalibrationItem.observed_creative_id == MetaAndromedaObservedCreative.id)
+                .filter(MetaAndromedaCalibrationItem.score_event_id.in_(cal_ids))
+                .all()
+            )
+            ad_name_map = {row.score_event_id: row.ad_name for row in obs_rows if row.ad_name}
         items = []
         for row in rows:
             item = self._score_to_list_item(row)
             item["has_observation"] = row.id in cal_ids
+            item["ad_name"] = ad_name_map.get(row.id)
             items.append(item)
         return {
             "items": items,
@@ -2008,7 +2038,7 @@ class MetaAndromedaRepository:
         db.commit()
 
         from .runtime import invalidate_prompt_cache
-        invalidate_prompt_cache(profile_name)
+        invalidate_prompt_cache()  # clear all so next scoring re-queries the promoted profile
 
         return {
             "profile_name": target.profile_name,

@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { useOutletContext } from 'react-router-dom';
 import { useModuleAccess } from '../hooks/usePermission';
 
@@ -101,6 +101,7 @@ const MetaAndromedaReviewQueue = () => {
     const [loadingDetail, setLoadingDetail] = useState(false);
     const [error, setError] = useState(null);
     const [searchTerm, setSearchTerm] = useState('');
+    const searchTimerRef = useRef(null);
 
     const t = (en, zh) => (language === 'en' ? en : zh);
 
@@ -115,7 +116,7 @@ const MetaAndromedaReviewQueue = () => {
         }
     };
 
-    const loadQueue = async (targetPage = 1) => {
+    const loadQueue = async (targetPage = 1, searchValue = searchTerm) => {
         setLoadingQueue(true);
         setError(null);
         try {
@@ -127,6 +128,7 @@ const MetaAndromedaReviewQueue = () => {
                 status: statusFilter === 'all' ? null : statusFilter,
                 has_observation,
                 roas_band: roasBandFilter === 'all' ? null : roasBandFilter,
+                search: searchValue.trim() || null,
                 page: targetPage,
                 page_size: PAGE_SIZE,
             });
@@ -154,6 +156,16 @@ const MetaAndromedaReviewQueue = () => {
         loadQueue(1);
     }, [statusFilter, observationFilter, roasBandFilter]);
 
+    const handleSearchChange = (e) => {
+        const val = e.target.value;
+        setSearchTerm(val);
+        clearTimeout(searchTimerRef.current);
+        searchTimerRef.current = setTimeout(() => {
+            setPage(1);
+            loadQueue(1, val);
+        }, 400);
+    };
+
     const loadDetail = async (scoreEventId) => {
         if (!scoreEventId) { setDetail(null); return; }
         setLoadingDetail(true);
@@ -170,16 +182,6 @@ const MetaAndromedaReviewQueue = () => {
 
     useEffect(() => { loadDetail(selectedId); }, [selectedId]);
 
-    const filteredItems = queueItems.filter((item) => {
-        const term = searchTerm.toLowerCase().trim();
-        if (!term) return true;
-        return (
-            item.score_event_id.toLowerCase().includes(term) ||
-            item.objective.toLowerCase().includes(term) ||
-            item.placement_family.toLowerCase().includes(term) ||
-            item.market.toLowerCase().includes(term)
-        );
-    });
 
     if (accessLoading) {
         return (
@@ -263,22 +265,22 @@ const MetaAndromedaReviewQueue = () => {
 
                     <input
                         type="text"
-                        placeholder={t('Search by ID, objective, placement...', '搜尋 ID、目標、版位...')}
+                        placeholder={t('Search ID, ad name, objective, market...', '搜尋 ID、廣告名稱、目標、市場...')}
                         value={searchTerm}
-                        onChange={(e) => setSearchTerm(e.target.value)}
+                        onChange={handleSearchChange}
                         style={searchInputStyle}
                     />
 
                     {loadingQueue ? (
                         <div style={{ color: 'var(--text-secondary)', padding: '16px 0' }}>{t('Loading...', '載入中...')}</div>
-                    ) : filteredItems.length === 0 ? (
+                    ) : queueItems.length === 0 ? (
                         <div style={{ color: 'var(--text-secondary)', padding: '16px 0' }}>{t('No records found.', '目前沒有符合條件的紀錄。')}</div>
                     ) : (
                         <div
                             className="queue-scroll-box"
                             style={{ display: 'grid', gap: '8px', maxHeight: 'calc(100vh - 360px)', minHeight: '200px', overflowY: 'auto', paddingRight: '4px' }}
                         >
-                            {filteredItems.map((item) => {
+                            {queueItems.map((item) => {
                                 const previewUrl = resolvePreviewUrl(item);
                                 const isVideo = item.asset_type === 'video';
                                 return (
@@ -317,9 +319,14 @@ const MetaAndromedaReviewQueue = () => {
                                                     {getStatusLabel(item.status)}
                                                 </span>
                                             </div>
-                                            <div style={{ color: 'var(--text-secondary)', fontSize: '0.75rem', marginBottom: '5px', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                                            <div style={{ color: 'var(--text-secondary)', fontSize: '0.75rem', marginBottom: item.ad_name ? '2px' : '5px', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
                                                 {item.objective} · {item.placement_family} · {item.market}
                                             </div>
+                                            {item.ad_name && (
+                                                <div style={{ color: 'var(--text-primary)', fontSize: '0.73rem', marginBottom: '5px', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', opacity: 0.75 }}>
+                                                    {item.ad_name}
+                                                </div>
+                                            )}
                                             <div style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '0.72rem' }}>
                                                 <span style={{ color: 'var(--text-secondary)' }}>
                                                     {t('Score', '評分')}: <strong style={{ color: 'var(--text-primary)' }}>{item.overall_score ?? '--'}</strong>
