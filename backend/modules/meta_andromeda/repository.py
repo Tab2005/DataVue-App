@@ -632,7 +632,7 @@ class MetaAndromedaRepository:
         }
 
     def list_review_queue(self, db: Session, status=None, has_observation=None, roas_band=None, limit=25, page=1, search=None, source=None):
-        from sqlalchemy import or_
+        from sqlalchemy import or_  # noqa: PLC0415
         query = db.query(MetaAndromedaScoreEvent)
         if status:
             query = query.filter(MetaAndromedaScoreEvent.status == status)
@@ -653,7 +653,8 @@ class MetaAndromedaRepository:
                 .correlate(MetaAndromedaScoreEvent)
                 .exists()
             )
-            query = query.filter(cal_exists)
+            obs_linked = MetaAndromedaScoreEvent.request_context["observed_creative_id"].isnot(None)
+            query = query.filter(or_(cal_exists, obs_linked))
         elif has_observation is False:
             cal_exists = (
                 db.query(MetaAndromedaCalibrationItem.score_event_id)
@@ -661,7 +662,8 @@ class MetaAndromedaRepository:
                 .correlate(MetaAndromedaScoreEvent)
                 .exists()
             )
-            query = query.filter(~cal_exists)
+            obs_linked = MetaAndromedaScoreEvent.request_context["observed_creative_id"].isnot(None)
+            query = query.filter(~cal_exists, ~obs_linked)
         if search:
             pat = f"%{search}%"
             ad_name_match = (
@@ -702,11 +704,31 @@ class MetaAndromedaRepository:
                 .filter(MetaAndromedaCalibrationItem.score_event_id.in_(cal_ids))
                 .all()
             )
-            ad_name_map = {row.score_event_id: row.ad_name for row in obs_rows if row.ad_name}
+            ad_name_map = {r.score_event_id: r.ad_name for r in obs_rows if r.ad_name}
+        # 補上直連 ObservedCreative（request_context.observed_creative_id）的 ad_name
+        direct_linked: dict[str, str] = {}  # score_event_id -> observed_creative_id
+        for row in rows:
+            if row.id in cal_ids:
+                continue
+            rc = MetaAndromedaRepository._safe_json_dict(row.request_context)
+            obs_id = rc.get("observed_creative_id")
+            if obs_id:
+                direct_linked[row.id] = obs_id
+        if direct_linked:
+            direct_obs = (
+                db.query(MetaAndromedaObservedCreative.id, MetaAndromedaObservedCreative.ad_name)
+                .filter(MetaAndromedaObservedCreative.id.in_(direct_linked.values()))
+                .all()
+            )
+            obs_ad_name = {o.id: o.ad_name for o in direct_obs if o.ad_name}
+            for evt_id, obs_id in direct_linked.items():
+                if evt_id not in ad_name_map and obs_id in obs_ad_name:
+                    ad_name_map[evt_id] = obs_ad_name[obs_id]
         items = []
         for row in rows:
+            rc = MetaAndromedaRepository._safe_json_dict(row.request_context)
             item = self._score_to_list_item(row)
-            item["has_observation"] = row.id in cal_ids
+            item["has_observation"] = (row.id in cal_ids) or bool(rc.get("observed_creative_id"))
             item["ad_name"] = ad_name_map.get(row.id)
             items.append(item)
         return {
