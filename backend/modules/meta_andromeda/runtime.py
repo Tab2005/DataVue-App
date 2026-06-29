@@ -415,6 +415,15 @@ class OpenRouterScoringProvider(BaseScoringProvider):
                     settings.META_ANDROMEDA_SCORE_TIMEOUT_SECONDS,
                     user_content,
                 )
+                if not raw or not raw.strip():
+                    if attempt < max_retries - 1:
+                        sleep_time = backoff * (2 ** attempt)
+                        logger.warning(
+                            "[MetaAndromeda] OpenRouter returned empty response. Retrying in %.1fs... (Attempt %d/%d)",
+                            sleep_time, attempt + 1, max_retries,
+                        )
+                        await asyncio.sleep(sleep_time)
+                        continue
                 break
             except Exception as e:
                 is_rate_limit = False
@@ -424,7 +433,7 @@ class OpenRouterScoringProvider(BaseScoringProvider):
                     is_rate_limit = True
                 elif "429" in str(e) or "resource_exhausted" in str(e).lower() or "exhausted" in str(e).lower() or "rate_limit" in str(e).lower():
                     is_rate_limit = True
-                
+
                 if is_rate_limit and attempt < max_retries - 1:
                     sleep_time = backoff * (2 ** attempt)
                     logger.warning(
