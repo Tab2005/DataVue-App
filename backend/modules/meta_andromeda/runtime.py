@@ -602,6 +602,7 @@ class MetaAndromedaRuntimeAdapter:
             "explanations": None,
             "lineage": {},
             "request_context": {
+                "origin": "score_lab",
                 "headline": payload.get("headline"),
                 "primary_text": payload.get("primary_text"),
                 "cta": payload.get("cta"),

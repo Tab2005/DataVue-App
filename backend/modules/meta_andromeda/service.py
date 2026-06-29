@@ -684,9 +684,47 @@ class MetaAndromedaService:
         if not auto_score_payload:
             return None
 
+        from database.models.meta_andromeda import MetaAndromedaScoreEvent as _ScoreEvent
+        from sqlalchemy.orm.attributes import flag_modified
+
         db = SessionLocal()
         observed_creative_id = auto_score_payload.get("observed_creative_id") or "unknown_observation"
+        asset_uri = auto_score_payload.get("asset_uri")
         try:
+            # 優先 link 既有的 Score Lab 預評，避免重複建立並保留「投放前預測」的比對意義
+            existing = None
+            if asset_uri:
+                existing = (
+                    db.query(_ScoreEvent)
+                    .filter(
+                        _ScoreEvent.asset_uri == asset_uri,
+                        _ScoreEvent.status == "completed",
+                        _ScoreEvent.request_context["observed_creative_id"].is_(None),
+                    )
+                    .order_by(_ScoreEvent.completed_at.desc())
+                    .first()
+                )
+
+            if existing:
+                rc = dict(existing.request_context or {})
+                rc["observed_creative_id"] = observed_creative_id
+                existing.request_context = rc
+                flag_modified(existing, "request_context")
+                db.commit()
+                MetaAndromedaService._set_observation_import_status(
+                    observed_creative_id,
+                    score_event_id=existing.id,
+                    score_status="completed",
+                    runtime_job_id=existing.runtime_job_id,
+                )
+                logger.info(
+                    "[Observation Import] Linked existing Score Lab score event %s → observed_creative_id %s (skipped re-score)",
+                    existing.id,
+                    observed_creative_id,
+                )
+                return {"score_event_id": existing.id, "status": "completed"}
+
+            # 無既有預評，正常建立並排入評分
             payload = {
                 key: value
                 for key, value in auto_score_payload.items()
@@ -694,6 +732,7 @@ class MetaAndromedaService:
             }
             payload.setdefault("request_context", {})
             payload["request_context"]["observed_creative_id"] = observed_creative_id
+            payload["request_context"]["origin"] = "analytics"
             created_score = MetaAndromedaService.create_score_event(db, payload)
             score_event_id = created_score["score_event_id"]
             runtime_job_id = get_meta_andromeda_score_job_id(score_event_id)

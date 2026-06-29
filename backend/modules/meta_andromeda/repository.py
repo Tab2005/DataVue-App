@@ -551,7 +551,9 @@ class MetaAndromedaRepository:
             "feature_manifest_id": score.feature_manifest_id,
             "error_message": score.error_message,
             "attempt_count": score.attempt_count,
-            "source": "analytics" if rc.get("observed_creative_id") else "score_lab",
+            "source": rc.get("origin") if rc.get("origin") in ("score_lab", "analytics") else (
+                "analytics" if rc.get("observed_creative_id") else "score_lab"
+            ),
         }
 
     @staticmethod
