@@ -8,6 +8,7 @@ import {
     fetchMetaAndromedaReviewDetail,
     fetchMetaAndromedaReviewQueue,
 } from '../services/metaAndromedaReviewQueueService';
+import { getDiagnosticLabel } from '../utils/metaAndromedaLabels';
 
 const PAGE_SIZE = 25;
 
@@ -639,7 +640,7 @@ const MetaAndromedaReviewQueue = () => {
                                     <div style={{ display: 'grid', gap: '8px', marginTop: '8px' }}>
                                         {Object.entries(detail.diagnostic_breakdown).map(([key, value]) => (
                                             <div key={key} style={{ display: 'flex', gap: '10px' }}>
-                                                <span style={{ color: 'var(--text-secondary)', fontSize: '0.8rem', minWidth: '110px', flexShrink: 0 }}>{key}</span>
+                                                <span style={{ color: 'var(--text-secondary)', fontSize: '0.8rem', minWidth: '110px', flexShrink: 0 }}>{getDiagnosticLabel(key, language)}</span>
                                                 <span style={{ color: 'var(--text-primary)', fontSize: '0.82rem', lineHeight: 1.5 }}>{value}</span>
                                             </div>
                                         ))}

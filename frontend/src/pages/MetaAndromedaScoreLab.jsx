@@ -7,6 +7,7 @@ import {
     submitMetaAndromedaScore,
     uploadMetaAndromedaAsset,
 } from '../services/metaAndromedaWorkflowService';
+import { getDiagnosticLabel } from '../utils/metaAndromedaLabels';
 
 /* ── constants ── */
 const OBJECTIVES = [
@@ -533,7 +534,7 @@ const MetaAndromedaScoreLab = () => {
                                     <div style={{ display: 'grid', gap: '7px', marginTop: '8px' }}>
                                         {Object.entries(scoreResult.diagnostic_breakdown).map(([k, v]) => (
                                             <div key={k} style={{ display: 'flex', gap: '10px' }}>
-                                                <span style={{ color: 'var(--text-secondary)', fontSize: '0.78rem', minWidth: '100px', flexShrink: 0 }}>{k}</span>
+                                                <span style={{ color: 'var(--text-secondary)', fontSize: '0.78rem', minWidth: '100px', flexShrink: 0 }}>{getDiagnosticLabel(k, lang)}</span>
                                                 <span style={{ color: 'var(--text-primary)', fontSize: '0.82rem' }}>{v}</span>
                                             </div>
                                         ))}
