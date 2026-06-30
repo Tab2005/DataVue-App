@@ -33,10 +33,12 @@ const colorMap = {
 
 export default function PainPoints() {
   return (
-    <section id="solutions" className="relative py-32 px-6 overflow-hidden bg-gradient-to-b from-slate-950/50 via-slate-900/30 to-transparent">
-      {/* 裝飾線 */}
-      <div className="absolute top-0 left-1/4 w-[1px] h-full bg-gradient-to-b from-cyan-500/20 via-transparent to-transparent hidden lg:block" />
-      <div className="absolute top-0 right-1/4 w-[1px] h-full bg-gradient-to-b from-purple-500/20 via-transparent to-transparent hidden lg:block" />
+    <section id="solutions" className="relative py-32 px-6 bg-gradient-to-b from-slate-950/50 via-slate-900/30 to-transparent">
+      {/* 裝飾線 — 用獨立的 overflow-hidden wrapper 包住，避免破壞 sticky */}
+      <div className="absolute inset-0 overflow-hidden pointer-events-none">
+        <div className="absolute top-0 left-1/4 w-[1px] h-full bg-gradient-to-b from-cyan-500/20 via-transparent to-transparent hidden lg:block" />
+        <div className="absolute top-0 right-1/4 w-[1px] h-full bg-gradient-to-b from-purple-500/20 via-transparent to-transparent hidden lg:block" />
+      </div>
 
       <div className="max-w-7xl mx-auto relative z-10">
         <div className="grid grid-cols-1 lg:grid-cols-12 gap-16">

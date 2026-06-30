@@ -45,7 +45,7 @@ export default function MetaAndromeda() {
       <div className="absolute top-1/2 left-0 w-[400px] h-[400px] bg-cyan-500/5 rounded-full blur-[150px] -translate-y-1/2" />
 
       <div className="max-w-7xl mx-auto relative z-10">
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-16 items-center">
+        <div className="grid grid-cols-1 lg:grid-cols-12 gap-12 items-center">
 
           {/* 左側：文案 */}
           <motion.div
@@ -53,6 +53,7 @@ export default function MetaAndromeda() {
             whileInView={{ opacity: 1, x: 0 }}
             viewport={{ once: true }}
             transition={{ duration: 0.8 }}
+            className="lg:col-span-5"
           >
             {/* 標籤 */}
             <div className="flex items-center gap-3 mb-6">
@@ -121,6 +122,7 @@ export default function MetaAndromeda() {
             whileInView={{ opacity: 1, x: 0 }}
             viewport={{ once: true }}
             transition={{ duration: 0.8, delay: 0.2 }}
+            className="lg:col-span-7"
           >
             <div className="relative rounded-3xl border border-purple-500/20 bg-slate-950/80 backdrop-blur-xl overflow-hidden shadow-2xl shadow-purple-500/10">
               {/* 終端機頂部 Bar */}
