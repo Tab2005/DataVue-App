@@ -133,6 +133,10 @@ class MetaAndromedaService:
         return repository.delete_score_event(db, score_event_id)
 
     @staticmethod
+    def batch_delete_score_events(db, score_event_ids: list[str]) -> dict:
+        return repository.batch_delete_score_events(db, score_event_ids)
+
+    @staticmethod
     def get_monitoring_summary(db) -> dict:
         summary = repository.get_monitoring_summary(db)
         summary.setdefault("worker_host", {})

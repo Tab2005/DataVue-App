@@ -35,6 +35,8 @@ from .schemas import (
     MaintenanceCleanupResponse,
     MonitoringTimelineResponse,
     AiReadyResponse,
+    ScoreEventBatchDeleteRequest,
+    ScoreEventBatchDeleteResponse,
     ScoreEventDeleteResponse,
     ScoringProfileListResponse,
     ScoringProfilePromoteResponse,
@@ -115,6 +117,17 @@ async def review_queue_detail(
             status_code=status.HTTP_404_NOT_FOUND,
             detail=f"Review queue item not found: {score_event_id}",
         ) from exc
+
+
+@router.post("/review-queue/batch-delete", response_model=ScoreEventBatchDeleteResponse)
+async def batch_delete_review_queue_items(
+    body: ScoreEventBatchDeleteRequest,
+    _user=Depends(get_current_meta_andromeda_user),
+    _access: bool = Depends(require_meta_andromeda_operate),
+    db=Depends(get_db),
+):
+    """Batch delete score events by ID list (max 200 per request)."""
+    return MetaAndromedaService.batch_delete_score_events(db, body.score_event_ids)
 
 
 @router.delete("/review-queue/{score_event_id}", response_model=ScoreEventDeleteResponse)

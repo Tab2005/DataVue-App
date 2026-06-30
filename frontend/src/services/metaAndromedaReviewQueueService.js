@@ -23,8 +23,13 @@ export const deleteMetaAndromedaReviewItem = async (scoreEventId) => {
     return apiClient.delete(`/api/meta-andromeda/review-queue/${scoreEventId}`);
 };
 
+export const batchDeleteMetaAndromedaReviewItems = async (scoreEventIds) => {
+    return apiClient.post('/api/meta-andromeda/review-queue/batch-delete', { score_event_ids: scoreEventIds });
+};
+
 export default {
     fetchMetaAndromedaReviewQueue,
     fetchMetaAndromedaReviewDetail,
     deleteMetaAndromedaReviewItem,
+    batchDeleteMetaAndromedaReviewItems,
 };

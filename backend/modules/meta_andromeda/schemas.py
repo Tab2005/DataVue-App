@@ -434,6 +434,16 @@ class ScoreEventDeleteResponse(BaseModel):
     deleted_score_event_id: str
 
 
+class ScoreEventBatchDeleteRequest(BaseModel):
+    score_event_ids: list[str] = Field(min_length=1, max_length=200)
+
+
+class ScoreEventBatchDeleteResponse(BaseModel):
+    deleted_count: int
+    deleted_ids: list[str]
+    not_found_ids: list[str]
+
+
 class MaintenanceCleanupRequest(BaseModel):
     older_than_minutes: int | None = Field(default=None, ge=5, le=10080)
     include_queued: bool = True

@@ -643,6 +643,25 @@ class MetaAndromedaRepository:
         db.commit()
         return {"deleted_score_event_id": score_event_id}
 
+    def batch_delete_score_events(self, db: Session, score_event_ids: list[str]) -> dict:
+        existing = {
+            row.id for row in
+            db.query(MetaAndromedaScoreEvent.id)
+            .filter(MetaAndromedaScoreEvent.id.in_(score_event_ids))
+            .all()
+        }
+        not_found = [sid for sid in score_event_ids if sid not in existing]
+        if not existing:
+            return {"deleted_count": 0, "deleted_ids": [], "not_found_ids": not_found}
+        ids = list(existing)
+        db.query(MetaAndromedaCalibrationItem).filter(MetaAndromedaCalibrationItem.score_event_id.in_(ids)).delete(synchronize_session=False)
+        db.query(MetaAndromedaFeedbackEvent).filter(MetaAndromedaFeedbackEvent.score_event_id.in_(ids)).delete(synchronize_session=False)
+        db.query(MetaAndromedaWorkerEvent).filter(MetaAndromedaWorkerEvent.score_event_id.in_(ids)).delete(synchronize_session=False)
+        db.query(MetaAndromedaDeadLetter).filter(MetaAndromedaDeadLetter.score_event_id.in_(ids)).delete(synchronize_session=False)
+        db.query(MetaAndromedaScoreEvent).filter(MetaAndromedaScoreEvent.id.in_(ids)).delete(synchronize_session=False)
+        db.commit()
+        return {"deleted_count": len(ids), "deleted_ids": ids, "not_found_ids": not_found}
+
     def list_review_queue(self, db: Session, status=None, has_observation=None, roas_band=None, limit=25, page=1, search=None, source=None, scoring_engine=None):
         from sqlalchemy import or_  # noqa: PLC0415
         query = db.query(MetaAndromedaScoreEvent)

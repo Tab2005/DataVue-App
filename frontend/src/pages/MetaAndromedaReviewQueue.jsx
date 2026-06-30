@@ -3,6 +3,7 @@ import { useOutletContext } from 'react-router-dom';
 import { useModuleAccess } from '../hooks/usePermission';
 
 import {
+    batchDeleteMetaAndromedaReviewItems,
     deleteMetaAndromedaReviewItem,
     fetchMetaAndromedaReviewDetail,
     fetchMetaAndromedaReviewQueue,
@@ -105,6 +106,8 @@ const MetaAndromedaReviewQueue = () => {
     const [sourceFilter, setSourceFilter] = useState('all');
     const [scoringEngineFilter, setScoringEngineFilter] = useState('all');
     const [deletingId, setDeletingId] = useState(null);
+    const [selectedIds, setSelectedIds] = useState(new Set());
+    const [batchDeleting, setBatchDeleting] = useState(false);
     const [page, setPage] = useState(1);
     const [totalPages, setTotalPages] = useState(1);
     const [totalCount, setTotalCount] = useState(0);
@@ -154,6 +157,7 @@ const MetaAndromedaReviewQueue = () => {
             setTotalPages(data.summary?.total_pages ?? 1);
             setTotalCount(data.summary?.total ?? 0);
             setSelectedId(items[0]?.score_event_id ?? null);
+            setSelectedIds(new Set());
         } catch (err) {
             setError(err.message || t('Failed to load records', '載入評估紀錄失敗'));
         } finally {
@@ -165,6 +169,39 @@ const MetaAndromedaReviewQueue = () => {
         if (newPage < 1 || newPage > totalPages) return;
         setPage(newPage);
         loadQueue(newPage);
+    };
+
+    const toggleSelect = (e, id) => {
+        e.stopPropagation();
+        setSelectedIds(prev => {
+            const next = new Set(prev);
+            next.has(id) ? next.delete(id) : next.add(id);
+            return next;
+        });
+    };
+
+    const toggleSelectAll = () => {
+        if (selectedIds.size === queueItems.length) {
+            setSelectedIds(new Set());
+        } else {
+            setSelectedIds(new Set(queueItems.map(i => i.score_event_id)));
+        }
+    };
+
+    const handleBatchDelete = async () => {
+        const ids = [...selectedIds];
+        if (ids.length === 0) return;
+        if (!window.confirm(t(`Delete ${ids.length} selected records?`, `確定要刪除已選取的 ${ids.length} 筆紀錄？`))) return;
+        setBatchDeleting(true);
+        try {
+            await batchDeleteMetaAndromedaReviewItems(ids);
+            if (ids.includes(selectedId)) setSelectedId(null);
+            await loadQueue(page);
+        } catch (err) {
+            setError(err.message || t('Batch delete failed', '批次刪除失敗'));
+        } finally {
+            setBatchDeleting(false);
+        }
     };
 
     const handleDelete = async (e, scoreEventId) => {
@@ -300,11 +337,34 @@ const MetaAndromedaReviewQueue = () => {
                 <section style={panelStyle}>
                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
                         <h2 style={{ ...sectionTitleStyle, margin: 0 }}>{t('Scored Assets', '已評估素材')}</h2>
-                        {!loadingQueue && (
-                            <span style={{ color: 'var(--text-secondary)', fontSize: '0.78rem' }}>
-                                {t(`${totalCount} total`, `共 ${totalCount} 筆`)}
-                            </span>
-                        )}
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                            {!loadingQueue && queueItems.length > 0 && (
+                                <label style={{ display: 'flex', alignItems: 'center', gap: '4px', color: 'var(--text-secondary)', fontSize: '0.78rem', cursor: 'pointer', userSelect: 'none' }}>
+                                    <input
+                                        type="checkbox"
+                                        checked={selectedIds.size === queueItems.length && queueItems.length > 0}
+                                        onChange={toggleSelectAll}
+                                        style={{ cursor: 'pointer' }}
+                                    />
+                                    {t('All', '全選')}
+                                </label>
+                            )}
+                            {selectedIds.size > 0 && (
+                                <button
+                                    type="button"
+                                    onClick={handleBatchDelete}
+                                    disabled={batchDeleting}
+                                    style={{ padding: '4px 10px', borderRadius: '8px', border: '1px solid rgba(239,68,68,0.35)', background: 'rgba(239,68,68,0.12)', color: '#ef4444', cursor: 'pointer', fontSize: '0.78rem', fontWeight: 600, opacity: batchDeleting ? 0.5 : 1 }}
+                                >
+                                    {batchDeleting ? t('Deleting…', '刪除中…') : t(`Delete (${selectedIds.size})`, `刪除 (${selectedIds.size})`)}
+                                </button>
+                            )}
+                            {!loadingQueue && selectedIds.size === 0 && (
+                                <span style={{ color: 'var(--text-secondary)', fontSize: '0.78rem' }}>
+                                    {t(`${totalCount} total`, `共 ${totalCount} 筆`)}
+                                </span>
+                            )}
+                        </div>
                     </div>
 
                     <input
@@ -339,10 +399,18 @@ const MetaAndromedaReviewQueue = () => {
                                         style={{
                                             ...queueItemStyle,
                                             display: 'flex', gap: '10px', alignItems: 'center',
-                                            borderColor: selectedId === item.score_event_id ? 'var(--accent-primary)' : 'var(--glass-border)',
-                                            background: selectedId === item.score_event_id ? 'rgba(255,255,255,0.05)' : 'rgba(255,255,255,0.01)',
+                                            borderColor: selectedIds.has(item.score_event_id) ? 'rgba(239,68,68,0.5)' : selectedId === item.score_event_id ? 'var(--accent-primary)' : 'var(--glass-border)',
+                                            background: selectedIds.has(item.score_event_id) ? 'rgba(239,68,68,0.04)' : selectedId === item.score_event_id ? 'rgba(255,255,255,0.05)' : 'rgba(255,255,255,0.01)',
                                         }}
                                     >
+                                        {/* 勾選框 */}
+                                        <input
+                                            type="checkbox"
+                                            checked={selectedIds.has(item.score_event_id)}
+                                            onClick={(e) => toggleSelect(e, item.score_event_id)}
+                                            onChange={() => {}}
+                                            style={{ cursor: 'pointer', flexShrink: 0, accentColor: '#ef4444' }}
+                                        />
                                         {/* 縮圖 */}
                                         <div style={{
                                             width: '52px', height: '52px', borderRadius: '8px', overflow: 'hidden',
