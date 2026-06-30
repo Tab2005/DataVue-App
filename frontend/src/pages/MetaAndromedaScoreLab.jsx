@@ -270,6 +270,11 @@ const MetaAndromedaScoreLab = () => {
     };
 
     const resetForm = () => {
+        if (localPreviewRef.current) {
+            URL.revokeObjectURL(localPreviewRef.current);
+            localPreviewRef.current = null;
+        }
+        setLocalPreviewUrl(null);
         setSelectedFile(null);
         setUploadedAsset(null);
         setScoreResult(null);
@@ -329,7 +334,7 @@ const MetaAndromedaScoreLab = () => {
                                             ? t('Uploading…', '上傳中…')
                                             : uploadedAsset
                                                 ? <span style={{ color: '#10b981', fontWeight: 600 }}>✓ {t('Uploaded', '上傳成功')}</span>
-                                                : selectedFile.name
+                                                : selectedFile?.name
                                         }
                                     </div>
                                     {!loadingUpload && (

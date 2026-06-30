@@ -19,9 +19,10 @@ const audiences = [
   {
     icon: Users,
     title: '數位代理商',
-    description: '為客戶管理多個帳戶，需要快速產出洞察報告的專業團隊。',
+    description: '為客戶管理多個帳戶，需要快速產出洞察報告的專業團隊。多帳號切換、團隊協作、自動排程報告一次到位。',
     highlight: 'AI 輔助，半小時完成日報告',
-    color: 'blue'
+    color: 'blue',
+    badges: ['多帳號切換', '團隊協作', '自動排程']
   },
   {
     icon: Zap,
@@ -111,6 +112,17 @@ export default function Audience() {
                     <span className={`w-1.5 h-1.5 rounded-full ${colors.text} animate-pulse`} />
                     <span className={`text-xs ${colors.text} font-medium`}>{audience.highlight}</span>
                   </div>
+
+                  {/* 代理商專屬功能 badges */}
+                  {audience.badges && (
+                    <div className="flex flex-wrap gap-1.5 mt-3">
+                      {audience.badges.map((badge) => (
+                        <span key={badge} className="px-2 py-0.5 rounded-md bg-white/5 border border-white/10 text-[10px] text-slate-400">
+                          {badge}
+                        </span>
+                      ))}
+                    </div>
+                  )}
                 </div>
               </motion.div>
             );

@@ -1,9 +1,65 @@
-import { motion } from 'framer-motion';
-import { Database, Shield, FileText, Globe, Zap } from 'lucide-react';
+import { motion, AnimatePresence } from 'framer-motion';
+import { Database, Shield, FileText, Globe, Zap, ChevronDown } from 'lucide-react';
+import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
+
+const faqs = [
+  {
+    q: '需要信用卡才能試用嗎？',
+    a: '不需要。您可以免費連接第一個數據源並開始使用，無需綁定任何付款方式。'
+  },
+  {
+    q: '支援哪些廣告帳戶與平台？',
+    a: 'DataVue 目前整合 Facebook Ads、Google Search Console（GSC）與 Google Analytics 4（GA4），透過官方 OAuth 2.0 授權連接。'
+  },
+  {
+    q: '我的數據安全嗎？',
+    a: '是的。我們使用 OAuth 2.0 官方授權流程，不會儲存您的帳號密碼。所有數據傳輸皆經過加密，且不會與第三方共享。'
+  },
+  {
+    q: '是否支援多人協作與多帳號管理？',
+    a: '支援。DataVue 提供完整的團隊功能，可邀請成員並設定不同的存取權限，適合代理商同時管理多個客戶帳號。'
+  },
+  {
+    q: 'Meta Andromeda AI 引擎什麼時候開放？',
+    a: 'Meta Andromeda 目前正在開放早期測試，歡迎代理商夥伴申請優先體驗。您可以點選頁面中的「申請優先體驗」按鈕加入等候名單。'
+  },
+];
+
+function FAQItem({ item, isOpen, onToggle }) {
+  return (
+    <div className="border-b border-white/5 last:border-0">
+      <button
+        onClick={onToggle}
+        className="w-full flex items-center justify-between py-5 text-left group"
+      >
+        <span className="text-sm text-slate-300 group-hover:text-white transition-colors pr-8">
+          {item.q}
+        </span>
+        <ChevronDown className={`w-4 h-4 text-slate-500 shrink-0 transition-transform duration-300 ${isOpen ? 'rotate-180' : ''}`} />
+      </button>
+      <AnimatePresence>
+        {isOpen && (
+          <motion.div
+            initial={{ height: 0, opacity: 0 }}
+            animate={{ height: 'auto', opacity: 1 }}
+            exit={{ height: 0, opacity: 0 }}
+            transition={{ duration: 0.3, ease: [0.16, 1, 0.3, 1] }}
+            className="overflow-hidden"
+          >
+            <p className="text-sm text-slate-500 leading-relaxed pb-5 pr-8">
+              {item.a}
+            </p>
+          </motion.div>
+        )}
+      </AnimatePresence>
+    </div>
+  );
+}
 
 export default function Footer() {
   const navigate = useNavigate();
+  const [openFaq, setOpenFaq] = useState(null);
 
   return (
     <footer className="relative bg-slate-950 border-t border-white/5 pt-20 pb-8 px-6 overflow-hidden">
@@ -13,6 +69,30 @@ export default function Footer() {
       </div>
 
       <div className="max-w-7xl mx-auto relative z-10">
+        {/* FAQ 區塊 */}
+        <motion.div
+          initial={{ opacity: 0, y: 20 }}
+          whileInView={{ opacity: 1, y: 0 }}
+          viewport={{ once: true }}
+          transition={{ duration: 0.8 }}
+          className="mb-20"
+        >
+          <div className="text-center mb-10">
+            <h3 className="text-2xl font-bold text-white mb-2">常見問題</h3>
+            <p className="text-sm text-slate-500">有其他問題？歡迎隨時聯繫我們。</p>
+          </div>
+          <div className="max-w-2xl mx-auto rounded-2xl border border-white/5 bg-slate-900/30 backdrop-blur-sm px-8">
+            {faqs.map((item, i) => (
+              <FAQItem
+                key={i}
+                item={item}
+                isOpen={openFaq === i}
+                onToggle={() => setOpenFaq(openFaq === i ? null : i)}
+              />
+            ))}
+          </div>
+        </motion.div>
+
         <div className="grid grid-cols-1 md:grid-cols-12 gap-12 mb-16">
           {/* 左側：品牌資訊 */}
           <div className="md:col-span-5 flex flex-col items-start">

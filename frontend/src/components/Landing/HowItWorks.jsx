@@ -25,13 +25,22 @@ const steps = [
     subtitle: 'AI 驅動的策略建議',
     description: '獲得每週數據解譯報告與可執行的優化方案。告別面對數字的焦慮，以清晰的洞察搶佔先機。',
     color: 'cyan'
+  },
+  {
+    num: '04',
+    icon: Workflow,
+    title: '自動輸出報告',
+    subtitle: '排程設定，一鍵分享',
+    description: '設定排程後，報表自動生成並支援一鍵分享連結。客戶、主管、團隊成員，隨時查看最新成效。',
+    color: 'teal'
   }
 ];
 
 const colorMap = {
   blue: { from: 'from-blue-500', to: 'to-cyan-500', text: 'text-blue-400', bg: 'bg-blue-500/10', border: 'border-blue-500/30', glow: 'shadow-blue-500/20' },
   purple: { from: 'from-purple-500', to: 'to-pink-500', text: 'text-purple-400', bg: 'bg-purple-500/10', border: 'border-purple-500/30', glow: 'shadow-purple-500/20' },
-  cyan: { from: 'from-cyan-500', to: 'to-teal-500', text: 'text-cyan-400', bg: 'bg-cyan-500/10', border: 'border-cyan-500/30', glow: 'shadow-cyan-500/20' }
+  cyan: { from: 'from-cyan-500', to: 'to-teal-500', text: 'text-cyan-400', bg: 'bg-cyan-500/10', border: 'border-cyan-500/30', glow: 'shadow-cyan-500/20' },
+  teal: { from: 'from-teal-500', to: 'to-green-500', text: 'text-teal-400', bg: 'bg-teal-500/10', border: 'border-teal-500/30', glow: 'shadow-teal-500/20' }
 };
 
 export default function HowItWorks() {
@@ -55,7 +64,7 @@ export default function HowItWorks() {
             <span>運作原理</span>
           </div>
           <h2 className="section-title mb-4">
-            三步驟開啟
+            四步驟開啟
             <br />
             <span className="gradient-text">數據驅動增長</span>
           </h2>
@@ -67,12 +76,12 @@ export default function HowItWorks() {
         {/* 步驟卡片 */}
         <div className="relative">
           {/* 連接線裝飾 (Desktop) */}
-          <div className="hidden lg:block absolute top-1/2 left-[16.67%] right-[16.67%] h-[2px] -translate-y-1/2 -z-10">
-            <div className="h-full bg-gradient-to-r from-blue-500/30 via-purple-500/30 to-cyan-500/30 rounded-full" />
-            <div className="absolute inset-0 bg-gradient-to-r from-blue-500 via-purple-500 to-cyan-500 opacity-30 blur-sm" />
+          <div className="hidden lg:block absolute top-1/2 left-[12.5%] right-[12.5%] h-[2px] -translate-y-1/2 -z-10">
+            <div className="h-full bg-gradient-to-r from-blue-500/30 via-purple-500/30 via-cyan-500/30 to-teal-500/30 rounded-full" />
+            <div className="absolute inset-0 bg-gradient-to-r from-blue-500 via-purple-500 via-cyan-500 to-teal-500 opacity-30 blur-sm" />
           </div>
 
-          <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+          <div className="grid grid-cols-1 lg:grid-cols-4 gap-6">
             {steps.map((step, index) => {
               const colors = colorMap[step.color];
               return (

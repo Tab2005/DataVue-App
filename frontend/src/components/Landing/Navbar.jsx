@@ -32,6 +32,7 @@ export default function Navbar() {
         <div className="hidden md:flex items-center gap-8">
           <a href="#features" className="nav-link">核心引擎</a>
           <a href="#solutions" className="nav-link">痛點剖析</a>
+          <a href="#andromeda" className="nav-link">AI 引擎</a>
           <a href="#audience" className="nav-link">適用場景</a>
           <a href="#how-it-works" className="nav-link">運作原理</a>
         </div>
@@ -48,9 +49,9 @@ export default function Navbar() {
             whileHover={{ scale: 1.05 }}
             whileTap={{ scale: 0.95 }}
             onClick={() => navigate('/login')}
-            className="px-5 py-2 rounded-full bg-gradient-to-r from-cyan-500 to-purple-500 text-white text-sm font-medium"
+            className="px-5 py-2 rounded-full bg-gradient-to-r from-cyan-500 to-purple-500 text-white text-sm font-medium shadow-lg shadow-cyan-500/20"
           >
-            立即開始
+            免費試用
           </motion.button>
         </div>
 
@@ -74,12 +75,13 @@ export default function Navbar() {
           <div className="max-w-7xl mx-auto px-6 py-4 flex flex-col gap-4">
             <a href="#features" onClick={() => setMobileMenuOpen(false)} className="mobile-nav-link">核心引擎</a>
             <a href="#solutions" onClick={() => setMobileMenuOpen(false)} className="mobile-nav-link">痛點剖析</a>
+            <a href="#andromeda" onClick={() => setMobileMenuOpen(false)} className="mobile-nav-link">AI 引擎</a>
             <a href="#audience" onClick={() => setMobileMenuOpen(false)} className="mobile-nav-link">適用場景</a>
             <a href="#how-it-works" onClick={() => setMobileMenuOpen(false)} className="mobile-nav-link">運作原理</a>
             <hr className="border-white/10" />
             <button onClick={() => { setMobileMenuOpen(false); navigate('/login'); }} className="mobile-nav-link text-left">登入</button>
             <button onClick={() => { setMobileMenuOpen(false); navigate('/login'); }} className="w-full py-3 rounded-xl bg-gradient-to-r from-cyan-500 to-purple-500 text-white font-medium">
-              立即開始
+              免費試用
             </button>
           </div>
         </motion.div>

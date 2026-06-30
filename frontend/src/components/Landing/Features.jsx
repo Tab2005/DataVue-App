@@ -2,7 +2,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { useState } from 'react';
 import { FaFacebook } from 'react-icons/fa';
 import { SiGooglecloud } from 'react-icons/si';
-import { Search, BarChart3, Bot, Sparkles, TrendingUp, Target, Zap, Shield } from 'lucide-react';
+import { Search, BarChart3, Bot, Sparkles, TrendingUp, Target, Zap, Shield, FileText } from 'lucide-react';
 
 const features = [
   {
@@ -44,6 +44,16 @@ const features = [
     description: '24小時不休的虛擬數據分析師。整合多平台數據，自動進行數據清洗與關聯性建模，產出可執行的決策報告。',
     stats: { label: '決策響應速度', value: '10x' },
     visual: 'neural'
+  },
+  {
+    id: 'reports',
+    icon: FileText,
+    color: 'orange',
+    title: '週報自動化',
+    subtitle: 'Reports Automation',
+    description: '設定一次，自動執行。每日、每週、每月定時生成廣告成效報告，支援一鍵分享連結。告別手動整理，讓報告自動送達客戶與主管。',
+    stats: { label: '節省手動整理時間', value: '80%' },
+    visual: 'reports'
   }
 ];
 
@@ -75,6 +85,13 @@ const colorClasses = {
     text: 'text-cyan-400',
     glow: 'shadow-cyan-500/20',
     gradient: 'from-cyan-500/20 to-transparent'
+  },
+  orange: {
+    bg: 'bg-orange-500/10',
+    border: 'border-orange-500/30',
+    text: 'text-orange-400',
+    glow: 'shadow-orange-500/20',
+    gradient: 'from-orange-500/20 to-transparent'
   }
 };
 
@@ -103,7 +120,7 @@ export default function Features() {
             <span>核心數據引擎</span>
           </div>
           <h2 className="section-title mb-4">
-            四大數據支柱
+            五大數據支柱
             <br />
             <span className="gradient-text">構築商業洞察</span>
           </h2>
@@ -224,6 +241,7 @@ export default function Features() {
                     {activeTab === 'fb' && <FBVisual colors={colors} />}
                     {activeTab === 'ga4' && <GA4Visual colors={colors} />}
                     {activeTab === 'ai' && <AIVisual colors={colors} />}
+                    {activeTab === 'reports' && <ReportsVisual colors={colors} />}
                   </div>
 
                   {/* 底部統計 */}
@@ -357,6 +375,39 @@ function AIVisual({ colors }) {
           <span className="w-2 h-2 rounded-full bg-cyan-400 animate-pulse" />
           <span>AI Analysis Complete</span>
         </div>
+      </div>
+    </div>
+  );
+}
+
+function ReportsVisual({ colors }) {
+  const schedules = [
+    { label: '每週一 09:00', name: '廣告週報', status: '已發送', count: 12 },
+    { label: '每月 1 日', name: '月度成效報告', status: '排程中', count: 3 },
+    { label: '每日 08:00', name: '日報快報', status: '已發送', count: 28 },
+  ];
+
+  return (
+    <div className="h-full flex flex-col justify-between font-mono text-[9px]">
+      <div className="flex justify-between items-center text-slate-500 border-b border-white/5 pb-2">
+        <span>SCHEDULE</span>
+        <span>REPORT NAME</span>
+        <span>STATUS</span>
+        <span>SENT</span>
+      </div>
+      <div className="flex-1 flex flex-col justify-center gap-2 mt-2">
+        {schedules.map((s, i) => (
+          <div key={i} className="flex items-center justify-between">
+            <span className="text-slate-400 w-20">{s.label}</span>
+            <span className="text-slate-300 flex-1 px-2">{s.name}</span>
+            <span className={`px-2 py-0.5 rounded border ${
+              s.status === '已發送'
+                ? `${colors.bg} ${colors.border} ${colors.text}`
+                : 'bg-slate-700/50 border-slate-600/30 text-slate-400'
+            }`}>{s.status}</span>
+            <span className={`w-8 text-right font-bold ${colors.text}`}>{s.count}</span>
+          </div>
+        ))}
       </div>
     </div>
   );

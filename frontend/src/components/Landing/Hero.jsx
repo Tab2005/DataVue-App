@@ -2,6 +2,7 @@ import { motion } from 'framer-motion';
 import { useNavigate } from 'react-router-dom';
 import { FaFacebook, FaGoogle } from 'react-icons/fa';
 import { SiGooglecloud } from 'react-icons/si';
+import { FileText } from 'lucide-react';
 
 const containerVariants = {
   hidden: { opacity: 0 },
@@ -91,8 +92,8 @@ export default function Hero() {
 
             {/* 副標題 */}
             <motion.p variants={itemVariants} className="hero-subtitle mb-10">
-              Facebook Ads、Google Search Console、GA4 — 所有行銷數據在同一個宇宙中匯聚。
-              DataVue 以 AI 為核心，為您提煉出可付諸行動的商業洞察。
+              Facebook Ads、Google Search Console、GA4 — 三大平台數據在同一個宇宙匯聚。
+              DataVue 以 AI 為核心提煉洞察，並自動輸出可分享的週報，讓決策不再等待。
             </motion.p>
 
             {/* CTA 按鈕組 */}
@@ -238,6 +239,23 @@ export default function Hero() {
                 <p className="text-xs text-slate-400 leading-relaxed max-w-[180px]">
                   檢測到高意圖關鍵字，建議將 20% 預算重新分配
                 </p>
+              </motion.div>
+
+              {/* 浮動數據卡 - 週報 */}
+              <motion.div
+                animate={{ y: [0, -7, 0] }}
+                transition={{ duration: 3.8, repeat: Infinity, ease: 'easeInOut', delay: 2 }}
+                className="absolute bottom-28 left-0 glass-card border-orange-500/20"
+              >
+                <div className="flex items-center gap-3">
+                  <div className="w-8 h-8 rounded-lg bg-orange-500/20 flex items-center justify-center">
+                    <FileText className="w-4 h-4 text-orange-400" />
+                  </div>
+                  <div>
+                    <div className="text-[10px] text-slate-500 uppercase tracking-wider">週報排程</div>
+                    <div className="text-xs font-semibold text-white">每週一 09:00 發送</div>
+                  </div>
+                </div>
               </motion.div>
 
               {/* 連接線 SVG */}
