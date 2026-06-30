@@ -430,6 +430,10 @@ class ReleaseActionResponse(BaseModel):
     note: str | None = None
 
 
+class ScoreEventDeleteResponse(BaseModel):
+    deleted_score_event_id: str
+
+
 class MaintenanceCleanupRequest(BaseModel):
     older_than_minutes: int | None = Field(default=None, ge=5, le=10080)
     include_queued: bool = True

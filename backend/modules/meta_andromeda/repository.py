@@ -631,7 +631,19 @@ class MetaAndromedaRepository:
             "created_at": report.created_at.isoformat() if report.created_at else None,
         }
 
-    def list_review_queue(self, db: Session, status=None, has_observation=None, roas_band=None, limit=25, page=1, search=None, source=None):
+    def delete_score_event(self, db: Session, score_event_id: str) -> dict:
+        score = db.query(MetaAndromedaScoreEvent).filter(MetaAndromedaScoreEvent.id == score_event_id).first()
+        if score is None:
+            raise KeyError(score_event_id)
+        db.query(MetaAndromedaCalibrationItem).filter(MetaAndromedaCalibrationItem.score_event_id == score_event_id).delete(synchronize_session=False)
+        db.query(MetaAndromedaFeedbackEvent).filter(MetaAndromedaFeedbackEvent.score_event_id == score_event_id).delete(synchronize_session=False)
+        db.query(MetaAndromedaWorkerEvent).filter(MetaAndromedaWorkerEvent.score_event_id == score_event_id).delete(synchronize_session=False)
+        db.query(MetaAndromedaDeadLetter).filter(MetaAndromedaDeadLetter.score_event_id == score_event_id).delete(synchronize_session=False)
+        db.delete(score)
+        db.commit()
+        return {"deleted_score_event_id": score_event_id}
+
+    def list_review_queue(self, db: Session, status=None, has_observation=None, roas_band=None, limit=25, page=1, search=None, source=None, scoring_engine=None):
         from sqlalchemy import or_  # noqa: PLC0415
         query = db.query(MetaAndromedaScoreEvent)
         if status:
@@ -645,6 +657,14 @@ class MetaAndromedaRepository:
         elif source == "score_lab":
             query = query.filter(
                 MetaAndromedaScoreEvent.request_context["observed_creative_id"].is_(None)
+            )
+        if scoring_engine == "ai":
+            query = query.filter(
+                MetaAndromedaScoreEvent.lineage["scoring_mode"].as_string() == "ai"
+            )
+        elif scoring_engine == "heuristic":
+            query = query.filter(
+                MetaAndromedaScoreEvent.lineage["scoring_mode"].as_string() == "heuristic"
             )
         if has_observation is True:
             cal_exists = (

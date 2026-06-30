@@ -3,6 +3,7 @@ import { useOutletContext } from 'react-router-dom';
 import { useModuleAccess } from '../hooks/usePermission';
 
 import {
+    deleteMetaAndromedaReviewItem,
     fetchMetaAndromedaReviewDetail,
     fetchMetaAndromedaReviewQueue,
 } from '../services/metaAndromedaReviewQueueService';
@@ -102,6 +103,8 @@ const MetaAndromedaReviewQueue = () => {
     const [observationFilter, setObservationFilter] = useState('all');
     const [roasBandFilter, setRoasBandFilter] = useState('all');
     const [sourceFilter, setSourceFilter] = useState('all');
+    const [scoringEngineFilter, setScoringEngineFilter] = useState('all');
+    const [deletingId, setDeletingId] = useState(null);
     const [page, setPage] = useState(1);
     const [totalPages, setTotalPages] = useState(1);
     const [totalCount, setTotalCount] = useState(0);
@@ -141,6 +144,7 @@ const MetaAndromedaReviewQueue = () => {
                 has_observation,
                 roas_band: roasBandFilter === 'all' ? null : roasBandFilter,
                 source: sourceFilter === 'all' ? null : sourceFilter,
+                scoring_engine: scoringEngineFilter === 'all' ? null : scoringEngineFilter,
                 search: searchValue.trim() || null,
                 page: targetPage,
                 page_size: PAGE_SIZE,
@@ -163,11 +167,26 @@ const MetaAndromedaReviewQueue = () => {
         loadQueue(newPage);
     };
 
+    const handleDelete = async (e, scoreEventId) => {
+        e.stopPropagation();
+        if (!window.confirm(t(`Delete record ${scoreEventId}?`, `確定要刪除紀錄 ${scoreEventId}？`))) return;
+        setDeletingId(scoreEventId);
+        try {
+            await deleteMetaAndromedaReviewItem(scoreEventId);
+            if (selectedId === scoreEventId) setSelectedId(null);
+            await loadQueue(page);
+        } catch (err) {
+            setError(err.message || t('Delete failed', '刪除失敗'));
+        } finally {
+            setDeletingId(null);
+        }
+    };
+
     // 篩選條件改變時重置頁碼
     useEffect(() => {
         setPage(1);
         loadQueue(1);
-    }, [statusFilter, observationFilter, roasBandFilter, sourceFilter]);
+    }, [statusFilter, observationFilter, roasBandFilter, sourceFilter, scoringEngineFilter]);
 
     const handleSearchChange = (e) => {
         const val = e.target.value;
@@ -225,6 +244,8 @@ const MetaAndromedaReviewQueue = () => {
                 .queue-scroll-box::-webkit-scrollbar-track { background: rgba(255,255,255,0.01); border-radius: 999px; }
                 .queue-scroll-box::-webkit-scrollbar-thumb { background: var(--glass-border); border-radius: 999px; }
                 .queue-scroll-box::-webkit-scrollbar-thumb:hover { background: var(--accent-primary); }
+                .queue-item-wrap .queue-delete-btn { opacity: 0; transition: opacity 0.15s; }
+                .queue-item-wrap:hover .queue-delete-btn { opacity: 1; }
             `}</style>
 
             {/* 標題列 */}
@@ -262,6 +283,11 @@ const MetaAndromedaReviewQueue = () => {
                         <option value="all">{t('All Records', '全部紀錄')}</option>
                         <option value="matched">{t('Matched', '已匹配成效')}</option>
                         <option value="unmatched">{t('Not Matched', '尚未匹配')}</option>
+                    </select>
+                    <select value={scoringEngineFilter} onChange={(e) => setScoringEngineFilter(e.target.value)} style={selectStyle}>
+                        <option value="all">{t('All Engines', '全部引擎')}</option>
+                        <option value="ai">{t('AI Model', 'AI 模型')}</option>
+                        <option value="heuristic">{t('Heuristic', '啟發式引擎')}</option>
                     </select>
                 </div>
             </div>
@@ -302,8 +328,12 @@ const MetaAndromedaReviewQueue = () => {
                                 const previewUrl = resolvePreviewUrl(item);
                                 const isVideo = item.asset_type === 'video';
                                 return (
-                                    <button
+                                    <div
                                         key={item.score_event_id}
+                                        className="queue-item-wrap"
+                                        style={{ position: 'relative' }}
+                                    >
+                                    <button
                                         type="button"
                                         onClick={() => setSelectedId(item.score_event_id)}
                                         style={{
@@ -373,6 +403,23 @@ const MetaAndromedaReviewQueue = () => {
                                             </div>
                                         </div>
                                     </button>
+                                    <button
+                                        type="button"
+                                        className="queue-delete-btn"
+                                        onClick={(e) => handleDelete(e, item.score_event_id)}
+                                        disabled={deletingId === item.score_event_id}
+                                        title={t('Delete record', '刪除紀錄')}
+                                        style={{
+                                            position: 'absolute', bottom: '8px', right: '8px',
+                                            background: 'rgba(239,68,68,0.12)', border: '1px solid rgba(239,68,68,0.25)',
+                                            borderRadius: '6px', color: '#ef4444', cursor: 'pointer',
+                                            fontSize: '0.72rem', padding: '2px 7px', lineHeight: 1.5,
+                                            opacity: deletingId === item.score_event_id ? 0.5 : undefined,
+                                        }}
+                                    >
+                                        {deletingId === item.score_event_id ? '…' : t('Delete', '刪除')}
+                                    </button>
+                                    </div>
                                 );
                             })}
                         </div>

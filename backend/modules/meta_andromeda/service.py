@@ -120,12 +120,17 @@ class MetaAndromedaService:
         page: int = 1,
         search: str | None = None,
         source: str | None = None,
+        scoring_engine: str | None = None,
     ) -> dict:
-        return repository.list_review_queue(db, status=status, has_observation=has_observation, roas_band=roas_band, limit=limit, page=page, search=search, source=source)
+        return repository.list_review_queue(db, status=status, has_observation=has_observation, roas_band=roas_band, limit=limit, page=page, search=search, source=source, scoring_engine=scoring_engine)
 
     @staticmethod
     def get_review_queue_detail(db, score_event_id: str) -> dict:
         return repository.get_review_queue_detail(db, score_event_id)
+
+    @staticmethod
+    def delete_score_event(db, score_event_id: str) -> dict:
+        return repository.delete_score_event(db, score_event_id)
 
     @staticmethod
     def get_monitoring_summary(db) -> dict:
