@@ -257,6 +257,7 @@ class MetaAndromedaScoringProfile(Base):
         ForeignKey("meta_andromeda_calibration_datasets.id"),
         nullable=True,
     )
+    objective_profiles = Column(JSON, nullable=True)
     is_promoted = Column(Boolean, nullable=False, default=False)
     promoted_at = Column(DateTime, nullable=True)
     created_at = Column(DateTime, default=text("CURRENT_TIMESTAMP"))

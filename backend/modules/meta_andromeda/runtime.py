@@ -18,6 +18,43 @@ logger = logging.getLogger(__name__)
 VALID_ROAS_BANDS = {"high", "mid", "low"}
 LABEL_POLICY_VERSION = "ma_label_policy_v1"
 
+_OBJECTIVE_GROUP_MAP: dict[str, str] = {
+    # conversion
+    "purchase": "conversion",
+    "add_to_cart": "conversion",
+    "complete_registration": "conversion",
+    "outcome_sales": "conversion",
+    # lead
+    "lead": "lead",
+    "lead_gen": "lead",
+    "form_submit": "lead",
+    # traffic
+    "traffic": "traffic",
+    "link_clicks": "traffic",
+    "landing_page_views": "traffic",
+    "outcome_traffic": "traffic",
+    # awareness
+    "brand_awareness": "awareness",
+    "reach": "awareness",
+    "awareness": "awareness",
+    "outcome_awareness": "awareness",
+    "page_likes": "awareness",
+    # engagement
+    "engagement": "engagement",
+    "post_engagement": "engagement",
+    "outcome_engagement": "engagement",
+    # video
+    "video_views": "video",
+    "video": "video",
+}
+
+
+def _resolve_objective_group(objective: str | None) -> str:
+    if not objective:
+        return "conversion"
+    return _OBJECTIVE_GROUP_MAP.get(objective.lower().strip(), "conversion")
+
+
 _prompt_profile_cache: dict[str, dict] = {}
 _profile_cache_lock = threading.Lock()
 
@@ -88,6 +125,7 @@ def _load_scoring_profile(profile_name: str) -> dict:
                     "system_prompt": row.system_prompt,
                     "calibration_guidance": row.calibration_guidance or "",
                     "few_shot_examples": few_shot_raw,
+                    "objective_profiles": row.objective_profiles or {},
                 }
                 with _profile_cache_lock:
                     _prompt_profile_cache[profile_name] = profile
@@ -103,10 +141,25 @@ def _load_scoring_profile(profile_name: str) -> dict:
         "system_prompt": _FALLBACK_SYSTEM_PROMPT,
         "calibration_guidance": "",
         "few_shot_examples": [],
+        "objective_profiles": {},
     }
     with _profile_cache_lock:
         _prompt_profile_cache[profile_name] = fallback
     return fallback
+
+
+def _resolve_active_profile(base_profile: dict, objective_group: str) -> dict:
+    """Merge base profile with objective-group-specific overrides."""
+    obj_profiles = base_profile.get("objective_profiles") or {}
+    override = obj_profiles.get(objective_group) or {}
+    return {
+        "user_prompt_template": override.get("user_prompt_template") or base_profile["user_prompt_template"],
+        "system_prompt": override.get("system_prompt") or base_profile["system_prompt"],
+        "calibration_guidance": override.get("calibration_guidance") or base_profile.get("calibration_guidance") or "",
+        "few_shot_examples": override.get("few_shot_examples") or base_profile.get("few_shot_examples") or [],
+        "metric_focus": override.get("metric_focus", "roas"),
+        "roas_band_eligible": bool(override.get("roas_band_eligible", True)),
+    }
 
 
 def invalidate_prompt_cache(profile_name: str | None = None) -> None:
@@ -271,8 +324,18 @@ def _compute_confidence(score_payload: dict, *, scoring_mode: str, used_multimod
     }
 
 
-def _validate_provider_result(parsed: dict, score_payload: dict, registry_entry: MetaAndromedaModelEntry) -> dict:
-    prediction_mode = "diagnostic_only" if score_payload.get("request_mode") == "diagnostic_only" else "diagnostic_plus_roas"
+def _validate_provider_result(
+    parsed: dict,
+    score_payload: dict,
+    registry_entry: MetaAndromedaModelEntry,
+    *,
+    roas_band_eligible: bool = True,
+    objective_group: str = "conversion",
+) -> dict:
+    is_diagnostic_only_request = score_payload.get("request_mode") == "diagnostic_only"
+    roas_applicable = roas_band_eligible and not is_diagnostic_only_request
+    prediction_mode = "diagnostic_plus_roas" if roas_applicable else "diagnostic_only"
+
     used_multimodal = len(_build_multimodal_user_content("", score_payload)) > 1
     confidence, confidence_detail = _compute_confidence(
         score_payload,
@@ -291,7 +354,7 @@ def _validate_provider_result(parsed: dict, score_payload: dict, registry_entry:
         raise ValueError("provider_invalid_overall_score")
 
     roas_band = parsed.get("roas_band")
-    if prediction_mode == "diagnostic_only":
+    if not roas_applicable:
         roas_band = None
     elif roas_band is not None:
         roas_band = str(roas_band).lower().strip()
@@ -304,6 +367,13 @@ def _validate_provider_result(parsed: dict, score_payload: dict, registry_entry:
     diagnostic_breakdown = _normalize_diagnostic_breakdown(parsed.get("diagnostic_breakdown"))
     summary = str(parsed.get("summary") or "Scored by OpenRouter-backed Meta Andromeda runtime.").strip()
 
+    if is_diagnostic_only_request:
+        roas_unavailable_reason = "diagnostic only request"
+    elif not roas_band_eligible:
+        roas_unavailable_reason = f"not applicable for {objective_group} campaigns"
+    else:
+        roas_unavailable_reason = None
+
     return {
         "status": "completed",
         "prediction_mode": prediction_mode,
@@ -314,10 +384,10 @@ def _validate_provider_result(parsed: dict, score_payload: dict, registry_entry:
         "error_message": None,
         "diagnostic_breakdown": diagnostic_breakdown,
         "roas_prediction": {
-            "eligible": prediction_mode == "diagnostic_plus_roas",
+            "eligible": roas_applicable,
             "band": roas_band,
             "confidence": confidence,
-            "reason_if_unavailable": None if prediction_mode == "diagnostic_plus_roas" else "diagnostic only request",
+            "reason_if_unavailable": roas_unavailable_reason,
         },
         "risk_tags": risk_tags,
         "top_positive_drivers": top_positive_drivers,
@@ -330,6 +400,7 @@ def _validate_provider_result(parsed: dict, score_payload: dict, registry_entry:
                 "provider": registry_entry.provider,
                 "provider_model": registry_entry.provider_model,
                 "objective": score_payload.get("objective", "purchase"),
+                "objective_group": objective_group,
                 "placement_family": score_payload.get("placement_family", "all"),
                 "confidence_detail": confidence_detail,
             },
@@ -343,6 +414,7 @@ def _validate_provider_result(parsed: dict, score_payload: dict, registry_entry:
             "registry_profile": registry_entry.scoring_profile,
             "registry_source": registry_entry.source_of_truth,
             "scoring_mode": "ai",
+            "objective_group": objective_group,
             "label_policy_version": LABEL_POLICY_VERSION,
         },
     }
@@ -380,7 +452,9 @@ class OpenRouterScoringProvider(BaseScoringProvider):
             request_context = {}
         request_mode = score_payload.get("request_mode", "auto")
 
-        scoring_profile = _load_scoring_profile(registry_entry.scoring_profile)
+        base_profile = _load_scoring_profile(registry_entry.scoring_profile)
+        objective_group = _resolve_objective_group(score_payload.get("objective"))
+        active_profile = _resolve_active_profile(base_profile, objective_group)
         _fmt = {
             "asset_type": score_payload.get("asset_type", "image"),
             "objective": score_payload.get("objective", "purchase"),
@@ -391,14 +465,14 @@ class OpenRouterScoringProvider(BaseScoringProvider):
             "primary_text": _clip(request_context.get("primary_text")),
             "cta": _clip(request_context.get("cta")),
         }
-        prompt = scoring_profile["user_prompt_template"].format_map(_fmt)
-        if scoring_profile.get("calibration_guidance"):
-            prompt += f"\n\n{scoring_profile['calibration_guidance']}"
-        few_shot_examples = scoring_profile.get("few_shot_examples")
+        prompt = active_profile["user_prompt_template"].format_map(_fmt)
+        if active_profile.get("calibration_guidance"):
+            prompt += f"\n\n{active_profile['calibration_guidance']}"
+        few_shot_examples = active_profile.get("few_shot_examples")
         if few_shot_examples and isinstance(few_shot_examples, list):
             from .calibration_pipeline import _format_few_shot_block
             prompt += _format_few_shot_block(few_shot_examples)
-        system_prompt = scoring_profile["system_prompt"]
+        system_prompt = active_profile["system_prompt"]
         user_content = _build_multimodal_user_content(prompt, score_payload)
         raw = None
         max_retries = 3
@@ -447,7 +521,13 @@ class OpenRouterScoringProvider(BaseScoringProvider):
                     raise
         parsed = _extract_json_payload(raw)
 
-        return _validate_provider_result(parsed, score_payload, registry_entry)
+        return _validate_provider_result(
+            parsed,
+            score_payload,
+            registry_entry,
+            roas_band_eligible=active_profile.get("roas_band_eligible", True),
+            objective_group=objective_group,
+        )
 
 
 def build_heuristic_score_result(score_payload: dict, registry_entry: MetaAndromedaModelEntry, fallback_reason: str | None = None) -> dict:
@@ -456,12 +536,16 @@ def build_heuristic_score_result(score_payload: dict, registry_entry: MetaAndrom
     request_mode = score_payload.get("request_mode", "auto")
     placement_family = score_payload.get("placement_family", "all")
     request_context = score_payload.get("request_context", {})
-    prediction_mode = "diagnostic_plus_roas" if request_mode != "diagnostic_only" else "diagnostic_only"
+    objective_group = _resolve_objective_group(objective)
+    roas_band_eligible = objective_group in {"conversion", "lead"}
+    is_diagnostic_only_request = request_mode == "diagnostic_only"
+    roas_applicable = roas_band_eligible and not is_diagnostic_only_request
+    prediction_mode = "diagnostic_plus_roas" if roas_applicable else "diagnostic_only"
 
     score = 56 if asset_type == "image" else 52
-    if objective == "purchase":
+    if objective_group == "conversion":
         score += 3
-    elif objective == "lead":
+    elif objective_group == "lead":
         score += 2
     if _clip(request_context.get("headline")):
         score += 8
@@ -473,6 +557,8 @@ def build_heuristic_score_result(score_payload: dict, registry_entry: MetaAndrom
         score -= 6
     if _clip(request_context.get("cta")):
         score += 10
+    elif objective_group in {"awareness", "video"}:
+        pass  # CTA not required for these groups
     else:
         score -= 5
     if placement_family in {"feed", "stories"}:
@@ -489,15 +575,18 @@ def build_heuristic_score_result(score_payload: dict, registry_entry: MetaAndrom
         fallback_reason=fallback_reason,
     )
 
-    if score >= 80:
-        roas_band = "high"
-    elif score >= 66:
-        roas_band = "mid"
+    if roas_applicable:
+        if score >= 80:
+            roas_band = "high"
+        elif score >= 66:
+            roas_band = "mid"
+        else:
+            roas_band = "low"
     else:
-        roas_band = "low"
+        roas_band = None
 
     top_positive_drivers = []
-    if _clip(request_context.get("cta")):
+    if _clip(request_context.get("cta")) and objective_group not in {"awareness", "video"}:
         top_positive_drivers.append("明確的行動呼籲 (CTA)")
     if _clip(request_context.get("headline")):
         top_positive_drivers.append("包含廣告標題")
@@ -520,24 +609,69 @@ def build_heuristic_score_result(score_payload: dict, registry_entry: MetaAndrom
     if fallback_reason:
         risk_tags.append("provider_fallback")
 
+    if objective_group == "awareness":
+        diagnostic_breakdown = {
+            "brand_recall": "good" if _clip(request_context.get("headline")) else "needs_work",
+            "message_clarity": "good" if _clip(request_context.get("primary_text")) else "needs_work",
+            "visual_distinctiveness": "good" if asset_type == "image" else "neutral",
+            "emotional_resonance": "neutral",
+        }
+    elif objective_group == "traffic":
+        diagnostic_breakdown = {
+            "thumb_stop": "good" if asset_type == "image" else "neutral",
+            "curiosity_hook": "good" if _clip(request_context.get("headline")) else "needs_work",
+            "visual_appeal": "good" if asset_type == "image" else "neutral",
+            "landing_relevance": "good" if _clip(request_context.get("primary_text")) else "needs_work",
+        }
+    elif objective_group == "video":
+        diagnostic_breakdown = {
+            "hook_strength": "good" if asset_type == "video" else "neutral",
+            "pacing": "neutral",
+            "message_delivery": "good" if _clip(request_context.get("headline")) else "needs_work",
+            "brand_integration": "good" if _clip(request_context.get("primary_text")) else "neutral",
+        }
+    elif objective_group == "lead":
+        diagnostic_breakdown = {
+            "trust_signals": "good" if _clip(request_context.get("primary_text")) else "needs_work",
+            "value_proposition": "good" if _clip(request_context.get("headline")) else "needs_work",
+            "cta_clarity": "clear" if _clip(request_context.get("cta")) else "missing",
+            "audience_fit": "neutral",
+        }
+    elif objective_group == "engagement":
+        diagnostic_breakdown = {
+            "shareability": "neutral",
+            "emotional_hook": "good" if _clip(request_context.get("primary_text")) else "needs_work",
+            "interaction_trigger": "good" if _clip(request_context.get("headline")) else "neutral",
+            "visual_impact": "good" if asset_type == "image" else "neutral",
+        }
+    else:  # conversion
+        diagnostic_breakdown = {
+            "hook_strength": "good" if _clip(request_context.get("headline")) else "needs_work",
+            "cta_presence": "clear" if _clip(request_context.get("cta")) else "missing",
+            "placement_fit": "good" if placement_family in {"feed", "stories"} else "neutral",
+        }
+
+    if is_diagnostic_only_request:
+        roas_unavailable_reason = "diagnostic only request"
+    elif not roas_band_eligible:
+        roas_unavailable_reason = f"not applicable for {objective_group} campaigns"
+    else:
+        roas_unavailable_reason = None
+
     return {
         "status": "completed",
         "prediction_mode": prediction_mode,
         "overall_score": score,
-        "roas_band": roas_band if prediction_mode == "diagnostic_plus_roas" else None,
+        "roas_band": roas_band,
         "model_version": registry_entry.model_version,
         "feature_manifest_id": registry_entry.feature_manifest_id,
         "error_message": None,
-        "diagnostic_breakdown": {
-            "hook_strength": "good" if _clip(request_context.get("headline")) else "needs_work",
-            "cta_presence": "clear" if _clip(request_context.get("cta")) else "missing",
-            "placement_fit": "good" if placement_family in {"feed", "stories"} else "neutral",
-        },
+        "diagnostic_breakdown": diagnostic_breakdown,
         "roas_prediction": {
-            "eligible": prediction_mode == "diagnostic_plus_roas",
-            "band": roas_band if prediction_mode == "diagnostic_plus_roas" else None,
+            "eligible": roas_applicable,
+            "band": roas_band,
             "confidence": confidence,
-            "reason_if_unavailable": None if prediction_mode == "diagnostic_plus_roas" else "diagnostic only request",
+            "reason_if_unavailable": roas_unavailable_reason,
         },
         "risk_tags": risk_tags,
         "top_positive_drivers": top_positive_drivers[:3],
@@ -550,6 +684,7 @@ def build_heuristic_score_result(score_payload: dict, registry_entry: MetaAndrom
                 "provider": registry_entry.provider,
                 "provider_model": registry_entry.provider_model,
                 "objective": objective,
+                "objective_group": objective_group,
                 "placement_family": placement_family,
                 "confidence_detail": confidence_detail,
             },
@@ -563,6 +698,7 @@ def build_heuristic_score_result(score_payload: dict, registry_entry: MetaAndrom
             "registry_profile": registry_entry.scoring_profile,
             "registry_source": registry_entry.source_of_truth,
             "scoring_mode": "heuristic",
+            "objective_group": objective_group,
             "fallback_reason": fallback_reason or "",
             "label_policy_version": LABEL_POLICY_VERSION,
         },

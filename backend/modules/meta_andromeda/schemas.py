@@ -475,6 +475,7 @@ class ScoringProfileEntry(BaseModel):
     bias_summary: dict | None = None
     calibration_guidance: str | None = None
     few_shot_example_count: int
+    objective_profiles: dict | None = None
     created_at: str | None = None
 
 

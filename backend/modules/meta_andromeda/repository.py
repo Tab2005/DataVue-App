@@ -2086,6 +2086,7 @@ class MetaAndromedaRepository:
                 "bias_summary": r.bias_summary,
                 "calibration_guidance": r.calibration_guidance,
                 "few_shot_example_count": len(r.few_shot_examples or []),
+                "objective_profiles": r.objective_profiles or {},
                 "created_at": r.created_at.isoformat() if r.created_at else None,
             }
             for r in rows
