@@ -8,7 +8,7 @@ import {
     fetchMetaAndromedaReviewDetail,
     fetchMetaAndromedaReviewQueue,
 } from '../services/metaAndromedaReviewQueueService';
-import { getDiagnosticLabel } from '../utils/metaAndromedaLabels';
+import { getDiagnosticLabel, getPerfMetricLabel, formatPerfValue } from '../utils/metaAndromedaLabels';
 
 const PAGE_SIZE = 25;
 
@@ -604,9 +604,9 @@ const MetaAndromedaReviewQueue = () => {
                                                 .slice(0, 8)
                                                 .map(([key, value]) => (
                                                     <div key={key} style={innerCardStyle}>
-                                                        <div style={{ fontSize: '0.68rem', color: 'var(--text-secondary)', marginBottom: '2px' }}>{key}</div>
+                                                        <div style={{ fontSize: '0.68rem', color: 'var(--text-secondary)', marginBottom: '2px' }}>{getPerfMetricLabel(key, language)}</div>
                                                         <div style={{ fontWeight: 600, color: 'var(--text-primary)', fontSize: '0.85rem' }}>
-                                                            {typeof value === 'number' ? value.toLocaleString() : String(value)}
+                                                            {formatPerfValue(key, value)}
                                                         </div>
                                                     </div>
                                                 ))}

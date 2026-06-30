@@ -37,3 +37,49 @@ export function getDiagnosticLabel(key, lang = 'zh') {
     if (lang !== 'zh') return key;
     return DIAGNOSTIC_KEY_LABELS_ZH[key] ?? key;
 }
+
+// Performance snapshot metric key → Traditional Chinese label
+// Keys that stay uppercase (ROAS, CPC) keep their English names
+export const PERF_METRIC_LABELS_ZH = {
+    spend:          '花費',
+    impressions:    '曝光次數',
+    clicks:         '點擊數',
+    purchases:      '購買次數',
+    purchase_value: '購買轉換值',
+    roas:           'ROAS',
+    ctr:            '點擊率',
+    cpc:            'CPC',
+    reach:          '觸及人數',
+    frequency:      '頻率',
+    cpp:            'CPP',
+    leads:          '潛在客戶數',
+    video_views:    '影片觀看數',
+    vtr:            'VTR',
+    engagements:    '互動數',
+    link_clicks:    '連結點擊數',
+};
+
+// Format a raw numeric value for display given its metric key
+export function formatPerfValue(key, value) {
+    if (value === null || value === undefined) return '—';
+    const k = String(key).toLowerCase();
+    const n = Number(value);
+    if (Number.isNaN(n)) return String(value);
+    if (k === 'ctr' || k === 'vtr') {
+        // stored as ratio (e.g. 2.163 means 2.163%) or as 0.02163 — detect by magnitude
+        const pct = n > 1 ? n : n * 100;
+        return pct.toFixed(2) + '%';
+    }
+    if (k === 'roas') return n.toFixed(2);
+    if (k === 'cpc' || k === 'cpp') return n.toFixed(2);
+    if (k === 'frequency') return n.toFixed(2);
+    // integers
+    if (Number.isInteger(n)) return n.toLocaleString();
+    // large decimal → 2dp
+    return n.toLocaleString(undefined, { maximumFractionDigits: 2 });
+}
+
+export function getPerfMetricLabel(key, lang = 'zh') {
+    if (lang !== 'zh') return key;
+    return PERF_METRIC_LABELS_ZH[String(key).toLowerCase()] ?? key;
+}
