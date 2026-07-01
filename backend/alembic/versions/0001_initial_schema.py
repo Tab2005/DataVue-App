@@ -18,12 +18,19 @@ depends_on = None
 
 def upgrade() -> None:
     # --- Users Table ---
-    # Enum workaround for PostgreSQL (check if type exists)
-    bind = op.get_bind()
-    if bind.engine.name == 'postgresql':
-        op.execute("DO $$ BEGIN IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'userrole') THEN CREATE TYPE userrole AS ENUM ('ADMIN', 'MEMBER', 'VIEWER'); END IF; END $$;")
-        op.execute("DO $$ BEGIN IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'userstatus') THEN CREATE TYPE userstatus AS ENUM ('ACTIVE', 'SUSPENDED'); END IF; END $$;")
-
+    # 2026-07-01 修復：原本這裡有一段 PostgreSQL 專用的
+    # `DO $$ BEGIN IF NOT EXISTS (...) THEN CREATE TYPE userrole ... END $$;`
+    # 手動防呆區塊，意圖是「型別不存在才建立」。但緊接著的
+    # op.create_table() 中 sa.Enum(name='userrole') 欄位會觸發 SQLAlchemy
+    # 自動建立同名 ENUM type，而 Alembic 呼叫時 checkfirst=False（無條件
+    # 建立，不檢查是否已存在），導致同一交易內型別被建立兩次，
+    # 在全新 PostgreSQL 資料庫上直接拋錯：
+    # (psycopg2.errors.DuplicateObject) type "userrole" already exists。
+    # 已移除手動 DO 區塊，改為單純依賴 op.create_table() 內建的自動建立：
+    # SQLAlchemy 對同一個 (schema, name) 的具名 type 在同一次 migration
+    # 執行過程中會透過內部 memo 去重，所以下面 team_members 表重複引用
+    # 同一個 userrole type 不會導致重複建立。已用全新 PostgreSQL 18
+    # 資料庫實測重現原錯誤並驗證此修復可解決。
     op.create_table('users',
         sa.Column('id', sa.String(), nullable=False),
         sa.Column('google_id', sa.String(), nullable=True),

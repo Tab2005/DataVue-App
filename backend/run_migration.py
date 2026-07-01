@@ -75,6 +75,24 @@ def _ensure_alembic_version_column_capacity() -> None:
     inspector = inspect(engine)
     existing_tables = set(inspector.get_table_names())
     if "alembic_version" not in existing_tables:
+        # 2026-07-01 修復：全新資料庫此時 alembic_version 表尚不存在，
+        # 若在此直接 return，Alembic 接下來會自動以預設寬度
+        # VARCHAR(32) 建立這張表。但本專案有多支 migration 使用超過
+        # 32 字元的自訂 revision id（例如
+        # "20260224_fix_integrations_migration_compat"，44 字元），
+        # 寫入時會因欄位過窄直接報錯
+        # (psycopg2.errors.StringDataRightTruncation)，導致整條
+        # migration 鏈（PostgreSQL 預設整批在同一交易內執行）全部回滾。
+        # 已用全新 PostgreSQL 18 資料庫實測重現並確認此修復可解決：
+        # 提前以足夠寬度手動建表，讓 Alembic 直接沿用既有的表。
+        if engine.dialect.name == "postgresql":
+            with engine.begin() as conn:
+                conn.execute(text(
+                    "CREATE TABLE alembic_version ("
+                    "version_num VARCHAR(128) NOT NULL, "
+                    "CONSTRAINT alembic_version_pkc PRIMARY KEY (version_num)"
+                    ")"
+                ))
         return
 
     columns = inspector.get_columns("alembic_version")

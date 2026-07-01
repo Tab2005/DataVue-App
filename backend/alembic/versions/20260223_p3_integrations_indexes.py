@@ -75,48 +75,44 @@ def upgrade() -> None:
 
     # ── 5.2：新增高頻查詢複合索引 ────────────────────────────────────────
     # 注意：此腳本的 down_revision 指向 fe8441e71f69（早於 20260106_add_permissions_tables）。
-    # 在全新 DB 升級時，user_module_access 等表可能尚未建立；
-    # 使用 try/except 保護，確保在 merge 後的補充執行中可正常建立索引。
-
-    # user_module_access：常以 (user_id, team_id, module_id) 三欄查詢
-    try:
-        op.create_index(
-            "ix_user_module_access_composite",
-            "user_module_access",
-            ["user_id", "team_id", "module_id"],
-            unique=False,
-        )
-    except Exception as e:
-        logger.warning("ix_user_module_access_composite 索引建立跳過（表可能尚未存在或索引已存在）：%s", e)
+    # 在全新 DB 升級時，user_module_access 尚未建立。
+    #
+    # 2026-07-01 修復：原本這裡對三個 create_index 都包了 try/except 想做
+    # 「表可能不存在就跳過」的防呆，這在 SQLite 上恰好能繼續往下跑，但在
+    # PostgreSQL 上一旦某條語句失敗，整個交易會被標記為 aborted，後續所有
+    # 語句（包含其他兩個原本會成功的索引、以及 Alembic 自動更新
+    # alembic_version 的 UPDATE）都會連帶失敗，整支 migration 直接中止。
+    # 已用全新 PostgreSQL 18 資料庫實測重現並確認此修復可解決。
+    #
+    # user_module_access 在此時間點確定尚未建立（由 20260106_add_permissions_tables
+    # 之後才建立），故直接移除這個必定失敗的嘗試；改由
+    # 20260701_consolidate_legacy_schema_patches.py 在該表確定存在後補建此索引。
+    # team_members（0001 建立）與 saved_views（230a10d75894 建立）在此時間點
+    # 都已確定存在，故改為直接呼叫，不再需要防呆。
 
     # team_members：依 user_id 反查所有團隊
-    try:
-        op.create_index(
-            "ix_team_members_user_id",
-            "team_members",
-            ["user_id"],
-            unique=False,
-        )
-    except Exception as e:
-        logger.warning("ix_team_members_user_id 索引建立跳過：%s", e)
+    op.create_index(
+        "ix_team_members_user_id",
+        "team_members",
+        ["user_id"],
+        unique=False,
+    )
 
     # saved_views：使用者在特定團隊的所有視圖
-    try:
-        op.create_index(
-            "ix_saved_views_user_team",
-            "saved_views",
-            ["user_id", "team_id"],
-            unique=False,
-        )
-    except Exception as e:
-        logger.warning("ix_saved_views_user_team 索引建立跳過：%s", e)
+    op.create_index(
+        "ix_saved_views_user_team",
+        "saved_views",
+        ["user_id", "team_id"],
+        unique=False,
+    )
 
 
 def downgrade() -> None:
     # 5.2 索引回滾
+    # 注意：ix_user_module_access_composite 已改由
+    # 20260701_consolidate_legacy_schema_patches.py 建立，此處不再處理。
     op.drop_index("ix_saved_views_user_team", table_name="saved_views")
     op.drop_index("ix_team_members_user_id", table_name="team_members")
-    op.drop_index("ix_user_module_access_composite", table_name="user_module_access")
 
     # 5.1 資料表回滾
     op.drop_index("ix_user_integrations_lookup", table_name="user_integrations")

@@ -30,7 +30,7 @@ from datetime import datetime, timezone
 from typing import Optional, Callable, Any
 
 from alembic import op
-from sqlalchemy import text
+from sqlalchemy import inspect, text
 
 # revision identifiers
 revision = "20260224_fix_integrations_migration_compat"
@@ -52,6 +52,7 @@ def _get_now_iso() -> str:
 
 def _migrate_tokens(
     conn,
+    existing_user_columns: set[str],
     provider: str,
     access_token_col: str,
     refresh_token_col: Optional[str] = None,
@@ -63,6 +64,7 @@ def _migrate_tokens(
 
     Args:
         conn             : SQLAlchemy Connection
+        existing_user_columns: users 表目前實際存在的欄位集合（避免查詢不存在的欄位）
         provider         : 整合提供方名稱
         access_token_col : users 表中 access token 欄位名稱
         refresh_token_col: users 表中 refresh token 欄位名稱（可選）
@@ -72,26 +74,36 @@ def _migrate_tokens(
     Returns:
         已遷移的資料筆數
     """
+    # 2026-07-01 修復：原本用 try/except 包住 SELECT，欄位不存在時捕捉例外
+    # 並跳過。這在 SQLite 上可行，但在 PostgreSQL 上一旦某條 SELECT 因欄位
+    # 不存在而失敗，整個交易會被標記為 aborted，導致後續所有 provider
+    # （即使欄位確實存在）的查詢與最終的 alembic_version 更新全部失敗。
+    # 已改為執行查詢前先檢查欄位是否存在，避免任何一次資料庫層級的錯誤，
+    # 不再需要 try/except。已用全新 PostgreSQL 18 資料庫實測重現並驗證此修復。
+    if access_token_col not in existing_user_columns:
+        logger.warning(
+            "[%s] users.%s 欄位不存在，跳過此 provider 的資料遷移",
+            provider,
+            access_token_col,
+        )
+        return 0
+
     select_cols = ["id", access_token_col]
-    if refresh_token_col:
+    if refresh_token_col and refresh_token_col in existing_user_columns:
         select_cols.append(refresh_token_col)
-    if expiry_col:
+    else:
+        refresh_token_col = None
+    if expiry_col and expiry_col in existing_user_columns:
         select_cols.append(expiry_col)
+    else:
+        expiry_col = None
 
     select_sql = (
         f"SELECT {', '.join(select_cols)} FROM users "
         f"WHERE {access_token_col} IS NOT NULL"
     )
 
-    try:
-        rows = conn.execute(text(select_sql)).fetchall()
-    except Exception as exc:
-        logger.warning(
-            "[%s] 查詢 users 表遇到錯誤（欄位可能不存在，跳過此 provider）：%s",
-            provider,
-            exc,
-        )
-        return 0
+    rows = conn.execute(text(select_sql)).fetchall()
 
     migrated_count = 0
     now = _get_now_iso()
@@ -163,9 +175,12 @@ def upgrade() -> None:
     conn = op.get_bind()
     total = 0
 
+    existing_user_columns = {c["name"] for c in inspect(conn).get_columns("users")}
+
     # 1. Facebook Token
     total += _migrate_tokens(
         conn,
+        existing_user_columns,
         provider="facebook",
         access_token_col="fb_access_token",
         expiry_col="token_expires_at",
@@ -178,6 +193,7 @@ def upgrade() -> None:
     # 2. Google Search Console Token
     total += _migrate_tokens(
         conn,
+        existing_user_columns,
         provider="gsc",
         access_token_col="gsc_access_token",
         refresh_token_col="gsc_refresh_token",
@@ -188,6 +204,7 @@ def upgrade() -> None:
     # 3. Google Analytics 4 Token
     total += _migrate_tokens(
         conn,
+        existing_user_columns,
         provider="ga4",
         access_token_col="ga4_access_token",
         refresh_token_col="ga4_refresh_token",
@@ -198,6 +215,7 @@ def upgrade() -> None:
     # 4. Zeabur AI Key
     total += _migrate_tokens(
         conn,
+        existing_user_columns,
         provider="ai_zeabur",
         access_token_col="zeabur_api_key",
         extra_data_builder=lambda r: {
@@ -209,6 +227,7 @@ def upgrade() -> None:
     # 5. Gemini AI Key
     total += _migrate_tokens(
         conn,
+        existing_user_columns,
         provider="ai_gemini",
         access_token_col="gemini_api_key",
         extra_data_builder=lambda r: {

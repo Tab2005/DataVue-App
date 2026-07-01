@@ -132,123 +132,6 @@ def run_migrations():
         return False
 
 
-def patch_database_schema(engine):
-    """Auto-patch database schema for missing columns."""
-    from sqlalchemy import text, inspect
-    
-    try:
-        inspector = inspect(engine)
-        
-        # Patch Teams table
-        if inspector.has_table("teams"):
-            columns = [c["name"] for c in inspector.get_columns("teams")]
-            
-            team_patches = [
-                ("visible_ad_account_ids", "TEXT"),
-                ("fb_app_id", "VARCHAR"),
-                ("fb_access_token", "VARCHAR"),
-                ("token_expires_at", "TIMESTAMP"),
-            ]
-            
-            for col_name, col_type in team_patches:
-                if col_name not in columns:
-                    logger.info(f"Patching teams.{col_name}...")
-                    with engine.connect() as conn:
-                        conn.execute(text(f"ALTER TABLE teams ADD COLUMN {col_name} {col_type}"))
-                        conn.commit()
-        
-        # Patch Users table
-        if inspector.has_table("users"):
-            columns = [c["name"] for c in inspector.get_columns("users")]
-            
-            user_patches = [
-                ("gsc_access_token", "TEXT"),
-                ("gsc_refresh_token", "TEXT"),
-                ("gsc_expires_at", "TIMESTAMP"),
-                ("zeabur_api_key", "VARCHAR"),
-                ("gemini_api_key", "VARCHAR"),
-                ("ai_provider", "VARCHAR DEFAULT 'zeabur'"),
-                ("ai_model", "VARCHAR DEFAULT 'gemini-1.5-flash'"),
-                # GA4 Integration
-                ("ga4_access_token", "TEXT"),
-                ("ga4_refresh_token", "TEXT"),
-                ("ga4_expires_at", "TIMESTAMP"),
-            ]
-            
-            for col_name, col_type in user_patches:
-                if col_name not in columns:
-                    logger.info(f"Patching users.{col_name}...")
-                    try:
-                        with engine.connect() as conn:
-                            conn.execute(text(f"ALTER TABLE users ADD COLUMN {col_name} {col_type}"))
-                            conn.commit()
-                    except Exception as e:
-                        logger.warning(f"Failed to add {col_name}: {e}")
-        
-        # Patch WeeklyReports table
-        if inspector.has_table("weekly_reports"):
-            columns = [c["name"] for c in inspector.get_columns("weekly_reports")]
-            if "share_token" not in columns:
-                logger.info("Patching weekly_reports.share_token...")
-                with engine.connect() as conn:
-                    conn.execute(text("ALTER TABLE weekly_reports ADD COLUMN share_token VARCHAR"))
-                    conn.execute(text("CREATE UNIQUE INDEX ix_weekly_reports_share_token ON weekly_reports (share_token)"))
-                    conn.commit()
-            
-            if "module_type" not in columns:
-                logger.info("Patching weekly_reports.module_type...")
-                with engine.connect() as conn:
-                    conn.execute(text("ALTER TABLE weekly_reports ADD COLUMN module_type VARCHAR DEFAULT 'fb_ads'"))
-                    conn.commit()
-
-        # Patch ReportSchedules table
-        if inspector.has_table("report_schedules"):
-            columns = [c["name"] for c in inspector.get_columns("report_schedules")]
-            if "module_type" not in columns:
-                logger.info("Patching report_schedules.module_type...")
-                with engine.connect() as conn:
-                    conn.execute(text("ALTER TABLE report_schedules ADD COLUMN module_type VARCHAR DEFAULT 'fb_ads'"))
-                    conn.commit()
-        
-        # Create page_titles table if missing
-        if not inspector.has_table("page_titles"):
-            logger.info("Creating page_titles table...")
-            with engine.connect() as conn:
-                conn.execute(text("""
-                    CREATE TABLE page_titles (
-                        id VARCHAR PRIMARY KEY,
-                        url VARCHAR UNIQUE NOT NULL,
-                        title VARCHAR,
-                        fetched_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-                    )
-                """))
-                conn.commit()
-            logger.info("Table 'page_titles' created")
-        
-        # Create saved_views table if missing
-        if not inspector.has_table("saved_views"):
-            logger.info("Creating saved_views table...")
-            with engine.connect() as conn:
-                conn.execute(text("""
-                    CREATE TABLE saved_views (
-                        id VARCHAR PRIMARY KEY,
-                        user_id VARCHAR NOT NULL,
-                        name VARCHAR NOT NULL,
-                        type VARCHAR NOT NULL,
-                        config TEXT NOT NULL,
-                        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-                    )
-                """))
-                conn.commit()
-            logger.info("Table 'saved_views' created")
-        
-        logger.info("Schema patching completed")
-        return True
-    except Exception as e:
-        logger.warning(f"Schema Patching Warning: {e}")
-        return False
-
-
 def seed_permissions():
     """Seed default permissions into the database."""
     try:
@@ -325,7 +208,7 @@ def run_startup_tasks():
     
     # 3. Import database and check connection
     try:
-        from database import engine, init_db, check_db_connection
+        from database import init_db, check_db_connection
         logger.info("Database module imported")
         
         if not check_db_connection():
@@ -352,13 +235,11 @@ def run_startup_tasks():
     else:
         run_migrations()
     
-    # 5. Patch schema (Legacy fallback, should move to Alembic)
-    patch_database_schema(engine)
-    
-    # 6. Initialize database (dev-mode create_all)
+    # 5. Initialize database (dev-mode create_all; production 只信任 Alembic，
+    #    見 database/__init__.py::init_db() 的 dialect 分流邏輯)
     init_db()
-    
-    # 7. Seed Meta Andromeda default models and records
+
+    # 6. Seed Meta Andromeda default models and records
     try:
         from modules.meta_andromeda.repository import repository
         from database import SessionLocal
@@ -371,10 +252,10 @@ def run_startup_tasks():
     except Exception as e:
         logger.error(f"Failed to seed Meta Andromeda data on startup: {e}")
 
-    # 8. Seed permissions
+    # 7. Seed permissions
     seed_permissions()
-    
-    # 9. Sync super admin
+
+    # 8. Sync super admin
     sync_super_admin()
     
     logger.info("=" * 50)

@@ -1,9 +1,23 @@
 """add_module_type_to_reports
 
 Revision ID: 403dfb0cfbd4
-Revises: 20260331_merge_all_heads
+Revises: 20260701_consolidate_legacy_patches
 Create Date: 2026-05-07 17:02:07.516486
 
+此 migration 假設 page_titles / saved_views 表已存在（僅 batch_alter_table，
+不建表）。2026-07-01 新增 20260701_consolidate_legacy_patches 補上
+page_titles 的 create_table，並插入為本檔案的新 down_revision，
+確保全新資料庫也能單靠 alembic upgrade head 跑通。
+
+2026-07-01 補充發現：saved_views 的 batch_alter_table 區塊假設表為「舊版
+raw-SQL 補丁 schema」（id/user_id/name/type/config/created_at）。但同鏈中
+較早的 230a10d75894_add_saved_views_table 建表時用的已是新版 schema
+（metrics/team_id/created_by，且已含 FK 與索引，無 type/config）。
+在全新資料庫上依序執行整條 migration 鏈時，230a10d75894 建出的已是新版
+schema，導致本檔案再次 add_column(metrics/team_id/created_by) 與
+drop_column(type/config) 直接出錯（重複欄位 / KeyError）。
+已改為偵測是否仍為舊版 schema（存在 'type' 欄位）才執行本區塊，
+對新版 schema（新環境）為 no-op；對真實延續自舊版補丁的既有環境行為不變。
 """
 from alembic import op
 import sqlalchemy as sa
@@ -11,7 +25,7 @@ import sqlalchemy as sa
 
 # revision identifiers, used by Alembic.
 revision = '403dfb0cfbd4'
-down_revision = '20260331_merge_all_heads'
+down_revision = '20260701_consolidate_legacy_patches'
 branch_labels = None
 depends_on = None
 
@@ -32,28 +46,34 @@ def upgrade() -> None:
     with op.batch_alter_table('report_schedules', schema=None) as batch_op:
         batch_op.add_column(sa.Column('module_type', sa.String(), nullable=True))
 
-    with op.batch_alter_table('saved_views', schema=None) as batch_op:
-        batch_op.add_column(sa.Column('metrics', sa.String(), nullable=False))
-        batch_op.add_column(sa.Column('team_id', sa.String(), nullable=True))
-        batch_op.add_column(sa.Column('created_by', sa.String(), nullable=True))
-        batch_op.alter_column('id',
-               existing_type=sa.VARCHAR(),
-               nullable=False)
-        batch_op.alter_column('user_id',
-               existing_type=sa.VARCHAR(),
-               nullable=True)
-        batch_op.alter_column('created_at',
-               existing_type=sa.TIMESTAMP(),
-               type_=sa.DateTime(),
-               existing_nullable=True,
-               existing_server_default=sa.text('(CURRENT_TIMESTAMP)'))
-        batch_op.create_index(batch_op.f('ix_saved_views_team_id'), ['team_id'], unique=False)
-        batch_op.create_index(batch_op.f('ix_saved_views_user_id'), ['user_id'], unique=False)
-        batch_op.create_foreign_key('fk_saved_views_team_id', 'teams', ['team_id'], ['id'])
-        batch_op.create_foreign_key('fk_saved_views_user_id', 'users', ['user_id'], ['id'])
-        batch_op.create_foreign_key('fk_saved_views_created_by', 'users', ['created_by'], ['id'])
-        batch_op.drop_column('type')
-        batch_op.drop_column('config')
+    conn = op.get_bind()
+    inspector = sa.inspect(conn)
+    saved_views_columns = {c["name"] for c in inspector.get_columns("saved_views")}
+    if "type" in saved_views_columns:
+        # 仍為舊版 raw-SQL 補丁 schema，執行既有的欄位遷移邏輯
+        with op.batch_alter_table('saved_views', schema=None) as batch_op:
+            batch_op.add_column(sa.Column('metrics', sa.String(), nullable=False))
+            batch_op.add_column(sa.Column('team_id', sa.String(), nullable=True))
+            batch_op.add_column(sa.Column('created_by', sa.String(), nullable=True))
+            batch_op.alter_column('id',
+                   existing_type=sa.VARCHAR(),
+                   nullable=False)
+            batch_op.alter_column('user_id',
+                   existing_type=sa.VARCHAR(),
+                   nullable=True)
+            batch_op.alter_column('created_at',
+                   existing_type=sa.TIMESTAMP(),
+                   type_=sa.DateTime(),
+                   existing_nullable=True,
+                   existing_server_default=sa.text('(CURRENT_TIMESTAMP)'))
+            batch_op.create_index(batch_op.f('ix_saved_views_team_id'), ['team_id'], unique=False)
+            batch_op.create_index(batch_op.f('ix_saved_views_user_id'), ['user_id'], unique=False)
+            batch_op.create_foreign_key('fk_saved_views_team_id', 'teams', ['team_id'], ['id'])
+            batch_op.create_foreign_key('fk_saved_views_user_id', 'users', ['user_id'], ['id'])
+            batch_op.create_foreign_key('fk_saved_views_created_by', 'users', ['created_by'], ['id'])
+            batch_op.drop_column('type')
+            batch_op.drop_column('config')
+    # 否則（新版 schema，如全新資料庫由 230a10d75894 直接建出）：no-op
 
     with op.batch_alter_table('weekly_reports', schema=None) as batch_op:
         batch_op.add_column(sa.Column('module_type', sa.String(), nullable=True))

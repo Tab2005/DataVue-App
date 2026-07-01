@@ -28,63 +28,118 @@
 
 ## P0 — 安全與資料完整性
 
-### P0-1 收斂 DB Schema 管理為單一 Alembic 路徑
+### P0-1 收斂 DB Schema 管理為單一 Alembic 路徑 ✅ 已完成（2026-07-01）
 
-**問題定位**
-目前有三套機制同時管理 schema，彼此職責重疊、部署順序敏感：
+**原始問題定位**
+目前有三套機制同時管理 schema：
 1. `core/startup.py::run_migrations()` → 執行 Alembic（正統）
-2. `core/startup.py::patch_database_schema(engine)`（L135-249）→ 手動 `ALTER TABLE ADD COLUMN` / `CREATE TABLE`
-3. `core/startup.py::init_db()`（L359）→ SQLAlchemy `create_all`
+2. `core/startup.py::patch_database_schema(engine)`（原 L135-249）→ 手動 `ALTER TABLE ADD COLUMN` / `CREATE TABLE`
+3. `database/__init__.py::init_db()` → `create_all()` + 額外兩處獨立的 fail-safe `ALTER TABLE`（`users.line_user_id`、`report_schedules.is_notify_line`）— **原計畫遺漏了這一層**，實際稽核時才發現這是第三套、與 `patch_database_schema` 各自獨立的補丁機制。
 
-現有 Alembic versions 已有 19 個 migration（含 `20260114_add_ga4_columns.py`、`403dfb0cfbd4_add_module_type_to_reports.py` 等），與 `patch_database_schema` 補的欄位**高度重複**（如 ga4 欄位、module_type、share_token）。
+**實際稽核結果（用全新 SQLite 空庫直接跑 `alembic upgrade head` 實測，而非僅靜態比對）**
 
-**修改方案（分階段，確保安全）**
+原計畫假設「大部分 patch 項目已被既有 migration 涵蓋，僅需少量補件」，但實測發現落差遠比預期大且會直接讓全新資料庫的 `alembic upgrade head` 中途崩潰：
 
-**階段 A：稽核落差（不改行為）**
-1. 建立一次性稽核腳本 `scripts/audit_schema_drift.py`：對照 `Base.metadata` 與實際 DB `inspect(engine)`，列出缺漏欄位/表。
-2. 逐一確認 `patch_database_schema` 補的每個欄位是否已被某個 migration 涵蓋：
+| 項目 | 稽核結果 |
+|---|---|
+| `teams.visible_ad_account_ids` / `fb_app_id` / `fb_access_token` / `token_expires_at` | ✅ 已被 `0001_initial_schema.py` + `fe8441e71f69` 完整涵蓋，`patch_database_schema` 對應區塊本來就是 dead code |
+| `users.ga4_*` / `openrouter_api_key` | ✅ 已涵蓋（`20260114_add_ga4_columns.py`、`46c781526b51`） |
+| `saved_views` 表 | ⚠️ **鏈上存在孤立矛盾**：`230a10d75894` 已建出新版 schema（含 metrics/team_id/created_by），但 `403dfb0cfbd4` 的 `batch_alter_table` 卻假設舊版 raw-SQL 補丁 schema（type/config 欄位）存在並嘗試再次新增/刪除，全新資料庫上會直接拋 `KeyError`。**已修復**：於 `403dfb0cfbd4` 內加入 `type` 欄位存在性檢查，僅在偵測到舊版 schema 時才執行遷移邏輯 |
+| `page_titles` 表 | 🔴 **從未被任何 migration 建立**，僅靠 `patch_database_schema`／`create_all()` 存在。`403dfb0cfbd4` 對它做 `batch_alter_table` 假設表已存在，全新資料庫上實測直接拋 `NoSuchTableError: page_titles` |
+| `report_schedules` 表本體 | 🔴 **從未被任何 migration 建立**（只有後續 migration 對它 `add_column`），同樣僅靠 `create_all()` 存在 |
+| `line_bindings` 表本體 | 🔴 同上，從未被任何 migration 建立 |
+| `users.gsc_access_token/refresh_token/expires_at`、`zeabur_api_key`、`gemini_api_key`、`ai_provider`、`ai_model`、`line_user_id` | 🔴 從未被任何 migration `add_column`，僅靠執行期補丁存在 |
+| `weekly_reports.share_token` | 🔴 從未被任何 migration 加入 |
+| `report_schedules.is_notify_line` | 🔴 從未被任何 migration 加入（僅存在於 `init_db()` 的獨立 fail-safe） |
+| （附帶發現）`ix_user_module_access_composite` 索引 | ⚠️ `20260223_p3_integrations_indexes.py` 因分支合併順序問題，在全新資料庫上此索引建立會被自身的 `try/except` 靜默吞掉，從未真正建立（效能索引，非阻斷性問題，已一併補上） |
 
-   | patch 項目 | 對應 migration | 狀態 |
-   |---|---|---|
-   | `users.ga4_*` | `20260114_add_ga4_columns.py` | ✅ 已涵蓋 |
-   | `weekly_reports.module_type` / `report_schedules.module_type` | `403dfb0cfbd4_add_module_type_to_reports.py` | 待確認 |
-   | `weekly_reports.share_token` | `20260331_add_weekly_reports.py` | 待確認 |
-   | `teams.fb_*` / `token_expires_at` | `fe8441e71f69_add_team_token_expires_at.py` | 待確認 |
-   | `page_titles` / `saved_views` 表 | `230a10d75894_add_saved_views_table.py` | 待確認 |
-   | `users.gemini_api_key` / `zeabur_api_key` / `openrouter_api_key` | `46c781526b51_add_openrouter_api_key.py` | 待確認 |
+**已完成的變更**
 
-**階段 B：補齊缺口的 migration**
-- 對稽核發現「只有 patch 有、migration 沒有」的欄位，新增一支 migration `alembic revision -m "consolidate legacy schema patches"`，把這些 DDL 正式化，並在 `upgrade()` 中用 `op.get_bind()` + `inspector.has_column` 做冪等保護（相容既有已補過的環境）：
+1. 新增 migration `backend/alembic/versions/20260701_consolidate_legacy_schema_patches.py`：
+   - `down_revision` 指向 `20260331_merge_all_heads`，**插入**在 `403dfb0cfbd4` 之前執行（而非簡單接在 head 之後）——因為 `403dfb0cfbd4` 對 `page_titles`／`report_schedules` 的 `batch_alter_table` 需要這些表在它執行時就已存在。所有動作皆先檢查存在性，對已具備該欄位/表的環境（即所有目前運行中的既有環境，因為它們都已透過執行期補丁擁有這些欄位/表）為 no-op。
+   - 補上 `report_schedules`、`line_bindings`、`page_titles` 三張表的 `create_table`；`users` 的 8 個舊版欄位；`weekly_reports.share_token`；`report_schedules.is_notify_line`；`ix_user_module_access_composite` 索引。
+2. 修改 `403dfb0cfbd4_add_module_type_to_reports.py`：`down_revision` 改指向新 migration；`saved_views` 區塊加上「是否仍為舊版 schema」的存在性檢查後才執行（見上表）。
+3. `core/startup.py`：**完整移除** `patch_database_schema()` 函式（115 行）與其呼叫，`run_startup_tasks()` 步驟重新編號。
+4. `database/__init__.py::init_db()`：移除 `line_user_id`／`is_notify_line` 兩處獨立 fail-safe `ALTER TABLE`（現已由 migration 涵蓋）；保留 `required_tables` 存在性檢查與 SQLite-only 的 emergency `create_all()`（僅在 migrations 未執行的異常情況下才會觸發，且 PostgreSQL 生產環境不受影響，暫不在本次變更中移除，作為更保守的雙重保險）。
 
-```python
-def upgrade():
-    conn = op.get_bind()
-    insp = sa.inspect(conn)
-    existing = {c["name"] for c in insp.get_columns("teams")}
-    if "fb_access_token" not in existing:
-        op.add_column("teams", sa.Column("fb_access_token", sa.String(), nullable=True))
-    # ...其餘欄位比照
+**驗證結果**
+- ✅ 全新空 SQLite 資料庫執行 `alembic upgrade head`：完整跑完全部 20 個 migration 無崩潰。
+- ✅ 事後以 `Base.metadata` 對照全新資料庫實際 schema：**零落差**（所有表、所有欄位完全一致）。
+- ✅ 對現有本機開發資料庫（`facebook_dashboard.db`，起始於落後 head 一版）套用同一鏈：僅執行最後一版 migration（新 migration 因該庫已越過插入點而被 Alembic 判定為免執行，符合預期），資料列數量不變，無資料流失。
+- ✅ 完整跑一次 `run_startup_tasks()`（migrations → init_db → Meta Andromeda seed → permission seed → super admin sync）於全新資料庫：全部成功，回傳 `True`。
+- ✅ `pytest tests/` 前後比對：**79 passed / 12 failed，變更前後失敗清單完全相同**（12 個失敗為既有問題，與網路依賴的 Meta Andromeda 測試及一個時區相關的 scheduler 測試有關，與本次改動無關，已用 `git stash` 驗證基準）。
+- ✅ `tests/test_health.py`：5 passed。
+
+**發現但刻意不在本次修復範圍內的問題**（留給後續追蹤）：
+1. `403dfb0cfbd4` 原本的 `downgrade()` 函式本身有預先存在的 bug（`batch_op.drop_constraint(None, type_='foreignkey')` 缺少具名約束，SQLAlchemy 較新版本會拋 `ValueError: Constraint must have a name`）。這與本次改動無關（我只改了它的 `upgrade()` 與 `down_revision`），且此專案的 19+ 個既有 migration 顯示 `downgrade()` 路徑從未被實際使用過。不建議現在修，因為需要對每支 migration 的 downgrade 個別檢查，屬於獨立的中型任務。
+2. 本機開發資料庫 `facebook_dashboard.db` 的 `meta_andromeda_assets`（缺 `storage_backend`/`storage_key`/`public_url`）與 `meta_andromeda_score_events`（缺 `queued_at`/`started_at`/`completed_at`/`failed_at`/`attempt_count`/`runtime_job_id`）兩張表，相較於目前 ORM model 有欄位缺漏。**已確認這是本機開發資料庫特有的歷史殘留**（在全新資料庫上跑相同 migration 鏈完全沒有此問題，證明 migration 本身完整）；研判是這兩張表早年由 `create_all()` 以舊版 model 建立，之後 model 新增了這些欄位但從未有對應 migration 或補丁去 `ALTER` 既有的本機表。**建議**：在部署到 staging/production 前，用本文件描述的稽核手法（全新 DB 跑 `alembic upgrade head` + 對照 `Base.metadata`）先確認 staging/production 資料庫是否也有此殘留；若本機資料不重要可考慮直接刪除重建這兩張表，或另開一支 migration 修補。
+
+**風險評估**：低（已完整驗證，含真實 PostgreSQL，見下）。
+
+---
+
+### P0-1 補充：真實 PostgreSQL 驗證，發現並修復 3 個獨立的既有 bug ✅ 已完成（2026-07-01）
+
+**背景**：用戶詢問「上述情形（P0-1 的發現）跟直接部署在網路 PostgreSQL 資料庫有關嗎？」。為了給出實證而非推論的答案，用戶提供了一組正式環境的 PostgreSQL 連線資訊。經確認該資料庫已有 29 張表、3 個真實使用者、`alembic_version` 已在 head，屬於**正式環境**。因此**全程未對該資料庫本身做任何寫入操作**，改為在同一台 PostgreSQL 主機上另建一個完全獨立、用完即刪的空白資料庫 `datavue_p0_1_test` 進行驗證（PostgreSQL 18.3）。
+
+這次驗證額外挖出 **3 個完全獨立於 P0-1 原始範圍、但同樣阻斷「全新 PostgreSQL 資料庫跑 `alembic upgrade head`」的既有 bug**。三者的共同根因：這個專案的 migration 鏈**從第一支（`0001_initial_schema.py`）開始，就從來沒有在真正全新的 PostgreSQL 資料庫上被完整測試過**——所有真實環境都是靠 `patch_database_schema()`／`create_all()` 建表，或被 `run_migration.py` 的 legacy-stamping 邏輯直接跳過大部分早期 migration。
+
+#### 發現 1：`0001_initial_schema.py` — ENUM type 重複建立
+
+**現象**：全新 PostgreSQL 資料庫上第一支 migration 就報錯：
 ```
-
-**階段 C：移除舊機制**
-1. `core/startup.py`：刪除 `patch_database_schema` 函式與其在 `run_startup_tasks()` 的呼叫（原 L356）。
-2. `init_db()` 的 `create_all`：改為**僅在 SQLite 開發模式**執行，生產（PostgreSQL）只信任 Alembic：
-
-```python
-# core/startup.py run_startup_tasks()
-from core.config import settings
-if not settings.is_postgres:
-    init_db()   # 僅開發用 SQLite 快速建表
+psycopg2.errors.DuplicateObject: type "userrole" already exists
 ```
+**根因**：程式碼裡手動用 `DO $$ BEGIN IF NOT EXISTS (...) THEN CREATE TYPE userrole ... END $$;` 先建立一次 ENUM type（防呆），但緊接著 `op.create_table('users', ...)` 裡 `sa.Enum(name='userrole')` 欄位會觸發 SQLAlchemy **自動且無條件**（`checkfirst=False`，Alembic 的預設行為）再建立一次同名 type，兩者互相打架。
 
-3. 保留 `DATAVUE_SKIP_STARTUP_MIGRATIONS` 機制（部署 entrypoint 已跑 migration 時可跳過）。
+**修復**：移除手動 `DO $$` 區塊，只保留 `op.create_table()` 自身的自動建立。SQLAlchemy 對同一個具名 type 在同一次 migration 執行過程中會透過內部 memo 去重，所以 `team_members` 表重複引用同一個 `userrole` type 不會導致重複建立。
 
-**驗證**
-- 在乾淨 SQLite 與乾淨 PostgreSQL 各跑一次 `alembic upgrade head` → 執行 `scripts/audit_schema_drift.py` 應回報「無落差」。
-- 既有生產 DB 執行新 migration 應為 no-op（冪等保護生效）。
-- `backend/tests/test_health.py` 應綠燈。
+（過程中曾嘗試用 `sa.Enum(..., create_type=False)` 修復，經追查 SQLAlchemy 原始碼確認 `create_type` 並非通用 `sa.Enum` 支援的參數、只在 `sqlalchemy.dialects.postgresql.ENUM` 上有效，此路不通，已改用上述根本修復。）
 
-**風險**：中。務必先在既有生產 DB 快照上驗證冪等性再上線。
+#### 發現 2：`20260223_p3_integrations_indexes.py` — try/except 在 PostgreSQL 下不安全
+
+**現象**：修復發現 1 後，下一步報錯：
+```
+psycopg2.errors.InFailedSqlTransaction: current transaction is aborted, commands ignored until end of transaction block
+```
+**根因**：這支 migration 對 `ix_user_module_access_composite` 索引建立包了 `try/except Exception`，因為此時 `user_module_access` 表確實還不存在（分支合併順序問題，程式碼註解本身也承認這點）。**在 SQLite 上，單一語句失敗不會拖累同一交易內的後續語句，所以 try/except 能正常吞掉錯誤繼續跑；但 PostgreSQL 的交易語意不同——任何一條語句出錯，整個交易會被標記為 aborted，之後所有語句（包含另外兩個原本會成功的索引、以及 Alembic 自動更新 `alembic_version` 的 UPDATE）全部被拒絕**，導致整支 migration 中止，且因為 PostgreSQL 下 Alembic 預設把一次 `upgrade()` 呼叫內的所有 migration 包在同一個外層交易，最終連前面已成功的 `0001` 等 migration 也會被整批回滾。
+
+**修復**：移除 `ix_user_module_access_composite` 這個確定會失敗的嘗試（改由本次新增的 `20260701_consolidate_legacy_schema_patches.py` 在該表確定存在後補建，原本就是為此設計）；另外兩個索引（`team_members`、`saved_views`，兩張表在此時間點確定已存在）改為直接呼叫，不再假裝需要防呆。
+
+#### 發現 3：`20260224_fix_integrations_migration_compat.py` — 同樣的 try/except 交易汙染問題
+
+**現象**：修復發現 2 後，下一步同樣報錯 `InFailedSqlTransaction`。
+**根因**：與發現 2 同一種模式——`_migrate_tokens()` 函式對 `SELECT gsc_access_token FROM users ...` 包了 `try/except`（因為在此時間點 `gsc_access_token`／`zeabur_api_key`／`gemini_api_key` 等欄位確實還不存在，要等到本次新增的 migration 才會加上），在 SQLite 上能繼續跑，在 PostgreSQL 上會拖垮整條鏈。
+
+**修復**：改為執行查詢前，先用 `inspect(conn).get_columns("users")` 檢查欄位是否存在，用**查詢前判斷**取代**查詢後補救**，行為完全等價但不會觸碰資料庫層級的錯誤狀態。
+
+#### 發現 4：`run_migration.py`（正式環境的實際遷移入口）— `alembic_version` 欄位寬度不足
+
+**現象**：修復發現 1-3 後，migration 鏈本身內容全部成功執行，但最後一步 Alembic 自動更新 `alembic_version.version_num` 時報錯：
+```
+psycopg2.errors.StringDataRightTruncation: value too long for type character varying(32)
+```
+**根因**：這個專案有多支 migration 使用超過 32 字元的自訂 revision id（例如 `20260224_fix_integrations_migration_compat`，44 字元），但 PostgreSQL 建立 `alembic_version` 表時的預設欄位寬度是 `VARCHAR(32)`（Alembic 沿用標準 32 字元 hex hash 的假設）。
+
+有趣的是：**`run_migration.py` 本身已經有 `_ensure_alembic_version_column_capacity()` 函式專門處理這個問題**——但只處理「`alembic_version` 表已存在、欄位太窄」的情況，對「全新資料庫、`alembic_version` 表根本還不存在」的情況會直接 `return` 提前放棄，把建表工作交給 Alembic 自己（用預設的窄欄位），於是問題原封不動地發生。這證實團隊已經知道這類問題的存在（且已經修過一次類似的情境），只是沒覆蓋到最根本的「從零開始」情境。
+
+**修復**：`_ensure_alembic_version_column_capacity()` 在偵測到 `alembic_version` 表不存在時（僅限 PostgreSQL），改為提前手動用足夠寬度（`VARCHAR(128)`，與既有補寬邏輯的目標寬度一致）建立這張表，讓 Alembic 直接沿用。
+
+#### 驗證結果（全部基於真實 PostgreSQL 18.3，非 SQLite 模擬）
+
+- ✅ 全新空 PostgreSQL 資料庫，透過**正式環境實際會執行的入口** `python run_migration.py`（而非直接呼叫 `alembic` CLI）：完整跑完全部 20 個 migration，`Migration upgrade successful.`。
+- ✅ 事後以 `Base.metadata` 對照：**零落差**（29 張表、所有欄位完全一致）。
+- ✅ 修復後重新驗證 SQLite 路徑（同樣全新空資料庫跑 `alembic upgrade head`）：仍然完整跑通，無回歸。
+- ✅ `pytest tests/`：79 passed / 12 failed，與修復前後、與 SQLite-only 驗證階段完全一致（無新增失敗）。
+- ✅ 全程未對用戶提供的正式資料庫 `zeabur` 做任何寫入，僅做過一次唯讀查詢確認其狀態；測試專用的 `datavue_p0_1_test` 資料庫已於驗證完成後 `DROP DATABASE` 清除，PostgreSQL 主機上僅剩 `postgres`（系統預設）與 `zeabur`（用戶正式資料庫）。
+
+**修改檔案清單（本補充部分）**：
+- `backend/alembic/versions/0001_initial_schema.py`
+- `backend/alembic/versions/20260223_p3_integrations_indexes.py`
+- `backend/alembic/versions/20260224_fix_integrations_migration_compat.py`
+- `backend/run_migration.py`
+
+**重要結論**：在這次修復之前，這個專案**沒有任何一條路徑能讓一個全新的 PostgreSQL 資料庫單靠程式碼自動建出完整可用的 schema**——無論是用 `alembic` CLI 或用正式環境實際使用的 `run_migration.py` 都會中途失敗。現有生產環境之所以正常運作，完全是因為它從來不是「全新」的（一路靠 `patch_database_schema()`／`create_all()`／legacy stamping 撐過來）。這意味著在移除 `patch_database_schema()` 這個安全網之前，**任何一次災難復原、staging 重建、或資料庫搬遷，理論上都會直接失敗在第一步**。現在，這條路徑已經被實測打通。
 
 ---
 
@@ -363,20 +418,20 @@ repository = MetaAndromedaRepository()
 
 ## 執行順序總表
 
-| 順序 | 項目 | 預估 | 相依 | 風險 |
-|---|---|---|---|---|
-| 1 | P0-2 `/health` 拆分 | 0.5d | — | 低 |
-| 2 | P0-3 移除除錯/一次性腳本 | 0.5d | — | 低 |
-| 3 | P0-1 Schema 收斂至 Alembic | 2-3d | 需 DB 快照驗證 | 中 |
-| 4 | P1-4 部署拓撲 + Redis 狀態 | 2-3d | 決定 queue host | 中 |
-| 5 | P1-1 空殼模組真遷移（ga4→gsc→ai_hub）| 2d | — | 中 |
-| 6 | P1-2 路由統一 | 2d | 可併 P1-1 | 低 |
-| 7 | P1-3 config → BaseSettings | 1-2d | — | 中 |
-| 8 | P2-1 拆分巨型檔案 | 持續 | 有測試護航更佳 | 中 |
-| 9 | P2-3 補測試 | 持續 | — | 低 |
-| 10 | P2-2 導入 TS | 持續 | — | 低 |
-| 11 | P2-4 指標單一來源 | 1d | — | 低 |
+| 順序 | 項目 | 預估 | 相依 | 風險 | 狀態 |
+|---|---|---|---|---|---|
+| 1 | P0-1 Schema 收斂至 Alembic | 2-3d | 需 DB 快照驗證 | 低（已驗證） | ✅ 2026-07-01 完成 |
+| 2 | P0-2 `/health` 拆分 | 0.5d | — | 低 | 待處理 |
+| 3 | P0-3 移除除錯/一次性腳本 | 0.5d | — | 低 | 待處理 |
+| 4 | P1-4 部署拓撲 + Redis 狀態 | 2-3d | 決定 queue host | 中 | 待處理 |
+| 5 | P1-1 空殼模組真遷移（ga4→gsc→ai_hub）| 2d | — | 中 | 待處理 |
+| 6 | P1-2 路由統一 | 2d | 可併 P1-1 | 低 | 待處理 |
+| 7 | P1-3 config → BaseSettings | 1-2d | — | 中 | 待處理 |
+| 8 | P2-1 拆分巨型檔案 | 持續 | 有測試護航更佳 | 中 | 待處理 |
+| 9 | P2-3 補測試 | 持續 | — | 低 | 待處理 |
+| 10 | P2-2 導入 TS | 持續 | — | 低 | 待處理 |
+| 11 | P2-4 指標單一來源 | 1d | — | 低 | 待處理 |
 
-**建議節奏**：先做 P0-2、P0-3（快速降風險），再排 P0-1（需謹慎驗證）。P1 項目可與 P1-1/P1-2 合併分批。P2 為持續改善，穿插於功能開發間進行。
+**實際執行順序調整**：P0-1 實際上先於 P0-2/P0-3 完成（用戶指定順序）。原評估風險「中」，經完整實測（全新 DB 全鏈跑通、零 schema 落差、測試套件無回歸）後下修為「低」。下一步建議 P0-2、P0-3（快速降風險，工作量小）。P1 項目可與 P1-1/P1-2 合併分批。P2 為持續改善，穿插於功能開發間進行。
 
 > ⚠️ 所有涉及 import 路徑大改（P1-1/P1-2）與 schema（P0-1）的項目，建議每完成一個子步驟即跑完整測試套件並保留 git 可回退點。實作前針對個別 runtime 行為（並發路徑、實際呼叫鏈）再做一次針對性驗證。
