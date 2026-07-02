@@ -245,74 +245,40 @@ else:
 
 from datetime import datetime, timezone
 from sqlalchemy import text
+from modules.auth.dependencies import require_super_admin
+
+# 2026-07-02 修復（P0-2）：git commit 僅於啟動時計算一次存入 module 級變數，
+# 避免公開的 /health 端點每次探活都 fork 子行程執行 `git rev-parse`。
+_GIT_COMMIT = "unknown"
+try:
+    import subprocess
+    _GIT_COMMIT = subprocess.check_output(
+        ["git", "rev-parse", "--short", "HEAD"], stderr=subprocess.DEVNULL
+    ).decode().strip()
+except Exception:
+    _GIT_COMMIT = os.getenv("ZEABUR_GIT_COMMIT_SHA") or os.getenv("COMMIT_REF") or "unknown"
+
 
 @app.get("/health", tags=["system"])
 async def health_check():
     """
-    完整健康檢查端點（供 Load Balancer、Zeabur、Docker 使用）。
-    
+    公開健康檢查端點（供 Load Balancer、Zeabur、Docker 使用，無需認證）。
+
+    僅回傳存活/就緒必要資訊，不含任何 API 金鑰、使用者統計等內部組態。
+    需要除錯用的詳細資訊請改用 /health/detail（限 Super Admin）。
+
     Returns:
         200 OK：應用正常
         503 Service Unavailable：資料庫異常
     """
     from database import SessionLocal
-    import os
-    
-    # 動態獲取 git commit
-    git_commit_dynamic = "unknown"
-    try:
-        import subprocess
-        git_commit_dynamic = subprocess.check_output(["git", "rev-parse", "HEAD"], stderr=subprocess.DEVNULL).decode().strip()
-    except Exception:
-        git_commit_dynamic = os.getenv("ZEABUR_GIT_COMMIT_SHA") or os.getenv("COMMIT_REF") or "unknown_inside_docker"
-
-    google_key = os.getenv("GOOGLE_AI_API_KEY") or ""
-    google_key_alt = os.getenv("GOOGLE_API_KEY") or ""
-    openrouter_key = os.getenv("OPENROUTER_API_KEY") or ""
-    zeabur_key = os.getenv("ZEABUR_AI_HUB_API_KEY") or ""
-    from core.config import settings
-
-    # 統計資料庫中有金鑰的用戶數
-    db_users_with_gemini_key_count = 0
-    db_users_with_openrouter_key_count = 0
-    try:
-        temp_session = SessionLocal()
-        try:
-            from database.models.user import User
-            db_users_with_gemini_key_count = temp_session.query(User).filter(
-                User.gemini_api_key.isnot(None),
-                User.gemini_api_key != ""
-            ).count()
-            db_users_with_openrouter_key_count = temp_session.query(User).filter(
-                User.openrouter_api_key.isnot(None),
-                User.openrouter_api_key != ""
-            ).count()
-        finally:
-            temp_session.close()
-    except Exception:
-        pass
 
     health_status = {
         "status": "healthy",
         "timestamp": datetime.now(timezone.utc).isoformat(),
         "uptime_seconds": int(time.time() - START_TIME),
         "version": "2.1.0",
-        "git_info": {
-            "deployed_via_agent_at": "2026-06-17T13:25:00+08:00",
-            "dynamic_commit": git_commit_dynamic,
-            "target_branch": "dev-saas"
-        },
-        "ai_config_debug": {
-            "GOOGLE_AI_API_KEY_len": len(google_key),
-            "GOOGLE_API_KEY_len": len(google_key_alt),
-            "OPENROUTER_API_KEY_len": len(openrouter_key),
-            "ZEABUR_AI_HUB_API_KEY_len": len(zeabur_key),
-            "settings_GOOGLE_AI_API_KEY_len": len(settings.GOOGLE_AI_API_KEY or "") if settings.GOOGLE_AI_API_KEY else 0,
-            "settings_OPENROUTER_API_KEY_len": len(settings.OPENROUTER_API_KEY or "") if settings.OPENROUTER_API_KEY else 0,
-            "db_users_with_gemini_key_count": db_users_with_gemini_key_count,
-            "db_users_with_openrouter_key_count": db_users_with_openrouter_key_count,
-            "META_ANDROMEDA_SCORING_PROVIDER": settings.META_ANDROMEDA_SCORING_PROVIDER
-        },
+        "commit": _GIT_COMMIT,
         "checks": {}
     }
 
@@ -369,6 +335,69 @@ async def health_check():
 async def health_check_legacy():
     """健康檢查端點（舊路徑，向後相容）。"""
     return await health_check()
+
+
+@app.get("/health/detail", tags=["system"])
+async def health_detail(_admin: bool = Depends(require_super_admin())):
+    """
+    授權版健康檢查端點（限 Super Admin）。
+
+    在 /health 的基礎欄位之上，附加內部除錯資訊：各 AI 供應商 API 金鑰長度、
+    資料庫中持有金鑰的用戶數、Meta Andromeda scoring provider 設定。
+    這些資訊過去曾直接暴露在無需認證的 /health，屬組態外洩，故收斂至此。
+    """
+    from database import SessionLocal
+    from core.config import settings
+
+    base = await health_check()
+    if isinstance(base, JSONResponse):
+        import json
+        health_status = json.loads(base.body)
+        status_code = base.status_code
+    else:
+        health_status = base
+        status_code = 200
+
+    google_key = os.getenv("GOOGLE_AI_API_KEY") or ""
+    google_key_alt = os.getenv("GOOGLE_API_KEY") or ""
+    openrouter_key = os.getenv("OPENROUTER_API_KEY") or ""
+    zeabur_key = os.getenv("ZEABUR_AI_HUB_API_KEY") or ""
+
+    # 統計資料庫中有金鑰的用戶數
+    db_users_with_gemini_key_count = 0
+    db_users_with_openrouter_key_count = 0
+    try:
+        temp_session = SessionLocal()
+        try:
+            from database.models.user import User
+            db_users_with_gemini_key_count = temp_session.query(User).filter(
+                User.gemini_api_key.isnot(None),
+                User.gemini_api_key != ""
+            ).count()
+            db_users_with_openrouter_key_count = temp_session.query(User).filter(
+                User.openrouter_api_key.isnot(None),
+                User.openrouter_api_key != ""
+            ).count()
+        finally:
+            temp_session.close()
+    except Exception:
+        pass
+
+    health_status["ai_config_debug"] = {
+        "GOOGLE_AI_API_KEY_len": len(google_key),
+        "GOOGLE_API_KEY_len": len(google_key_alt),
+        "OPENROUTER_API_KEY_len": len(openrouter_key),
+        "ZEABUR_AI_HUB_API_KEY_len": len(zeabur_key),
+        "settings_GOOGLE_AI_API_KEY_len": len(settings.GOOGLE_AI_API_KEY or "") if settings.GOOGLE_AI_API_KEY else 0,
+        "settings_OPENROUTER_API_KEY_len": len(settings.OPENROUTER_API_KEY or "") if settings.OPENROUTER_API_KEY else 0,
+        "db_users_with_gemini_key_count": db_users_with_gemini_key_count,
+        "db_users_with_openrouter_key_count": db_users_with_openrouter_key_count,
+        "META_ANDROMEDA_SCORING_PROVIDER": settings.META_ANDROMEDA_SCORING_PROVIDER,
+    }
+
+    if status_code != 200:
+        return JSONResponse(status_code=status_code, content=health_status)
+    return health_status
 
 
 # ============================================================

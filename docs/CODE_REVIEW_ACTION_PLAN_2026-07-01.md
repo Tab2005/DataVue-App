@@ -143,41 +143,26 @@ psycopg2.errors.StringDataRightTruncation: value too long for type character var
 
 ---
 
-### P0-2 `/health` 端點資訊洩漏拆分
+### P0-2 `/health` 端點資訊洩漏拆分 ✅ 已完成（2026-07-02）
 
 **問題定位**
-`main.py::health_check`（L249-365）為無需認證端點，卻回傳：各 API 金鑰長度、DB 中持有金鑰的用戶數（兩次 `count()` query）、`META_ANDROMEDA_SCORING_PROVIDER`、硬編碼的部署時間/分支。屬內部組態外洩，且每次探活都打 DB 做金鑰統計。
+`main.py::health_check`（原 L249-365）為無需認證端點，卻回傳：各 API 金鑰長度、DB 中持有金鑰的用戶數（兩次 `count()` query）、`META_ANDROMEDA_SCORING_PROVIDER`、硬編碼的部署時間/分支。屬內部組態外洩，且每次探活都打 DB 做金鑰統計，並對每次請求 `subprocess` 呼叫 `git rev-parse`。
 
-**修改方案**
+**已完成的變更**
 
-1. **精簡公開 `/health`**：只保留 liveness/readiness 必要欄位，移除 `ai_config_debug` 整段與 `git_info` 硬編碼字串：
+1. **精簡公開 `/health`**（`backend/main.py`）：移除整段 `ai_config_debug`（API 金鑰長度、DB 金鑰統計、`META_ANDROMEDA_SCORING_PROVIDER`）與硬編碼的 `git_info`（`deployed_via_agent_at`／`target_branch`）。現在只回傳 `status`、`timestamp`、`uptime_seconds`、`version`、`commit`（見下）、`checks`（`database`／`redis`／`scheduler`／`meta_andromeda`，皆不含機密內容）。
+2. **新增授權版 `/health/detail`**：掛 `Depends(require_super_admin())`（沿用既有 `modules/auth/dependencies.py::require_super_admin`，與其他 admin-only 端點一致的用法）。內部呼叫 `health_check()` 取得基礎欄位後，疊加原本的 `ai_config_debug`（API 金鑰長度、DB 金鑰統計、scoring provider）。未帶 token 回 401，非 super admin 回 403。
+3. **git commit 快取**：`_GIT_COMMIT` 於模組載入時（app 啟動時）以 `subprocess.check_output(["git", "rev-parse", "--short", "HEAD"])` 計算一次，失敗則 fallback 至 `ZEABUR_GIT_COMMIT_SHA` / `COMMIT_REF` 環境變數；`/health` 直接讀取此模組級變數，不再每次探活都 fork 子行程。
 
-```python
-@app.get("/health", tags=["system"])
-async def health_check():
-    health = {"status": "healthy", "timestamp": ..., "uptime_seconds": ..., "version": "2.1.0", "checks": {}}
-    # 只保留：database（必要）、redis / scheduler / meta_andromeda（選用，不含機密）
-    # 移除 ai_config_debug、git_info、db_users_with_*_count
-    ...
-    return health if healthy else JSONResponse(status_code=503, content=health)
-```
+**驗證結果**
+- ✅ `tests/test_health.py` 新增 4 個測試（原 5 個全數維持通過）：
+  - `test_health_does_not_leak_internal_config`：未帶 token `GET /health` → 200，回應內**不含** `ai_config_debug` / `git_info`。
+  - `test_health_detail_requires_auth`：未帶 token `GET /health/detail` → 401/403。
+  - `test_health_detail_requires_super_admin`：一般使用者（非 super admin）`GET /health/detail` → 403。
+  - `test_health_detail_returns_debug_info_for_super_admin`：super admin `GET /health/detail` → 200，含 `ai_config_debug` 與基礎 `checks`。
+- ✅ `pytest tests/`：83 passed / 12 failed（較 P0-1 完成時的 79 passed 多出本次新增的 4 個測試，12 個既有失敗清單不變，與本次改動無關）。
 
-2. **新增授權版 `/health/detail`**：把金鑰長度、DB 統計、scoring provider 等移到此端點，掛 `Depends(require_super_admin)`（沿用現有 `modules/auth/dependencies.py` 的權限依賴）：
-
-```python
-@app.get("/health/detail", tags=["system"])
-async def health_detail(_admin=Depends(require_super_admin)):
-    ...  # 原 ai_config_debug + db 金鑰統計移到這裡
-```
-
-3. **git commit 快取**：`git rev-parse HEAD` 於啟動時執行一次存入 module 級變數，`/health` 直接讀取，避免每次探活 `subprocess`。
-
-**驗證**
-- 未帶 token `GET /health` → 200，回應內**不含**任何金鑰長度或 provider 名稱。
-- 非 admin `GET /health/detail` → 401/403；super admin → 200 含詳細資訊。
-- 更新 `test_health.py` 斷言公開端點不含 `ai_config_debug`。
-
-**風險**：低。注意若前端或監控有依賴舊 `/health` 欄位需同步調整。
+**風險評估**：低（已完整驗證）。前端與監控若曾依賴舊 `/health` 內的 `ai_config_debug` / `git_info` 欄位需改讀 `/health/detail`（需 super admin token）；目前程式庫內未發現任何前端程式碼讀取這兩個欄位。
 
 ---
 
@@ -421,7 +406,7 @@ repository = MetaAndromedaRepository()
 | 順序 | 項目 | 預估 | 相依 | 風險 | 狀態 |
 |---|---|---|---|---|---|
 | 1 | P0-1 Schema 收斂至 Alembic | 2-3d | 需 DB 快照驗證 | 低（已驗證） | ✅ 2026-07-01 完成 |
-| 2 | P0-2 `/health` 拆分 | 0.5d | — | 低 | 待處理 |
+| 2 | P0-2 `/health` 拆分 | 0.5d | — | 低（已驗證） | ✅ 2026-07-02 完成 |
 | 3 | P0-3 移除除錯/一次性腳本 | 0.5d | — | 低 | 待處理 |
 | 4 | P1-4 部署拓撲 + Redis 狀態 | 2-3d | 決定 queue host | 中 | 待處理 |
 | 5 | P1-1 空殼模組真遷移（ga4→gsc→ai_hub）| 2d | — | 中 | 待處理 |
