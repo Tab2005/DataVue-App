@@ -166,19 +166,36 @@ psycopg2.errors.StringDataRightTruncation: value too long for type character var
 
 ---
 
-### P0-3 移除／隔離生產環境的除錯與一次性腳本
+### P0-3 移除／隔離生產環境的除錯與一次性腳本 ✅ 已完成（2026-07-02）
 
 **問題定位**
-- 根目錄 `tmp_migrate.py`、`run_migration.py` 疑似一次性腳本，留在可 import 路徑。
+- 根目錄 `tmp_migrate.py`、`run_migration.py` 原計畫判斷「疑似一次性腳本，留在可 import 路徑」。
 - `routers/debug.py` 受 `DEBUG_MODE` 控制（main.py L235-238），需確認生產為 false。
 
-**修改方案**
-1. 將 `tmp_migrate.py`、`run_migration.py` 移到 `scripts/maintenance/` 或直接刪除（若已被 Alembic 取代）。先 `grep -rn "tmp_migrate\|run_migration" backend/` 確認無其他 import。
-2. 在 `core/startup.py` 啟動日誌中明確印出 `DEBUG_MODE` 與 `ENV` 值，方便運維確認生產態。
-3. 於 `docs/06_部署指南.md` 補上生產環境必要環境變數檢查清單（`DEBUG_MODE=false`、`ENV=production`、`DATAVUE_SKIP_STARTUP_MIGRATIONS` 策略）。
+**實際稽核結果（與原計畫的重要差異）**
 
-**驗證**：`grep` 確認無殘留 import；生產啟動日誌顯示 `DEBUG_MODE=false`。
-**風險**：低。
+原計畫假設 `tmp_migrate.py`、`run_migration.py` 兩者性質相同，可一併搬移或刪除。實際稽核（`grep -rln "run_migration" backend/ --include="*.py"` 以及檢視 `backend/Dockerfile`）發現兩者性質完全不同：
+
+| 檔案 | 稽核結果 |
+|---|---|
+| `tmp_migrate.py` | 🔴 確認為真正的一次性腳本：硬編碼 SQLite 檔名、僅新增 `weekly_reports.share_token`，此欄位已由 P0-1 新增的 `20260701_consolidate_legacy_schema_patches.py` migration 涵蓋。`grep -rn "tmp_migrate" backend/` 確認**無任何其他程式碼 import**。**已刪除** |
+| `run_migration.py` | ⚠️ **並非一次性腳本，而是生產環境實際的遷移入口**：`backend/Dockerfile` 的 `CMD` 為 `python run_migration.py && export DATAVUE_SKIP_STARTUP_MIGRATIONS=1 && exec python main.py`（此事實已在 P0-1 補充驗證階段確認，見上文）。若依原計畫移動或刪除，會直接讓生產環境部署失敗。**維持原檔名與位置不動** |
+
+**已完成的變更**
+1. 刪除 `backend/tmp_migrate.py`（確認無殘留 import，已被 Alembic migration 取代）。
+2. **不**移動／刪除 `run_migration.py`（更正原計畫的錯誤假設）。
+3. `backend/core/startup.py::run_startup_tasks()`：新增啟動日誌 `ENV=... | DEBUG_MODE=...`，並在 `ENV=production` 但 `DEBUG_MODE=true` 時額外印出警告（避免生產環境意外掛載 `/api/debug/*`）。
+4. `docs/06_部署指南.md`：
+   - 新增「✅ 生產環境部署前檢查清單」段落，列出 `ENV`、`DEBUG_MODE`、`DATAVUE_SKIP_STARTUP_MIGRATIONS`、`DATABASE_URL`、`ENCRYPTION_KEY`、`SUPER_ADMIN_EMAIL` 六項環境變數的生產建議值與說明。
+   - 修正「資料庫遷移」段落原本建議「手動於 Console 執行 `alembic upgrade head`」的過時說明，改為說明生產環境的 `Dockerfile CMD` 已自動執行 `run_migration.py`，通常不需手動介入。
+
+**驗證結果**
+- ✅ `grep -rn "tmp_migrate" backend/`：刪除後確認無殘留引用。
+- ✅ `pytest tests/`：83 passed / 12 failed（與 P0-2 完成時的清單完全一致，本次改動未造成任何新失敗）。
+- ✅ 實際執行測試套件，於日誌中確認新增的啟動日誌行正確輸出：`ENV=development | DEBUG_MODE=False`。
+- ✅ `routers/debug.py` 本身即有 `dependencies=[Depends(get_super_admin)]`（router 層級保護），與 `main.py` 的 `DEBUG_MODE` 條件掛載形成雙重防護，本次未發現需額外修改之處。
+
+**風險評估**：低（已完整驗證）。`tmp_migrate.py` 刪除前已與使用者確認（曾被自動化權限稽核機制攔下，因為刪除該檔案超出「同步文件」這個明確指令的字面範圍；使用者確認後才執行）。
 
 ---
 
@@ -407,7 +424,7 @@ repository = MetaAndromedaRepository()
 |---|---|---|---|---|---|
 | 1 | P0-1 Schema 收斂至 Alembic | 2-3d | 需 DB 快照驗證 | 低（已驗證） | ✅ 2026-07-01 完成 |
 | 2 | P0-2 `/health` 拆分 | 0.5d | — | 低（已驗證） | ✅ 2026-07-02 完成 |
-| 3 | P0-3 移除除錯/一次性腳本 | 0.5d | — | 低 | 待處理 |
+| 3 | P0-3 移除除錯/一次性腳本 | 0.5d | — | 低（已驗證） | ✅ 2026-07-02 完成 |
 | 4 | P1-4 部署拓撲 + Redis 狀態 | 2-3d | 決定 queue host | 中 | 待處理 |
 | 5 | P1-1 空殼模組真遷移（ga4→gsc→ai_hub）| 2d | — | 中 | 待處理 |
 | 6 | P1-2 路由統一 | 2d | 可併 P1-1 | 低 | 待處理 |

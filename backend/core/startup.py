@@ -197,7 +197,17 @@ def run_startup_tasks():
     logger.info("=" * 50)
     logger.info("🚀 Running Startup Tasks...")
     logger.info("=" * 50)
-    
+
+    # 2026-07-02（P0-3）：明確印出 ENV / DEBUG_MODE，方便運維從啟動日誌直接
+    # 確認目前是否為生產環境、debug 端點是否有被意外掛載，不需另外進 shell 查環境變數。
+    from core.config import settings
+    debug_mode = os.getenv("DEBUG_MODE", "false").lower() == "true"
+    logger.info(f"ENV={settings.ENV} | DEBUG_MODE={debug_mode}")
+    if settings.is_production and debug_mode:
+        logger.warning(
+            "⚠️ DEBUG_MODE=true 但 ENV=production！/api/debug/* 端點將被掛載，請確認這是刻意行為。"
+        )
+
     # 1. Validate environment
     validate_environment()
     
