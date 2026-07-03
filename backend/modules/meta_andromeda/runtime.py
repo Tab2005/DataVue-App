@@ -12,48 +12,12 @@ from uuid import uuid4
 
 from core.config import settings
 from .model_registry import MetaAndromedaModelEntry, model_registry
+from .objective_routing import is_roas_band_eligible, resolve_objective_group
+from .labeling import LABEL_POLICY_VERSION
 
 
 logger = logging.getLogger(__name__)
 VALID_ROAS_BANDS = {"high", "mid", "low"}
-LABEL_POLICY_VERSION = "ma_label_policy_v1"
-
-_OBJECTIVE_GROUP_MAP: dict[str, str] = {
-    # conversion
-    "purchase": "conversion",
-    "add_to_cart": "conversion",
-    "complete_registration": "conversion",
-    "outcome_sales": "conversion",
-    # lead
-    "lead": "lead",
-    "lead_gen": "lead",
-    "form_submit": "lead",
-    # traffic
-    "traffic": "traffic",
-    "link_clicks": "traffic",
-    "landing_page_views": "traffic",
-    "outcome_traffic": "traffic",
-    # awareness
-    "brand_awareness": "awareness",
-    "reach": "awareness",
-    "awareness": "awareness",
-    "outcome_awareness": "awareness",
-    "page_likes": "awareness",
-    # engagement
-    "engagement": "engagement",
-    "post_engagement": "engagement",
-    "outcome_engagement": "engagement",
-    # video
-    "video_views": "video",
-    "video": "video",
-}
-
-
-def _resolve_objective_group(objective: str | None) -> str:
-    if not objective:
-        return "conversion"
-    return _OBJECTIVE_GROUP_MAP.get(objective.lower().strip(), "conversion")
-
 
 _prompt_profile_cache: dict[str, dict] = {}
 _profile_cache_lock = threading.Lock()
@@ -656,7 +620,7 @@ class OpenRouterScoringProvider(BaseScoringProvider):
         request_mode = score_payload.get("request_mode", "auto")
 
         base_profile = _load_scoring_profile(registry_entry.scoring_profile)
-        objective_group = _resolve_objective_group(score_payload.get("objective"))
+        objective_group = resolve_objective_group(score_payload.get("objective"))
         active_profile = _resolve_active_profile(base_profile, objective_group)
         _fmt = {
             "asset_type": score_payload.get("asset_type", "image"),
@@ -739,8 +703,8 @@ def build_heuristic_score_result(score_payload: dict, registry_entry: MetaAndrom
     request_mode = score_payload.get("request_mode", "auto")
     placement_family = score_payload.get("placement_family", "all")
     request_context = score_payload.get("request_context", {})
-    objective_group = _resolve_objective_group(objective)
-    roas_band_eligible = objective_group in {"conversion", "lead"}
+    objective_group = resolve_objective_group(objective)
+    roas_band_eligible = is_roas_band_eligible(objective_group)
     is_diagnostic_only_request = request_mode == "diagnostic_only"
     roas_applicable = roas_band_eligible and not is_diagnostic_only_request
     prediction_mode = "diagnostic_plus_roas" if roas_applicable else "diagnostic_only"

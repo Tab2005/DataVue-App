@@ -211,6 +211,14 @@ const MetaAndromedaRelease = () => {
                 </h1>
             </div>
 
+            {overview?.is_demo_data ? (
+                <div style={warningPanelStyle}>
+                    {t(
+                        '⚠️ The accuracy/error numbers below are demo data, not computed from real drift reports. Approve/Rollback here do not switch the model runtime actually uses.',
+                        '⚠️ 以下準確率／誤差數字為示範資料，並非由實際 drift report 配對結果計算；此處的核准/回滾也不會切換 runtime 實際使用的模型版本。'
+                    )}
+                </div>
+            ) : null}
             {actionMessage ? <div style={successPanelStyle}>{actionMessage}</div> : null}
             {loading ? (
                 <div style={panelStyle}>{t('Loading release overview...', '載入版本總覽中...')}</div>
@@ -554,6 +562,16 @@ const successPanelStyle = {
     background: 'rgba(16, 185, 129, 0.12)',
     border: '1px solid rgba(16, 185, 129, 0.25)',
     color: 'var(--text-primary)',
+};
+
+const warningPanelStyle = {
+    marginBottom: '16px',
+    padding: '16px',
+    borderRadius: '12px',
+    background: 'rgba(245, 158, 11, 0.1)',
+    border: '1px solid rgba(245, 158, 11, 0.3)',
+    color: 'var(--text-primary)',
+    fontSize: '0.88rem',
 };
 
 const infoPanelStyle = {

@@ -47,15 +47,26 @@ def normalize_facebook_ad_row(
     media_url = row.get("image_url")
     media_type = "image" if media_url else "unknown"
 
+    spend = float(row.get("spend", 0) or 0)
+    clicks = int(row.get("clicks", 0) or 0)
+    purchases = int(row.get("purchases", 0) or 0)
+    # analytics_service._process_actions() 已將 lead / onsite_conversion.lead_grouped 兩種 action_type
+    # 都攤平進 "leads" / "onsite_leads"，兩者合計視為此廣告產生的潛在客戶數
+    leads = int(row.get("leads", 0) or 0) + int(row.get("onsite_leads", 0) or 0)
+
     performance_snapshot = {
-        "spend": float(row.get("spend", 0) or 0),
+        "spend": spend,
         "impressions": int(row.get("impressions", 0) or 0),
-        "clicks": int(row.get("clicks", 0) or 0),
-        "purchases": int(row.get("purchases", 0) or 0),
+        "clicks": clicks,
+        "purchases": purchases,
         "purchase_value": float(row.get("purchase_value", 0) or 0),
         "roas": float(row.get("roas", 0) or 0),
         "ctr": float(row.get("ctr", 0) or 0),
         "cpc": float(row.get("cpc", 0) or 0),
+        "leads": leads,
+        "cvr": (leads / clicks) if clicks > 0 else None,
+        "cpl": (spend / leads) if leads > 0 else None,
+        "cpa": (spend / purchases) if purchases > 0 else None,
     }
 
     return ObservedCreativeCandidate(

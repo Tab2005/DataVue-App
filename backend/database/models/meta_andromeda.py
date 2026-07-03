@@ -233,6 +233,7 @@ class MetaAndromedaCalibrationItem(Base):
     error = Column(Float, nullable=False)
     performance_snapshot = Column(JSON, nullable=False, default=dict)
     label_policy_version = Column(String(50), nullable=False)
+    label_thresholds = Column(JSON, nullable=True)
     created_at = Column(DateTime, default=text("CURRENT_TIMESTAMP"))
 
     dataset = relationship("MetaAndromedaCalibrationDataset", backref="items")
@@ -263,3 +264,35 @@ class MetaAndromedaScoringProfile(Base):
     created_at = Column(DateTime, default=text("CURRENT_TIMESTAMP"))
 
     calibration_dataset = relationship("MetaAndromedaCalibrationDataset")
+
+
+class MetaAndromedaLabelPolicy(Base):
+    """Persisted audit record of the dynamic P33/P67 label thresholds computed
+    for a given (scope_key, window_kind), shared by drift reports and
+    calibration-dataset sync so both pipelines label the same observed batch
+    identically. scope_key is an account_id, or "global" when unscoped."""
+
+    __tablename__ = "meta_andromeda_label_policies"
+
+    id = Column(String, primary_key=True, default=lambda: f"ma_lp_{uuid.uuid4().hex[:12]}")
+    scope_key = Column(String(120), nullable=False, index=True)
+    window_kind = Column(String(50), nullable=False, index=True)
+    label_policy_version = Column(String(50), nullable=False)
+    roas_low = Column(Float, nullable=True)
+    roas_high = Column(Float, nullable=True)
+    roas_method = Column(String(30), nullable=True)
+    roas_sample_count = Column(Integer, nullable=False, default=0)
+    ctr_low = Column(Float, nullable=True)
+    ctr_high = Column(Float, nullable=True)
+    ctr_sample_count = Column(Integer, nullable=False, default=0)
+    cpc_low = Column(Float, nullable=True)
+    cpc_high = Column(Float, nullable=True)
+    cpc_sample_count = Column(Integer, nullable=False, default=0)
+    cvr_low = Column(Float, nullable=True)
+    cvr_high = Column(Float, nullable=True)
+    cvr_sample_count = Column(Integer, nullable=False, default=0)
+    cpl_low = Column(Float, nullable=True)
+    cpl_high = Column(Float, nullable=True)
+    cpl_sample_count = Column(Integer, nullable=False, default=0)
+    effective_from = Column(DateTime, nullable=False, default=text("CURRENT_TIMESTAMP"))
+    created_at = Column(DateTime, default=text("CURRENT_TIMESTAMP"))

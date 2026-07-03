@@ -2056,18 +2056,18 @@ def test_sync_calibration_dataset_endpoint(meta_andromeda_access, db):
     assert payload["synced_count"] == 1
     assert payload["item_count"] == 1
     assert payload["status"] == "queued_for_calibration"
-    assert payload["label_policy_version"] == "ma_label_policy_v1"
+    assert payload["label_policy_version"] == "ma_label_policy_v2"
 
     # 檢查資料庫中 Observed Creative 的 lineage["calibration"] 是否被寫入
     obs_db = db.query(MetaAndromedaObservedCreative).filter(MetaAndromedaObservedCreative.id == "obs_to_calibrate").first()
     assert obs_db.lineage["calibration"]["dataset_id"] == payload["dataset_id"]
     assert obs_db.lineage["calibration"]["error"] == 2
-    assert obs_db.lineage["calibration"]["label_policy_version"] == "ma_label_policy_v1"
+    assert obs_db.lineage["calibration"]["label_policy_version"] == "ma_label_policy_v2"
 
     dataset = db.query(MetaAndromedaCalibrationDataset).filter(MetaAndromedaCalibrationDataset.id == payload["dataset_id"]).one()
     item = db.query(MetaAndromedaCalibrationItem).filter(MetaAndromedaCalibrationItem.dataset_id == payload["dataset_id"]).one()
     assert dataset.synced_count == 1
-    assert dataset.label_policy_version == "ma_label_policy_v1"
+    assert dataset.label_policy_version == "ma_label_policy_v2"
     assert item.prediction_band == "high"
     assert item.observed_band == "low"
 
@@ -2164,7 +2164,7 @@ def test_meta_andromeda_heuristic_runtime_uses_lower_score_and_dynamic_confidenc
 
     assert result["overall_score"] < 60
     assert result["roas_prediction"]["confidence"] != 0.61
-    assert result["lineage"]["label_policy_version"] == "ma_label_policy_v1"
+    assert result["lineage"]["label_policy_version"] == "ma_label_policy_v2"
 
 
 @pytest.mark.unit

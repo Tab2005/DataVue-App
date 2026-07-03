@@ -24,32 +24,17 @@ from database.models.meta_andromeda import (
     MetaAndromedaWorkerEvent,
 )
 from .model_registry import model_registry
-
-
-TERMINAL_SCORE_STATUSES = {"completed", "failed"}
-LABEL_POLICY_VERSION = "ma_label_policy_v1"
-
-
-def _objective_key(value: str | None) -> str:
-    return (value or "").strip().lower()
-
-
-_ROAS_FALLBACK_LOW = 3.0
-_ROAS_FALLBACK_HIGH = 6.0
-
-# 流量/互動/知名度廣告 objective 關鍵詞清單
-# 這類廣告不追求購買轉換，ROAS 永遠為 0，應改用 CTR/CPC 評估
-_TRAFFIC_OBJECTIVE_TOKENS = (
-    "traffic", "engagement", "awareness", "reach", "video",
-    "outcome_traffic", "outcome_engagement", "outcome_awareness",
-    # 舊帳號代碼相容
-    "link_clicks", "post_engagement", "page_likes",
-    "brand_awareness", "video_views",
+from .objective_routing import NON_ROAS_GROUPS, resolve_objective_group
+from .labeling import (
+    LABEL_POLICY_VERSION,
+    compute_label_thresholds,
+    label_observed_band,
+    match_observed_to_prediction,
+    persist_label_policy,
 )
 
 
-def _is_traffic_objective(objective_key: str) -> bool:
-    return any(token in objective_key for token in _TRAFFIC_OBJECTIVE_TOKENS)
+TERMINAL_SCORE_STATUSES = {"completed", "failed"}
 
 
 def _spearman_r(x: list[float], y: list[float]) -> float:
@@ -138,83 +123,6 @@ def _classify_period_state(spearman_r: float, perf_is_high: bool, dominant_metri
         "creative_explained_variance": round(spearman_r ** 2, 4),
         "recommendation": recommendation,
     }
-
-
-def _resolve_observed_band(
-    objective: str | None,
-    performance_snapshot: dict | None,
-    roas_thresholds: tuple[float, float] | None = None,
-    ctr_thresholds: tuple[float, float] | None = None,
-    cpc_thresholds: tuple[float, float] | None = None,
-) -> tuple[str, dict]:
-    snapshot = performance_snapshot or {}
-    objective_key = _objective_key(objective)
-
-    # 潛在客戶廣告：CVR / CPL 評估
-    if any(token in objective_key for token in ("lead", "cpl")):
-        cvr = snapshot.get("cvr")
-        if cvr is not None:
-            value = float(cvr)
-            if value >= 0.08:
-                return "high", {"metric": "cvr", "value": value}
-            if value >= 0.03:
-                return "mid", {"metric": "cvr", "value": value}
-            return "low", {"metric": "cvr", "value": value}
-        cpl = snapshot.get("cpl")
-        if cpl is not None:
-            value = float(cpl)
-            if value <= 150:
-                return "high", {"metric": "cpl", "value": value}
-            if value <= 350:
-                return "mid", {"metric": "cpl", "value": value}
-            return "low", {"metric": "cpl", "value": value}
-
-    # 流量 / 互動 / 知名度廣告：CTR 或 CPC 評估（ROAS 對此類廣告無意義）
-    if _is_traffic_objective(objective_key):
-        ctr = snapshot.get("ctr")
-        if ctr is not None and ctr_thresholds:
-            value = float(ctr)
-            low_t, high_t = ctr_thresholds
-            if value >= high_t:
-                return "high", {"metric": "ctr", "value": value}
-            if value >= low_t:
-                return "mid", {"metric": "ctr", "value": value}
-            return "low", {"metric": "ctr", "value": value}
-
-        cpc = snapshot.get("cpc")
-        if cpc is not None and cpc_thresholds and float(cpc) > 0:
-            value = float(cpc)
-            # cpc_thresholds = (P67, P33)：CPC 越低越好，P33 側 → "high"
-            low_t, high_t = cpc_thresholds
-            if value <= high_t:
-                return "high", {"metric": "cpc", "value": value}
-            if value <= low_t:
-                return "mid", {"metric": "cpc", "value": value}
-            return "low", {"metric": "cpc", "value": value}
-
-        return "low", {"metric": "fallback_traffic", "value": None}
-
-    # 轉換廣告（預設）：ROAS 評估
-    roas = snapshot.get("roas")
-    if roas is not None:
-        value = float(roas)
-        low_threshold, high_threshold = roas_thresholds if roas_thresholds else (_ROAS_FALLBACK_LOW, _ROAS_FALLBACK_HIGH)
-        if value < low_threshold:
-            return "low", {"metric": "roas", "value": value}
-        if value < high_threshold:
-            return "mid", {"metric": "roas", "value": value}
-        return "high", {"metric": "roas", "value": value}
-
-    cpa = snapshot.get("cpa")
-    if cpa is not None:
-        value = float(cpa)
-        if value <= 120:
-            return "high", {"metric": "cpa", "value": value}
-        if value <= 300:
-            return "mid", {"metric": "cpa", "value": value}
-        return "low", {"metric": "cpa", "value": value}
-
-    return "low", {"metric": "fallback", "value": None}
 
 
 SEED_REVIEW_QUEUE = [
@@ -823,14 +731,15 @@ class MetaAndromedaRepository:
                     .first()
                 )
             if obs and obs.performance_snapshot and float((obs.performance_snapshot or {}).get("spend", 0) or 0) > 0:
-                pred_band = row.roas_band or "low"
-                real_band, _ = _resolve_observed_band(obs.objective, obs.performance_snapshot)
+                roas_eligible = bool((row.roas_prediction or {}).get("eligible", True))
+                pred_band = row.roas_band if roas_eligible else None
+                real_band, _ = label_observed_band(obs.objective, obs.performance_snapshot)
                 _band_score = {"low": 1, "mid": 2, "high": 3}
-                err = abs(_band_score.get(pred_band, 1) - _band_score.get(real_band, 1))
+                err = float(abs(_band_score.get(pred_band, 1) - _band_score.get(real_band, 1))) if pred_band else None
                 detail["observation"] = {
                     "prediction_band": pred_band,
                     "observed_band": real_band,
-                    "error": float(err),
+                    "error": err,
                     "performance_snapshot": deepcopy(obs.performance_snapshot or {}),
                     "ad_name": obs.ad_name,
                     "ad_id": obs.ad_id,
@@ -1085,119 +994,49 @@ class MetaAndromedaRepository:
         # 區間映射字典
         band_score = {"low": 1, "mid": 2, "high": 3}
 
-        # 動態 ROAS 門檻：只從轉換廣告（非流量/互動/知名度）計算 P33/P67
-        # 排除流量廣告，避免大量 ROAS=0 拉低分位數；樣本 < 5 時回退固定門檻
-        _roas_values = sorted(
-            float(obs.performance_snapshot["roas"])
-            for obs in observed_list
-            if obs.performance_snapshot
-            and obs.performance_snapshot.get("roas") is not None
-            and not _is_traffic_objective(_objective_key(obs.objective))
-        )
-        if len(_roas_values) >= 5:
-            _p33 = _roas_values[int(len(_roas_values) * 0.33)]
-            _p67 = _roas_values[int(len(_roas_values) * 0.67)]
-            roas_thresholds: tuple[float, float] | None = (_p33, _p67)
-            roas_threshold_method = "percentile_p33_p67"
-        else:
-            roas_thresholds = None
-            roas_threshold_method = "fixed_fallback"
-
-        # 動態 CTR/CPC 門檻：只從流量/互動/知名度廣告計算 P33/P67；樣本 < 5 時不設門檻
-        _traffic_obs = [
-            obs for obs in observed_list
-            if _is_traffic_objective(_objective_key(obs.objective))
-        ]
-        ctr_thresholds: tuple[float, float] | None = None
-        cpc_thresholds: tuple[float, float] | None = None
-        _ctr_values = sorted(
-            float(obs.performance_snapshot["ctr"])
-            for obs in _traffic_obs
-            if obs.performance_snapshot and obs.performance_snapshot.get("ctr")
-        )
-        if len(_ctr_values) >= 5:
-            ctr_thresholds = (
-                _ctr_values[int(len(_ctr_values) * 0.33)],
-                _ctr_values[int(len(_ctr_values) * 0.67)],
-            )
-        _cpc_values = sorted(
-            float(obs.performance_snapshot["cpc"])
-            for obs in _traffic_obs
-            if obs.performance_snapshot
-            and obs.performance_snapshot.get("cpc")
-            and float(obs.performance_snapshot["cpc"]) > 0
-        )
-        if len(_cpc_values) >= 5:
-            # CPC 越低越好：P67（貴的那側）作為 Low/Mid 邊界，P33（便宜的那側）作為 Mid/High 邊界
-            cpc_thresholds = (
-                _cpc_values[int(len(_cpc_values) * 0.67)],
-                _cpc_values[int(len(_cpc_values) * 0.33)],
-            )
+        # 動態標籤門檻（ROAS / CTR / CPC / CVR / CPL）：與 sync_calibration_dataset 共用同一套計算方式，
+        # 確保同一批 ObservedCreative 在 drift 與校準兩處算出一致的 observed_band
+        label_thresholds = compute_label_thresholds(observed_list)
+        persist_label_policy(db, account_id or "global", window_kind, label_thresholds)
 
         # 2. 逐筆進行 Prediction 匹配與比對
         for obs in observed_list:
-            pred = None
-            
-            # 優先嘗試透過 asset.checksum_sha256 進行匹配 (避免因重新下載/上傳而產生的隨機 UUID asset_uri 不一致問題)
-            if obs.asset and obs.asset.checksum_sha256:
-                # 撈出所有 checksum 相同的 assets
-                sibling_assets = db.query(MetaAndromedaAsset.id).filter(
-                    MetaAndromedaAsset.checksum_sha256 == obs.asset.checksum_sha256
-                ).all()
-                sibling_asset_ids = [a[0] for a in sibling_assets] if sibling_assets else []
-                
-                if sibling_asset_ids:
-                    pred = (
-                        db.query(MetaAndromedaScoreEvent)
-                        .filter(
-                            MetaAndromedaScoreEvent.asset_id.in_(sibling_asset_ids),
-                            MetaAndromedaScoreEvent.status == "completed"
-                        )
-                        .order_by(MetaAndromedaScoreEvent.completed_at.desc())
-                        .first()
-                    )
-            
-            # 若無 checksum 或沒配到，則 Fallback 使用傳統的 asset_uri 精確匹配
-            if not pred and obs.asset_uri:
-                pred = (
-                    db.query(MetaAndromedaScoreEvent)
-                    .filter(
-                        MetaAndromedaScoreEvent.asset_uri == obs.asset_uri,
-                        MetaAndromedaScoreEvent.status == "completed"
-                    )
-                    .order_by(MetaAndromedaScoreEvent.completed_at.desc())
-                    .first()
-                )
-                
+            pred = match_observed_to_prediction(db, obs)
             if not pred:
                 continue
-                
+
             # 提取真實成效 Band（依 objective 路由至對應指標，使用本批次動態門檻）
-            real_band, label_detail = _resolve_observed_band(
+            real_band, label_detail = label_observed_band(
                 obs.objective,
                 obs.performance_snapshot,
-                roas_thresholds,
-                ctr_thresholds=ctr_thresholds,
-                cpc_thresholds=cpc_thresholds,
+                label_thresholds,
             )
             real_roas = obs.performance_snapshot.get("roas", 0.0) if obs.performance_snapshot else 0.0
-                
-            pred_band = pred.roas_band or "low"
-            
-            is_match = (pred_band == real_band)
-            if is_match:
-                correct_count += 1
-                
-            # 計算 MAE 誤差 (數值距離)
-            err = abs(band_score.get(pred_band, 1) - band_score.get(real_band, 1))
-            total_error += err
-            
+
+            # 非轉換/lead 廣告（roas_band=null 為正確設計）不應被強制視為 "low" 來計算 accuracy/MAE，
+            # 否則模型「正確地不出 band」會被誤記為預測錯誤，污染校準集與健康度判斷
+            pred_roas_eligible = (pred.roas_prediction or {}).get("eligible")
+            if pred_roas_eligible is None:
+                pred_roas_eligible = resolve_objective_group(obs.objective) not in NON_ROAS_GROUPS
+            pred_band = pred.roas_band if pred_roas_eligible else None
+            band_eligible = pred_band is not None
+
+            if band_eligible:
+                is_match = (pred_band == real_band)
+                if is_match:
+                    correct_count += 1
+                err = abs(band_score.get(pred_band, 1) - band_score.get(real_band, 1))
+                total_error += err
+            else:
+                err = None
+
             real_spend = float((obs.performance_snapshot or {}).get("spend", 0) or 0)
             matched_pairs.append({
                 "id": obs.id,
                 "ad_id": obs.ad_id,
                 "ad_name": obs.ad_name,
                 "prediction_band": pred_band,
+                "band_eligible": band_eligible,
                 "observed_band": real_band,
                 "real_roas": real_roas,
                 "real_spend": real_spend,
@@ -1208,12 +1047,14 @@ class MetaAndromedaRepository:
                 "label_policy_version": LABEL_POLICY_VERSION,
                 "label_metric": label_detail["metric"],
             })
-            
-        # 3. 計算統計指標
+
+        # 3. 計算統計指標（accuracy/MAE 只計入 band_eligible 的項目；Spearman 仍使用全部 matched_pairs）
         total_matched = len(matched_pairs)
-        accuracy = correct_count / total_matched if total_matched > 0 else 0.0
-        mae = total_error / total_matched if total_matched > 0 else 0.0
-        calibration_candidate_total = sum(1 for item in matched_pairs if item["error"] > 0)
+        band_matched_pairs = [p for p in matched_pairs if p["band_eligible"]]
+        total_band_matched = len(band_matched_pairs)
+        accuracy = correct_count / total_band_matched if total_band_matched > 0 else 0.0
+        mae = total_error / total_band_matched if total_band_matched > 0 else 0.0
+        calibration_candidate_total = sum(1 for item in band_matched_pairs if item["error"] > 0)
 
         # Spearman ρ：AI overall_score 排名 vs 主指標排名的相關性
         # 以各廣告的 primary_metric 判斷帳戶類型（purchase→ROAS, lead→CVR/CPL, 其他→CPA）
@@ -1308,6 +1149,7 @@ class MetaAndromedaRepository:
             report_payload={
                 "total_observed": len(observed_list),
                 "total_matched": total_matched,
+                "total_band_matched": total_band_matched,
                 "match_rate": round(total_matched / len(observed_list), 4) if observed_list else 0.0,
                 "obs_with_asset": sum(1 for obs in observed_list if obs.asset_id or obs.asset_uri),
                 "total_completed_scores": db.query(MetaAndromedaScoreEvent).filter(MetaAndromedaScoreEvent.status == "completed").count(),
@@ -1324,22 +1166,38 @@ class MetaAndromedaRepository:
                 "calibration_candidate_total": calibration_candidate_total,
                 "label_policy_version": LABEL_POLICY_VERSION,
                 "roas_band_thresholds": {
-                    "low_below": round(roas_thresholds[0], 2) if roas_thresholds else _ROAS_FALLBACK_LOW,
-                    "high_above": round(roas_thresholds[1], 2) if roas_thresholds else _ROAS_FALLBACK_HIGH,
-                    "method": roas_threshold_method,
-                    "sample_count": len(_roas_values),
+                    "low_below": round(label_thresholds["roas"]["thresholds"][0], 2) if label_thresholds["roas"]["thresholds"] else None,
+                    "high_above": round(label_thresholds["roas"]["thresholds"][1], 2) if label_thresholds["roas"]["thresholds"] else None,
+                    "method": label_thresholds["roas"]["method"],
+                    "sample_count": label_thresholds["roas"]["sample_count"],
                 },
                 "ctr_band_thresholds": {
-                    "low_below": round(ctr_thresholds[0], 4) if ctr_thresholds else None,
-                    "high_above": round(ctr_thresholds[1], 4) if ctr_thresholds else None,
-                    "sample_count": len(_ctr_values),
+                    "low_below": round(label_thresholds["ctr"]["thresholds"][0], 4) if label_thresholds["ctr"]["thresholds"] else None,
+                    "high_above": round(label_thresholds["ctr"]["thresholds"][1], 4) if label_thresholds["ctr"]["thresholds"] else None,
+                    "sample_count": label_thresholds["ctr"]["sample_count"],
                 },
                 "cpc_band_thresholds": {
-                    "low_above": round(cpc_thresholds[0], 2) if cpc_thresholds else None,
-                    "high_below": round(cpc_thresholds[1], 2) if cpc_thresholds else None,
-                    "sample_count": len(_cpc_values),
+                    "low_above": round(label_thresholds["cpc"]["thresholds"][0], 2) if label_thresholds["cpc"]["thresholds"] else None,
+                    "high_below": round(label_thresholds["cpc"]["thresholds"][1], 2) if label_thresholds["cpc"]["thresholds"] else None,
+                    "sample_count": label_thresholds["cpc"]["sample_count"],
                 },
-                "traffic_ad_total": len(_traffic_obs),
+                "cvr_band_thresholds": {
+                    "low_below": round(label_thresholds["cvr"]["thresholds"][0], 4) if label_thresholds["cvr"]["thresholds"] else None,
+                    "high_above": round(label_thresholds["cvr"]["thresholds"][1], 4) if label_thresholds["cvr"]["thresholds"] else None,
+                    "sample_count": label_thresholds["cvr"]["sample_count"],
+                },
+                "cpl_band_thresholds": {
+                    "low_above": round(label_thresholds["cpl"]["thresholds"][0], 2) if label_thresholds["cpl"]["thresholds"] else None,
+                    "high_below": round(label_thresholds["cpl"]["thresholds"][1], 2) if label_thresholds["cpl"]["thresholds"] else None,
+                    "sample_count": label_thresholds["cpl"]["sample_count"],
+                },
+                "traffic_ad_total": label_thresholds["traffic_total"],
+                "lead_ad_total": label_thresholds["lead_total"],
+                "lead_ad_with_metric_total": label_thresholds["lead_with_metric_total"],
+                "lead_metric_coverage": (
+                    round(label_thresholds["lead_with_metric_total"] / label_thresholds["lead_total"], 4)
+                    if label_thresholds["lead_total"] else None
+                ),
                 "matched_details": matched_pairs,
                 "since": since,
                 "until": until,
@@ -1381,6 +1239,7 @@ class MetaAndromedaRepository:
             "approved_at": "",
             "pairwise_ranking_accuracy": 0.85,
             "mean_band_error": 0.15,
+            "is_demo_data": True,
         }
         previous_dict = self._release_record_to_dict(previous) if previous else {
             "model_version": "prod_v2026_05_12",
@@ -1389,6 +1248,7 @@ class MetaAndromedaRepository:
             "approved_at": "",
             "pairwise_ranking_accuracy": 0.82,
             "mean_band_error": 0.18,
+            "is_demo_data": True,
         }
 
         return {
@@ -1396,7 +1256,13 @@ class MetaAndromedaRepository:
             "previous_production": previous_dict,
             "candidates": [self._release_record_to_dict(item) for item in candidates],
             "history": [self._release_event_to_dict(item) for item in history],
+            "data_source": "seed_demo",
+            "is_demo_data": True,
             "notes": [
+                (
+                    "⚠️ pairwise_ranking_accuracy / mean_band_error 目前為示範資料（seed），"
+                    "並未從 drift report 實際配對結果計算，approve/rollback 也不會切換 runtime 實際使用的模型版本。"
+                ),
                 "Release actions now persist to DataVue DB.",
                 "Release metadata is now aligned with the Meta Andromeda registry source of truth.",
                 (
@@ -1420,6 +1286,9 @@ class MetaAndromedaRepository:
             "approved_at": record.approved_at or "",
             "pairwise_ranking_accuracy": record.pairwise_ranking_accuracy,
             "mean_band_error": record.mean_band_error,
+            # 目前尚未實作以 drift report 實際配對結果計算這兩個指標（見 docs/19 P0-6），
+            # 這裡的數字全部來自 seed/手動輸入，不代表真實模型表現
+            "is_demo_data": True,
         }
         if record.record_kind == "candidate":
             payload["created_at"] = record.created_at
@@ -1902,6 +1771,7 @@ class MetaAndromedaRepository:
         dataset_id = f"cal_ds_{datetime.now(timezone.utc).strftime('%Y%m%d')}_{uuid.uuid4().hex[:8]}"
         synced_count = 0
         matched_count = 0
+        skipped_not_band_eligible = 0
         band_score = {"low": 1, "mid": 2, "high": 3}
         dataset = MetaAndromedaCalibrationDataset(
             id=dataset_id,
@@ -1913,36 +1783,40 @@ class MetaAndromedaRepository:
             summary={},
         )
         db.add(dataset)
-        
+
+        # 動態標籤門檻：與 create_drift_report 共用同一套計算方式，確保同一批
+        # ObservedCreative 在 drift 與校準兩處算出一致的 observed_band
+        eligible_observed_list = [obs for obs in observed_list if obs.id not in excluded_observed_ids]
+        label_thresholds = compute_label_thresholds(eligible_observed_list)
+        persist_label_policy(db, "global", window_kind, label_thresholds)
+
         # 2. 篩選有偏差且未被排除的進行標記
-        for obs in observed_list:
-            if obs.id in excluded_observed_ids:
-                continue
+        for obs in eligible_observed_list:
             # 排除 spend=0 的記錄（廣告未實際投放，成效數據無意義）
             if float((obs.performance_snapshot or {}).get("spend", 0) or 0) <= 0:
                 continue
-            if not obs.asset_uri:
+            if not obs.asset_uri and not (obs.asset and obs.asset.checksum_sha256):
                 continue
-                
-            # 尋找匹配的 Completed ScoreEvent
-            pred = (
-                db.query(MetaAndromedaScoreEvent)
-                .filter(
-                    MetaAndromedaScoreEvent.asset_uri == obs.asset_uri,
-                    MetaAndromedaScoreEvent.status == "completed"
-                )
-                .order_by(MetaAndromedaScoreEvent.completed_at.desc())
-                .first()
-            )
-            
+
+            # 尋找匹配的 Completed ScoreEvent（與 drift report 使用同一套 checksum→asset_uri 匹配邏輯）
+            pred = match_observed_to_prediction(db, obs)
+
             if not pred:
                 continue
             matched_count += 1
-                
-            real_band, label_detail = _resolve_observed_band(obs.objective, obs.performance_snapshot)
-                
-            pred_band = pred.roas_band or "low"
-            
+
+            real_band, label_detail = label_observed_band(obs.objective, obs.performance_snapshot, label_thresholds)
+
+            # 非轉換/lead 廣告（roas_band=null 為正確設計）不進入校準集，避免模型「正確不出 band」
+            # 被誤判為預測錯誤而拉偏 prompt 校準方向
+            pred_roas_eligible = (pred.roas_prediction or {}).get("eligible")
+            if pred_roas_eligible is None:
+                pred_roas_eligible = resolve_objective_group(obs.objective) not in NON_ROAS_GROUPS
+            if not pred_roas_eligible or pred.roas_band is None:
+                skipped_not_band_eligible += 1
+                continue
+            pred_band = pred.roas_band
+
             # 只有有偏差的才需要校準
             err = abs(band_score.get(pred_band, 1) - band_score.get(real_band, 1))
             if err > 0:
@@ -1974,6 +1848,7 @@ class MetaAndromedaRepository:
                         error=float(err),
                         performance_snapshot=deepcopy(obs.performance_snapshot or {}),
                         label_policy_version=LABEL_POLICY_VERSION,
+                        label_thresholds=deepcopy(label_thresholds),
                     )
                 )
                 synced_count += 1
@@ -1982,6 +1857,7 @@ class MetaAndromedaRepository:
         dataset.summary = {
             "matched_count": matched_count,
             "excluded_count": len(excluded_observed_ids or []),
+            "skipped_not_band_eligible": skipped_not_band_eligible,
             "label_policy_version": LABEL_POLICY_VERSION,
         }
         db.commit()
@@ -2067,6 +1943,26 @@ class MetaAndromedaRepository:
                 "created_at": r.created_at.isoformat() if r.created_at else None,
             })
         return result[:limit]
+
+    @staticmethod
+    def get_active_base_profile_name(db: Session) -> str:
+        """Resolve the scoring-profile name currently used by the runtime.
+
+        This is a profile_name in meta_andromeda_scoring_profiles, NOT a
+        model_version from the model registry — the two are different
+        namespaces (e.g. "creative_scoring_v2" vs "cand_v2026_06_05_a").
+        Mirrors runtime._load_scoring_profile()'s own precedence: the
+        globally promoted profile wins, otherwise fall back to the
+        registry's configured scoring_profile.
+        """
+        promoted = (
+            db.query(MetaAndromedaScoringProfile)
+            .filter(MetaAndromedaScoringProfile.is_promoted == True)  # noqa: E712
+            .first()
+        )
+        if promoted is not None:
+            return promoted.profile_name
+        return model_registry.get_entry().scoring_profile
 
     @staticmethod
     def list_scoring_profiles(db: Session) -> list[dict]:

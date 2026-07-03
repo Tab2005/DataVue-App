@@ -7,7 +7,11 @@ import logging
 import uuid
 from datetime import datetime, timezone
 
-from database.models.meta_andromeda import MetaAndromedaCalibrationItem, MetaAndromedaScoringProfile
+from database.models.meta_andromeda import (
+    MetaAndromedaCalibrationDataset,
+    MetaAndromedaCalibrationItem,
+    MetaAndromedaScoringProfile,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -124,6 +128,22 @@ def _format_few_shot_block(examples: list[dict]) -> str:
     return "\n".join(lines)
 
 
+def _set_dataset_status(db, dataset_id: str, status: str, extra_summary: dict | None = None) -> None:
+    dataset = (
+        db.query(MetaAndromedaCalibrationDataset)
+        .filter(MetaAndromedaCalibrationDataset.id == dataset_id)
+        .first()
+    )
+    if dataset is None:
+        return
+    dataset.status = status
+    if extra_summary:
+        summary = dict(dataset.summary or {})
+        summary.update(extra_summary)
+        dataset.summary = summary
+    db.commit()
+
+
 def generate_calibrated_profile(db, dataset_id: str, base_profile_name: str) -> str | None:
     bias = analyze_dataset_bias(db, dataset_id)
 
@@ -134,6 +154,7 @@ def generate_calibrated_profile(db, dataset_id: str, base_profile_name: str) -> 
             bias["total_items"],
             MIN_ITEMS_FOR_CALIBRATION,
         )
+        _set_dataset_status(db, dataset_id, "calibration_skipped:insufficient_samples")
         return None
 
     base_profile = (
@@ -146,6 +167,12 @@ def generate_calibrated_profile(db, dataset_id: str, base_profile_name: str) -> 
             "[CalibrationPipeline] Base profile '%s' not found. Skipping calibration.",
             base_profile_name,
         )
+        _set_dataset_status(
+            db,
+            dataset_id,
+            "calibration_failed:base_profile_missing",
+            extra_summary={"base_profile_name": base_profile_name},
+        )
         return None
 
     new_profile_name = f"{base_profile_name}_cal_{dataset_id[:8]}"
@@ -153,6 +180,12 @@ def generate_calibrated_profile(db, dataset_id: str, base_profile_name: str) -> 
         MetaAndromedaScoringProfile.profile_name == new_profile_name
     ).first():
         logger.info("[CalibrationPipeline] Profile '%s' already exists. Skipping.", new_profile_name)
+        _set_dataset_status(
+            db,
+            dataset_id,
+            "calibrated",
+            extra_summary={"generated_profile_name": new_profile_name},
+        )
         return new_profile_name
 
     calibration_guidance = _BIAS_GUIDANCE[bias["dominant_bias"]]
@@ -172,7 +205,12 @@ def generate_calibrated_profile(db, dataset_id: str, base_profile_name: str) -> 
         is_promoted=False,
     )
     db.add(new_profile)
-    db.commit()
+    _set_dataset_status(
+        db,
+        dataset_id,
+        "calibrated",
+        extra_summary={"generated_profile_name": new_profile_name},
+    )
 
     logger.info(
         "[CalibrationPipeline] Generated new profile '%s' from dataset %s (bias=%s, items=%d).",

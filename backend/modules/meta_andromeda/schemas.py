@@ -389,6 +389,7 @@ class ReleaseRecordResponse(BaseModel):
     approved_at: str
     pairwise_ranking_accuracy: float
     mean_band_error: float
+    is_demo_data: bool = True
 
 
 class ReleaseCandidateResponse(BaseModel):
@@ -398,6 +399,7 @@ class ReleaseCandidateResponse(BaseModel):
     pairwise_ranking_accuracy: float
     mean_band_error: float
     promotion_gate_summary: dict[str, bool]
+    is_demo_data: bool = True
 
 
 class ReleaseHistoryEntryResponse(BaseModel):
@@ -414,6 +416,8 @@ class ReleaseOverviewResponse(BaseModel):
     candidates: list[ReleaseCandidateResponse]
     history: list[ReleaseHistoryEntryResponse]
     notes: list[str]
+    data_source: str = "seed_demo"
+    is_demo_data: bool = True
 
 
 class ReleaseActionRequest(BaseModel):

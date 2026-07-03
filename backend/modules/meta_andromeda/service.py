@@ -26,6 +26,7 @@ from .import_status_store import (
 )
 from .importers.facebook_ads_importer import fetch_observed_creative_candidate
 from .model_registry import model_registry
+from .objective_routing import resolve_objective_group
 from .queue_host import queue_host_adapter
 from .repository import repository
 from .runtime import runtime_adapter
@@ -634,6 +635,7 @@ class MetaAndromedaService:
                     "campaign_id": candidate.campaign_id,
                     "adset_id": candidate.adset_id,
                     "ad_id": candidate.ad_id,
+                    "objective_group": resolve_objective_group(candidate.objective),
                 },
             },
         )
@@ -1444,8 +1446,7 @@ class MetaAndromedaService:
         if synced_count >= 10 and dataset_id:
             try:
                 from core.scheduler import add_meta_andromeda_calibration_job
-                from core.config import settings as _settings
-                base_profile = _settings.META_ANDROMEDA_SCORING_MODEL_VERSION
+                base_profile = repository.get_active_base_profile_name(db)
                 add_meta_andromeda_calibration_job(dataset_id, base_profile)
             except Exception as exc:
                 import logging as _logging
