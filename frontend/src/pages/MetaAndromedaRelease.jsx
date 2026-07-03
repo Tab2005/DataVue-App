@@ -214,8 +214,8 @@ const MetaAndromedaRelease = () => {
             {overview?.is_demo_data ? (
                 <div style={warningPanelStyle}>
                     {t(
-                        '⚠️ The accuracy/error numbers below are demo data, not computed from real drift reports. Approve/Rollback here do not switch the model runtime actually uses.',
-                        '⚠️ 以下準確率／誤差數字為示範資料，並非由實際 drift report 配對結果計算；此處的核准/回滾也不會切換 runtime 實際使用的模型版本。'
+                        '⚠️ The accuracy/error numbers below are still demo data — call POST /release/{model_version}/refresh-metrics to compute them from real drift report matches. Approve/Rollback do switch which model the runtime actually uses.',
+                        '⚠️ 以下準確率／誤差數字仍為示範資料，尚未呼叫 POST /release/{model_version}/refresh-metrics 從實際 drift report 配對結果計算；核准/回滾已會切換 runtime 實際使用的模型版本。'
                     )}
                 </div>
             ) : null}

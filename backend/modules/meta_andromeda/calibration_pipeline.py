@@ -420,9 +420,14 @@ async def _default_holdout_scorer(item: MetaAndromedaCalibrationItem, profile_na
             "cta": request_context.get("cta"),
             "asset_public_url": request_context.get("asset_public_url"),
             "asset_source_url": request_context.get("asset_source_url") or obs.asset_uri,
+            # 標記為回測請求：符合 self-consistency 的「高價值請求」資格（見 runtime.py
+            # _resolve_self_consistency_sample_count），若啟用會取樣 N 次取中位數
+            "is_backtest": True,
         },
     }
-    registry_entry = model_registry.get_entry()
+    # 回測用「backtest」情境選模型：若有指定專門的較強/較貴模型（release_channel=
+    # backtest_reference）就優先用它，讓 ρ/accuracy 比較不被互動用的便宜模型天花板卡住
+    registry_entry = model_registry.get_entry(purpose="backtest")
     provider = OpenRouterScoringProvider(api_key=settings.OPENROUTER_API_KEY, force_profile_name=profile_name)
     try:
         return await provider.score(score_payload, registry_entry)

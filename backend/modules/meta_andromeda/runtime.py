@@ -7,10 +7,13 @@ import json
 import logging
 import re
 import threading
+import time
+from collections import Counter
 from datetime import datetime, timezone
 from uuid import uuid4
 
 from core.config import settings
+from .cache_invalidation import publish_invalidation, register_invalidation_handler
 from .model_registry import MetaAndromedaModelEntry, model_registry
 from .objective_routing import is_roas_band_eligible, resolve_objective_group
 from .labeling import LABEL_POLICY_VERSION
@@ -19,7 +22,10 @@ from .labeling import LABEL_POLICY_VERSION
 logger = logging.getLogger(__name__)
 VALID_ROAS_BANDS = {"high", "mid", "low"}
 
-_prompt_profile_cache: dict[str, dict] = {}
+# TTL 作為多 worker 快取失效的底線：即使 Redis pub/sub 通知因故沒送達（worker 啟動時機、
+# 網路抖動等），5 分鐘後也會自動視為過期重新查 DB，不會無限期卡在舊 prompt
+_PROMPT_CACHE_TTL_SECONDS = 300
+_prompt_profile_cache: dict[str, tuple[dict, float]] = {}
 _profile_cache_lock = threading.Lock()
 
 _FALLBACK_USER_PROMPT_TEMPLATE = (
@@ -66,6 +72,49 @@ _OBJ_PROMPT_SUFFIX = (
     "Primary text: {primary_text}\n"
     "CTA: {cta}\n"
 )
+
+# 附加於每個 objective_group prompt 之後（統一在 render 時 append，而非逐一改寫每份 prompt
+# template），要求 diagnostic_breakdown 每個維度輸出結構化數值分數，供統計校準層使用
+_DIAGNOSTIC_SCORE_FORMAT_INSTRUCTION = (
+    "\n\nOUTPUT FORMAT REQUIREMENT for diagnostic_breakdown: each key's value MUST be a JSON "
+    'object {"score": <integer 0-100>, "reasoning": "<one short sentence in Traditional Chinese>"}, '
+    "never a plain string. The score is your own independent numeric sub-rating for that "
+    "dimension (may differ from overall_score) and is used for downstream statistical calibration."
+)
+
+# OpenRouter/OpenAI-style structured-output schema (docs/20 P2-2). Not every model routed
+# through OpenRouter honors response_format, so this is tried first and callers must fall
+# back to the existing regex-based _extract_json_payload() path on any failure — never assume
+# a model actually obeys the schema.
+_SCORE_RESPONSE_JSON_SCHEMA = {
+    "type": "json_schema",
+    "json_schema": {
+        "name": "meta_andromeda_creative_score",
+        "strict": False,
+        "schema": {
+            "type": "object",
+            "properties": {
+                "overall_score": {"type": "integer", "minimum": 0, "maximum": 100},
+                "roas_band": {"type": ["string", "null"], "enum": ["high", "mid", "low", None]},
+                "top_positive_drivers": {"type": "array", "items": {"type": "string"}},
+                "top_negative_drivers": {"type": "array", "items": {"type": "string"}},
+                "risk_tags": {"type": "array", "items": {"type": "string"}},
+                "diagnostic_breakdown": {
+                    "type": "object",
+                    "additionalProperties": {
+                        "type": "object",
+                        "properties": {
+                            "score": {"type": "integer", "minimum": 0, "maximum": 100},
+                            "reasoning": {"type": "string"},
+                        },
+                    },
+                },
+                "summary": {"type": "string"},
+            },
+            "required": ["overall_score", "summary"],
+        },
+    },
+}
 
 _DEFAULT_OBJECTIVE_PROFILES: dict[str, dict] = {
     "lead": {
@@ -233,8 +282,12 @@ def _load_scoring_profile(profile_name: str, *, ignore_promoted: bool = False) -
     """
     cache_key = f"__exact__{profile_name}" if ignore_promoted else profile_name
     with _profile_cache_lock:
-        if cache_key in _prompt_profile_cache:
-            return _prompt_profile_cache[cache_key]
+        cached = _prompt_profile_cache.get(cache_key)
+        if cached is not None:
+            value, cached_at = cached
+            if time.monotonic() - cached_at < _PROMPT_CACHE_TTL_SECONDS:
+                return value
+            del _prompt_profile_cache[cache_key]
 
     try:
         from database import SessionLocal
@@ -274,7 +327,7 @@ def _load_scoring_profile(profile_name: str, *, ignore_promoted: bool = False) -
                     "resolved_profile_name": row.profile_name,
                 }
                 with _profile_cache_lock:
-                    _prompt_profile_cache[cache_key] = profile
+                    _prompt_profile_cache[cache_key] = (profile, time.monotonic())
                 logger.info("[MetaAndromeda] Loaded scoring profile '%s' from DB.", profile_name)
                 return profile
         finally:
@@ -291,7 +344,7 @@ def _load_scoring_profile(profile_name: str, *, ignore_promoted: bool = False) -
         "resolved_profile_name": None,
     }
     with _profile_cache_lock:
-        _prompt_profile_cache[cache_key] = fallback
+        _prompt_profile_cache[cache_key] = (fallback, time.monotonic())
     return fallback
 
 
@@ -348,14 +401,25 @@ def _resolve_active_profile(base_profile: dict, objective_group: str) -> dict:
     }
 
 
-def invalidate_prompt_cache(profile_name: str | None = None) -> None:
+def _invalidate_prompt_cache_local(profile_name: str | None = None) -> None:
     with _profile_cache_lock:
         if profile_name is None:
             _prompt_profile_cache.clear()
             logger.info("[MetaAndromeda] Prompt profile cache fully cleared.")
         else:
             _prompt_profile_cache.pop(profile_name, None)
+            _prompt_profile_cache.pop(f"__exact__{profile_name}", None)
             logger.info("[MetaAndromeda] Prompt profile cache cleared for '%s'.", profile_name)
+
+
+def invalidate_prompt_cache(profile_name: str | None = None) -> None:
+    """Clear this process's prompt cache and notify other workers via Redis
+    pub/sub (docs/20 P2-7) — a promote/approve handled by one worker must not
+    leave sibling workers serving the old prompt until their TTL happens to expire."""
+    publish_invalidation("prompt_profile", profile_name)
+
+
+register_invalidation_handler("prompt_profile", _invalidate_prompt_cache_local)
 
 
 def _clip(value: str | None, limit: int = 140) -> str:
@@ -442,21 +506,38 @@ def _normalize_string_list(value, field_name: str, *, limit: int | None = None) 
     return normalized[:limit] if limit is not None else normalized
 
 
-def _normalize_diagnostic_breakdown(value) -> dict[str, str]:
+def _normalize_diagnostic_breakdown(value) -> tuple[dict[str, str], dict[str, int]]:
+    """Returns (display_dict, numeric_scores_dict).
+
+    display_dict keeps the existing "score: reasoning" string shape so the
+    public API contract (diagnostic_breakdown: dict[str, str]) and frontend
+    review-queue display are unchanged. numeric_scores_dict extracts the raw
+    0-100 sub-score per dimension (when the model returned one) for the
+    statistical confidence-calibration layer — this is the "數值化
+    diagnostic_breakdown" from docs/20 task 3.1, done without breaking the
+    existing string-shaped API.
+    """
     if value is None:
-        return {}
+        return {}, {}
     if not isinstance(value, dict):
         logger.warning("[MetaAndromeda] diagnostic_breakdown is %s, expected dict — returning empty.", type(value).__name__)
-        return {}
-    result = {}
+        return {}, {}
+    display: dict[str, str] = {}
+    numeric: dict[str, int] = {}
     for key, item in value.items():
         if isinstance(item, dict):
             score = item.get("score", "")
             reasoning = item.get("reasoning", "")
-            result[str(key)] = f"{score}: {reasoning}".strip(": ") if (score or reasoning) else ""
+            display[str(key)] = f"{score}: {reasoning}".strip(": ") if (score or reasoning) else ""
+            try:
+                score_int = int(score)
+                if 0 <= score_int <= 100:
+                    numeric[str(key)] = score_int
+            except (TypeError, ValueError):
+                pass
         else:
-            result[str(key)] = str(item)
-    return result
+            display[str(key)] = str(item)
+    return display, numeric
 
 
 def _build_multimodal_user_content(prompt: str, score_payload: dict) -> list[dict]:
@@ -473,6 +554,12 @@ def _build_multimodal_user_content(prompt: str, score_payload: dict) -> list[dic
         normalized_url = image_url.strip()
         if normalized_url.startswith(("http://", "https://", "data:image/")):
             user_content.append({"type": "image_url", "image_url": {"url": normalized_url}})
+    elif score_payload.get("asset_type") == "video":
+        keyframe_urls = request_context.get("video_keyframe_urls")
+        if isinstance(keyframe_urls, list):
+            for url in keyframe_urls:
+                if isinstance(url, str) and url.startswith(("http://", "https://", "data:image/")):
+                    user_content.append({"type": "image_url", "image_url": {"url": url}})
     return user_content
 
 
@@ -491,22 +578,55 @@ def _compute_signal_completeness(score_payload: dict) -> tuple[float, dict]:
     return completeness, components
 
 
-def _compute_confidence(score_payload: dict, *, scoring_mode: str, used_multimodal: bool, fallback_reason: str | None = None) -> tuple[float | None, dict]:
+def _compute_confidence(
+    score_payload: dict,
+    *,
+    scoring_mode: str,
+    used_multimodal: bool,
+    fallback_reason: str | None = None,
+    overall_score: int | None = None,
+    video_not_inspected: bool = False,
+) -> tuple[float | None, dict]:
     if score_payload.get("request_mode") == "diagnostic_only":
         return None, {"reason": "diagnostic_only_request"}
 
     completeness, components = _compute_signal_completeness(score_payload)
     base = 0.42 if scoring_mode == "heuristic" else 0.58
-    confidence = base + completeness * (0.26 if scoring_mode == "heuristic" else 0.24)
+    formula_confidence = base + completeness * (0.26 if scoring_mode == "heuristic" else 0.24)
     if used_multimodal:
-        confidence += 0.06
+        formula_confidence += 0.06
     if fallback_reason:
-        confidence -= 0.12
-    return max(0.18, min(round(confidence, 4), 0.92)), {
+        formula_confidence -= 0.12
+    if video_not_inspected:
+        # 沒看過影片內容等於盲評，遠比「訊號不完整」嚴重——原本 image_signal 分量只讓
+        # completeness 少掉 ~0.03-0.06，不足以反映這件事，這裡直接大幅扣減
+        formula_confidence -= 0.2
+    formula_confidence = max(0.18, min(round(formula_confidence, 4), 0.92))
+
+    # 用歷史 CalibrationItem（prediction_band vs observed_band）擬合出的經驗機率取代手寫公式，
+    # 讓 confidence 真的代表「這個 band 判斷過去有多常猜對」而非只是訊號完整度的代理指標。
+    # 資料不足或尚未擬合時優雅退回原本的公式，避免冷啟動期間報錯或無意義輸出。影片盲評的情況
+    # 不查經驗校準表——那張表主要是用「有看過內容」的樣本擬合的，用在盲評案例上會虛報信心。
+    calibration_method = "hand_written_formula"
+    calibrated_confidence = None
+    if scoring_mode == "ai" and overall_score is not None and not fallback_reason and not video_not_inspected:
+        try:
+            from .calibration_stats import predict_confidence
+            calibrated_confidence = predict_confidence(overall_score)
+            if calibrated_confidence is not None:
+                calibration_method = "empirical_isotonic"
+        except Exception as exc:
+            logger.debug("[MetaAndromeda] Confidence calibration lookup failed: %s", exc)
+
+    final_confidence = calibrated_confidence if calibrated_confidence is not None else formula_confidence
+    return final_confidence, {
         "signal_completeness": round(completeness, 4),
         "components": components,
         "used_multimodal": used_multimodal,
         "fallback": bool(fallback_reason),
+        "video_not_inspected": video_not_inspected,
+        "calibration_method": calibration_method,
+        "formula_confidence": formula_confidence,
     }
 
 
@@ -523,13 +643,6 @@ def _validate_provider_result(
     roas_applicable = roas_band_eligible and not is_diagnostic_only_request
     prediction_mode = "diagnostic_plus_roas" if roas_applicable else "diagnostic_only"
 
-    used_multimodal = len(_build_multimodal_user_content("", score_payload)) > 1
-    confidence, confidence_detail = _compute_confidence(
-        score_payload,
-        scoring_mode="ai",
-        used_multimodal=used_multimodal,
-    )
-
     raw_score = parsed.get("overall_score")
     if raw_score is None:
         raise ValueError("provider_missing_overall_score")
@@ -539,6 +652,18 @@ def _validate_provider_result(
         raise ValueError("provider_invalid_overall_score") from exc
     if overall_score < 0 or overall_score > 100:
         raise ValueError("provider_invalid_overall_score")
+
+    used_multimodal = len(_build_multimodal_user_content("", score_payload)) > 1
+    # 影片素材沒能附上 keyframes（ffmpeg 不存在/抽取失敗）等於盲評：模型只能靠文案判斷，
+    # 這比「訊號不完整」嚴重得多，必須額外扣減 confidence 並在 risk_tags 明確標出
+    video_not_inspected = score_payload.get("asset_type") == "video" and not used_multimodal
+    confidence, confidence_detail = _compute_confidence(
+        score_payload,
+        scoring_mode="ai",
+        used_multimodal=used_multimodal,
+        overall_score=overall_score,
+        video_not_inspected=video_not_inspected,
+    )
 
     roas_band = parsed.get("roas_band")
     if not roas_applicable:
@@ -551,7 +676,9 @@ def _validate_provider_result(
     top_positive_drivers = _normalize_string_list(parsed.get("top_positive_drivers"), "top_positive_drivers", limit=3)
     top_negative_drivers = _normalize_string_list(parsed.get("top_negative_drivers"), "top_negative_drivers", limit=3)
     risk_tags = _normalize_string_list(parsed.get("risk_tags"), "risk_tags")
-    diagnostic_breakdown = _normalize_diagnostic_breakdown(parsed.get("diagnostic_breakdown"))
+    if video_not_inspected and "video_content_not_inspected" not in risk_tags:
+        risk_tags.append("video_content_not_inspected")
+    diagnostic_breakdown, diagnostic_scores = _normalize_diagnostic_breakdown(parsed.get("diagnostic_breakdown"))
     summary = str(parsed.get("summary") or "Scored by OpenRouter-backed Meta Andromeda runtime.").strip()
 
     if is_diagnostic_only_request:
@@ -604,8 +731,78 @@ def _validate_provider_result(
             "scoring_mode": "ai",
             "objective_group": objective_group,
             "label_policy_version": LABEL_POLICY_VERSION,
+            "diagnostic_scores": diagnostic_scores,
         },
     }
+
+
+def _resolve_self_consistency_sample_count(score_payload: dict) -> int:
+    """Self-consistency (N-sample, take the median) is only worth the extra API
+    cost/latency for "high value" scoring: observation-triggered re-scoring
+    (事後補評) and holdout backtests — not interactive Score Lab uploads, which
+    stay single-sample to keep cost/latency predictable for a human waiting
+    on the result (docs/20 P2-2)."""
+    if not settings.META_ANDROMEDA_SELF_CONSISTENCY_ENABLED:
+        return 1
+    request_context = score_payload.get("request_context", {})
+    if not isinstance(request_context, dict):
+        return 1
+    origin = request_context.get("origin")
+    is_backtest = bool(request_context.get("is_backtest"))
+    if origin == "analytics" or is_backtest:
+        return settings.META_ANDROMEDA_SELF_CONSISTENCY_SAMPLES
+    return 1
+
+
+def _median_int(values: list[int]) -> int:
+    ordered = sorted(values)
+    n = len(ordered)
+    mid = n // 2
+    if n % 2 == 1:
+        return ordered[mid]
+    return round((ordered[mid - 1] + ordered[mid]) / 2)
+
+
+def _majority_vote_band(bands: list[str | None]) -> str | None:
+    votes = [b for b in bands if b in VALID_ROAS_BANDS]
+    if not votes:
+        return None
+    counts = Counter(votes)
+    top_count = max(counts.values())
+    tied = sorted(b for b, c in counts.items() if c == top_count)
+    if len(tied) == 1:
+        return tied[0]
+    # 平票時取中間值（mid 若在候選內優先，否則取 band_order 排序後的中位者），避免用字母順序
+    # 這種跟語意無關的方式決定 high 還是 low
+    band_order = {"low": 1, "mid": 2, "high": 3}
+    tied_sorted = sorted(tied, key=lambda b: band_order[b])
+    return tied_sorted[len(tied_sorted) // 2]
+
+
+def _aggregate_self_consistency_samples(samples: list[dict]) -> dict:
+    """Merge N independently-parsed provider responses into one: median
+    overall_score, majority-vote roas_band, and textual fields (diagnostic
+    breakdown/drivers/summary) taken from whichever sample's overall_score is
+    closest to the median — averaging text doesn't make sense, but picking the
+    most "representative" sample's prose does."""
+    if len(samples) == 1:
+        return samples[0]
+
+    scores = [int(s.get("overall_score", 0)) for s in samples]
+    median_score = _median_int(scores)
+    bands = [s.get("roas_band") for s in samples]
+    majority_band = _majority_vote_band(bands)
+
+    representative = min(samples, key=lambda s: abs(int(s.get("overall_score", 0)) - median_score))
+    merged = dict(representative)
+    merged["overall_score"] = median_score
+    merged["roas_band"] = majority_band
+    merged["_self_consistency"] = {
+        "sample_count": len(samples),
+        "scores": scores,
+        "bands": bands,
+    }
+    return merged
 
 
 class BaseScoringProvider:
@@ -630,14 +827,7 @@ class OpenRouterScoringProvider(BaseScoringProvider):
         # 才能在別的 profile 已上線時仍獨立評估候選 profile
         self.force_profile_name = force_profile_name
 
-    async def score(self, score_payload: dict, registry_entry: MetaAndromedaModelEntry) -> dict:
-        from services.ai.openrouter_client import OpenRouterClient
-        import openai
-
-        client = OpenRouterClient(api_key=self.api_key)
-        if client.client is None:
-            raise RuntimeError("OpenRouter client is not configured")
-
+    def _build_prompt(self, score_payload: dict, registry_entry: MetaAndromedaModelEntry) -> dict:
         request_context = score_payload.get("request_context", {})
         if not isinstance(request_context, dict):
             request_context = {}
@@ -660,6 +850,7 @@ class OpenRouterScoringProvider(BaseScoringProvider):
             "cta": _clip(request_context.get("cta")),
         }
         prompt = active_profile["user_prompt_template"].format_map(_fmt)
+        prompt += _DIAGNOSTIC_SCORE_FORMAT_INSTRUCTION
         if active_profile.get("calibration_guidance"):
             prompt += f"\n\n{active_profile['calibration_guidance']}"
         few_shot_examples = active_profile.get("few_shot_examples")
@@ -672,6 +863,53 @@ class OpenRouterScoringProvider(BaseScoringProvider):
         user_content = _build_multimodal_user_content(prompt, score_payload)
         # few-shot 圖片附加在主素材圖片之後，讓模型能實際「看到」校準範例，而非只靠文字描述
         user_content.extend(few_shot_image_blocks)
+        return {
+            "prompt": prompt,
+            "system_prompt": system_prompt,
+            "user_content": user_content,
+            "active_profile": active_profile,
+            "objective_group": objective_group,
+        }
+
+    @staticmethod
+    async def _call_provider_once(
+        client,
+        prompt: str,
+        system_prompt: str,
+        user_content,
+        registry_entry: MetaAndromedaModelEntry,
+        *,
+        use_structured_output: bool,
+    ) -> dict:
+        """One full attempt (with its own rate-limit retry loop), returning the
+        parsed JSON payload. use_structured_output tries response_format=
+        json_schema first (P2-2) as a fast pre-attempt — any failure there
+        (model doesn't support it, malformed response, ...) falls through to
+        the existing, already-battle-tested regex-parsed retry loop unchanged.
+        """
+        import openai
+
+        if use_structured_output:
+            try:
+                raw = await asyncio.to_thread(
+                    client.generate_content,
+                    prompt,
+                    registry_entry.provider_model,
+                    system_prompt,
+                    0.2,
+                    8192,
+                    settings.META_ANDROMEDA_SCORE_TIMEOUT_SECONDS,
+                    user_content,
+                    _SCORE_RESPONSE_JSON_SCHEMA,
+                )
+                if raw and raw.strip():
+                    return _extract_json_payload(raw)
+            except Exception as exc:
+                logger.info(
+                    "[MetaAndromeda] Structured output attempt failed (%s), falling back to regex-parsed prompt.",
+                    exc,
+                )
+
         raw = None
         max_retries = 3
         backoff = 2.0
@@ -717,7 +955,49 @@ class OpenRouterScoringProvider(BaseScoringProvider):
                     await asyncio.sleep(sleep_time)
                 else:
                     raise
-        parsed = _extract_json_payload(raw)
+        return _extract_json_payload(raw)
+
+    async def score(self, score_payload: dict, registry_entry: MetaAndromedaModelEntry) -> dict:
+        from services.ai.openrouter_client import OpenRouterClient
+
+        client = OpenRouterClient(api_key=self.api_key)
+        if client.client is None:
+            raise RuntimeError("OpenRouter client is not configured")
+
+        built = self._build_prompt(score_payload, registry_entry)
+        prompt = built["prompt"]
+        system_prompt = built["system_prompt"]
+        user_content = built["user_content"]
+        active_profile = built["active_profile"]
+        objective_group = built["objective_group"]
+
+        sample_count = _resolve_self_consistency_sample_count(score_payload)
+        use_structured_output = settings.META_ANDROMEDA_STRUCTURED_OUTPUT_ENABLED
+
+        if sample_count <= 1:
+            parsed = await self._call_provider_once(
+                client, prompt, system_prompt, user_content, registry_entry,
+                use_structured_output=use_structured_output,
+            )
+        else:
+            # 依序取樣（非併發）：避免對本來就嚴格限流的 provider 一次炸出 N 倍請求，
+            # 用延遲換取穩定性——這類請求本來就是背景非互動流程，不急著在幾秒內回應
+            samples = []
+            for i in range(sample_count):
+                try:
+                    sample = await self._call_provider_once(
+                        client, prompt, system_prompt, user_content, registry_entry,
+                        use_structured_output=use_structured_output,
+                    )
+                    samples.append(sample)
+                except Exception as exc:
+                    logger.warning(
+                        "[MetaAndromeda] Self-consistency sample %d/%d failed: %s",
+                        i + 1, sample_count, exc,
+                    )
+            if not samples:
+                raise RuntimeError("self_consistency_all_samples_failed")
+            parsed = _aggregate_self_consistency_samples(samples)
 
         return _validate_provider_result(
             parsed,
@@ -901,6 +1181,7 @@ def build_heuristic_score_result(score_payload: dict, registry_entry: MetaAndrom
             "objective_group": objective_group,
             "fallback_reason": fallback_reason or "",
             "label_policy_version": LABEL_POLICY_VERSION,
+            "diagnostic_scores": {},
         },
     }
 
@@ -1020,6 +1301,34 @@ class MetaAndromedaRuntimeAdapter:
                                     request_context["asset_public_url"] = f"data:{mime};base64,{base64_str}"
                             except Exception as parse_exc:
                                 logger.error(f"[MetaAndromeda] Base64 encoding failed for asset {asset_id}: {parse_exc}")
+
+                        # 影片素材：抽 keyframes 多圖傳入，讓模型能實際「看到」內容而非只憑文案盲評。
+                        # 任何失敗（ffmpeg 不存在、檔案損毀、逾時）都優雅退化為空列表，之後在
+                        # _validate_provider_result 標記 video_content_not_inspected 並顯著調降 confidence。
+                        elif asset.asset_uri.startswith("storage://") and asset.asset_type == "video":
+                            try:
+                                from .video_utils import extract_video_keyframes_base64
+
+                                video_bytes = None
+                                if asset.storage_backend == "filesystem":
+                                    from pathlib import Path
+                                    storage_root = Path(settings.META_ANDROMEDA_STORAGE_ROOT)
+                                    safe_path = (storage_root / asset.storage_key).resolve()
+                                    if safe_path.relative_to(storage_root.resolve()) and safe_path.exists():
+                                        video_bytes = safe_path.read_bytes()
+                                elif asset.storage_backend == "s3_compatible":
+                                    from .storage import storage_adapter
+                                    client = storage_adapter._build_s3_client()
+                                    bucket = settings.META_ANDROMEDA_STORAGE_S3_BUCKET
+                                    response = client.get_object(Bucket=bucket, Key=asset.storage_key)
+                                    video_bytes = response['Body'].read()
+
+                                if video_bytes:
+                                    keyframe_urls = extract_video_keyframes_base64(video_bytes)
+                                    if keyframe_urls:
+                                        request_context["video_keyframe_urls"] = keyframe_urls
+                            except Exception as parse_exc:
+                                logger.warning(f"[MetaAndromeda] Video keyframe extraction failed for asset {asset_id}: {parse_exc}")
                 finally:
                     db_session.close()
             except Exception as e:

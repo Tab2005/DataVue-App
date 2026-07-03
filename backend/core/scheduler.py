@@ -32,6 +32,7 @@ scheduler = AsyncIOScheduler(timezone=SCHEDULER_TIMEZONE)
 META_ANDROMEDA_QUEUE_SWEEP_JOB_ID = "ma_queue_sweeper"
 META_ANDROMEDA_REDIS_STREAM_CONSUMER_JOB_ID = "ma_redis_stream_consumer"
 META_ANDROMEDA_REDIS_STREAM_RECLAIM_JOB_ID = "ma_redis_stream_reclaim"
+META_ANDROMEDA_WEEKLY_CLOSED_LOOP_JOB_ID = "ma_weekly_closed_loop"
 
 
 def is_scheduler_enabled() -> bool:
@@ -613,6 +614,99 @@ def add_meta_andromeda_redis_stream_reclaim_job():
     return job
 
 
+async def run_meta_andromeda_weekly_closed_loop() -> None:
+    """Per docs/20 P2-6: for every account with observed creatives, weekly
+    auto-run drift report -> (if any account unhealthy) calibration dataset
+    sync -> calibration pipeline (already auto-triggered by sync when
+    error_item_count >= 10, see service.sync_calibration_dataset). The
+    resulting profile still needs a human to hit promote — this job doesn't
+    change any live scoring behavior on its own, it just removes "someone has
+    to remember to click the button" from the cadence.
+    """
+    from modules.meta_andromeda.repository import repository
+
+    db = SessionLocal()
+    try:
+        accounts = repository.list_observed_accounts(db)
+        logger.info("⏰ [MetaAndromeda] Weekly closed-loop run starting for %d account(s).", len(accounts))
+
+        any_unhealthy = False
+        for account in accounts:
+            account_id = account.get("account_id")
+            if not account_id:
+                continue
+            try:
+                report = repository.create_drift_report(
+                    db,
+                    window_kind="last_7d",
+                    triggered_by="weekly_auto_scheduler",
+                    account_id=account_id,
+                )
+                drift_status = report.get("drift_status")
+                logger.info(
+                    "⏰ [MetaAndromeda] Weekly drift report for account %s: status=%s",
+                    account_id, drift_status,
+                )
+                if drift_status in ("warning", "drifted"):
+                    any_unhealthy = True
+            except Exception as exc:
+                logger.warning(
+                    "⏰ [MetaAndromeda] Weekly drift report failed for account %s: %s", account_id, exc
+                )
+
+        if not any_unhealthy:
+            logger.info("⏰ [MetaAndromeda] Weekly closed-loop: all accounts healthy, skipping calibration sync.")
+            return
+
+        try:
+            # sync_calibration_dataset 目前不支援 account 篩選（見 docs/20 已知限制），
+            # 全帳戶都不健康時每週跑一次全域同步即可，不必每個帳戶各跑一次
+            sync_result = repository.sync_calibration_dataset(
+                db, window_kind="last_7d", excluded_observed_ids=[]
+            )
+            error_item_count = sync_result.get("error_item_count", 0)
+            dataset_id = sync_result.get("dataset_id")
+            logger.info(
+                "⏰ [MetaAndromeda] Weekly calibration sync: %d error items in dataset %s",
+                error_item_count, dataset_id,
+            )
+            if error_item_count >= 10 and dataset_id:
+                base_profile = repository.get_active_base_profile_name(db)
+                add_meta_andromeda_calibration_job(dataset_id, base_profile)
+        except Exception as exc:
+            logger.warning("⏰ [MetaAndromeda] Weekly calibration sync failed: %s", exc)
+    finally:
+        db.close()
+
+
+def add_meta_andromeda_weekly_closed_loop_job():
+    """Register the weekly per-account drift -> calibration closed-loop job (P2-6)."""
+    if not settings.META_ANDROMEDA_WEEKLY_LOOP_ENABLED:
+        logger.info("⏰ [MetaAndromeda] Weekly closed-loop disabled via META_ANDROMEDA_WEEKLY_LOOP_ENABLED=false.")
+        return None
+    job = scheduler.add_job(
+        run_meta_andromeda_weekly_closed_loop,
+        trigger=CronTrigger(
+            day_of_week=settings.META_ANDROMEDA_WEEKLY_LOOP_DAY_OF_WEEK,
+            hour=settings.META_ANDROMEDA_WEEKLY_LOOP_HOUR,
+            minute=0,
+            timezone=SCHEDULER_TIMEZONE,
+        ),
+        id=META_ANDROMEDA_WEEKLY_CLOSED_LOOP_JOB_ID,
+        replace_existing=True,
+        misfire_grace_time=DEFAULT_MISFIRE_GRACE_TIME,
+        coalesce=True,
+        max_instances=1,
+    )
+    logger.info(
+        "⏰ [MetaAndromeda] Weekly closed-loop job registered (day_of_week=%s, hour=%s %s).",
+        settings.META_ANDROMEDA_WEEKLY_LOOP_DAY_OF_WEEK,
+        settings.META_ANDROMEDA_WEEKLY_LOOP_HOUR,
+        SCHEDULER_TIMEZONE,
+    )
+    return job
+
+
 def remove_report_job(schedule_id: str):
     """移除排程。"""
     job_id = get_job_id(schedule_id)
@@ -649,6 +743,7 @@ async def start_scheduler() -> dict:
         add_meta_andromeda_queue_sweeper_job()
         add_meta_andromeda_redis_stream_consumer_job()
         add_meta_andromeda_redis_stream_reclaim_job()
+        add_meta_andromeda_weekly_closed_loop_job()
 
         for schedule in active_schedules:
             add_report_job(schedule, db=db, persist_next_run=True)

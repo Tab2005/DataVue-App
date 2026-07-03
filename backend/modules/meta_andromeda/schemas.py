@@ -219,10 +219,11 @@ class ReviewQueueDetailResponse(BaseModel):
     feature_manifest_id: str | None
     observation: ObservationResponse | None = None
     request_context: dict[str, Any] | None = None
-    lineage: dict[str, str | None]
+    lineage: dict[str, Any]
     error_message: str | None
     attempt_count: int
     created_at: datetime
+    feedback_history: list[dict[str, Any]] = Field(default_factory=list)
 
 
 class AssetUploadResponse(BaseModel):
@@ -335,7 +336,7 @@ class ExternalWorkerScoreResultRequest(BaseModel):
     top_positive_drivers: list[str] = Field(default_factory=list)
     top_negative_drivers: list[str] = Field(default_factory=list)
     explanations: dict = Field(default_factory=dict)
-    lineage: dict[str, str | None] = Field(default_factory=dict)
+    lineage: dict[str, Any] = Field(default_factory=dict)
 
 
 class ExternalWorkerCallbackRequest(BaseModel):
@@ -368,6 +369,7 @@ class FeedbackEntryResponse(BaseModel):
     reason_codes: list[str]
     comment: str | None
     created_at: str
+    flagged_for_calibration_review: bool = False
 
 
 class FeedbackListResponse(BaseModel):
@@ -432,6 +434,13 @@ class ReleaseActionResponse(BaseModel):
     actor: str
     created_at: str
     note: str | None = None
+
+
+class ReleaseMetricsRefreshResponse(BaseModel):
+    status: str
+    sample_count: int | None = None
+    pairwise_ranking_accuracy: float | None = None
+    mean_band_error: float | None = None
 
 
 class ScoreEventDeleteResponse(BaseModel):

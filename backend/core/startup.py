@@ -262,6 +262,15 @@ def run_startup_tasks():
     except Exception as e:
         logger.error(f"Failed to seed Meta Andromeda data on startup: {e}")
 
+    # 6b. Start Meta Andromeda cache invalidation listener (P2-7)：多 worker 部署下，
+    # 任一 worker 執行 promote/approve 都要讓其他 worker 的本地 prompt/registry/confidence
+    # 快取立刻失效，而不是等各自 TTL 到期。Redis 未設定時靜默降級為單機行為。
+    try:
+        from modules.meta_andromeda.cache_invalidation import start_invalidation_listener
+        start_invalidation_listener()
+    except Exception as e:
+        logger.warning(f"Failed to start Meta Andromeda cache invalidation listener: {e}")
+
     # 7. Seed permissions
     seed_permissions()
 

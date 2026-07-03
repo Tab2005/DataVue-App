@@ -131,6 +131,107 @@ def _check_promoted_profile_degradation(db, accuracy: float, spearman_r: float, 
         db.commit()
 
 
+def _switch_model_registry_production(db, model_version: str) -> None:
+    """Flip is_current_production in the DB-backed model registry so runtime's
+    model_registry.get_entry() actually starts using the newly approved/rolled-back
+    model_version — the missing link that made Release approve/rollback a no-op
+    on scoring behavior before (docs/19 P0-6)."""
+    from database.models.meta_andromeda import MetaAndromedaModelRegistryEntry
+
+    target = (
+        db.query(MetaAndromedaModelRegistryEntry)
+        .filter(MetaAndromedaModelRegistryEntry.model_version == model_version)
+        .first()
+    )
+    if target is None:
+        logger.warning(
+            "[MetaAndromeda] Release action referenced model_version '%s' with no matching "
+            "model_registry_entries row — runtime will keep using whatever is currently "
+            "is_current_production until a registry entry for this version is added.",
+            model_version,
+        )
+        return
+
+    db.query(MetaAndromedaModelRegistryEntry).filter(
+        MetaAndromedaModelRegistryEntry.is_current_production == True  # noqa: E712
+    ).update({"is_current_production": False}, synchronize_session=False)
+    target.is_current_production = True
+    db.add(target)
+    db.commit()
+
+    from .model_registry import invalidate_registry_cache
+    invalidate_registry_cache()
+
+
+def _compute_pairwise_ranking_accuracy(scores: list[float], perf: list[float]) -> float:
+    """Fraction of concordant pairs: how often a higher overall_score also has a
+    higher primary-metric value. Pairs tied on either dimension are excluded from
+    the denominator (standard convention for pairwise/Kendall-style concordance)."""
+    n = len(scores)
+    concordant = 0
+    total = 0
+    for i in range(n):
+        for j in range(i + 1, n):
+            if scores[i] == scores[j] or perf[i] == perf[j]:
+                continue
+            total += 1
+            if (scores[i] - scores[j]) * (perf[i] - perf[j]) > 0:
+                concordant += 1
+    return concordant / total if total else 0.0
+
+
+def compute_release_metrics(db, model_version: str) -> dict:
+    """Compute real pairwise ranking accuracy / mean band error for `model_version`
+    from historical drift-matched pairs (ScoreEvent.lineage.registry_model_version),
+    replacing the seed placeholder numbers release records shipped with (docs/19 P0-6).
+    """
+    observed_list = [
+        obs for obs in db.query(MetaAndromedaObservedCreative).all()
+        if float((obs.performance_snapshot or {}).get("spend", 0) or 0) > 0
+    ]
+    if not observed_list:
+        return {"status": "insufficient_data", "sample_count": 0}
+
+    label_thresholds = compute_label_thresholds(observed_list)
+    band_score = {"low": 1, "mid": 2, "high": 3}
+    scores: list[float] = []
+    perf_values: list[float] = []
+    total_error = 0.0
+    matched = 0
+
+    for obs in observed_list:
+        pred = match_observed_to_prediction(db, obs)
+        if not pred:
+            continue
+        if (pred.lineage or {}).get("registry_model_version") != model_version:
+            continue
+        if (pred.lineage or {}).get("scoring_mode") == "heuristic":
+            continue
+
+        real_band, label_detail = label_observed_band(obs.objective, obs.performance_snapshot, label_thresholds)
+        pred_roas_eligible = (pred.roas_prediction or {}).get("eligible")
+        if pred_roas_eligible is None:
+            pred_roas_eligible = resolve_objective_group(obs.objective) not in NON_ROAS_GROUPS
+        pred_band = pred.roas_band if pred_roas_eligible else None
+        if pred_band is None or pred.overall_score is None or label_detail.get("value") is None:
+            continue
+
+        matched += 1
+        total_error += abs(band_score.get(pred_band, 1) - band_score.get(real_band, 1))
+        scores.append(float(pred.overall_score))
+        perf_values.append(float(label_detail["value"]))
+
+    if matched < 3:
+        return {"status": "insufficient_data", "sample_count": matched}
+
+    return {
+        "status": "computed",
+        "sample_count": matched,
+        "pairwise_ranking_accuracy": round(_compute_pairwise_ranking_accuracy(scores, perf_values), 4),
+        "mean_band_error": round(total_error / matched, 4),
+    }
+
+
 def _average_rank(values: list[float]) -> list[float]:
     """Tie-aware average ranking: tied values share the mean of their tied rank positions."""
     n = len(values)
@@ -888,6 +989,26 @@ class MetaAndromedaRepository:
                 }
             else:
                 detail["observation"] = None
+
+        # 三方對照（人 vs 模型 vs 市場）：把 reviewer 的歷史回饋跟上面的 AI 預測/市場實績
+        # 放在同一個 detail 裡，才看得出 reviewer 說的 hook_soft 之類的判斷是否真的準
+        feedback_rows = (
+            db.query(MetaAndromedaFeedbackEvent)
+            .filter(MetaAndromedaFeedbackEvent.score_event_id == score_event_id)
+            .order_by(MetaAndromedaFeedbackEvent.created_at.asc())
+            .all()
+        )
+        detail["feedback_history"] = [
+            {
+                "feedback_event_id": item.id,
+                "reviewer_id": item.reviewer_id,
+                "decision": item.decision,
+                "reason_codes": item.reason_codes or [],
+                "comment": item.comment,
+                "created_at": item.created_at.isoformat() if item.created_at else None,
+            }
+            for item in feedback_rows
+        ]
         return detail
 
     def get_monitoring_summary(self, db: Session):
@@ -1500,19 +1621,23 @@ class MetaAndromedaRepository:
             "is_demo_data": True,
         }
 
+        current_is_demo = bool(current_dict.get("is_demo_data", True))
         return {
             "current_production": current_dict,
             "previous_production": previous_dict,
             "candidates": [self._release_record_to_dict(item) for item in candidates],
             "history": [self._release_event_to_dict(item) for item in history],
-            "data_source": "seed_demo",
-            "is_demo_data": True,
+            "data_source": "seed_demo" if current_is_demo else "computed",
+            "is_demo_data": current_is_demo,
             "notes": [
                 (
-                    "⚠️ pairwise_ranking_accuracy / mean_band_error 目前為示範資料（seed），"
-                    "並未從 drift report 實際配對結果計算，approve/rollback 也不會切換 runtime 實際使用的模型版本。"
+                    "⚠️ pairwise_ranking_accuracy / mean_band_error 目前為示範資料（seed），尚未呼叫過 "
+                    "POST /release/{model_version}/refresh-metrics 從 drift report 實際配對結果計算。"
+                    if current_is_demo else
+                    "✅ pairwise_ranking_accuracy / mean_band_error 已從 drift report 實際配對結果計算。"
                 ),
-                "Release actions now persist to DataVue DB.",
+                "Release actions now persist to DataVue DB and switch the DB-backed model registry's "
+                "is_current_production, so approve/rollback now actually changes which model runtime uses.",
                 "Release metadata is now aligned with the Meta Andromeda registry source of truth.",
                 (
                     f"Latest calibration dataset: {latest_calibration.id} "
@@ -1535,9 +1660,9 @@ class MetaAndromedaRepository:
             "approved_at": record.approved_at or "",
             "pairwise_ranking_accuracy": record.pairwise_ranking_accuracy,
             "mean_band_error": record.mean_band_error,
-            # 目前尚未實作以 drift report 實際配對結果計算這兩個指標（見 docs/19 P0-6），
-            # 這裡的數字全部來自 seed/手動輸入，不代表真實模型表現
-            "is_demo_data": True,
+            # metrics_source=="computed" 代表已用 refresh_release_metrics()（drift-matched pairs）
+            # 實算過；否則仍是 seed/手動輸入，不代表真實模型表現（見 docs/19 P0-6）
+            "is_demo_data": getattr(record, "metrics_source", "seed") != "computed",
         }
         if record.record_kind == "candidate":
             payload["created_at"] = record.created_at
@@ -1912,6 +2037,31 @@ class MetaAndromedaRepository:
         score.feedback_count += 1
         score.latest_feedback_decision = decision
         score.updated_at = datetime.now(timezone.utc)
+
+        # 分歧樣本自動標記為校準候選：reviewer 明確拒絕高分素材、或核准低分素材，代表人的判斷
+        # 與模型判斷方向相反，值得後續人工複核是否要納入 prompt 校準（人工弱標籤，與市場成效
+        # 標籤分開權重，不直接當市場 ground truth 用，因為市場數據還沒回來）
+        overall_score = score.overall_score
+        is_divergent = (
+            overall_score is not None
+            and (
+                (decision == "reject" and overall_score >= 70)
+                or (decision == "approve" and overall_score <= 40)
+            )
+        )
+        if is_divergent:
+            lineage = dict(score.lineage or {})
+            lineage["human_feedback_flag"] = {
+                "decision": decision,
+                "overall_score": overall_score,
+                "reason_codes": reason_codes or [],
+                "flagged_at": datetime.now(timezone.utc).isoformat(),
+                "note": "reviewer decision diverges from AI score direction; candidate for manual calibration review",
+            }
+            score.lineage = lineage
+            from sqlalchemy.orm.attributes import flag_modified
+            flag_modified(score, "lineage")
+
         db.add(feedback)
         db.commit()
         db.refresh(feedback)
@@ -1923,7 +2073,84 @@ class MetaAndromedaRepository:
             "reason_codes": feedback.reason_codes or [],
             "comment": feedback.comment,
             "created_at": feedback.created_at.isoformat(),
+            "flagged_for_calibration_review": is_divergent,
         }
+
+    @staticmethod
+    def list_feedback_calibration_candidates(db: Session, limit: int = 50) -> list[dict]:
+        """Score events whose human review diverged from the AI's own score
+        (submit_feedback's human_feedback_flag), surfaced for an operator to
+        manually decide whether to fold into the next calibration round."""
+        rows = (
+            db.query(MetaAndromedaScoreEvent)
+            .filter(MetaAndromedaScoreEvent.status == "completed")
+            .order_by(MetaAndromedaScoreEvent.updated_at.desc())
+            .limit(500)
+            .all()
+        )
+        candidates = []
+        for row in rows:
+            flag = (row.lineage or {}).get("human_feedback_flag")
+            if not flag:
+                continue
+            candidates.append({
+                "score_event_id": row.id,
+                "asset_uri": row.asset_uri,
+                "overall_score": row.overall_score,
+                "roas_band": row.roas_band,
+                **flag,
+            })
+            if len(candidates) >= limit:
+                break
+        return candidates
+
+    @staticmethod
+    def analyze_feedback_reason_codes(db: Session) -> dict:
+        """Validate reviewer feedback against market ground truth: for each
+        reason_code, how often did the score events it was attached to end up
+        matching (or diverging from) their later-observed market band? This is
+        "reviewer 說 hook_soft 的素材是否真的表現差" made concrete — it tells you
+        whether to trust a given reason_code's signal or the model's own band.
+        """
+        feedback_rows = db.query(MetaAndromedaFeedbackEvent).all()
+        if not feedback_rows:
+            return {"total_feedback_events": 0, "reason_code_breakdown": {}}
+
+        score_ids = {f.score_event_id for f in feedback_rows}
+        cal_items = (
+            db.query(MetaAndromedaCalibrationItem)
+            .filter(MetaAndromedaCalibrationItem.score_event_id.in_(score_ids))
+            .all()
+        )
+        band_by_score_id = {item.score_event_id: item for item in cal_items}
+
+        breakdown: dict[str, dict] = {}
+        for fb in feedback_rows:
+            cal_item = band_by_score_id.get(fb.score_event_id)
+            for code in (fb.reason_codes or []):
+                bucket = breakdown.setdefault(code, {
+                    "total": 0,
+                    "with_market_data": 0,
+                    "reviewer_matched_market": 0,
+                })
+                bucket["total"] += 1
+                if cal_item is None:
+                    continue
+                bucket["with_market_data"] += 1
+                # reject/revise 代表 reviewer 認為素材有問題；若市場實績也落在 low/mid（非 high），
+                # 視為 reviewer 判斷與市場一致
+                reviewer_flagged_weak = fb.decision in ("reject", "revise")
+                market_confirms_weak = cal_item.observed_band in ("low", "mid")
+                if reviewer_flagged_weak == market_confirms_weak:
+                    bucket["reviewer_matched_market"] += 1
+
+        for code, bucket in breakdown.items():
+            bucket["reviewer_market_agreement_rate"] = (
+                round(bucket["reviewer_matched_market"] / bucket["with_market_data"], 4)
+                if bucket["with_market_data"] else None
+            )
+
+        return {"total_feedback_events": len(feedback_rows), "reason_code_breakdown": breakdown}
 
     def perform_release_action(self, db: Session, action: str, model_version: str, actor: str, note: str | None):
         current = db.query(MetaAndromedaReleaseRecord).filter(MetaAndromedaReleaseRecord.record_kind == "current_production").first()
@@ -1949,6 +2176,8 @@ class MetaAndromedaRepository:
             previous.created_at = current.created_at
             previous.pairwise_ranking_accuracy = current.pairwise_ranking_accuracy
             previous.mean_band_error = current.mean_band_error
+            previous.metrics_source = current.metrics_source
+            previous.metrics_sample_count = current.metrics_sample_count
 
             current.model_version = candidate.model_version
             current.release_status = "production"
@@ -1957,7 +2186,13 @@ class MetaAndromedaRepository:
             current.created_at = created_at
             current.pairwise_ranking_accuracy = candidate.pairwise_ranking_accuracy
             current.mean_band_error = candidate.mean_band_error
+            current.metrics_source = candidate.metrics_source
+            current.metrics_sample_count = candidate.metrics_sample_count
             candidate.release_status = "approved"
+
+            # Runtime 真正切換：把新 current_production 的 model_version 標記為 DB registry 的
+            # is_current_production，下一次 model_registry.get_entry() 就會用它（P0-6 完整版核心）
+            _switch_model_registry_production(db, current.model_version)
         elif action == "reject":
             candidate.release_status = "rejected"
         elif action == "rollback":
@@ -1968,6 +2203,8 @@ class MetaAndromedaRepository:
                 "created_at": current.created_at,
                 "pairwise_ranking_accuracy": current.pairwise_ranking_accuracy,
                 "mean_band_error": current.mean_band_error,
+                "metrics_source": current.metrics_source,
+                "metrics_sample_count": current.metrics_sample_count,
             }
             current.model_version = previous.model_version
             current.release_status = "production"
@@ -1976,6 +2213,8 @@ class MetaAndromedaRepository:
             current.created_at = created_at
             current.pairwise_ranking_accuracy = previous.pairwise_ranking_accuracy
             current.mean_band_error = previous.mean_band_error
+            current.metrics_source = previous.metrics_source
+            current.metrics_sample_count = previous.metrics_sample_count
 
             previous.model_version = current_snapshot["model_version"]
             previous.release_status = "superseded"
@@ -1984,6 +2223,10 @@ class MetaAndromedaRepository:
             previous.created_at = current_snapshot["created_at"]
             previous.pairwise_ranking_accuracy = current_snapshot["pairwise_ranking_accuracy"]
             previous.mean_band_error = current_snapshot["mean_band_error"]
+            previous.metrics_source = current_snapshot["metrics_source"]
+            previous.metrics_sample_count = current_snapshot["metrics_sample_count"]
+
+            _switch_model_registry_production(db, current.model_version)
 
         event = MetaAndromedaReleaseEvent(
             action=action,
@@ -2002,6 +2245,27 @@ class MetaAndromedaRepository:
             "created_at": created_at,
             "note": note,
         }
+
+    @staticmethod
+    def refresh_release_metrics(db: Session, model_version: str) -> dict:
+        """Compute real pairwise ranking accuracy / mean band error for `model_version`
+        from historical drift-matched pairs and write it back onto whichever release
+        record(s) reference this model_version (current/previous/candidate)."""
+        metrics = compute_release_metrics(db, model_version)
+        if metrics["status"] != "computed":
+            return metrics
+
+        records = db.query(MetaAndromedaReleaseRecord).filter(
+            MetaAndromedaReleaseRecord.model_version == model_version
+        ).all()
+        for record in records:
+            record.pairwise_ranking_accuracy = metrics["pairwise_ranking_accuracy"]
+            record.mean_band_error = metrics["mean_band_error"]
+            record.metrics_source = "computed"
+            record.metrics_sample_count = metrics["sample_count"]
+            db.add(record)
+        db.commit()
+        return metrics
 
     def sync_calibration_dataset(
         self,
@@ -2123,6 +2387,7 @@ class MetaAndromedaRepository:
                     label_policy_version=LABEL_POLICY_VERSION,
                     label_thresholds=deepcopy(label_thresholds),
                     baseline_overall_score=pred.overall_score,
+                    diagnostic_scores=deepcopy((pred.lineage or {}).get("diagnostic_scores") or {}),
                 )
             )
             synced_count += 1
@@ -2141,6 +2406,13 @@ class MetaAndromedaRepository:
             "label_policy_version": LABEL_POLICY_VERSION,
         }
         db.commit()
+
+        # 每次同步後重新擬合信心校準層（純 Python、資料量小，直接同步跑，不需要排程）
+        try:
+            from .calibration_stats import fit_confidence_calibration
+            fit_confidence_calibration(db)
+        except Exception as exc:
+            logger.warning("[MetaAndromeda] Confidence calibration refit failed: %s", exc)
 
         return {
             "dataset_id": dataset_id,

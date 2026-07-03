@@ -127,6 +127,10 @@ class MetaAndromedaReleaseRecord(Base):
     pairwise_ranking_accuracy = Column(Float, nullable=False)
     mean_band_error = Column(Float, nullable=False)
     promotion_gate_summary = Column(JSON, nullable=True)
+    # "seed"（示範資料，從未實算過）或 "computed"（repository.compute_release_metrics()
+    # 從實際 drift-matched pairs 算出）；驅動 Release 工作台的 is_demo_data 標示
+    metrics_source = Column(String(20), nullable=False, default="seed")
+    metrics_sample_count = Column(Integer, nullable=True)
 
 
 class MetaAndromedaReleaseEvent(Base):
@@ -241,6 +245,10 @@ class MetaAndromedaCalibrationItem(Base):
     # backtest can compute a baseline ranking correlation (Spearman) to compare against the
     # candidate profile's re-scored ranking, not just band accuracy
     baseline_overall_score = Column(Integer, nullable=True)
+    # numeric diagnostic_breakdown sub-scores (visual_appeal/copywriting/cta_clarity/...) at
+    # scoring time, extracted by runtime._normalize_diagnostic_breakdown(); feeds the P1-1
+    # statistical calibration layer
+    diagnostic_scores = Column(JSON, nullable=True)
     created_at = Column(DateTime, default=text("CURRENT_TIMESTAMP"))
 
     dataset = relationship("MetaAndromedaCalibrationDataset", backref="items")
@@ -313,4 +321,42 @@ class MetaAndromedaLabelPolicy(Base):
     cpl_method = Column(String(30), nullable=True)
     cpl_sample_count = Column(Integer, nullable=False, default=0)
     effective_from = Column(DateTime, nullable=False, default=text("CURRENT_TIMESTAMP"))
+    created_at = Column(DateTime, default=text("CURRENT_TIMESTAMP"))
+
+
+class MetaAndromedaConfidenceCalibration(Base):
+    """Isotonic (PAVA) mapping from the AI provider's raw overall_score to an
+    empirically observed band-accuracy hit rate, fit from CalibrationItem
+    history by calibration_stats.fit_confidence_calibration(). Lets the
+    runtime's reported "confidence" mean what it claims instead of being a
+    hand-written formula (docs/20 task 3.1 / P2-4)."""
+
+    __tablename__ = "meta_andromeda_confidence_calibrations"
+
+    id = Column(String, primary_key=True, default=lambda: f"ma_cc_{uuid.uuid4().hex[:12]}")
+    scope_key = Column(String(120), nullable=False, unique=True, index=True)
+    calibration_data = Column(JSON, nullable=False, default=dict)
+    item_count = Column(Integer, nullable=False, default=0)
+    fitted_at = Column(DateTime, default=text("CURRENT_TIMESTAMP"))
+
+
+class MetaAndromedaModelRegistryEntry(Base):
+    """DB-backed model registry (docs/20 task 3.2 / P0-6 full version).
+
+    Mirrors model_registry.py's previously hardcoded _entries dict. Exactly one
+    row should have is_current_production=True at a time; runtime.model_registry
+    reads this table first and falls back to the hardcoded dict only if the
+    table is empty or unreachable (defense in depth, not the primary path)."""
+
+    __tablename__ = "meta_andromeda_model_registry_entries"
+
+    id = Column(String, primary_key=True, default=lambda: f"mr_{uuid.uuid4().hex[:12]}")
+    model_version = Column(String(100), nullable=False, unique=True, index=True)
+    provider = Column(String(50), nullable=False)
+    provider_model = Column(String(200), nullable=False)
+    scoring_profile = Column(String(120), nullable=False)
+    feature_manifest_id = Column(String(100), nullable=False)
+    release_channel = Column(String(30), nullable=False)
+    source_of_truth = Column(String(120), nullable=False)
+    is_current_production = Column(Boolean, nullable=False, default=False, index=True)
     created_at = Column(DateTime, default=text("CURRENT_TIMESTAMP"))

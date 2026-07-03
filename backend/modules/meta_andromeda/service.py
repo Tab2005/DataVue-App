@@ -701,7 +701,10 @@ class MetaAndromedaService:
         observed_creative_id = auto_score_payload.get("observed_creative_id") or "unknown_observation"
         asset_uri = auto_score_payload.get("asset_uri")
         try:
-            # 優先 link 既有的 Score Lab 預評，避免重複建立並保留「投放前預測」的比對意義
+            # 同一素材可能在多個觀測窗口（last_7d/last_30d/lifetime）各匯入一次；只要該素材已有
+            # 「AI 模式、completed」的最新評分就重用，不必每個窗口都重新呼叫 AI 評一次分。
+            # request_context.observed_creative_id 保留原本第一個連結的觀測（相容現有單值查詢），
+            # 完整的多對一關聯改記在 lineage.linked_observation_ids（新增、不影響既有查詢）。
             existing = None
             if asset_uri:
                 existing = (
@@ -709,17 +712,28 @@ class MetaAndromedaService:
                     .filter(
                         _ScoreEvent.asset_uri == asset_uri,
                         _ScoreEvent.status == "completed",
-                        _ScoreEvent.request_context["observed_creative_id"].is_(None),
                     )
                     .order_by(_ScoreEvent.completed_at.desc())
-                    .first()
+                    .all()
+                )
+                existing = next(
+                    (evt for evt in existing if (evt.lineage or {}).get("scoring_mode") == "ai"),
+                    None,
                 )
 
             if existing:
                 rc = dict(existing.request_context or {})
-                rc["observed_creative_id"] = observed_creative_id
+                rc.setdefault("observed_creative_id", observed_creative_id)
+
+                lineage = dict(existing.lineage or {})
+                linked_ids = list(lineage.get("linked_observation_ids") or [])
+                if observed_creative_id not in linked_ids:
+                    linked_ids.append(observed_creative_id)
+                lineage["linked_observation_ids"] = linked_ids
+                existing.lineage = lineage
                 existing.request_context = rc
                 flag_modified(existing, "request_context")
+                flag_modified(existing, "lineage")
                 db.commit()
                 MetaAndromedaService._set_observation_import_status(
                     observed_creative_id,
@@ -728,9 +742,10 @@ class MetaAndromedaService:
                     runtime_job_id=existing.runtime_job_id,
                 )
                 logger.info(
-                    "[Observation Import] Linked existing Score Lab score event %s → observed_creative_id %s (skipped re-score)",
+                    "[Observation Import] Linked existing score event %s → observed_creative_id %s (skipped re-score, now linked to %d observations)",
                     existing.id,
                     observed_creative_id,
+                    len(linked_ids),
                 )
                 return {"score_event_id": existing.id, "status": "completed"}
 
@@ -1407,6 +1422,15 @@ class MetaAndromedaService:
         )
 
     @staticmethod
+    def list_feedback_calibration_candidates(db) -> dict:
+        candidates = repository.list_feedback_calibration_candidates(db)
+        return {"candidates": candidates, "total": len(candidates)}
+
+    @staticmethod
+    def analyze_feedback_reason_codes(db) -> dict:
+        return repository.analyze_feedback_reason_codes(db)
+
+    @staticmethod
     def perform_release_action(
         db,
         action: str,
@@ -1421,6 +1445,10 @@ class MetaAndromedaService:
             actor=actor,
             note=note,
         )
+
+    @staticmethod
+    def refresh_release_metrics(db, model_version: str) -> dict:
+        return repository.refresh_release_metrics(db, model_version)
 
     @staticmethod
     def list_scoring_profiles(db) -> dict:

@@ -6,11 +6,13 @@ ENV PYTHONUNBUFFERED=1
 # 設定工作目錄
 WORKDIR /app
 
-# 安裝系統依賴（PostgreSQL 客戶端與 curl 供健康檢查使用）
+# 安裝系統依賴（PostgreSQL 客戶端、curl 供健康檢查使用、ffmpeg 供 Meta Andromeda
+# 影片素材抽取關鍵影格使用，見 modules/meta_andromeda/video_utils.py）
 RUN apt-get update && apt-get install -y \
     libpq-dev \
     gcc \
     curl \
+    ffmpeg \
     && rm -rf /var/lib/apt/lists/*
 
 # 複製並安裝 Python 依賴

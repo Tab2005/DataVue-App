@@ -153,8 +153,15 @@ class OpenRouterClient:
         max_tokens: Optional[int] = None,
         timeout: Optional[float] = None,
         user_content: Optional[Union[str, List[Dict[str, Any]]]] = None,
+        response_format: Optional[Dict[str, Any]] = None,
     ) -> str:
-        """生成內容 (同步阻塞呼叫)"""
+        """生成內容 (同步阻塞呼叫)
+
+        response_format: OpenAI-style structured-output spec, e.g.
+        {"type": "json_schema", "json_schema": {...}}. Not all models routed
+        through OpenRouter support this — callers should catch failures and
+        retry without it rather than assuming every model honors the schema.
+        """
         if not self.client:
             raise RuntimeError("OpenRouter Client not initialized.")
 
@@ -172,12 +179,15 @@ class OpenRouterClient:
         try:
             # 限制 connect timeout 為 3.0 秒，避免在部署網路不通時卡死 20 秒才 fallback
             api_timeout = (3.0, float(timeout)) if timeout is not None else (3.0, 15.0)
-            response = self.client.with_options(timeout=api_timeout).chat.completions.create(
+            create_kwargs = dict(
                 model=model_to_use,
                 messages=messages,
                 temperature=temperature,
-                max_tokens=max_tokens or 8192
+                max_tokens=max_tokens or 8192,
             )
+            if response_format is not None:
+                create_kwargs["response_format"] = response_format
+            response = self.client.with_options(timeout=api_timeout).chat.completions.create(**create_kwargs)
 
             if not response.choices:
                 logger.warning("[OpenRouterClient] API response returned no choices: %s", response)

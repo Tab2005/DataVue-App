@@ -45,6 +45,7 @@ from .schemas import (
     PingResponse,
     ReleaseActionRequest,
     ReleaseActionResponse,
+    ReleaseMetricsRefreshResponse,
     ReleaseOverviewResponse,
     ReviewQueueDetailResponse,
     ReviewQueueListResponse,
@@ -658,6 +659,30 @@ async def submit_feedback(
         ) from exc
 
 
+@router.get("/monitoring/feedback/calibration-candidates")
+async def list_feedback_calibration_candidates(
+    _user=Depends(get_current_meta_andromeda_user),
+    _access: bool = Depends(require_meta_andromeda_module),
+    db=Depends(get_db),
+):
+    """Score events whose human review (approve/reject) diverged from the AI's
+    own score direction — candidates an operator can manually fold into the
+    next prompt calibration round."""
+    return MetaAndromedaService.list_feedback_calibration_candidates(db)
+
+
+@router.get("/monitoring/feedback/reason-code-analysis")
+async def analyze_feedback_reason_codes(
+    _user=Depends(get_current_meta_andromeda_user),
+    _access: bool = Depends(require_meta_andromeda_module),
+    db=Depends(get_db),
+):
+    """For each feedback reason_code, how often the reviewer's implied judgment
+    (reject/revise = weak, approve = strong) agreed with the later-observed
+    market band — validates whether a given reason_code is a trustworthy signal."""
+    return MetaAndromedaService.analyze_feedback_reason_codes(db)
+
+
 @router.post("/release/approve", response_model=ReleaseActionResponse)
 async def approve_release(
     payload: ReleaseActionRequest,
@@ -716,3 +741,19 @@ async def rollback_release(
         actor=getattr(user, "email", None) or "datavue_operator",
         note=payload.note,
     )
+
+
+@router.post(
+    "/release/{model_version}/refresh-metrics",
+    response_model=ReleaseMetricsRefreshResponse,
+)
+async def refresh_release_metrics(
+    model_version: str,
+    _user=Depends(get_current_meta_andromeda_user),
+    _access: bool = Depends(require_meta_andromeda_release),
+    db=Depends(get_db),
+):
+    """Compute real pairwise ranking accuracy / mean band error for this model_version
+    from drift-matched history and write it onto any release record referencing it,
+    clearing its is_demo_data flag once enough data exists."""
+    return MetaAndromedaService.refresh_release_metrics(db, model_version)

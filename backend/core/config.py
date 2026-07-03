@@ -194,6 +194,22 @@ class Settings:
         return max(1, int(os.getenv("META_ANDROMEDA_SCORE_MAX_ATTEMPTS", "3")))
 
     @property
+    def META_ANDROMEDA_STRUCTURED_OUTPUT_ENABLED(self) -> bool:
+        """優先以 OpenRouter response_format=json_schema 取得結構化輸出，失敗才退回
+        regex 解析（docs/20 P2-2）。預設開啟——失敗會優雅退回現有 regex 路徑，風險低。"""
+        return os.getenv("META_ANDROMEDA_STRUCTURED_OUTPUT_ENABLED", "true").lower() in {"1", "true", "yes", "on"}
+
+    @property
+    def META_ANDROMEDA_SELF_CONSISTENCY_ENABLED(self) -> bool:
+        """對高價值請求（事後補評/回測）取樣 N 次取中位數，而非互動式 Score Lab 單次評分
+        （docs/20 P2-2）。預設關閉——會讓這類請求的 AI 呼叫量與延遲乘以 N 倍，須明確啟用。"""
+        return os.getenv("META_ANDROMEDA_SELF_CONSISTENCY_ENABLED", "false").lower() in {"1", "true", "yes", "on"}
+
+    @property
+    def META_ANDROMEDA_SELF_CONSISTENCY_SAMPLES(self) -> int:
+        return max(1, int(os.getenv("META_ANDROMEDA_SELF_CONSISTENCY_SAMPLES", "3")))
+
+    @property
     def META_ANDROMEDA_SCORE_RETRY_DELAY_SECONDS(self) -> float:
         return max(0.0, float(os.getenv("META_ANDROMEDA_SCORE_RETRY_DELAY_SECONDS", "5")))
 
@@ -244,6 +260,20 @@ class Settings:
     @property
     def META_ANDROMEDA_EXTERNAL_QUEUE_ENDPOINT(self) -> Optional[str]:
         return os.getenv("META_ANDROMEDA_EXTERNAL_QUEUE_ENDPOINT")
+
+    @property
+    def META_ANDROMEDA_WEEKLY_LOOP_ENABLED(self) -> bool:
+        """每帳戶每週自動跑 drift report -> 校準資料集 sync -> 校準管線（docs/20 P2-6）。
+        新 profile 仍需人工 promote，這個排程本身不會改變任何生效中的評分行為，預設開啟。"""
+        return os.getenv("META_ANDROMEDA_WEEKLY_LOOP_ENABLED", "true").lower() in {"1", "true", "yes", "on"}
+
+    @property
+    def META_ANDROMEDA_WEEKLY_LOOP_DAY_OF_WEEK(self) -> str:
+        return os.getenv("META_ANDROMEDA_WEEKLY_LOOP_DAY_OF_WEEK", "mon")
+
+    @property
+    def META_ANDROMEDA_WEEKLY_LOOP_HOUR(self) -> int:
+        return max(0, min(23, int(os.getenv("META_ANDROMEDA_WEEKLY_LOOP_HOUR", "3"))))
 
     @property
     def META_ANDROMEDA_EXTERNAL_QUEUE_TOKEN(self) -> Optional[str]:
