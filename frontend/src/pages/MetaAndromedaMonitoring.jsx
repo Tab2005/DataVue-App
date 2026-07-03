@@ -13,6 +13,8 @@ import {
     runScoringProfileBacktest,
     fetchDriftTrend,
     fetchObservedAccounts,
+    fetchModelRegistry,
+    updateBacktestModel,
 } from '../services/metaAndromedaMonitoringService';
 
 const MetaAndromedaMonitoring = () => {
@@ -47,6 +49,10 @@ const MetaAndromedaMonitoring = () => {
     const [driftTrend, setDriftTrend] = useState(null);
     const [loadingTrend, setLoadingTrend] = useState(false);
     const [observedAccounts, setObservedAccounts] = useState([]);
+    const [modelRegistry, setModelRegistry] = useState(null);
+    const [loadingModelRegistry, setLoadingModelRegistry] = useState(false);
+    const [backtestModelInput, setBacktestModelInput] = useState('');
+    const [savingBacktestModel, setSavingBacktestModel] = useState(false);
     const { hasAccess, loading: loadingModuleAccess } = useModuleAccess('meta_andromeda', selectedTeamId);
 
     const t = (en, zh) => (language === 'en' ? en : zh);
@@ -232,6 +238,7 @@ const MetaAndromedaMonitoring = () => {
         loadSummary();
         loadProfiles();
         loadObservedAccounts();
+        loadModelRegistry();
     }, [hasAccess]);
 
     useEffect(() => {
@@ -350,6 +357,36 @@ const MetaAndromedaMonitoring = () => {
             setError(err.message || 'Failed to load scoring profiles');
         } finally {
             setLoadingProfiles(false);
+        }
+    };
+
+    const loadModelRegistry = async () => {
+        setLoadingModelRegistry(true);
+        try {
+            const data = await fetchModelRegistry();
+            setModelRegistry(data);
+            const backtestEntry = (data?.entries || []).find((e) => e.release_channel === 'backtest_reference');
+            if (backtestEntry) {
+                setBacktestModelInput(backtestEntry.provider_model);
+            }
+        } catch (err) {
+            setError(err.message || 'Failed to load model registry');
+        } finally {
+            setLoadingModelRegistry(false);
+        }
+    };
+
+    const handleSaveBacktestModel = async () => {
+        if (!backtestModelInput.trim()) return;
+        setSavingBacktestModel(true);
+        setError(null);
+        try {
+            await updateBacktestModel('openrouter', backtestModelInput.trim());
+            await loadModelRegistry();
+        } catch (err) {
+            setError(err.message || 'Failed to save backtest model');
+        } finally {
+            setSavingBacktestModel(false);
         }
     };
 
@@ -1322,6 +1359,106 @@ const MetaAndromedaMonitoring = () => {
                                         </div>
                                     </div>
                                 ))}
+                            </div>
+                        </section>
+
+                        <section style={{ ...panelStyle, gridColumn: isMobile ? undefined : 'span 2' }}>
+                            <h2 style={sectionTitleStyle}>{t('Model Settings', '模型設定')}</h2>
+                            <div style={{ color: 'var(--text-secondary)', fontSize: '0.85rem', marginBottom: '14px' }}>
+                                {t(
+                                    'Interactive/production scoring model is changed via the Release workflow only (approve/rollback), shown here read-only. Backtest model is independent and can be set directly.',
+                                    '互動／正式評分模型只能透過版本總覽的核准／回退流程變更，這裡僅唯讀顯示。回測模型是獨立設定，可直接在這裡調整。'
+                                )}
+                            </div>
+
+                            {(() => {
+                                const entries = modelRegistry?.entries || [];
+                                const productionEntry = entries.find((e) => e.is_current_production);
+                                return (
+                                    <div style={{
+                                        marginBottom: '16px',
+                                        padding: '12px 14px',
+                                        borderRadius: '10px',
+                                        background: 'rgba(255,255,255,0.03)',
+                                        border: '1px solid var(--glass-border)',
+                                    }}>
+                                        <div style={{ fontSize: '0.8rem', color: 'var(--text-secondary)', marginBottom: '4px' }}>
+                                            {t('Current interactive/production model', '目前生效中的互動／正式評分模型')}
+                                        </div>
+                                        {loadingModelRegistry ? (
+                                            <div style={{ fontSize: '0.85rem', color: 'var(--text-secondary)' }}>{t('Loading...', '載入中...')}</div>
+                                        ) : productionEntry ? (
+                                            <div style={{ fontSize: '0.88rem', fontWeight: 600 }}>
+                                                {productionEntry.provider_model}
+                                                <span style={{ fontWeight: 400, color: 'var(--text-secondary)', marginLeft: '8px' }}>
+                                                    ({productionEntry.model_version})
+                                                </span>
+                                            </div>
+                                        ) : (
+                                            <div style={{ fontSize: '0.85rem', color: 'var(--text-secondary)' }}>{t('Not found', '查無資料')}</div>
+                                        )}
+                                        <a href="/meta-andromeda/release" style={{ fontSize: '0.78rem', color: '#60a5fa' }}>
+                                            {t('Change via Release Overview →', '至版本總覽變更 →')}
+                                        </a>
+                                    </div>
+                                );
+                            })()}
+
+                            <div style={{
+                                padding: '12px 14px',
+                                borderRadius: '10px',
+                                background: 'rgba(255,255,255,0.03)',
+                                border: '1px solid var(--glass-border)',
+                            }}>
+                                <div style={{ fontSize: '0.8rem', color: 'var(--text-secondary)', marginBottom: '8px' }}>
+                                    {t(
+                                        'Backtest model (used only when running holdout backtests before promoting a candidate profile). Leave empty to fall back to the production model above.',
+                                        '回測專用模型（僅在候選 profile 執行 holdout 回測時使用）。留空則自動退回使用上方的正式評分模型。'
+                                    )}
+                                </div>
+                                <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+                                    <input
+                                        type="text"
+                                        value={backtestModelInput}
+                                        onChange={(e) => setBacktestModelInput(e.target.value)}
+                                        placeholder="e.g. openai/gpt-4o-mini"
+                                        style={{
+                                            flex: '1 1 260px',
+                                            padding: '8px 10px',
+                                            borderRadius: '8px',
+                                            border: '1px solid var(--glass-border)',
+                                            background: 'rgba(255,255,255,0.04)',
+                                            color: 'var(--text-primary)',
+                                            fontSize: '0.85rem',
+                                        }}
+                                    />
+                                    <button
+                                        type="button"
+                                        onClick={handleSaveBacktestModel}
+                                        disabled={savingBacktestModel || !backtestModelInput.trim()}
+                                        style={{
+                                            padding: '8px 16px',
+                                            borderRadius: '8px',
+                                            border: 'none',
+                                            background: savingBacktestModel ? 'rgba(96,165,250,0.3)' : '#60a5fa',
+                                            color: 'white',
+                                            fontWeight: 600,
+                                            fontSize: '0.85rem',
+                                            cursor: savingBacktestModel ? 'wait' : 'pointer',
+                                        }}
+                                    >
+                                        {savingBacktestModel ? t('Saving...', '儲存中...') : t('Save', '儲存')}
+                                    </button>
+                                </div>
+                                {(() => {
+                                    const backtestEntry = (modelRegistry?.entries || []).find((e) => e.release_channel === 'backtest_reference');
+                                    if (!backtestEntry) return null;
+                                    return (
+                                        <div style={{ fontSize: '0.78rem', color: '#34d399', marginTop: '8px' }}>
+                                            {t('Currently set to', '目前設定為')}: {backtestEntry.provider_model}
+                                        </div>
+                                    );
+                                })()}
                             </div>
                         </section>
 

@@ -43,6 +43,17 @@ export const fetchObservedAccounts = async () => {
     return apiClient.get('/api/meta-andromeda/monitoring/observed-accounts');
 };
 
+export const fetchModelRegistry = async () => {
+    return apiClient.get('/api/meta-andromeda/monitoring/model-registry');
+};
+
+export const updateBacktestModel = async (provider, providerModel) => {
+    return apiClient.put('/api/meta-andromeda/monitoring/model-registry/backtest-model', {
+        provider,
+        provider_model: providerModel,
+    });
+};
+
 export default {
     fetchMetaAndromedaMonitoringSummary,
     fetchMetaAndromedaMonitoringTimeline,
@@ -54,4 +65,6 @@ export default {
     runScoringProfileBacktest,
     fetchDriftTrend,
     fetchObservedAccounts,
+    fetchModelRegistry,
+    updateBacktestModel,
 };

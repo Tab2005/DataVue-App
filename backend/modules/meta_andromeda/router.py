@@ -41,6 +41,9 @@ from .schemas import (
     ScoringProfileBacktestResponse,
     ScoringProfileListResponse,
     ScoringProfilePromoteResponse,
+    BacktestModelUpdateRequest,
+    ModelRegistryEntryResponse,
+    ModelRegistryListResponse,
     OverviewResponse,
     PingResponse,
     ReleaseActionRequest,
@@ -249,6 +252,38 @@ async def promote_scoring_profile(
             status_code=status.HTTP_409_CONFLICT,
             detail={"code": exc.code, "message": exc.message},
         ) from exc
+
+
+@router.get("/monitoring/model-registry", response_model=ModelRegistryListResponse)
+async def list_model_registry(
+    _user=Depends(get_current_meta_andromeda_user),
+    _access: bool = Depends(require_meta_andromeda_module),
+    db=Depends(get_db),
+):
+    """List all model registry entries (interactive/production + backtest reference).
+    Scoring/interactive model selection is changed via the release approve/rollback
+    workflow only — this endpoint is read-only for that channel."""
+    from .repository import repository as _repo
+    entries = _repo.list_model_registry_entries(db)
+    return {"entries": entries}
+
+
+@router.put("/monitoring/model-registry/backtest-model", response_model=ModelRegistryEntryResponse)
+async def update_backtest_model(
+    payload: BacktestModelUpdateRequest,
+    _user=Depends(get_current_meta_andromeda_user),
+    _access: bool = Depends(require_meta_andromeda_operate),
+    db=Depends(get_db),
+):
+    """Set which model evaluate_profile_on_holdout() re-scores holdout items with
+    (docs/20 P2-3). Independent of the interactive/production model — changing this
+    never affects live scoring, only future backtest runs."""
+    from .repository import repository as _repo
+    from .model_registry import invalidate_registry_cache
+
+    result = _repo.set_backtest_reference_model(db, payload.provider, payload.provider_model)
+    invalidate_registry_cache()
+    return result
 
 
 @router.post("/maintenance/cleanup-stale-score-events", response_model=MaintenanceCleanupResponse)

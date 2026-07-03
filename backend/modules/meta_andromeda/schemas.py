@@ -522,6 +522,25 @@ class ScoringProfileBacktestResponse(BaseModel):
     evaluated_at: str | None = None
 
 
+class ModelRegistryEntryResponse(BaseModel):
+    model_version: str
+    provider: str
+    provider_model: str
+    scoring_profile: str | None = None
+    release_channel: str
+    is_current_production: bool | None = None
+    created_at: str | None = None
+
+
+class ModelRegistryListResponse(BaseModel):
+    entries: list[ModelRegistryEntryResponse]
+
+
+class BacktestModelUpdateRequest(BaseModel):
+    provider: str = "openrouter"
+    provider_model: str
+
+
 class ObservedAccountEntry(BaseModel):
     account_id: str
     platform: str

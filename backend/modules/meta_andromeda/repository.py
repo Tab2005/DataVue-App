@@ -17,6 +17,7 @@ from database.models.meta_andromeda import (
     MetaAndromedaDeadLetter,
     MetaAndromedaDriftReport,
     MetaAndromedaFeedbackEvent,
+    MetaAndromedaModelRegistryEntry,
     MetaAndromedaObservedCreative,
     MetaAndromedaReleaseEvent,
     MetaAndromedaReleaseRecord,
@@ -2610,6 +2611,72 @@ class MetaAndromedaRepository:
     async def run_holdout_backtest(db: Session, profile_name: str) -> dict:
         from .calibration_pipeline import evaluate_profile_on_holdout
         return await evaluate_profile_on_holdout(db, profile_name)
+
+    @staticmethod
+    def list_model_registry_entries(db: Session) -> list[dict]:
+        rows = (
+            db.query(MetaAndromedaModelRegistryEntry)
+            .order_by(MetaAndromedaModelRegistryEntry.created_at.desc())
+            .all()
+        )
+        return [
+            {
+                "model_version": r.model_version,
+                "provider": r.provider,
+                "provider_model": r.provider_model,
+                "scoring_profile": r.scoring_profile,
+                "release_channel": r.release_channel,
+                "is_current_production": r.is_current_production,
+                "created_at": r.created_at.isoformat() if r.created_at else None,
+            }
+            for r in rows
+        ]
+
+    @staticmethod
+    def set_backtest_reference_model(db: Session, provider: str, provider_model: str) -> dict:
+        """Upsert the single registry row tagged release_channel='backtest_reference' —
+        the model evaluate_profile_on_holdout uses instead of falling back to
+        current_production (docs/20 P2-3). Scoring/interactive model selection is
+        intentionally NOT exposed here — it stays gated behind the release
+        approve/rollback workflow (drift + backtest checks) so this can't create a
+        second, conflicting way to change what's live for real users."""
+        entry = (
+            db.query(MetaAndromedaModelRegistryEntry)
+            .filter(MetaAndromedaModelRegistryEntry.release_channel == "backtest_reference")
+            .first()
+        )
+        current_production = (
+            db.query(MetaAndromedaModelRegistryEntry)
+            .filter(MetaAndromedaModelRegistryEntry.is_current_production == True)  # noqa: E712
+            .first()
+        )
+        scoring_profile = current_production.scoring_profile if current_production else "creative_scoring_v2"
+
+        if entry:
+            entry.provider = provider
+            entry.provider_model = provider_model
+            entry.scoring_profile = scoring_profile
+        else:
+            entry = MetaAndromedaModelRegistryEntry(
+                model_version="backtest_reference_model",
+                provider=provider,
+                provider_model=provider_model,
+                scoring_profile=scoring_profile,
+                feature_manifest_id="fm_backtest_reference",
+                release_channel="backtest_reference",
+                source_of_truth="datavue.meta_andromeda.registry",
+                is_current_production=False,
+            )
+            db.add(entry)
+        db.commit()
+        return {
+            "model_version": entry.model_version,
+            "provider": entry.provider,
+            "provider_model": entry.provider_model,
+            "scoring_profile": entry.scoring_profile,
+            "release_channel": entry.release_channel,
+            "is_current_production": entry.is_current_production,
+        }
 
 
 class PromotionGateError(Exception):
