@@ -10,6 +10,7 @@ import {
     cleanupStaleScoreEvents,
     fetchScoringProfiles,
     promoteScoringProfile,
+    runScoringProfileBacktest,
     fetchDriftTrend,
     fetchObservedAccounts,
 } from '../services/metaAndromedaMonitoringService';
@@ -41,6 +42,8 @@ const MetaAndromedaMonitoring = () => {
     const [scoringProfiles, setScoringProfiles] = useState(null);
     const [loadingProfiles, setLoadingProfiles] = useState(false);
     const [promotingProfile, setPromotingProfile] = useState(null);
+    const [backtestingProfile, setBacktestingProfile] = useState(null);
+    const [backtestResults, setBacktestResults] = useState({});
     const [driftTrend, setDriftTrend] = useState(null);
     const [loadingTrend, setLoadingTrend] = useState(false);
     const [observedAccounts, setObservedAccounts] = useState([]);
@@ -381,8 +384,33 @@ const MetaAndromedaMonitoring = () => {
         }
     };
 
-    const handlePromoteProfile = async (profileName) => {
-        if (!window.confirm(language === 'zh'
+    const handleRunBacktest = async (profileName) => {
+        setBacktestingProfile(profileName);
+        setError(null);
+        try {
+            const result = await runScoringProfileBacktest(profileName);
+            setBacktestResults((prev) => ({ ...prev, [profileName]: result }));
+        } catch (err) {
+            setError(err.message || 'Backtest failed');
+        } finally {
+            setBacktestingProfile(null);
+        }
+    };
+
+    const handlePromoteProfile = async (profileName, persistedBacktest) => {
+        // 優先看剛跑完、還沒 reload 進 scoringProfiles 的最新結果，沒有的話退回已存進
+        // profile.bias_summary.holdout_backtest 的舊結果
+        const backtest = backtestResults[profileName] || persistedBacktest;
+        // calibration_auto 產生的候選 profile 後端會要求先跑過回測且通過才准套用（P1-6 gate），
+        // 沒跑過或沒過的話這裡先跟使用者確認是否要用 force 覆寫，而不是讓他們直接撞 409
+        const failedGate = backtest && backtest.status === 'evaluated' && backtest.passed_gate === false;
+        if (failedGate) {
+            if (!window.confirm(language === 'zh'
+                ? `這個候選版本的回測結果未通過門檻（並未確定優於目前正式版）。仍要強制套用嗎？`
+                : `This candidate did not pass the backtest gate (not confirmed better than production). Force promote anyway?`)) {
+                return;
+            }
+        } else if (!window.confirm(language === 'zh'
             ? `確定要將 "${profileName}" 設為生效中的 Scoring Profile？\n目前生效的 profile 會被取消。`
             : `Promote "${profileName}" as the active Scoring Profile?\nThe current active profile will be deactivated.`)) {
             return;
@@ -390,10 +418,16 @@ const MetaAndromedaMonitoring = () => {
         setPromotingProfile(profileName);
         setError(null);
         try {
-            await promoteScoringProfile(profileName);
+            await promoteScoringProfile(profileName, failedGate);
             await loadProfiles();
         } catch (err) {
-            setError(err.message || 'Promote failed');
+            if (err.code === 'holdout_backtest_required') {
+                setError(language === 'zh'
+                    ? `套用被擋下：尚未執行 holdout 回測。請先點「執行回測」按鈕。`
+                    : `Promote blocked: holdout backtest hasn't run yet. Click "Run Backtest" first.`);
+            } else {
+                setError(err.message || 'Promote failed');
+            }
         } finally {
             setPromotingProfile(null);
         }
@@ -1169,26 +1203,72 @@ const MetaAndromedaMonitoring = () => {
                                                         {p.calibration_guidance.slice(0, 180)}{p.calibration_guidance.length > 180 ? '...' : ''}
                                                     </div>
                                                 )}
-                                                <button
-                                                    type="button"
-                                                    onClick={() => handlePromoteProfile(p.profile_name)}
-                                                    disabled={promotingProfile === p.profile_name}
-                                                    style={{
-                                                        alignSelf: 'flex-start',
-                                                        padding: '7px 14px',
-                                                        borderRadius: '8px',
-                                                        border: 'none',
-                                                        background: promotingProfile === p.profile_name ? 'rgba(245,158,11,0.3)' : '#f59e0b',
-                                                        color: 'white',
-                                                        fontWeight: 600,
-                                                        fontSize: '0.82rem',
-                                                        cursor: promotingProfile === p.profile_name ? 'wait' : 'pointer',
-                                                    }}
-                                                >
-                                                    {promotingProfile === p.profile_name
-                                                        ? t('Promoting...', '套用中...')
-                                                        : t('Promote This Profile', '套用此 Profile')}
-                                                </button>
+                                                {(() => {
+                                                    const persisted = p.bias_summary?.holdout_backtest;
+                                                    const fresh = backtestResults[p.profile_name];
+                                                    const backtest = fresh || persisted;
+                                                    if (!backtest) return null;
+                                                    const passed = backtest.passed_gate === true;
+                                                    return (
+                                                        <div style={{
+                                                            fontSize: '0.78rem',
+                                                            padding: '8px 10px',
+                                                            borderRadius: '6px',
+                                                            background: passed ? 'rgba(52,211,153,0.08)' : 'rgba(239,68,68,0.08)',
+                                                            border: `1px solid ${passed ? 'rgba(52,211,153,0.3)' : 'rgba(239,68,68,0.3)'}`,
+                                                            color: passed ? '#34d399' : '#ef4444',
+                                                        }}>
+                                                            {t('Backtest', '回測')}: {passed
+                                                                ? t('Passed', '通過')
+                                                                : t('Not passed (candidate not confirmed better than production)', '未通過（未確定優於正式版）')}
+                                                            {' · '}accuracy {backtest.baseline_accuracy?.toFixed?.(2) ?? backtest.baseline_accuracy} → {backtest.candidate_accuracy?.toFixed?.(2) ?? backtest.candidate_accuracy}
+                                                            {' · '}Spearman {backtest.baseline_spearman?.toFixed?.(2) ?? backtest.baseline_spearman} → {backtest.candidate_spearman?.toFixed?.(2) ?? backtest.candidate_spearman}
+                                                            {' · '}n={backtest.evaluated_count}
+                                                        </div>
+                                                    );
+                                                })()}
+                                                <div style={{ display: 'flex', gap: '8px' }}>
+                                                    <button
+                                                        type="button"
+                                                        onClick={() => handleRunBacktest(p.profile_name)}
+                                                        disabled={backtestingProfile === p.profile_name}
+                                                        style={{
+                                                            alignSelf: 'flex-start',
+                                                            padding: '7px 14px',
+                                                            borderRadius: '8px',
+                                                            border: '1px solid rgba(245,158,11,0.5)',
+                                                            background: 'transparent',
+                                                            color: '#f59e0b',
+                                                            fontWeight: 600,
+                                                            fontSize: '0.82rem',
+                                                            cursor: backtestingProfile === p.profile_name ? 'wait' : 'pointer',
+                                                        }}
+                                                    >
+                                                        {backtestingProfile === p.profile_name
+                                                            ? t('Running backtest...', '回測執行中...')
+                                                            : t('Run Backtest', '執行回測')}
+                                                    </button>
+                                                    <button
+                                                        type="button"
+                                                        onClick={() => handlePromoteProfile(p.profile_name, p.bias_summary?.holdout_backtest)}
+                                                        disabled={promotingProfile === p.profile_name}
+                                                        style={{
+                                                            alignSelf: 'flex-start',
+                                                            padding: '7px 14px',
+                                                            borderRadius: '8px',
+                                                            border: 'none',
+                                                            background: promotingProfile === p.profile_name ? 'rgba(245,158,11,0.3)' : '#f59e0b',
+                                                            color: 'white',
+                                                            fontWeight: 600,
+                                                            fontSize: '0.82rem',
+                                                            cursor: promotingProfile === p.profile_name ? 'wait' : 'pointer',
+                                                        }}
+                                                    >
+                                                        {promotingProfile === p.profile_name
+                                                            ? t('Promoting...', '套用中...')
+                                                            : t('Promote This Profile', '套用此 Profile')}
+                                                    </button>
+                                                </div>
                                             </div>
                                         ))}
                                     </div>

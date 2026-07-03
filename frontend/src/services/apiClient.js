@@ -138,13 +138,24 @@ async function request(method, path, options = {}) {
         if (!response.ok) {
             errorCount++;
             let errorMessage = `HTTP ${response.status}`;
+            let errorCode = null;
             try {
                 const errorData = await response.json();
-                errorMessage = errorData.detail || errorData.error || errorData.message || errorMessage;
+                const detail = errorData.detail || errorData.error || errorData.message;
+                // FastAPI 的 HTTPException(detail={"code": ..., "message": ...}) 這種結構化錯誤
+                // detail 會是物件，直接塞進 Error 會被 String() 轉成 "[object Object]"，要先拆開
+                if (detail && typeof detail === 'object') {
+                    errorMessage = detail.message || JSON.stringify(detail);
+                    errorCode = detail.code || null;
+                } else if (detail) {
+                    errorMessage = detail;
+                }
             } catch {
                 // 無法解析 JSON 錯誤回應，使用預設訊息
             }
-            throw new ApiError(errorMessage, response.status, path);
+            const apiError = new ApiError(errorMessage, response.status, path);
+            apiError.code = errorCode;
+            throw apiError;
         }
 
         // 204 No Content
