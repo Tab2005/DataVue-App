@@ -38,6 +38,7 @@ from .schemas import (
     ScoreEventBatchDeleteRequest,
     ScoreEventBatchDeleteResponse,
     ScoreEventDeleteResponse,
+    ScoringProfileBacktestResponse,
     ScoringProfileListResponse,
     ScoringProfilePromoteResponse,
     OverviewResponse,
@@ -209,22 +210,43 @@ async def list_scoring_profiles(
 
 
 @router.post(
-    "/monitoring/scoring-profiles/{profile_name}/promote",
-    response_model=ScoringProfilePromoteResponse,
+    "/monitoring/scoring-profiles/{profile_name}/backtest",
+    response_model=ScoringProfileBacktestResponse,
 )
-async def promote_scoring_profile(
+async def backtest_scoring_profile(
     profile_name: str,
     _user=Depends(get_current_meta_andromeda_user),
     _access: bool = Depends(require_meta_andromeda_operate),
     db=Depends(get_db),
 ):
+    """Re-score this profile's holdout set and record the result on the profile
+    (bias_summary.holdout_backtest), gating whether /promote will accept it."""
+    return await MetaAndromedaService.run_holdout_backtest(db, profile_name)
+
+
+@router.post(
+    "/monitoring/scoring-profiles/{profile_name}/promote",
+    response_model=ScoringProfilePromoteResponse,
+)
+async def promote_scoring_profile(
+    profile_name: str,
+    force: bool = Query(False, description="Bypass the holdout backtest gate (not recommended)"),
+    _user=Depends(get_current_meta_andromeda_user),
+    _access: bool = Depends(require_meta_andromeda_operate),
+    db=Depends(get_db),
+):
+    from .repository import PromotionGateError, repository as _repo
     try:
-        from .repository import repository as _repo
-        return _repo.promote_scoring_profile(db, profile_name)
+        return _repo.promote_scoring_profile(db, profile_name, force=force)
     except KeyError as exc:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail=str(exc),
+        ) from exc
+    except PromotionGateError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail={"code": exc.code, "message": exc.message},
         ) from exc
 
 

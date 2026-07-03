@@ -234,6 +234,13 @@ class MetaAndromedaCalibrationItem(Base):
     performance_snapshot = Column(JSON, nullable=False, default=dict)
     label_policy_version = Column(String(50), nullable=False)
     label_thresholds = Column(JSON, nullable=True)
+    # "few_shot" (used to build calibration-guidance examples) vs "holdout" (reserved for
+    # promote-gate backtest evaluation, never injected into few-shot prompts)
+    split = Column(String(20), nullable=True)
+    # overall_score from the ScoreEvent that produced prediction_band, kept so the holdout
+    # backtest can compute a baseline ranking correlation (Spearman) to compare against the
+    # candidate profile's re-scored ranking, not just band accuracy
+    baseline_overall_score = Column(Integer, nullable=True)
     created_at = Column(DateTime, default=text("CURRENT_TIMESTAMP"))
 
     dataset = relationship("MetaAndromedaCalibrationDataset", backref="items")
@@ -261,6 +268,13 @@ class MetaAndromedaScoringProfile(Base):
     objective_profiles = Column(JSON, nullable=True)
     is_promoted = Column(Boolean, nullable=False, default=False)
     promoted_at = Column(DateTime, nullable=True)
+    # Holdout backtest metrics captured at promote time (band accuracy/ranking accuracy
+    # for this profile vs the profile it replaced), used as the baseline for post-promote
+    # drift comparisons.
+    promotion_baseline = Column(JSON, nullable=True)
+    consecutive_degraded_periods = Column(Integer, nullable=False, default=0)
+    demoted_at = Column(DateTime, nullable=True)
+    demoted_reason = Column(Text, nullable=True)
     created_at = Column(DateTime, default=text("CURRENT_TIMESTAMP"))
 
     calibration_dataset = relationship("MetaAndromedaCalibrationDataset")
@@ -284,15 +298,19 @@ class MetaAndromedaLabelPolicy(Base):
     roas_sample_count = Column(Integer, nullable=False, default=0)
     ctr_low = Column(Float, nullable=True)
     ctr_high = Column(Float, nullable=True)
+    ctr_method = Column(String(30), nullable=True)
     ctr_sample_count = Column(Integer, nullable=False, default=0)
     cpc_low = Column(Float, nullable=True)
     cpc_high = Column(Float, nullable=True)
+    cpc_method = Column(String(30), nullable=True)
     cpc_sample_count = Column(Integer, nullable=False, default=0)
     cvr_low = Column(Float, nullable=True)
     cvr_high = Column(Float, nullable=True)
+    cvr_method = Column(String(30), nullable=True)
     cvr_sample_count = Column(Integer, nullable=False, default=0)
     cpl_low = Column(Float, nullable=True)
     cpl_high = Column(Float, nullable=True)
+    cpl_method = Column(String(30), nullable=True)
     cpl_sample_count = Column(Integer, nullable=False, default=0)
     effective_from = Column(DateTime, nullable=False, default=text("CURRENT_TIMESTAMP"))
     created_at = Column(DateTime, default=text("CURRENT_TIMESTAMP"))

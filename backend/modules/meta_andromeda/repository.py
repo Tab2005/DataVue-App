@@ -2,9 +2,10 @@
 Meta Andromeda Module - DB-backed repository
 """
 
+import logging
 from collections import Counter
 from copy import deepcopy
-from datetime import datetime, timezone
+from datetime import date, datetime, timezone
 import math
 import statistics
 from sqlalchemy.orm import Session
@@ -33,27 +34,165 @@ from .labeling import (
     persist_label_policy,
 )
 
+logger = logging.getLogger(__name__)
 
 TERMINAL_SCORE_STATUSES = {"completed", "failed"}
 
+# 小曝光廣告的 ROAS/CTR 噪音極大：spend=1、impressions=50 的廣告與 spend 十萬的廣告
+# 不該同權重納入 accuracy 計算。門檻選擇 impressions（而非 spend）因跨帳戶/幣別可比。
+MIN_IMPRESSIONS_FOR_ACCURACY = 1000
+# 觀測期間過短（如 custom 窗口只選 1 天）統計噪音大，不納入 accuracy/校準集
+MIN_OBSERVATION_WINDOW_DAYS = 3
+
+
+def _window_days(start_str: str | None, end_str: str | None) -> int | None:
+    try:
+        start = date.fromisoformat((start_str or "")[:10])
+        end = date.fromisoformat((end_str or "")[:10])
+        return (end - start).days + 1
+    except (TypeError, ValueError):
+        return None
+
+
+def _dedupe_observed_by_ad_id(observed_list: list) -> tuple[list, int]:
+    """Collapse duplicate ObservedCreative rows sharing the same ad_id within one
+    drift report batch (e.g. a 'custom' window's interval-overlap query can match
+    both a last_7d and a last_30d row for the same ad). Keeps the highest-spend
+    row, tie-broken by the longer observation window."""
+    best_by_ad: dict[str, object] = {}
+    for obs in observed_list:
+        spend = float((obs.performance_snapshot or {}).get("spend", 0) or 0)
+        current = best_by_ad.get(obs.ad_id)
+        if current is None:
+            best_by_ad[obs.ad_id] = obs
+            continue
+        current_spend = float((current.performance_snapshot or {}).get("spend", 0) or 0)
+        if spend > current_spend:
+            best_by_ad[obs.ad_id] = obs
+        elif spend == current_spend:
+            current_days = _window_days(current.observation_window_start, current.observation_window_end) or 0
+            new_days = _window_days(obs.observation_window_start, obs.observation_window_end) or 0
+            if new_days > current_days:
+                best_by_ad[obs.ad_id] = obs
+    deduped = list(best_by_ad.values())
+    return deduped, len(observed_list) - len(deduped)
+
+
+def _check_promoted_profile_degradation(db, accuracy: float, spearman_r: float, drift_status: str) -> None:
+    """Compare this drift report's accuracy/ρ against the currently promoted
+    profile's promotion_baseline (captured from its holdout backtest at promote
+    time). Two consecutive degraded periods auto-demotes the profile so a bad
+    calibration doesn't silently stay live — this is the "驗證" step the closed
+    loop was missing (promote used to be one-way with no feedback)."""
+    if drift_status in ("insufficient_data", "insufficient_sample"):
+        return  # 樣本不足時 accuracy/ρ 本身不可信，不能拿來判定劣化
+
+    promoted = (
+        db.query(MetaAndromedaScoringProfile)
+        .filter(MetaAndromedaScoringProfile.is_promoted == True)  # noqa: E712
+        .first()
+    )
+    if promoted is None or not promoted.promotion_baseline:
+        return
+
+    baseline_accuracy = promoted.promotion_baseline.get("accuracy")
+    baseline_spearman = promoted.promotion_baseline.get("spearman_r")
+    if baseline_accuracy is None or baseline_spearman is None:
+        return
+
+    degraded = accuracy < baseline_accuracy and spearman_r < baseline_spearman
+    if not degraded:
+        if promoted.consecutive_degraded_periods:
+            promoted.consecutive_degraded_periods = 0
+            db.add(promoted)
+            db.commit()
+        return
+
+    promoted.consecutive_degraded_periods = (promoted.consecutive_degraded_periods or 0) + 1
+    if promoted.consecutive_degraded_periods >= 2:
+        promoted.is_promoted = False
+        promoted.demoted_at = datetime.now(timezone.utc)
+        promoted.demoted_reason = (
+            f"連續 {promoted.consecutive_degraded_periods} 期表現劣於 promote 前基線"
+            f"（baseline accuracy={baseline_accuracy:.3f}/ρ={baseline_spearman:.3f}，"
+            f"本期 accuracy={accuracy:.3f}/ρ={spearman_r:.3f}）"
+        )
+        logger.warning(
+            "[MetaAndromeda] Auto-demoted scoring profile '%s': %s",
+            promoted.profile_name,
+            promoted.demoted_reason,
+        )
+        db.add(promoted)
+        db.commit()
+        from .runtime import invalidate_prompt_cache
+        invalidate_prompt_cache()
+    else:
+        db.add(promoted)
+        db.commit()
+
+
+def _average_rank(values: list[float]) -> list[float]:
+    """Tie-aware average ranking: tied values share the mean of their tied rank positions."""
+    n = len(values)
+    order = sorted(range(n), key=lambda i: values[i])
+    ranks = [0.0] * n
+    i = 0
+    while i < n:
+        j = i
+        while j + 1 < n and values[order[j + 1]] == values[order[i]]:
+            j += 1
+        avg_rank = (i + j) / 2.0 + 1.0
+        for k in range(i, j + 1):
+            ranks[order[k]] = avg_rank
+        i = j + 1
+    return ranks
+
 
 def _spearman_r(x: list[float], y: list[float]) -> float:
-    """Spearman rank correlation between two equal-length lists. Returns 0.0 if n < 3."""
+    """Spearman rank correlation between two equal-length lists. Returns 0.0 if n < 3.
+
+    Uses tie-aware average ranking (ties share the mean of their tied rank
+    positions) and computes rho as the Pearson correlation of the ranks.
+    Without ties this is mathematically identical to the classic
+    1 - 6*sum(d^2)/(n*(n^2-1)) shortcut; with ties (common here since AI
+    scores cluster on a handful of integers) the shortcut formula is biased
+    and this is the textbook-correct generalization.
+    """
     n = len(x)
     if n < 3:
         return 0.0
 
-    def _rank(values: list[float]) -> list[float]:
-        order = sorted(range(n), key=lambda i: values[i])
-        ranks = [0.0] * n
-        for pos, idx in enumerate(order):
-            ranks[idx] = float(pos + 1)
-        return ranks
+    rx, ry = _average_rank(x), _average_rank(y)
+    mean_rx = sum(rx) / n
+    mean_ry = sum(ry) / n
+    cov = sum((rx[i] - mean_rx) * (ry[i] - mean_ry) for i in range(n))
+    var_x = sum((r - mean_rx) ** 2 for r in rx)
+    var_y = sum((r - mean_ry) ** 2 for r in ry)
+    denom = (var_x * var_y) ** 0.5
+    return cov / denom if denom else 0.0
 
-    rx, ry = _rank(x), _rank(y)
-    d_sq = sum((rx[i] - ry[i]) ** 2 for i in range(n))
-    denom = n * (n * n - 1)
-    return 1.0 - (6.0 * d_sq / denom) if denom else 0.0
+
+def _spearman_r_weighted(x: list[float], y: list[float], weights: list[float]) -> float:
+    """Spend-weighted Spearman rho: weighted Pearson correlation on tie-aware ranks.
+
+    Supplementary metric alongside the unweighted rho — large-budget creatives
+    matter more for ranking quality in practice, but this doesn't replace the
+    primary ρ used for drift verdicts (a handful of high-spend ads shouldn't
+    single-handedly flip the health status).
+    """
+    n = len(x)
+    if n < 3 or sum(weights) <= 0:
+        return 0.0
+
+    rx, ry = _average_rank(x), _average_rank(y)
+    total_w = sum(weights)
+    mean_rx = sum(w * r for w, r in zip(weights, rx)) / total_w
+    mean_ry = sum(w * r for w, r in zip(weights, ry)) / total_w
+    cov = sum(w * (rx[i] - mean_rx) * (ry[i] - mean_ry) for i, w in enumerate(weights))
+    var_x = sum(w * (rx[i] - mean_rx) ** 2 for i, w in enumerate(weights))
+    var_y = sum(w * (ry[i] - mean_ry) ** 2 for i, w in enumerate(weights))
+    denom = (var_x * var_y) ** 0.5
+    return cov / denom if denom else 0.0
 
 
 _METRIC_LABEL: dict[str, str] = {
@@ -986,7 +1125,10 @@ class MetaAndromedaRepository:
             obs for obs in q.all()
             if float((obs.performance_snapshot or {}).get("spend", 0) or 0) > 0
         ]
-        
+        # 同一 ad_id 若因 custom 窗口區間重疊比對而重複出現，只保留 spend 最大的一筆，
+        # 避免同一素材的成效被重複計入統計
+        observed_list, deduped_ad_count = _dedupe_observed_by_ad_id(observed_list)
+
         matched_pairs = []
         correct_count = 0
         total_error = 0.0
@@ -995,14 +1137,26 @@ class MetaAndromedaRepository:
         band_score = {"low": 1, "mid": 2, "high": 3}
 
         # 動態標籤門檻（ROAS / CTR / CPC / CVR / CPL）：與 sync_calibration_dataset 共用同一套計算方式，
-        # 確保同一批 ObservedCreative 在 drift 與校準兩處算出一致的 observed_band
-        label_thresholds = compute_label_thresholds(observed_list)
-        persist_label_policy(db, account_id or "global", window_kind, label_thresholds)
+        # 確保同一批 ObservedCreative 在 drift 與校準兩處算出一致的 observed_band；樣本不足時
+        # 沿用同 scope_key/window_kind 上一期已持久化的門檻，而非每次都退回全域固定值
+        label_policy_scope = account_id or "global"
+        label_thresholds = compute_label_thresholds(
+            observed_list, db=db, scope_key=label_policy_scope, window_kind=window_kind
+        )
+        persist_label_policy(db, label_policy_scope, window_kind, label_thresholds)
 
         # 2. 逐筆進行 Prediction 匹配與比對
+        heuristic_fallback_count = 0
         for obs in observed_list:
             pred = match_observed_to_prediction(db, obs)
             if not pred:
+                continue
+
+            # 過濾 heuristic fallback 分數：這是規則加減分而非模型預測，與 AI 分數混算會
+            # 稀釋/扭曲 accuracy 與 Spearman ρ。獨立統計占比，作為評分服務健康度指標。
+            pred_lineage = pred.lineage or {}
+            if pred_lineage.get("scoring_mode") == "heuristic":
+                heuristic_fallback_count += 1
                 continue
 
             # 提取真實成效 Band（依 objective 路由至對應指標，使用本批次動態門檻）
@@ -1021,7 +1175,15 @@ class MetaAndromedaRepository:
             pred_band = pred.roas_band if pred_roas_eligible else None
             band_eligible = pred_band is not None
 
-            if band_eligible:
+            # 曝光/觀測期間門檻：小曝光廣告的 ROAS/CTR 噪音極大，觀測期間過短同樣不可靠，
+            # 不該與大預算、足夠觀測天數的廣告同權重納入 accuracy
+            impressions = int((obs.performance_snapshot or {}).get("impressions", 0) or 0)
+            sufficient_delivery = impressions >= MIN_IMPRESSIONS_FOR_ACCURACY
+            window_days = _window_days(obs.observation_window_start, obs.observation_window_end)
+            immature = window_days is not None and window_days < MIN_OBSERVATION_WINDOW_DAYS
+            accuracy_eligible = band_eligible and sufficient_delivery and not immature
+
+            if accuracy_eligible:
                 is_match = (pred_band == real_band)
                 if is_match:
                     correct_count += 1
@@ -1031,12 +1193,18 @@ class MetaAndromedaRepository:
                 err = None
 
             real_spend = float((obs.performance_snapshot or {}).get("spend", 0) or 0)
+            request_context = pred.request_context or {}
+            origin = request_context.get("origin") if request_context.get("origin") in ("score_lab", "analytics") else "unknown"
             matched_pairs.append({
                 "id": obs.id,
                 "ad_id": obs.ad_id,
                 "ad_name": obs.ad_name,
                 "prediction_band": pred_band,
                 "band_eligible": band_eligible,
+                "sufficient_delivery": sufficient_delivery,
+                "immature": immature,
+                "accuracy_eligible": accuracy_eligible,
+                "impressions": impressions,
                 "observed_band": real_band,
                 "real_roas": real_roas,
                 "real_spend": real_spend,
@@ -1046,15 +1214,35 @@ class MetaAndromedaRepository:
                 "error": err,
                 "label_policy_version": LABEL_POLICY_VERSION,
                 "label_metric": label_detail["metric"],
+                "origin": origin,
+                "prompt_profile_used": pred_lineage.get("prompt_profile_used"),
             })
 
-        # 3. 計算統計指標（accuracy/MAE 只計入 band_eligible 的項目；Spearman 仍使用全部 matched_pairs）
+        # 3. 計算統計指標（accuracy/MAE 只計入 accuracy_eligible 的項目：band 有效 + 曝光/觀測期間足夠；
+        # Spearman 仍使用全部 matched_pairs，樣本量比曝光門檻更重要）
         total_matched = len(matched_pairs)
-        band_matched_pairs = [p for p in matched_pairs if p["band_eligible"]]
+        band_matched_pairs = [p for p in matched_pairs if p["accuracy_eligible"]]
         total_band_matched = len(band_matched_pairs)
+        insufficient_delivery_total = sum(1 for p in matched_pairs if p["band_eligible"] and not p["sufficient_delivery"])
+        immature_total = sum(1 for p in matched_pairs if p["immature"])
         accuracy = correct_count / total_band_matched if total_band_matched > 0 else 0.0
         mae = total_error / total_band_matched if total_band_matched > 0 else 0.0
         calibration_candidate_total = sum(1 for item in band_matched_pairs if item["error"] > 0)
+
+        # origin 切片：投放前預測（score_lab）vs 事後補評（analytics），accuracy 分開看才能看出
+        # 產品宣稱的「投放前預測」能力，事後補評的素材模型並沒有看過成效
+        def _origin_accuracy(origin_key: str) -> dict:
+            subset = [p for p in band_matched_pairs if p["origin"] == origin_key]
+            if not subset:
+                return {"total": 0, "accuracy": None}
+            correct = sum(1 for p in subset if p["prediction_band"] == p["observed_band"])
+            return {"total": len(subset), "accuracy": round(correct / len(subset), 4)}
+
+        origin_breakdown = {
+            "score_lab": _origin_accuracy("score_lab"),
+            "analytics": _origin_accuracy("analytics"),
+            "unknown": _origin_accuracy("unknown"),
+        }
 
         # Spearman ρ：AI overall_score 排名 vs 主指標排名的相關性
         # 以各廣告的 primary_metric 判斷帳戶類型（purchase→ROAS, lead→CVR/CPL, 其他→CPA）
@@ -1076,6 +1264,12 @@ class MetaAndromedaRepository:
         _perf   = [float(p["primary_metric_value"]) for p in _eligible]
         spearman_r = _spearman_r(_scores, _perf) if len(_scores) >= 3 else 0.0
 
+        # spend 加權版本：大預算素材的排序對齊更重要；輔助指標，不取代主判據 spearman_r
+        _spends = [float(p["real_spend"]) for p in _eligible]
+        spearman_r_spend_weighted = (
+            _spearman_r_weighted(_scores, _perf, _spends) if len(_scores) >= 3 else 0.0
+        )
+
         # 主指標分布（用於象限判定的 P50 基準）
         _perf_all = sorted(
             float(p["primary_metric_value"]) for p in matched_pairs
@@ -1084,12 +1278,38 @@ class MetaAndromedaRepository:
         )
         perf_median = _perf_all[len(_perf_all) // 2] if _perf_all else 0.0
         perf_std = statistics.stdev(_perf_all) if len(_perf_all) >= 2 else 0.0
-        perf_is_high = perf_median >= (sum(_perf_all) / len(_perf_all)) if _perf_all else False
+
+        # perf_is_high 應該回答「這期表現是否比上期好」，而非「中位數是否 >= 平均數」
+        # （後者只反映分布偏態，右偏分布會永遠判 False，跟表現好壞無關）。
+        # 優先與同帳戶上一期 perf_median 比較；沒有基準時才退回舊的分布判定法。
+        _prior_report_query = db.query(MetaAndromedaDriftReport).filter(
+            MetaAndromedaDriftReport.window_kind == window_kind,
+            MetaAndromedaDriftReport.drift_status != "insufficient_data",
+        )
+        if account_id:
+            _prior_report_query = _prior_report_query.filter(
+                MetaAndromedaDriftReport.report_payload["account_id"].as_string() == account_id
+            )
+        _prior_report = _prior_report_query.order_by(MetaAndromedaDriftReport.created_at.desc()).first()
+        _prior_perf_median = None
+        if _prior_report and _prior_report.report_payload:
+            _prior_perf_median = _prior_report.report_payload.get("perf_median")
+
+        if _prior_perf_median is not None:
+            perf_is_high = perf_median >= _prior_perf_median
+            perf_baseline_method = "prior_period_median"
+        else:
+            perf_is_high = perf_median >= (sum(_perf_all) / len(_perf_all)) if _perf_all else False
+            perf_baseline_method = "distribution_mean_fallback"
 
         period_diagnosis = _classify_period_state(spearman_r, perf_is_high, dominant_metric)
         metric_label = _METRIC_LABEL.get(dominant_metric, dominant_metric.upper())
 
         # 4. 判定漂移健康度（主判據：Spearman ρ；輔助資訊：accuracy/MAE）
+        # ρ 門檻本身無檢定支撐：n 太小時無論 ρ 高低都不具統計意義，一律標記
+        # insufficient_sample，不允許判定為 healthy/warning/drifted 誤導營運決策
+        n_spearman = len(_scores)
+        MIN_SAMPLES_FOR_DRIFT_VERDICT = 15
         if total_matched < 5:
             drift_status = "insufficient_data"
             severity = "info"
@@ -1113,6 +1333,14 @@ class MetaAndromedaRepository:
                 f"Prediction / ScoreEvent 累積統計：{total_completed_scores} 筆已完成，"
                 f"{total_failed_scores} 筆失敗，{total_pending_scores} 筆處理/排隊中。"
                 "請確認素材是否已在評分工作台完成評估，或確認背景任務與 AI 服務是否正常運作。"
+            )
+        elif n_spearman < MIN_SAMPLES_FOR_DRIFT_VERDICT:
+            drift_status = "insufficient_sample"
+            severity = "info"
+            summary = (
+                f"已匹配 {total_matched} 筆，但用於排名相關性計算的樣本僅 {n_spearman} 筆"
+                f"（< {MIN_SAMPLES_FOR_DRIFT_VERDICT}），ρ={spearman_r:.3f} 統計上不具判定意義，"
+                "暫不判定 healthy/warning/drifted，僅供參考。建議累積更多觀測樣本後再檢視。"
             )
         elif spearman_r >= 0.30:
             drift_status = "healthy"
@@ -1150,6 +1378,11 @@ class MetaAndromedaRepository:
                 "total_observed": len(observed_list),
                 "total_matched": total_matched,
                 "total_band_matched": total_band_matched,
+                "deduped_ad_count": deduped_ad_count,
+                "insufficient_delivery_total": insufficient_delivery_total,
+                "immature_total": immature_total,
+                "min_impressions_for_accuracy": MIN_IMPRESSIONS_FOR_ACCURACY,
+                "min_observation_window_days": MIN_OBSERVATION_WINDOW_DAYS,
                 "match_rate": round(total_matched / len(observed_list), 4) if observed_list else 0.0,
                 "obs_with_asset": sum(1 for obs in observed_list if obs.asset_id or obs.asset_uri),
                 "total_completed_scores": db.query(MetaAndromedaScoreEvent).filter(MetaAndromedaScoreEvent.status == "completed").count(),
@@ -1158,13 +1391,22 @@ class MetaAndromedaRepository:
                 "accuracy": round(accuracy, 4),
                 "mae": round(mae, 4),
                 "spearman_r": round(spearman_r, 4),
+                "spearman_r_spend_weighted": round(spearman_r_spend_weighted, 4),
+                "spearman_sample_count": n_spearman,
                 "dominant_metric": dominant_metric,
                 "metric_distribution": metric_distribution,
                 "perf_median": round(perf_median, 4),
                 "perf_std": round(perf_std, 4),
+                "perf_baseline_method": perf_baseline_method,
                 "period_diagnosis": period_diagnosis,
                 "calibration_candidate_total": calibration_candidate_total,
                 "label_policy_version": LABEL_POLICY_VERSION,
+                "heuristic_fallback_total": heuristic_fallback_count,
+                "heuristic_fallback_rate": (
+                    round(heuristic_fallback_count / (total_matched + heuristic_fallback_count), 4)
+                    if (total_matched + heuristic_fallback_count) else 0.0
+                ),
+                "origin_breakdown": origin_breakdown,
                 "roas_band_thresholds": {
                     "low_below": round(label_thresholds["roas"]["thresholds"][0], 2) if label_thresholds["roas"]["thresholds"] else None,
                     "high_above": round(label_thresholds["roas"]["thresholds"][1], 2) if label_thresholds["roas"]["thresholds"] else None,
@@ -1174,21 +1416,25 @@ class MetaAndromedaRepository:
                 "ctr_band_thresholds": {
                     "low_below": round(label_thresholds["ctr"]["thresholds"][0], 4) if label_thresholds["ctr"]["thresholds"] else None,
                     "high_above": round(label_thresholds["ctr"]["thresholds"][1], 4) if label_thresholds["ctr"]["thresholds"] else None,
+                    "method": label_thresholds["ctr"]["method"],
                     "sample_count": label_thresholds["ctr"]["sample_count"],
                 },
                 "cpc_band_thresholds": {
                     "low_above": round(label_thresholds["cpc"]["thresholds"][0], 2) if label_thresholds["cpc"]["thresholds"] else None,
                     "high_below": round(label_thresholds["cpc"]["thresholds"][1], 2) if label_thresholds["cpc"]["thresholds"] else None,
+                    "method": label_thresholds["cpc"]["method"],
                     "sample_count": label_thresholds["cpc"]["sample_count"],
                 },
                 "cvr_band_thresholds": {
                     "low_below": round(label_thresholds["cvr"]["thresholds"][0], 4) if label_thresholds["cvr"]["thresholds"] else None,
                     "high_above": round(label_thresholds["cvr"]["thresholds"][1], 4) if label_thresholds["cvr"]["thresholds"] else None,
+                    "method": label_thresholds["cvr"]["method"],
                     "sample_count": label_thresholds["cvr"]["sample_count"],
                 },
                 "cpl_band_thresholds": {
                     "low_above": round(label_thresholds["cpl"]["thresholds"][0], 2) if label_thresholds["cpl"]["thresholds"] else None,
                     "high_below": round(label_thresholds["cpl"]["thresholds"][1], 2) if label_thresholds["cpl"]["thresholds"] else None,
+                    "method": label_thresholds["cpl"]["method"],
                     "sample_count": label_thresholds["cpl"]["sample_count"],
                 },
                 "traffic_ad_total": label_thresholds["traffic_total"],
@@ -1207,7 +1453,10 @@ class MetaAndromedaRepository:
         db.add(report)
         db.commit()
         db.refresh(report)
-        
+
+        # Promote 後追蹤：與這個 promoted profile 的 promote 前基線比較，連續劣化自動降級
+        _check_promoted_profile_degradation(db, accuracy, spearman_r, drift_status)
+
         return self._drift_report_to_dict(report)
 
     def get_release_overview(self, db: Session):
@@ -1771,7 +2020,11 @@ class MetaAndromedaRepository:
         dataset_id = f"cal_ds_{datetime.now(timezone.utc).strftime('%Y%m%d')}_{uuid.uuid4().hex[:8]}"
         synced_count = 0
         matched_count = 0
+        error_item_count = 0
         skipped_not_band_eligible = 0
+        skipped_heuristic = 0
+        skipped_insufficient_delivery = 0
+        skipped_immature = 0
         band_score = {"low": 1, "mid": 2, "high": 3}
         dataset = MetaAndromedaCalibrationDataset(
             id=dataset_id,
@@ -1785,9 +2038,13 @@ class MetaAndromedaRepository:
         db.add(dataset)
 
         # 動態標籤門檻：與 create_drift_report 共用同一套計算方式，確保同一批
-        # ObservedCreative 在 drift 與校準兩處算出一致的 observed_band
+        # ObservedCreative 在 drift 與校準兩處算出一致的 observed_band；樣本不足時沿用
+        # 上一期已持久化的門檻
         eligible_observed_list = [obs for obs in observed_list if obs.id not in excluded_observed_ids]
-        label_thresholds = compute_label_thresholds(eligible_observed_list)
+        eligible_observed_list, _deduped_ad_count = _dedupe_observed_by_ad_id(eligible_observed_list)
+        label_thresholds = compute_label_thresholds(
+            eligible_observed_list, db=db, scope_key="global", window_kind=window_kind
+        )
         persist_label_policy(db, "global", window_kind, label_thresholds)
 
         # 2. 篩選有偏差且未被排除的進行標記
@@ -1798,10 +2055,25 @@ class MetaAndromedaRepository:
             if not obs.asset_uri and not (obs.asset and obs.asset.checksum_sha256):
                 continue
 
+            # 曝光/觀測期間門檻：與 drift report 一致，小曝光或觀測期過短的樣本不進校準集
+            impressions = int((obs.performance_snapshot or {}).get("impressions", 0) or 0)
+            if impressions < MIN_IMPRESSIONS_FOR_ACCURACY:
+                skipped_insufficient_delivery += 1
+                continue
+            window_days = _window_days(obs.observation_window_start, obs.observation_window_end)
+            if window_days is not None and window_days < MIN_OBSERVATION_WINDOW_DAYS:
+                skipped_immature += 1
+                continue
+
             # 尋找匹配的 Completed ScoreEvent（與 drift report 使用同一套 checksum→asset_uri 匹配邏輯）
             pred = match_observed_to_prediction(db, obs)
 
             if not pred:
+                continue
+
+            # heuristic fallback 分數是規則加減分而非模型判斷，不該被拿來「校準模型」
+            if (pred.lineage or {}).get("scoring_mode") == "heuristic":
+                skipped_heuristic += 1
                 continue
             matched_count += 1
 
@@ -1817,11 +2089,12 @@ class MetaAndromedaRepository:
                 continue
             pred_band = pred.roas_band
 
-            # 只有有偏差的才需要校準
+            # 同時收錄有偏差（err>0，校準用）與正確配對（err=0，對照組/回測 holdout 用）的項目，
+            # 不再只收 err>0——正確配對是驗證校準有沒有把「本來就對的」判斷帶偏的唯一依據
             err = abs(band_score.get(pred_band, 1) - band_score.get(real_band, 1))
+            item_id = f"cal_item_{uuid.uuid4().hex[:12]}"
             if err > 0:
-                item_id = f"cal_item_{uuid.uuid4().hex[:12]}"
-                # 更新 lineage
+                error_item_count += 1
                 lineage = deepcopy(obs.lineage or {})
                 lineage["calibration"] = {
                     "dataset_id": dataset_id,
@@ -1833,38 +2106,46 @@ class MetaAndromedaRepository:
                     "label_metric": label_detail["metric"],
                 }
                 obs.lineage = lineage
-                db.add(
-                    MetaAndromedaCalibrationItem(
-                        id=item_id,
-                        dataset_id=dataset_id,
-                        observed_creative_id=obs.id,
-                        score_event_id=pred.id,
-                        asset_uri=obs.asset_uri,
-                        objective=obs.objective,
-                        market=obs.market,
-                        placement_family=obs.placement_family,
-                        prediction_band=pred_band,
-                        observed_band=real_band,
-                        error=float(err),
-                        performance_snapshot=deepcopy(obs.performance_snapshot or {}),
-                        label_policy_version=LABEL_POLICY_VERSION,
-                        label_thresholds=deepcopy(label_thresholds),
-                    )
+            db.add(
+                MetaAndromedaCalibrationItem(
+                    id=item_id,
+                    dataset_id=dataset_id,
+                    observed_creative_id=obs.id,
+                    score_event_id=pred.id,
+                    asset_uri=obs.asset_uri,
+                    objective=obs.objective,
+                    market=obs.market,
+                    placement_family=obs.placement_family,
+                    prediction_band=pred_band,
+                    observed_band=real_band,
+                    error=float(err),
+                    performance_snapshot=deepcopy(obs.performance_snapshot or {}),
+                    label_policy_version=LABEL_POLICY_VERSION,
+                    label_thresholds=deepcopy(label_thresholds),
+                    baseline_overall_score=pred.overall_score,
                 )
-                synced_count += 1
+            )
+            synced_count += 1
         dataset.synced_count = synced_count
-        dataset.status = "queued_for_calibration" if synced_count > 0 else "no_data_to_sync"
+        dataset.status = "queued_for_calibration" if error_item_count > 0 else "no_data_to_sync"
         dataset.summary = {
             "matched_count": matched_count,
+            "error_item_count": error_item_count,
+            "correct_item_count": synced_count - error_item_count,
             "excluded_count": len(excluded_observed_ids or []),
             "skipped_not_band_eligible": skipped_not_band_eligible,
+            "skipped_heuristic": skipped_heuristic,
+            "skipped_insufficient_delivery": skipped_insufficient_delivery,
+            "skipped_immature": skipped_immature,
+            "deduped_ad_count": _deduped_ad_count,
             "label_policy_version": LABEL_POLICY_VERSION,
         }
         db.commit()
-            
+
         return {
             "dataset_id": dataset_id,
             "synced_count": synced_count,
+            "error_item_count": error_item_count,
             "status": dataset.status,
             "item_count": synced_count,
             "label_policy_version": LABEL_POLICY_VERSION,
@@ -1901,9 +2182,10 @@ class MetaAndromedaRepository:
     def get_drift_trend(db: Session, limit: int = 20, account_id: str | None = None) -> list[dict]:
         # 只取有足夠資料完成象限診斷的報告，排除：
         # 1. insufficient_data（配對數 < 5，無法計算 ρ）
-        # 2. Phase 1 之前的舊報告（report_payload 無 period_diagnosis）
+        # 2. insufficient_sample（配對數 >= 5 但 Spearman 樣本 < 15，ρ 不具統計意義）
+        # 3. Phase 1 之前的舊報告（report_payload 無 period_diagnosis）
         query = db.query(MetaAndromedaDriftReport).filter(
-            MetaAndromedaDriftReport.drift_status != "insufficient_data"
+            MetaAndromedaDriftReport.drift_status.notin_(["insufficient_data", "insufficient_sample"])
         )
         # account_id 隔離：在 DB 層過濾，確保無 account_id 的舊報告不會洩漏
         if account_id:
@@ -1989,13 +2271,34 @@ class MetaAndromedaRepository:
         ]
 
     @staticmethod
-    def promote_scoring_profile(db: Session, profile_name: str) -> dict:
-        from datetime import datetime, timezone
+    def promote_scoring_profile(db: Session, profile_name: str, force: bool = False) -> dict:
         target = db.query(MetaAndromedaScoringProfile).filter(
             MetaAndromedaScoringProfile.profile_name == profile_name
         ).first()
         if target is None:
             raise KeyError(f"Scoring profile not found: {profile_name}")
+
+        # 自動校準產出的 profile 一律要先過 holdout 回測 gate 才能 promote；手動/種子 profile
+        # 沒有校準資料集可回測，維持原本行為。force=True 可明確覆寫（供緊急情況使用）。
+        backtest_gate_bypassed = False
+        if target.source == "calibration_auto" and not force:
+            backtest = (target.bias_summary or {}).get("holdout_backtest")
+            if not backtest or backtest.get("status") != "evaluated":
+                raise PromotionGateError(
+                    "holdout_backtest_required",
+                    f"Profile '{profile_name}' 尚未執行 holdout 回測，請先呼叫 backtest 端點，"
+                    "或帶 force=true 明確略過（不建議）。",
+                )
+            if not backtest.get("passed_gate"):
+                raise PromotionGateError(
+                    "holdout_backtest_failed",
+                    f"Profile '{profile_name}' 回測未達標：accuracy {backtest.get('baseline_accuracy')} -> "
+                    f"{backtest.get('candidate_accuracy')}（Δ={backtest.get('accuracy_delta')}），"
+                    f"spearman {backtest.get('baseline_spearman')} -> {backtest.get('candidate_spearman')}"
+                    f"（Δ={backtest.get('spearman_delta')}）。可帶 force=true 明確覆寫（不建議）。",
+                )
+        elif target.source == "calibration_auto" and force:
+            backtest_gate_bypassed = True
 
         db.query(MetaAndromedaScoringProfile).filter(
             MetaAndromedaScoringProfile.is_promoted == True  # noqa: E712
@@ -2004,6 +2307,20 @@ class MetaAndromedaRepository:
         now = datetime.now(timezone.utc)
         target.is_promoted = True
         target.promoted_at = now
+        target.consecutive_degraded_periods = 0
+        target.demoted_at = None
+        target.demoted_reason = None
+
+        # 記錄 promote 前基線，供 create_drift_report 在之後每期自動比對是否劣化
+        backtest = (target.bias_summary or {}).get("holdout_backtest")
+        if backtest and backtest.get("status") == "evaluated":
+            target.promotion_baseline = {
+                "accuracy": backtest.get("baseline_accuracy"),
+                "spearman_r": backtest.get("baseline_spearman"),
+                "source": "holdout_backtest",
+                "recorded_at": now.isoformat(),
+            }
+
         db.add(target)
         db.commit()
 
@@ -2014,7 +2331,22 @@ class MetaAndromedaRepository:
             "profile_name": target.profile_name,
             "is_promoted": True,
             "promoted_at": now.isoformat(),
+            "backtest_gate_bypassed": backtest_gate_bypassed,
         }
+
+    @staticmethod
+    async def run_holdout_backtest(db: Session, profile_name: str) -> dict:
+        from .calibration_pipeline import evaluate_profile_on_holdout
+        return await evaluate_profile_on_holdout(db, profile_name)
+
+
+class PromotionGateError(Exception):
+    """Raised when a scoring profile fails (or hasn't run) its promote-gate holdout backtest."""
+
+    def __init__(self, code: str, message: str):
+        super().__init__(message)
+        self.code = code
+        self.message = message
 
 
 repository = MetaAndromedaRepository()

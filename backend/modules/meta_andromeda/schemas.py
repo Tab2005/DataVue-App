@@ -492,6 +492,25 @@ class ScoringProfilePromoteResponse(BaseModel):
     profile_name: str
     is_promoted: bool
     promoted_at: str
+    backtest_gate_bypassed: bool = False
+
+
+class ScoringProfileBacktestResponse(BaseModel):
+    status: str
+    reason: str | None = None
+    holdout_size: int | None = None
+    min_holdout_size: int | None = None
+    evaluated_count: int | None = None
+    baseline_accuracy: float | None = None
+    candidate_accuracy: float | None = None
+    baseline_spearman: float | None = None
+    candidate_spearman: float | None = None
+    accuracy_delta: float | None = None
+    spearman_delta: float | None = None
+    accuracy_gate_passed: bool | None = None
+    spearman_gate_passed: bool | None = None
+    passed_gate: bool | None = None
+    evaluated_at: str | None = None
 
 
 class ObservedAccountEntry(BaseModel):

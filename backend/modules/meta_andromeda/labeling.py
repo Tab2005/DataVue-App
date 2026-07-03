@@ -19,7 +19,8 @@ from .objective_routing import LEAD, NON_ROAS_GROUPS, resolve_objective_group
 
 LABEL_POLICY_VERSION = "ma_label_policy_v2"
 
-MIN_SAMPLES_FOR_DYNAMIC_THRESHOLD = 5
+# 5 筆資料的 P33/P67 幾乎是隨機數；上修至 20 才具備基本統計意義
+MIN_SAMPLES_FOR_DYNAMIC_THRESHOLD = 20
 
 _ROAS_FALLBACK_LOW = 3.0
 _ROAS_FALLBACK_HIGH = 6.0
@@ -71,12 +72,79 @@ def match_observed_to_prediction(db, obs) -> MetaAndromedaScoreEvent | None:
     return pred
 
 
-def compute_label_thresholds(observed_list: list) -> dict:
+def _percentile(sorted_values: list[float], pct: float) -> float:
+    """Linear-interpolation percentile (numpy's default 'linear' method).
+
+    Replaces the previous biased-index lookup (values[int(len*pct)]), which
+    systematically skews toward the high end of the distribution.
+    """
+    n = len(sorted_values)
+    if n == 1:
+        return sorted_values[0]
+    idx = pct * (n - 1)
+    lo = int(idx)
+    hi = min(lo + 1, n - 1)
+    frac = idx - lo
+    return sorted_values[lo] + (sorted_values[hi] - sorted_values[lo]) * frac
+
+
+def _load_prior_policy(db, scope_key: str | None, window_kind: str | None):
+    if db is None or not scope_key or not window_kind:
+        return None
+    from database.models.meta_andromeda import MetaAndromedaLabelPolicy
+
+    return (
+        db.query(MetaAndromedaLabelPolicy)
+        .filter(
+            MetaAndromedaLabelPolicy.scope_key == scope_key,
+            MetaAndromedaLabelPolicy.window_kind == window_kind,
+        )
+        .first()
+    )
+
+
+def _resolve_dynamic_threshold(
+    values: list[float],
+    *,
+    reverse: bool,
+    prior_low: float | None,
+    prior_high: float | None,
+    prior_sample_count: int,
+) -> tuple[tuple[float, float] | None, str, int]:
+    """Compute a P33/P67 threshold pair for one metric.
+
+    reverse=True is for lower-is-better metrics (CPC/CPL): the returned tuple
+    is (P67, P33) to match label_observed_band()'s "low_t, high_t" unpacking
+    convention for those metrics. When the current batch doesn't clear
+    MIN_SAMPLES_FOR_DYNAMIC_THRESHOLD, fall back to the last persisted policy
+    for this scope rather than immediately dropping to the global fixed
+    fallback — a single small batch shouldn't reset the label boundary.
+    """
+    if len(values) >= MIN_SAMPLES_FOR_DYNAMIC_THRESHOLD:
+        p33, p67 = _percentile(values, 0.33), _percentile(values, 0.67)
+        thresholds = (p67, p33) if reverse else (p33, p67)
+        return thresholds, "percentile_p33_p67", len(values)
+    if prior_low is not None and prior_high is not None:
+        return (prior_low, prior_high), "persisted_prior", prior_sample_count or 0
+    return None, "fixed_fallback", len(values)
+
+
+def compute_label_thresholds(
+    observed_list: list,
+    *,
+    db=None,
+    scope_key: str | None = None,
+    window_kind: str | None = None,
+) -> dict:
     """Compute dynamic P33/P67 label thresholds for a batch of ObservedCreative rows.
 
     Groups are routed via the shared resolve_objective_group() so the
     threshold pools always match the same grouping the prompt/runtime uses.
+    Pass db/scope_key/window_kind to enable falling back to the last
+    persisted MetaAndromedaLabelPolicy when the current batch is too small.
     """
+    prior = _load_prior_policy(db, scope_key, window_kind)
+
     roas_values = sorted(
         float(obs.performance_snapshot["roas"])
         for obs in observed_list
@@ -85,14 +153,13 @@ def compute_label_thresholds(observed_list: list) -> dict:
         and resolve_objective_group(obs.objective) not in NON_ROAS_GROUPS
         and resolve_objective_group(obs.objective) != LEAD
     )
-    roas_thresholds = None
-    roas_method = "fixed_fallback"
-    if len(roas_values) >= MIN_SAMPLES_FOR_DYNAMIC_THRESHOLD:
-        roas_thresholds = (
-            roas_values[int(len(roas_values) * 0.33)],
-            roas_values[int(len(roas_values) * 0.67)],
-        )
-        roas_method = "percentile_p33_p67"
+    roas_thresholds, roas_method, roas_sample_count = _resolve_dynamic_threshold(
+        roas_values,
+        reverse=False,
+        prior_low=prior.roas_low if prior else None,
+        prior_high=prior.roas_high if prior else None,
+        prior_sample_count=prior.roas_sample_count if prior else 0,
+    )
 
     traffic_obs = [obs for obs in observed_list if resolve_objective_group(obs.objective) in NON_ROAS_GROUPS]
     ctr_values = sorted(
@@ -100,12 +167,13 @@ def compute_label_thresholds(observed_list: list) -> dict:
         for obs in traffic_obs
         if obs.performance_snapshot and obs.performance_snapshot.get("ctr")
     )
-    ctr_thresholds = None
-    if len(ctr_values) >= MIN_SAMPLES_FOR_DYNAMIC_THRESHOLD:
-        ctr_thresholds = (
-            ctr_values[int(len(ctr_values) * 0.33)],
-            ctr_values[int(len(ctr_values) * 0.67)],
-        )
+    ctr_thresholds, ctr_method, ctr_sample_count = _resolve_dynamic_threshold(
+        ctr_values,
+        reverse=False,
+        prior_low=prior.ctr_low if prior else None,
+        prior_high=prior.ctr_high if prior else None,
+        prior_sample_count=prior.ctr_sample_count if prior else 0,
+    )
 
     cpc_values = sorted(
         float(obs.performance_snapshot["cpc"])
@@ -114,13 +182,13 @@ def compute_label_thresholds(observed_list: list) -> dict:
         and obs.performance_snapshot.get("cpc")
         and float(obs.performance_snapshot["cpc"]) > 0
     )
-    cpc_thresholds = None
-    if len(cpc_values) >= MIN_SAMPLES_FOR_DYNAMIC_THRESHOLD:
-        # (P67, P33)：CPC 越低越好，P33 側 → "high"
-        cpc_thresholds = (
-            cpc_values[int(len(cpc_values) * 0.67)],
-            cpc_values[int(len(cpc_values) * 0.33)],
-        )
+    cpc_thresholds, cpc_method, cpc_sample_count = _resolve_dynamic_threshold(
+        cpc_values,
+        reverse=True,
+        prior_low=prior.cpc_low if prior else None,
+        prior_high=prior.cpc_high if prior else None,
+        prior_sample_count=prior.cpc_sample_count if prior else 0,
+    )
 
     lead_obs = [obs for obs in observed_list if resolve_objective_group(obs.objective) == LEAD]
     cvr_values = sorted(
@@ -128,12 +196,13 @@ def compute_label_thresholds(observed_list: list) -> dict:
         for obs in lead_obs
         if obs.performance_snapshot and obs.performance_snapshot.get("cvr") is not None
     )
-    cvr_thresholds = None
-    if len(cvr_values) >= MIN_SAMPLES_FOR_DYNAMIC_THRESHOLD:
-        cvr_thresholds = (
-            cvr_values[int(len(cvr_values) * 0.33)],
-            cvr_values[int(len(cvr_values) * 0.67)],
-        )
+    cvr_thresholds, cvr_method, cvr_sample_count = _resolve_dynamic_threshold(
+        cvr_values,
+        reverse=False,
+        prior_low=prior.cvr_low if prior else None,
+        prior_high=prior.cvr_high if prior else None,
+        prior_sample_count=prior.cvr_sample_count if prior else 0,
+    )
 
     cpl_values = sorted(
         float(obs.performance_snapshot["cpl"])
@@ -142,13 +211,13 @@ def compute_label_thresholds(observed_list: list) -> dict:
         and obs.performance_snapshot.get("cpl") is not None
         and float(obs.performance_snapshot["cpl"]) > 0
     )
-    cpl_thresholds = None
-    if len(cpl_values) >= MIN_SAMPLES_FOR_DYNAMIC_THRESHOLD:
-        # (P67, P33)：CPL 越低越好，P33 側 → "high"
-        cpl_thresholds = (
-            cpl_values[int(len(cpl_values) * 0.67)],
-            cpl_values[int(len(cpl_values) * 0.33)],
-        )
+    cpl_thresholds, cpl_method, cpl_sample_count = _resolve_dynamic_threshold(
+        cpl_values,
+        reverse=True,
+        prior_low=prior.cpl_low if prior else None,
+        prior_high=prior.cpl_high if prior else None,
+        prior_sample_count=prior.cpl_sample_count if prior else 0,
+    )
 
     lead_with_metric_total = sum(
         1
@@ -161,11 +230,11 @@ def compute_label_thresholds(observed_list: list) -> dict:
     )
 
     return {
-        "roas": {"thresholds": roas_thresholds, "method": roas_method, "sample_count": len(roas_values)},
-        "ctr": {"thresholds": ctr_thresholds, "sample_count": len(ctr_values)},
-        "cpc": {"thresholds": cpc_thresholds, "sample_count": len(cpc_values)},
-        "cvr": {"thresholds": cvr_thresholds, "sample_count": len(cvr_values)},
-        "cpl": {"thresholds": cpl_thresholds, "sample_count": len(cpl_values)},
+        "roas": {"thresholds": roas_thresholds, "method": roas_method, "sample_count": roas_sample_count},
+        "ctr": {"thresholds": ctr_thresholds, "method": ctr_method, "sample_count": ctr_sample_count},
+        "cpc": {"thresholds": cpc_thresholds, "method": cpc_method, "sample_count": cpc_sample_count},
+        "cvr": {"thresholds": cvr_thresholds, "method": cvr_method, "sample_count": cvr_sample_count},
+        "cpl": {"thresholds": cpl_thresholds, "method": cpl_method, "sample_count": cpl_sample_count},
         "traffic_total": len(traffic_obs),
         "lead_total": len(lead_obs),
         "lead_with_metric_total": lead_with_metric_total,
@@ -300,15 +369,19 @@ def persist_label_policy(db, scope_key: str, window_kind: str, thresholds: dict)
         roas_sample_count=roas.get("sample_count", 0),
         ctr_low=ctr_t[0],
         ctr_high=ctr_t[1],
+        ctr_method=ctr.get("method"),
         ctr_sample_count=ctr.get("sample_count", 0),
         cpc_low=cpc_t[0],
         cpc_high=cpc_t[1],
+        cpc_method=cpc.get("method"),
         cpc_sample_count=cpc.get("sample_count", 0),
         cvr_low=cvr_t[0],
         cvr_high=cvr_t[1],
+        cvr_method=cvr.get("method"),
         cvr_sample_count=cvr.get("sample_count", 0),
         cpl_low=cpl_t[0],
         cpl_high=cpl_t[1],
+        cpl_method=cpl.get("method"),
         cpl_sample_count=cpl.get("sample_count", 0),
         effective_from=datetime.now(timezone.utc),
     )

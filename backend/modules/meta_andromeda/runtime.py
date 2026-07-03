@@ -222,24 +222,38 @@ _DEFAULT_OBJECTIVE_PROFILES: dict[str, dict] = {
 }
 
 
-def _load_scoring_profile(profile_name: str) -> dict:
+def _load_scoring_profile(profile_name: str, *, ignore_promoted: bool = False) -> dict:
+    """Load a scoring profile's prompt content.
+
+    By default the globally promoted profile wins regardless of profile_name
+    (matches production scoring behavior). Pass ignore_promoted=True to force
+    loading the exact named profile — used by the holdout backtest, which must
+    evaluate the CANDIDATE profile in isolation even if a different profile is
+    currently promoted.
+    """
+    cache_key = f"__exact__{profile_name}" if ignore_promoted else profile_name
     with _profile_cache_lock:
-        if profile_name in _prompt_profile_cache:
-            return _prompt_profile_cache[profile_name]
+        if cache_key in _prompt_profile_cache:
+            return _prompt_profile_cache[cache_key]
 
     try:
         from database import SessionLocal
         from database.models.meta_andromeda import MetaAndromedaScoringProfile
         db = SessionLocal()
         try:
-            # Prefer the globally promoted profile; fall back to named profile
-            row = (
-                db.query(MetaAndromedaScoringProfile)
-                .filter(MetaAndromedaScoringProfile.is_promoted == True)  # noqa: E712
-                .first()
-            ) or db.query(MetaAndromedaScoringProfile).filter(
-                MetaAndromedaScoringProfile.profile_name == profile_name
-            ).first()
+            if ignore_promoted:
+                row = db.query(MetaAndromedaScoringProfile).filter(
+                    MetaAndromedaScoringProfile.profile_name == profile_name
+                ).first()
+            else:
+                # Prefer the globally promoted profile; fall back to named profile
+                row = (
+                    db.query(MetaAndromedaScoringProfile)
+                    .filter(MetaAndromedaScoringProfile.is_promoted == True)  # noqa: E712
+                    .first()
+                ) or db.query(MetaAndromedaScoringProfile).filter(
+                    MetaAndromedaScoringProfile.profile_name == profile_name
+                ).first()
             if row is not None:
                 few_shot_raw = row.few_shot_examples
                 if isinstance(few_shot_raw, str):
@@ -255,9 +269,12 @@ def _load_scoring_profile(profile_name: str) -> dict:
                     "calibration_guidance": row.calibration_guidance or "",
                     "few_shot_examples": few_shot_raw,
                     "objective_profiles": row.objective_profiles or {},
+                    # 實際被載入的 profile 名稱：可能因 is_promoted 全域覆蓋而與呼叫方傳入的
+                    # profile_name（registry 設定值）不同，lineage 必須記這個，校準前後 ρ 才可歸因
+                    "resolved_profile_name": row.profile_name,
                 }
                 with _profile_cache_lock:
-                    _prompt_profile_cache[profile_name] = profile
+                    _prompt_profile_cache[cache_key] = profile
                 logger.info("[MetaAndromeda] Loaded scoring profile '%s' from DB.", profile_name)
                 return profile
         finally:
@@ -271,9 +288,10 @@ def _load_scoring_profile(profile_name: str) -> dict:
         "calibration_guidance": "",
         "few_shot_examples": [],
         "objective_profiles": {},
+        "resolved_profile_name": None,
     }
     with _profile_cache_lock:
-        _prompt_profile_cache[profile_name] = fallback
+        _prompt_profile_cache[cache_key] = fallback
     return fallback
 
 
@@ -326,6 +344,7 @@ def _resolve_active_profile(base_profile: dict, objective_group: str) -> dict:
         "few_shot_examples": few_shot_examples,
         "metric_focus": metric_focus,
         "roas_band_eligible": roas_band_eligible,
+        "resolved_profile_name": base_profile.get("resolved_profile_name"),
     }
 
 
@@ -498,6 +517,7 @@ def _validate_provider_result(
     *,
     roas_band_eligible: bool = True,
     objective_group: str = "conversion",
+    prompt_profile_used: str | None = None,
 ) -> dict:
     is_diagnostic_only_request = score_payload.get("request_mode") == "diagnostic_only"
     roas_applicable = roas_band_eligible and not is_diagnostic_only_request
@@ -580,6 +600,7 @@ def _validate_provider_result(
             "provider_model": registry_entry.provider_model,
             "registry_profile": registry_entry.scoring_profile,
             "registry_source": registry_entry.source_of_truth,
+            "prompt_profile_used": prompt_profile_used or "hardcoded_fallback",
             "scoring_mode": "ai",
             "objective_group": objective_group,
             "label_policy_version": LABEL_POLICY_VERSION,
@@ -603,8 +624,11 @@ class HeuristicScoringProvider(BaseScoringProvider):
 
 
 class OpenRouterScoringProvider(BaseScoringProvider):
-    def __init__(self, api_key: str | None = None):
+    def __init__(self, api_key: str | None = None, force_profile_name: str | None = None):
         self.api_key = api_key
+        # 回測用：強制使用指定 profile_name，忽略 is_promoted 全域覆蓋，
+        # 才能在別的 profile 已上線時仍獨立評估候選 profile
+        self.force_profile_name = force_profile_name
 
     async def score(self, score_payload: dict, registry_entry: MetaAndromedaModelEntry) -> dict:
         from services.ai.openrouter_client import OpenRouterClient
@@ -619,7 +643,10 @@ class OpenRouterScoringProvider(BaseScoringProvider):
             request_context = {}
         request_mode = score_payload.get("request_mode", "auto")
 
-        base_profile = _load_scoring_profile(registry_entry.scoring_profile)
+        if self.force_profile_name:
+            base_profile = _load_scoring_profile(self.force_profile_name, ignore_promoted=True)
+        else:
+            base_profile = _load_scoring_profile(registry_entry.scoring_profile)
         objective_group = resolve_objective_group(score_payload.get("objective"))
         active_profile = _resolve_active_profile(base_profile, objective_group)
         _fmt = {
@@ -636,11 +663,15 @@ class OpenRouterScoringProvider(BaseScoringProvider):
         if active_profile.get("calibration_guidance"):
             prompt += f"\n\n{active_profile['calibration_guidance']}"
         few_shot_examples = active_profile.get("few_shot_examples")
+        few_shot_image_blocks: list[dict] = []
         if few_shot_examples and isinstance(few_shot_examples, list):
-            from .calibration_pipeline import _format_few_shot_block
-            prompt += _format_few_shot_block(few_shot_examples)
+            from .calibration_pipeline import format_few_shot_content
+            few_shot_text, few_shot_image_blocks = format_few_shot_content(few_shot_examples)
+            prompt += few_shot_text
         system_prompt = active_profile["system_prompt"]
         user_content = _build_multimodal_user_content(prompt, score_payload)
+        # few-shot 圖片附加在主素材圖片之後，讓模型能實際「看到」校準範例，而非只靠文字描述
+        user_content.extend(few_shot_image_blocks)
         raw = None
         max_retries = 3
         backoff = 2.0
@@ -694,6 +725,7 @@ class OpenRouterScoringProvider(BaseScoringProvider):
             registry_entry,
             roas_band_eligible=active_profile.get("roas_band_eligible", True),
             objective_group=objective_group,
+            prompt_profile_used=active_profile.get("resolved_profile_name"),
         )
 
 
@@ -864,6 +896,7 @@ def build_heuristic_score_result(score_payload: dict, registry_entry: MetaAndrom
             "provider_model": registry_entry.provider_model,
             "registry_profile": registry_entry.scoring_profile,
             "registry_source": registry_entry.source_of_truth,
+            "prompt_profile_used": None,
             "scoring_mode": "heuristic",
             "objective_group": objective_group,
             "fallback_reason": fallback_reason or "",

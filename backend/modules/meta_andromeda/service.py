@@ -1427,8 +1427,12 @@ class MetaAndromedaService:
         return {"profiles": repository.list_scoring_profiles(db), "total": len(repository.list_scoring_profiles(db))}
 
     @staticmethod
-    def promote_scoring_profile(db, profile_name: str) -> dict:
-        return repository.promote_scoring_profile(db, profile_name)
+    def promote_scoring_profile(db, profile_name: str, force: bool = False) -> dict:
+        return repository.promote_scoring_profile(db, profile_name, force=force)
+
+    @staticmethod
+    async def run_holdout_backtest(db, profile_name: str) -> dict:
+        return await repository.run_holdout_backtest(db, profile_name)
 
     @staticmethod
     def sync_calibration_dataset(
@@ -1441,9 +1445,11 @@ class MetaAndromedaService:
             window_kind=window_kind,
             excluded_observed_ids=excluded_observed_ids,
         )
-        synced_count = result.get("synced_count", 0)
+        # 觸發門檻看的是「有偏差的項目數」（error_item_count），而非 synced_count——
+        # synced_count 現在也包含 error=0 的正確配對對照組，用它當門檻會被稀釋
+        error_item_count = result.get("error_item_count", 0)
         dataset_id = result.get("dataset_id")
-        if synced_count >= 10 and dataset_id:
+        if error_item_count >= 10 and dataset_id:
             try:
                 from core.scheduler import add_meta_andromeda_calibration_job
                 base_profile = repository.get_active_base_profile_name(db)
