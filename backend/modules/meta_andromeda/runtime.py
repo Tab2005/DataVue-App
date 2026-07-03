@@ -422,6 +422,40 @@ def invalidate_prompt_cache(profile_name: str | None = None) -> None:
 register_invalidation_handler("prompt_profile", _invalidate_prompt_cache_local)
 
 
+def resolve_openrouter_api_key_for_asset(db_session, asset_id: str | None) -> str | None:
+    """Look up the OpenRouter API key belonging to whoever uploaded this asset — the
+    same per-user, DB-stored key resolution MetaAndromedaRuntime.generate_score_result
+    uses for live scoring — falling back to the raw OPENROUTER_API_KEY env var.
+
+    Any code path that talks to OpenRouter directly (calibration_pipeline.py's LLM
+    guidance generator and holdout backtest scorer both did this) MUST go through here
+    instead of reading settings.OPENROUTER_API_KEY alone: in deployments where the
+    working key lives per-user in the DB rather than as a container env var, that
+    shortcut makes every such call fail with "OpenRouter client is not configured"
+    (2026-07-03 incident: broke the holdout backtest — 0/22 items scored — and silently
+    degraded LLM calibration-guidance generation to its hardcoded template fallback).
+    """
+    if asset_id:
+        try:
+            from database.models.meta_andromeda import MetaAndromedaAsset
+            from database.models.user import User
+            from modules.auth.service import TokenManager
+
+            asset = db_session.query(MetaAndromedaAsset).filter(MetaAndromedaAsset.id == asset_id).first()
+            if asset and asset.uploaded_by:
+                user = db_session.query(User).filter(User.id == asset.uploaded_by).first()
+                if user and user.google_id:
+                    db_key = TokenManager.get_ai_api_key(user.google_id, provider="openrouter")
+                    if db_key:
+                        return db_key
+        except Exception as exc:
+            logger.warning(
+                "[MetaAndromeda] Failed to resolve per-user OpenRouter key for asset %s: %s",
+                asset_id, exc,
+            )
+    return settings.OPENROUTER_API_KEY
+
+
 def _clip(value: str | None, limit: int = 140) -> str:
     if not value:
         return ""

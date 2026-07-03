@@ -204,7 +204,7 @@ def format_few_shot_content(examples: list[dict]) -> tuple[str, list[dict]]:
     return "\n".join(lines), image_blocks
 
 
-def _generate_llm_guidance(bias: dict, dataset_id: str) -> str | None:
+def _generate_llm_guidance(bias: dict, dataset_id: str, db=None) -> str | None:
     """Ask an LLM to turn the confusion matrix + worst examples into a specific
     calibration instruction, replacing the generic 3-template fallback. Returns
     None on any failure (no API key, network error, empty response, ...) so the
@@ -213,8 +213,24 @@ def _generate_llm_guidance(bias: dict, dataset_id: str) -> str | None:
     try:
         from services.ai.openrouter_client import OpenRouterClient
         from core.config import settings
+        from .runtime import resolve_openrouter_api_key_for_asset
 
-        client = OpenRouterClient(api_key=settings.OPENROUTER_API_KEY)
+        api_key = settings.OPENROUTER_API_KEY
+        if db is not None:
+            # 用資料集裡任一筆項目的素材上傳者金鑰（跟正常評分流程一致），而不是只看
+            # container 環境變數——見 resolve_openrouter_api_key_for_asset 的說明
+            sample_item = (
+                db.query(MetaAndromedaCalibrationItem)
+                .filter(MetaAndromedaCalibrationItem.dataset_id == dataset_id)
+                .first()
+            )
+            sample_asset_id = (
+                sample_item.observed_creative.asset_id
+                if sample_item and sample_item.observed_creative else None
+            )
+            api_key = resolve_openrouter_api_key_for_asset(db, sample_asset_id)
+
+        client = OpenRouterClient(api_key=api_key)
         if client.client is None:
             return None
 
@@ -363,7 +379,7 @@ def generate_calibrated_profile(db, dataset_id: str, base_profile_name: str) -> 
         )
         return new_profile_name
 
-    calibration_guidance = _generate_llm_guidance(bias, dataset_id) or _BIAS_GUIDANCE[bias["dominant_bias"]]
+    calibration_guidance = _generate_llm_guidance(bias, dataset_id, db) or _BIAS_GUIDANCE[bias["dominant_bias"]]
 
     few_shot_by_group = bias["few_shot_by_group"]
     # 保留頂層 few_shot_examples 供沒有 objective_profiles 覆蓋的舊路徑使用（向下相容）
@@ -425,15 +441,24 @@ async def _default_holdout_scorer(item: MetaAndromedaCalibrationItem, profile_na
     """Re-score one holdout CalibrationItem's asset with `profile_name`, bypassing
     whatever profile is currently is_promoted (ignore_promoted=True). Returns the
     runtime score result dict, or None if the item can't be scored."""
-    from .runtime import OpenRouterScoringProvider
+    from .runtime import OpenRouterScoringProvider, resolve_openrouter_api_key_for_asset
     from .model_registry import model_registry
     from core.config import settings
+    from database import SessionLocal
 
     obs = item.observed_creative
     score_event = item.score_event
     if obs is None or not obs.asset_uri:
         return None
     request_context = (score_event.request_context or {}) if score_event else {}
+
+    # 用素材上傳者的個人金鑰（跟正常評分流程一致），而不是只看 container 環境變數
+    # ——否則在金鑰其實存在 DB 而非環境變數的部署下，這裡會每一筆都失敗且不拋例外可查
+    key_db = SessionLocal()
+    try:
+        api_key = resolve_openrouter_api_key_for_asset(key_db, obs.asset_id)
+    finally:
+        key_db.close()
 
     score_payload = {
         "asset_uri": obs.asset_uri,
@@ -456,7 +481,7 @@ async def _default_holdout_scorer(item: MetaAndromedaCalibrationItem, profile_na
     # 回測用「backtest」情境選模型：若有指定專門的較強/較貴模型（release_channel=
     # backtest_reference）就優先用它，讓 ρ/accuracy 比較不被互動用的便宜模型天花板卡住
     registry_entry = model_registry.get_entry(purpose="backtest")
-    provider = OpenRouterScoringProvider(api_key=settings.OPENROUTER_API_KEY, force_profile_name=profile_name)
+    provider = OpenRouterScoringProvider(api_key=api_key, force_profile_name=profile_name)
     try:
         return await provider.score(score_payload, registry_entry)
     except Exception as exc:
