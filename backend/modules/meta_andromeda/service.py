@@ -5,7 +5,6 @@ Meta Andromeda Module - Service
 import asyncio
 import hashlib
 import hmac
-import threading
 from datetime import UTC, datetime, timedelta
 from mimetypes import guess_extension
 from pathlib import Path
@@ -19,6 +18,12 @@ from core.scheduler import get_meta_andromeda_score_job_id, scheduler
 from database import SessionLocal, User
 from database.models.meta_andromeda import MetaAndromedaDeadLetter, MetaAndromedaScoreEvent, MetaAndromedaWorkerEvent
 from .schemas import ObservedCreativeCandidate
+from .concurrency import DistributedSemaphore
+from .import_status_store import (
+    clear_import_status_by_score_event_ids,
+    get_import_status,
+    set_import_status,
+)
 from .importers.facebook_ads_importer import fetch_observed_creative_candidate
 from .model_registry import model_registry
 from .queue_host import queue_host_adapter
@@ -29,10 +34,10 @@ from redis_cache import get_redis_client
 
 logger = logging.getLogger(__name__)
 
-_observation_import_statuses: dict[str, dict] = {}
-_observation_import_status_lock = threading.Lock()
-_score_event_semaphore = asyncio.Semaphore(settings.META_ANDROMEDA_SCORE_MAX_CONCURRENCY)
-_observation_import_semaphore = asyncio.Semaphore(settings.META_ANDROMEDA_OBSERVATION_MAX_CONCURRENCY)
+_score_event_semaphore = DistributedSemaphore("ma_score_event", settings.META_ANDROMEDA_SCORE_MAX_CONCURRENCY)
+_observation_import_semaphore = DistributedSemaphore(
+    "ma_observation_import", settings.META_ANDROMEDA_OBSERVATION_MAX_CONCURRENCY
+)
 
 
 class MetaAndromedaValidationError(ValueError):
@@ -471,13 +476,7 @@ class MetaAndromedaService:
 
     @staticmethod
     def _set_observation_import_status(observed_creative_id: str, **updates) -> dict:
-        timestamp = datetime.now(UTC).isoformat()
-        with _observation_import_status_lock:
-            current = _observation_import_statuses.get(observed_creative_id, {})
-            current.update(updates)
-            current["updated_at"] = timestamp
-            _observation_import_statuses[observed_creative_id] = current
-            return dict(current)
+        return set_import_status(observed_creative_id, **updates)
 
     @staticmethod
     def queue_observed_facebook_ad_import(payload: dict) -> dict:
@@ -792,7 +791,7 @@ class MetaAndromedaService:
             score_status="pending_observation",
         )
 
-        async with _observation_import_semaphore:
+        async with _observation_import_semaphore.acquire():
             MetaAndromedaService._set_observation_import_status(
                 observed_creative_id,
                 observation_status="processing",
@@ -843,7 +842,7 @@ class MetaAndromedaService:
     @staticmethod
     def get_observed_facebook_ad_import_status(db, observed_creative_id: str) -> dict:
         observed = repository.get_observed_creative(db, observed_creative_id)
-        memory_status = _observation_import_statuses.get(observed_creative_id, {})
+        memory_status = get_import_status(observed_creative_id)
         if observed is None:
             if memory_status:
                 return {
@@ -1151,7 +1150,7 @@ class MetaAndromedaService:
 
     @staticmethod
     async def process_score_event(score_event_id: str, queue_host: str = "unknown") -> dict:
-        async with _score_event_semaphore:
+        async with _score_event_semaphore.acquire():
             db = SessionLocal()
             try:
                 current = repository.mark_score_processing(db, score_event_id)
@@ -1271,15 +1270,7 @@ class MetaAndromedaService:
 
     @staticmethod
     def _clear_observation_import_status_entries(score_event_ids: set[str]) -> int:
-        removed = 0
-        if not score_event_ids:
-            return removed
-        with _observation_import_status_lock:
-            for observed_creative_id, payload in list(_observation_import_statuses.items()):
-                if payload.get("score_event_id") in score_event_ids:
-                    _observation_import_statuses.pop(observed_creative_id, None)
-                    removed += 1
-        return removed
+        return clear_import_status_by_score_event_ids(score_event_ids)
 
     @staticmethod
     def cleanup_stale_score_events(
