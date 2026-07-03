@@ -310,17 +310,45 @@ def generate_calibrated_profile(db, dataset_id: str, base_profile_name: str) -> 
         .first()
     )
     if base_profile is None:
+        # 自我修復：正式環境曾發生 seed migration 因表已存在而被跳過、導致
+        # meta_andromeda_scoring_profiles 整張表是空的（2026-07-03 生產事故，已用
+        # hotfix migration 20260703_ma_seed_profile_hotfix 補回去）。這裡加一層防禦，
+        # 未來若再因任何原因缺失 base profile，用 runtime.py 的硬編碼 fallback prompt
+        # 自動補一筆同名 profile，而不是靜默失敗、卡住整條校準閉環。
         logger.warning(
-            "[CalibrationPipeline] Base profile '%s' not found. Skipping calibration.",
+            "[CalibrationPipeline] Base profile '%s' not found. Attempting to auto-heal from "
+            "runtime fallback prompt instead of silently failing.",
             base_profile_name,
         )
-        _set_dataset_status(
-            db,
-            dataset_id,
-            "calibration_failed:base_profile_missing",
-            extra_summary={"base_profile_name": base_profile_name},
-        )
-        return None
+        try:
+            from .runtime import _FALLBACK_SYSTEM_PROMPT, _FALLBACK_USER_PROMPT_TEMPLATE
+
+            base_profile = MetaAndromedaScoringProfile(
+                id=f"sp_autoheal_{uuid.uuid4().hex[:12]}",
+                profile_name=base_profile_name,
+                user_prompt_template=_FALLBACK_USER_PROMPT_TEMPLATE,
+                system_prompt=_FALLBACK_SYSTEM_PROMPT,
+                source="auto_healed_fallback",
+                is_promoted=False,
+            )
+            db.add(base_profile)
+            db.commit()
+            logger.warning(
+                "[CalibrationPipeline] Auto-healed missing base profile '%s' from runtime fallback prompt.",
+                base_profile_name,
+            )
+        except Exception as exc:
+            logger.error(
+                "[CalibrationPipeline] Auto-heal for base profile '%s' also failed: %s",
+                base_profile_name, exc,
+            )
+            _set_dataset_status(
+                db,
+                dataset_id,
+                "calibration_failed:base_profile_missing",
+                extra_summary={"base_profile_name": base_profile_name},
+            )
+            return None
 
     new_profile_name = f"{base_profile_name}_cal_{dataset_id[:8]}"
     if db.query(MetaAndromedaScoringProfile).filter(
