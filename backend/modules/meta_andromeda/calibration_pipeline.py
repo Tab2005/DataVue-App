@@ -23,23 +23,23 @@ MAX_CORRECT_EXAMPLES_PER_GROUP = 1
 
 _BIAS_GUIDANCE = {
     "over_predict": (
-        "CALIBRATION NOTE: Recent performance data shows a systematic tendency to over-predict ROAS bands. "
-        "Apply stricter thresholds for HIGH classification — require multiple strong positive signals with no significant risk tags. "
-        "When visual hierarchy is strong but CTA or copy is mediocre, default to MID rather than HIGH. "
-        "Err on the side of conservative scoring."
+        "校準備註：近期成效資料顯示模型系統性地高估 ROAS 級距。"
+        "對 HIGH 分類要套用更嚴格的門檻——須有多項強烈正面訊號且無明顯風險標記才給 HIGH。"
+        "當視覺層次強但 CTA 或文案表現平庸時，預設給 MID 而非 HIGH。"
+        "評分時寧可保守。"
     ),
     "under_predict": (
-        "CALIBRATION NOTE: Recent performance data shows a systematic tendency to under-predict ROAS bands. "
-        "Do not be overly conservative. "
-        "If a creative shows clear visual focus, compelling CTA, and on-brand messaging that is consistent with the target market, "
-        "lean toward MID or HIGH even if minor imperfections exist. "
-        "Only assign LOW when there are clear structural weaknesses."
+        "校準備註：近期成效資料顯示模型系統性地低估 ROAS 級距。"
+        "不要過度保守。"
+        "若素材具備清楚的視覺焦點、有說服力的 CTA，且訊息與目標市場調性一致，"
+        "即使有小瑕疵也應偏向給 MID 或 HIGH。"
+        "只有在出現明顯的結構性弱點時才給 LOW。"
     ),
     "mixed": (
-        "CALIBRATION NOTE: Recent performance data shows inconsistent prediction patterns with no dominant bias direction. "
-        "Pay close attention to the diagnostic_breakdown scores — ensure that visual_appeal, copywriting, "
-        "cta_clarity, and relevance are evaluated independently and consistently. "
-        "Do not let one strong dimension override weaknesses in others."
+        "校準備註：近期成效資料顯示預測模式不一致，沒有明顯的偏差方向。"
+        "請仔細檢視 diagnostic_breakdown 各項分數——確保 visual_appeal、copywriting、"
+        "cta_clarity、relevance 都是獨立且一致地評估。"
+        "不要讓某一項特別強的表現掩蓋其他項目的弱點。"
     ),
 }
 
@@ -254,10 +254,11 @@ def _generate_llm_guidance(bias: dict, dataset_id: str, db=None) -> str | None:
             + "\n".join(confusion_lines)
             + "\n\nWorst mispredicted examples:\n"
             + "\n".join(example_lines)
-            + "\n\nWrite a single CALIBRATION NOTE paragraph (3-5 sentences, English) that tells the "
-            "scoring model specifically what pattern to watch for and how to adjust — not generic "
-            "advice like 'be more careful'. If you can infer a concrete creative pattern (e.g. "
-            "text-heavy images, missing CTA, multi-person photos) from the examples, name it. "
+            + "\n\nWrite a single calibration-note paragraph (3-5 sentences, in Traditional Chinese "
+            "/ 繁體中文, prefixed with '校準備註：') that tells the scoring model specifically what "
+            "pattern to watch for and how to adjust — not generic advice like 'be more careful'. "
+            "If you can infer a concrete creative pattern (e.g. text-heavy images, missing CTA, "
+            "multi-person photos) from the examples, name it. "
             "Output ONLY the paragraph text, no preamble."
         )
         content = client.generate_content(
