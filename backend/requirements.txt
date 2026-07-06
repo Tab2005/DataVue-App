@@ -64,3 +64,6 @@ apscheduler>=3.11.0,<4.0.0
 
 # 圖像處理
 pillow>=12.2.0,<13.0.0
+
+# 數值計算（Contribution 模組 MMM 引擎，見 docs/21）
+numpy>=2.0.0,<3.0.0

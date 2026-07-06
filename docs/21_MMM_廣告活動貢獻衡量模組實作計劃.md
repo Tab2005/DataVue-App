@@ -4,7 +4,7 @@
 - **性質**：實作計劃（依可行性驗證結果展開為可執行任務，驗證摘要見本文「零」章）
 - **依據**：2026-07-06 可行性驗證（合成資料 + 真實帳號 act_1077213689343030，脚本見開發 session scratchpad，演算法將於任務 1.2 移植入 repo）
 - **範圍**：新增 `backend/modules/contribution/`、`backend/database/models/contribution.py`、`backend/alembic/versions/`、`backend/core/scheduler.py`、`backend/seeds/permission_seeds.py`、`frontend/src/pages/ContributionAnalysis.jsx`、`frontend/src/services/contributionService.js`
-- **執行原則**：每個任務獨立可測、可回滾；第 1 波（後端核心 + 演算法移植與測試）完成並通過驗收前，不進入第 2 波（前端）；第 3 波（自動化與 Andromeda 整合）為選配，依使用回饋決定。
+- **執行原則**：每個任務獨立可測、可回滾；第 1 波（後端核心 + 演算法移植與測試）完成並通過驗收前，不進入第 2 波（前端）；第 3 波 A（GA4 整合）為建議實作、第 3 波 B（自動化與 Andromeda 整合）為選配，依使用回饋決定。
 
 ---
 
@@ -48,7 +48,7 @@
 1. **只做組別層級**：單活動點估計在共線資料下不可信 → 活動須分組（自動建議 + 使用者可調）。
 2. **只給區間，不給單點**：貢獻一律以多次重啟的中位數 + 範圍呈現。
 3. **附帶診斷**：共線性警告、資料量檢查（最少天數/日轉換量）為一級輸出，不是隱藏細節。
-4. **y 先用 Meta 自報總購買**：整體量級仍含平台偏差，但活動「之間」的相對貢獻由時間共變學出、是去偏的；未來可換 GA4/CRM 訂單數，模型不需改。
+4. **y 先用 Meta 自報總購買**：整體量級仍含平台偏差，但活動「之間」的相對貢獻由時間共變學出、是去偏的；第 3 波 A 將新增 GA4 站點購買作為第二種 y 模式（雙 y 並存對照，非替代，見任務 3.4a），模型不需改。
 
 ---
 
@@ -232,9 +232,13 @@ contribution/
 
 ### 4.2 頁面區塊（單頁、由上而下）
 
+**單頁原則**：Meta-y 與 GA4-y **不分頁**，同在 `/contribution` 以「分析視角」切換——雙 y 對照本身就是核心價值（歸因通膨指數必須兩邊並排才成立）。既有 `GA4Analytics.jsx`（GA4 流量報表頁）不動，貢獻分析頁只借用 GA4 資料當模型輸入，不重複呈現 GA4 報表。
+
 | 區塊 | 內容 |
 |---|---|
-| 帳戶與期間選擇 | 复用 `AdAccountSelector`；期間預設近 180 天；「開始分析」按鈕（POST /analyses 後輪詢） |
+| 帳戶與期間選擇 | 复用 `AdAccountSelector`；期間預設近 180 天；「開始分析」按鈕（POST /analyses 後輪詢）。第 3 波 A 後追加 GA4 property 配對選擇器（僅已授權 GA4 的使用者可設定） |
+| 分析視角切換（第 3 波 A） | `Meta 歸因 / GA4 全站 / 並排對照` 三態切換；帳戶未配對 GA4 或使用者未授權 GA4 時隱藏切換器，頁面行為與第 2 波版本完全相同 |
+| 歸因通膨指數（第 3 波 A） | 僅當同帳戶同期間的 meta-y 與 ga4-y 快照皆存在時渲染：逐組顯示兩視角貢獻差距，標記「收割嫌疑」（Meta-y 高、GA4-y 低）與「被低報」（GA4-y 相對高） |
 | 資料量檢查卡 | guardrail 預檢結果：天數/日均轉換/組數，不足時顯示原因並禁用分析 |
 | 貢獻對比圖（主圖） | 各組三聯橫條：花費占比 vs 自報占比 vs MMM 貢獻（誤差線 = min–max 範圍） |
 | 邊際報酬排序 | 各組「每 +N 元的邊際轉換」由高至低（N = snapshot config 的 `marginal_step`，介面明示步長與幣別），直接回答加碼順位；tooltip 註明「局部斜率，僅在目前花費水位附近有效，不可線性外推」 |
@@ -308,14 +312,48 @@ contribution/
 #### 任務 2.2 — 視覺化細節
 載入 `dataviz` skill 後實作三聯對比圖與邊際排序圖；深淺色主題皆可讀。**驗收**：以真實快照截圖走查。
 
-### 第 3 波：自動化與整合（選配，依使用回饋決定）
+### 第 3 波 A：GA4 整合（**建議實作**，2026-07-06 討論後自選配升格；仍排在第 1、2 波之後）
+
+利用既有 GA4 Data API 整合（`ga4_service.py`，RunReport），**不需 BigQuery Export**、歷史資料可直接回抓。引擎不變，只擴充 X/y 的組合。資料分工原則：**花費永遠來自各平台自己的 API**（Meta 花費走 Meta API），GA4 只提供「結果面」（全站訂單）與「環境面」（渠道 session、Google Ads 花費）。
+
+**前置條件**：使用者將廣告帳號與 GA4 property 配對（前端新增選擇器）；該 property 需有電商事件（purchase）。**未串接 GA4 的帳號自動退回 Meta-y 模式，功能不退化**——GA4 是增強項，不是必要條件。
+
+**授權模式（重要約束）**：GA4 採**每使用者 Google OAuth**（token 存 `users.ga4_access_token/ga4_refresh_token`，`GA4Service.get_credentials()` 自動 refresh 回寫），**沒有 Meta 那種團隊 token fallback**。因此：
+1. **配對持久化**：`廣告帳號 ↔ GA4 property` 配對存帳號層設定（3.4a 實作時新增 `contribution_account_settings` 小表：`account_id` UNIQUE、`ga4_property_id`、`paired_by` FK users、`updated_at`），`paired_by` 即憑證擁有者。
+2. **GA4 資料一律以 `paired_by` 使用者的憑證抓取**（含背景任務：job 執行時經 `get_credentials(paired_by_user, db)` 用 refresh token 換新 access token，機制既有）。發起 GA4-y 分析不要求發起者本人已授權 GA4，但配對的建立/變更要求操作者本人已授權且能存取該 property（避免替他人綁定看不到的 property）。
+3. **憑證失效降級**：`paired_by` 使用者撤銷 Google 授權或 refresh 失敗時，GA4-y 分析失敗並寫明確 `error_message`（`ga4_credentials_invalid:{user}`），**Meta-y 模式完全不受影響**；前端在配對選擇器旁顯示憑證狀態與「需由 {paired_by} 重新授權或改配對」提示。
+4. **快照結果的可見性**：GA4-y 快照內容為聚合統計（無使用者層級 GA4 資料），可見性依 `contribution` 模組權限，與 Meta-y 快照一致，不因 GA4 憑證歸屬而額外限縮。
+
+#### 任務 3.4a — 雙 y 對照模式（不是替代，兩種 y 並存）
+
+| y 模式 | 回答的問題 | 適用決策 |
+|---|---|---|
+| `meta`（現行） | Meta 生態內各活動組怎麼分功勞（口徑與廣告後台一致） | Meta 預算內部挪移 |
+| `ga4` | Meta 花費對**全站真實訂單**的增量（y = GA4 站點級每日購買，含所有來源；Meta 貢獻由模型從中分解，截距 = 「不投 Meta 也會發生的訂單」） | Meta 大盤預算加減（對管理層的語言） |
+
+- snapshot config 記錄 `y_source: meta | ga4`；同一 X 跑兩次，前端可切換/並排。
+- **雙 y 差距即診斷訊號（歸因通膨指數）**：某組 Meta-y 貢獻高但 GA4-y 貢獻低 → 收割/通膨；兩邊皆高 → 真實增量引擎；GA4-y 相對高 → 被 Meta 低報（隱私流失）。
+- 注意：兩種 y 計數口徑不同（去重/時區），**只比較貢獻占比與邊際排序，不比較絕對筆數**。
+
+**驗收**：同帳戶雙 y 對比報告；GA4 未配對時 ga4 模式明確不可選且 meta 模式不受影響。
+
+#### 任務 3.4b — GA4 控制變數（GA4-y 模式的必要配套）
+
+特徵矩陣新增控制欄位，吸收非 Meta 因素、避免誤算給 Meta：
+1. **自然/直接/Email/推薦渠道每日 session**（`sessionDefaultChannelGroup`）→ 吸收自然需求與季節性（雙 11、大盤紅利）。
+2. **Google Ads 每日花費**（GA4 有連結 Google Ads 時，Data API `advertiserAdCost`）→ 直接控制 Google 投放的干擾，不需另串 Google Ads API；未連結時退回付費搜尋渠道 session 間接控制。
+3. 其他拿不到花費的付費渠道（LINE 等）→ 以該渠道 session 兜底。
+
+**驗收**：GA4-y 模式強制附帶控制變數（引擎拒絕無控制變數的 ga4 y_source）；控制變數清單記入 snapshot config；合成測試驗證「注入已知自然需求波動後，Meta 組貢獻估計不被污染」。
+
+### 第 3 波 B：自動化與整合（選配，依使用回饋決定）
 
 | 任務 | 內容 | 驗收 |
 |---|---|---|
-| 3.1 週期自動更新 | CronTrigger 每週一自動補抓資料 + 重跑分析（比照 `add_meta_andromeda_weekly_closed_loop_job`） | 週一自動產生新快照，失敗有 log 與 status |
+| 3.1 週期自動更新 | CronTrigger 每週一自動補抓資料 + 重跑分析（比照 `add_meta_andromeda_weekly_closed_loop_job`）；帳戶有 GA4 配對時 meta-y 與 ga4-y 各跑一次，GA4 憑證失效時降級只跑 meta-y 並記 warning | 週一自動產生新快照，失敗有 log 與 status；GA4 憑證失效不影響 meta-y 快照產出 |
 | 3.2 快照對比 | 前端兩快照差異視圖（貢獻變化趨勢） | 可視覺對比任兩次快照 |
 | 3.3 Andromeda 資料整合 | 將 MMM 組別貢獻係數提供給 Andromeda 校準層作為 `performance_snapshot` 的去偏參考（單向：Contribution → Andromeda；介面為讀 snapshot 表，不互相 import 業務邏輯） | Andromeda 端 PoC 報告：使用去偏轉換數後校準準確率變化 |
-| 3.4 y 變數升級 | 支援 GA4/CRM 訂單數作為 y（設定切換） | 同帳戶雙 y 對比報告 |
+| 3.5 跨渠道擴充評估 | 將 Google Ads 花費自控制變數升為第二個 X（跨渠道 MMM 的第一步，Meridian 方向）；連同路徑歸因（需 BigQuery Export）一併另案評估 | 評估報告 |
 
 ---
 
@@ -328,6 +366,7 @@ contribution/
 | 隨機搜尋的不確定性 | 兩次分析數字不同引發困惑 | 固定 seed 集合（config 記錄）；同輸入同 config 結果可重現 |
 | 使用者把區間當精確值做預算決策 | 錯誤決策歸咎系統 | UI 呈現原則（第四章）+ 頁面常駐方法說明連結 |
 | FB API 欄位/版本變動 | 抓取失敗 | 沿用 fb_ads 的版本常數（v24.0）與錯誤處理；actions 缺欄位時記 warning 不 crash |
+| GA4 憑證失效（per-user OAuth，無團隊 fallback） | GA4-y 分析中斷 | 憑證綁定 `paired_by` 使用者 + refresh 機制既有；失效時明確 error_message 並降級只跑 meta-y，前端提示重新授權或改配對（見第 3 波 A 授權模式） |
 | numpy 新依賴 | 部署映像變大（約 +60MB） | 可接受；Dockerfile 無需變更（pip 安裝自 requirements.txt） |
 
 ---
