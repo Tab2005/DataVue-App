@@ -1197,7 +1197,7 @@ const MetaAndromedaMonitoring = () => {
                             </div>
                         </section>
 
-                        <section style={{ ...panelStyle, gridColumn: isMobile ? undefined : 'span 2' }}>
+                        <section style={{ ...panelStyle, gridColumn: isMobile ? undefined : 'span 3' }}>
                             <h2 style={sectionTitleStyle}>{t('Scoring Profiles', 'Scoring Profiles 管理')}</h2>
                             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px', gap: '12px' }}>
                                 <div style={{ color: 'var(--text-secondary)', fontSize: '0.85rem' }}>

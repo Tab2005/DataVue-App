@@ -5,18 +5,51 @@
 - **依據**：docs/19_Meta_Andromeda_素材評分閉環優化建議報告.md
 - **範圍**：`backend/modules/meta_andromeda`（runtime / model_registry / calibration_pipeline / repository / service / importers）、`backend/core/scheduler.py`、`backend/database/models/meta_andromeda.py`
 - **執行原則**：每個任務獨立可測、可回滾；第 1 波全部完成前不進入第 2 波（P0 斷點會污染第 2 波要修的統計量）。
+- **實作狀態**：三波已於 2026-07-03 全數完成實作並 commit（見下方「執行狀態總覽」），2026-07-06 逐項對照程式碼複查完畢。
 
 ---
 
 ## 零、總覽與波次對應
 
-| 波次 | 目標 | 對應 docs/19 章節 | 前置條件 |
-|------|------|------|------|
-| 第 1 波 | 修復閉環斷點，讓自動校準真正跑起來 | 二、P0-1~P0-6 | 無 |
-| 第 2 波 | 提升評估與校準樣本品質，讓準確率數字可信 | 三、P1-1~P1-6 | 第 1 波 P0-1~P0-5 完成 |
-| 第 3 波 | 結構升級與自動化 | 四、五、P2-1~P2-8 | 第 2 波完成 |
+| 波次 | 目標 | 對應 docs/19 章節 | 前置條件 | 狀態 |
+|------|------|------|------|------|
+| 第 1 波 | 修復閉環斷點，讓自動校準真正跑起來 | 二、P0-1~P0-6 | 無 | ✅ 全部完成 |
+| 第 2 波 | 提升評估與校準樣本品質，讓準確率數字可信 | 三、P1-1~P1-6 | 第 1 波 P0-1~P0-5 完成 | ✅ 全部完成 |
+| 第 3 波 | 結構升級與自動化 | 四、五、P2-1~P2-8 | 第 2 波完成 | ✅ 完成（P2-7 部分缺口，見下） |
 
 每個任務區塊包含：**問題**（引用報告結論）、**變更檔案**、**實作步驟**、**驗收標準**、**風險/回滾**。
+
+---
+
+## 執行狀態總覽（2026-07-06 對照程式碼複查）
+
+| 任務 | 狀態 | 備註 |
+|------|------|------|
+| P0-1 修復自動校準參數錯誤 + Seed | ✅ | `creative_scoring_v1` seed migration + `repository.get_active_base_profile_name()`；另有 `3c065d1` 修空表 seeding 缺陷的 hotfix migration |
+| P0-2 統一配對與標籤政策 | ✅ | 新增 `labeling.py` 共用 matching/threshold/banding，`LABEL_POLICY_VERSION` bump |
+| P0-3 修復 Lead 觀測標籤死碼 | ✅ | FB importer 補 `leads/cvr/cpl/cpa`，門檻改 `labeling.py` 動態分位數 |
+| P0-4 統一 Objective 路由 | ✅ | 新增 `objective_routing.py`，runtime 與 repository 共用 `resolve_objective_group()` |
+| P0-5 非轉換廣告 Band 污染 | ✅ | `NON_ROAS_GROUPS` 排除 + `accuracy_eligible` 標記 |
+| P0-6 Release 機制串接（本波最小可行版） | ✅ | 示範資料標示（`is_demo_data`），完整版見 3.2 |
+| P1-2 Lineage 記錄實際 Prompt Profile | ✅ | `resolved_profile_name` / `prompt_profile_used`，heuristic fallback 過濾與獨立統計 |
+| P1-3 標籤穩健性：曝光門檻與去重 | ✅ | `MIN_IMPRESSIONS_FOR_ACCURACY=1000`、`immature` 標記、`_dedupe_observed_by_ad_id` |
+| P1-4 統計方法修正 | ✅ | tie-aware `_spearman_r`、動態門檻樣本下限 20、`insufficient_sample` 判定、`perf_is_high` 改比對上期中位數 |
+| P1-5 校準 Few-shot 與 Guidance 品質 | ✅ | 多模態 few-shot（圖片 data URI）、錯例/對例混合、LLM 依 confusion matrix 生成 guidance |
+| P1-6 校準 Profile 回測 Gate | ✅ | `evaluate_profile_on_holdout()` + `PromotionGateError`（409 + force 覆寫）、連續 2 期劣化自動 un-promote |
+| 3.1（P1-1）兩段式評分 | ✅ | `_normalize_diagnostic_breakdown` 抽數值子分數；`calibration_stats.py`（PAVA 等張回歸）擬合 confidence 經驗機率 |
+| 3.2（P0-6 完整版）Model Registry 落 DB | ✅ | `model_registry.get_entry()` 讀 DB；approve/rollback 真正切換 runtime 模型；`refresh_release_metrics()` 用 drift 配對實算指標 |
+| P2-1 影片素材 keyframes | ✅ | 新增 `video_utils.py`（ffmpeg 抽幀），未抽到時標記 `video_content_not_inspected` 並扣減 confidence |
+| P2-2 結構化輸出 + Self-consistency | ✅ | `response_format: json_schema` 優先嘗試 + 原本 regex 解析為 fallback；高價值請求 N 次取樣中位數/多數決 |
+| P2-3 情境分層選模型 | ✅ | `get_entry(purpose="interactive"\|"backtest")`；**2026-07-06 修復**：`META_ANDROMEDA_SCORING_MODEL` env escape hatch 原本會蓋掉 `purpose="backtest"` 解析結果，已排除 |
+| P2-4 Confidence 經驗校準 | ⚠️ 部分 | 與 3.1 共用 `calibration_stats.py`；**僅 global scope**，未做 per-account 版本（文件原文允許「不足時 global」，屬刻意簡化非缺陷） |
+| P2-5 人工回饋 reason_codes | ✅ | `analyze_feedback_reason_codes`、分歧樣本自動標記校準候選、review queue 顯示 `observed_band` |
+| P2-6 每週自動排程 | ✅ | `core/scheduler.run_meta_andromeda_weekly_closed_loop()`，逐帳戶 drift → 全域 calibration sync |
+| P2-7 Prompt Cache TTL + Promote 失效通知 | ⚠️ 部分 | Cache TTL + Redis pub/sub 失效通知已做；**「`is_promoted` 改為 per base-profile 而非全域唯一」未做**，目前仍是全域唯一旗標（文件原文為假設語氣、無明確驗收標準，屬刻意跳過） |
+| P2-8 同素材跨窗口去重 | ✅ | link 條件放寬為「同 asset、AI 模式、completed 最新評分」，多對一關聯記 `lineage.linked_observation_ids` |
+
+**已知缺口（如需補上請另立任務）**：
+1. P2-7：`meta_andromeda_scoring_profiles.is_promoted` 需改為 per `base_profile_name` 分組唯一，而非全表唯一。
+2. P2-4：若要更精準的 confidence 校準，可視資料量評估是否值得做 per-account 版本（目前 global scope 已有合理的資料量門檻與 fallback）。
 
 ---
 
