@@ -26,6 +26,11 @@ from database.models.meta_andromeda import (
     MetaAndromedaDeadLetter,
     MetaAndromedaDriftReport,
 )
+from database.models.contribution import (
+    ContributionDailyMetric,
+    ContributionCampaignGroup,
+    ContributionSnapshot,
+)
 
 __all__ = [
     "User", "UserRole", "UserStatus",
@@ -46,4 +51,7 @@ __all__ = [
     "MetaAndromedaWorkerEvent",
     "MetaAndromedaDeadLetter",
     "MetaAndromedaDriftReport",
+    "ContributionDailyMetric",
+    "ContributionCampaignGroup",
+    "ContributionSnapshot",
 ]

@@ -53,6 +53,11 @@ from database.models.meta_andromeda import (
     MetaAndromedaWorkerEvent,
     MetaAndromedaDeadLetter,
 )
+from database.models.contribution import (
+    ContributionDailyMetric,
+    ContributionCampaignGroup,
+    ContributionSnapshot,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -79,6 +84,9 @@ __all__ = [
     "MetaAndromedaReleaseEvent",
     "MetaAndromedaWorkerEvent",
     "MetaAndromedaDeadLetter",
+    "ContributionDailyMetric",
+    "ContributionCampaignGroup",
+    "ContributionSnapshot",
     # 初始化函式
     "init_db",
 ]
@@ -117,6 +125,9 @@ def init_db():
             "meta_andromeda_worker_events",
             "meta_andromeda_dead_letters",
             "meta_andromeda_drift_reports",
+            "contribution_daily_metrics",
+            "contribution_campaign_groups",
+            "contribution_snapshots",
         ]
         missing = [t for t in required_tables if t not in existing_tables]
         

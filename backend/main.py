@@ -202,6 +202,7 @@ from routers import users, teams, invites, admin, ai, saved_views, gsc, permissi
 from routers import facebook, debug, ga4, auth, reports, line
 from routers.metrics import router as metrics_router
 from modules.meta_andromeda import router as meta_andromeda_router
+from modules.contribution import router as contribution_router
 
 # Authentication & Users
 app.include_router(auth.router)
@@ -223,6 +224,7 @@ app.include_router(saved_views.router)
 app.include_router(reports.router)
 app.include_router(line.router)
 app.include_router(meta_andromeda_router, prefix="/api/meta-andromeda", tags=["meta_andromeda"])
+app.include_router(contribution_router, prefix="/api/contribution", tags=["contribution"])
 
 # Metrics Registry (4.6)
 app.include_router(metrics_router)

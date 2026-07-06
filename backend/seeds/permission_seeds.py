@@ -5,6 +5,7 @@ MODULES = [
     {"key": "gsc", "name": "Google Search Console", "icon": "🔍", "sort_order": 2},
     {"key": "ga4", "name": "Google Analytics 4", "icon": "📈", "sort_order": 3, "enabled": True},
     {"key": "meta_andromeda", "name": "Meta Andromeda", "icon": "🛰️", "sort_order": 4, "enabled": True},
+    {"key": "contribution", "name": "貢獻分析", "icon": "📊", "sort_order": 5, "enabled": True},
 ]
 
 PERMISSIONS = {
@@ -28,6 +29,9 @@ PERMISSIONS = {
         {"key": "ga4:analytics:view", "name": "數據查看", "category": "feature"},
     ],
     "meta_andromeda": [],
+    # 貢獻分析模組（docs/21）：採 module-only access，不分細項權限
+    #（同 meta_andromeda；細項權限待第 2 波依使用回饋再拆分）。
+    "contribution": [],
 }
 
 ROLES = [

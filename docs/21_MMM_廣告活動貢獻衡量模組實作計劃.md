@@ -172,7 +172,7 @@ contribution/
 | `hill(x, K)` | 飽和曲線：`x / (x + K)` |
 | `nonneg_ridge(X, y, lam, iters)` | 非負 ridge：投影梯度下降（Lipschitz 步長） |
 | `fit(spend_by_group, y, config)` | 隨機搜尋 θ∈{0,0.15,…,0.75} × K∈{P25,P50,P75}（各組獨立），時間序列前段訓練 / 末段（預設 45 天）驗證選模；預設 800 trials |
-| `run_analysis(spend_by_group, y, config)` | 跑 `n_restarts`（預設 5）次不同 seed 的 `fit`，彙整為中位數/範圍 + 邊際轉換（穩態 adstock 乘數 × hill 導數差分）+ 診斷 |
+| `run_analysis(spend_by_group, y, config)` | 跑 `n_restarts`（預設 5）次不同 seed 的 `fit`，彙整為中位數/範圍 + 邊際轉換（穩態 adstock 乘數 × hill 導數差分）+ 診斷。邊際步長 `marginal_step` 為 config 參數，**依帳戶幣別與各組花費量級自動選擇**（預設取「該組日均花費的 1% 向上取整至 100 的整數倍、下限 100」，幣別取自帳戶 metadata），實際使用值記入 snapshot config 與 results |
 | `diagnose(spend_by_group, y)` | 共線性矩陣（日花費 Pearson r，\|r\|>0.7 列警告）、Poisson 天花板 `1 - mean/var`、資料量檢查 |
 
 **資料量守門（guardrails，不符合即拒絕分析並回明確錯誤）**：
@@ -198,7 +198,7 @@ contribution/
 
 ### 3.4 service.py + 背景任務
 
-- `create_analysis(account_id, params, user)`：guardrail 預檢 → 建 `ContributionSnapshot(status=queued)` → `core/scheduler.add_contribution_analysis_job(snapshot_id)`。
+- `create_analysis(account_id, params, user)`：guardrail 預檢 → 建 `ContributionSnapshot(status=queued)` → `core/scheduler.add_contribution_analysis_job(snapshot_id)`。**分析以單一廣告帳號為邊界**：每個 snapshot 只讀該 `account_id` 的歷史資料，θ/K/β 全部由該帳號自己的資料估出，不同帳號互不影響；可存取的帳號範圍沿用 FB token 權限（同 fb_ads）。
 - `core/scheduler.py` 新增 `add_contribution_analysis_job()` 與 `process_contribution_analysis()`（同 `add_meta_andromeda_score_job` 模式：date-trigger 一次性 job、失敗寫回 snapshot.status=failed + error_message）。分析耗時估 10–60 秒（800 trials × 5 restarts，numpy 向量化），不需 Redis 佇列，APScheduler 即可；scheduler 不可用時走 local async fallback（沿用 Andromeda 的 host 判斷模式，簡化為兩層）。
 - 完成後寫 `results` + `diagnostics`，`status=completed`。
 
@@ -237,7 +237,7 @@ contribution/
 | 帳戶與期間選擇 | 复用 `AdAccountSelector`；期間預設近 180 天；「開始分析」按鈕（POST /analyses 後輪詢） |
 | 資料量檢查卡 | guardrail 預檢結果：天數/日均轉換/組數，不足時顯示原因並禁用分析 |
 | 貢獻對比圖（主圖） | 各組三聯橫條：花費占比 vs 自報占比 vs MMM 貢獻（誤差線 = min–max 範圍） |
-| 邊際報酬排序 | 各組「每 +100 元的邊際轉換」由高至低，直接回答加碼順位 |
+| 邊際報酬排序 | 各組「每 +N 元的邊際轉換」由高至低（N = snapshot config 的 `marginal_step`，介面明示步長與幣別），直接回答加碼順位；tooltip 註明「局部斜率，僅在目前花費水位附近有效，不可線性外推」 |
 | 診斷警告卡 | 共線性配對清單（附「錯開預算調整」建議）、holdout R² 與雜訊天花板、被判 0% 且高共線的組標記「存疑」 |
 | 分組編輯器 | 活動清單拖拉/勾選改組，PUT /groups 後可重跑分析 |
 | 歷史快照 | 過往分析列表，點開可比較兩次結果 |
@@ -250,15 +250,21 @@ contribution/
 
 ### 第 1 波：後端核心（完成並驗收後才進第 2 波）
 
-#### 任務 1.1 — 資料表與模組骨架
+#### 任務 1.1 — 資料表與模組骨架 ✅（2026-07-06 完成）
 
-**變更檔案**：`database/models/contribution.py`（新增）、`database/models/__init__.py`、`alembic/versions/20260706_contribution_module_tables.py`（新增）、`modules/contribution/{__init__,router,dependencies,schemas,repository}.py`（新增）、`seeds/permission_seeds.py`、`main.py`
+**變更檔案**：`database/models/contribution.py`（新增）、`database/models/__init__.py`、`database/__init__.py`、`alembic/versions/20260706_contribution_module_tables.py`（新增）、`modules/contribution/{__init__,router,dependencies,schemas,repository}.py`（新增）、`seeds/permission_seeds.py`、`main.py`、`tests/test_contribution_module.py`（新增）
 
 **實作步驟**：建 3 張表 migration → 模組骨架與空端點（回 501）→ 權限 seed 與 router 掛載。
 
 **驗收標準**：migration 在本地 SQLite 與 PostgreSQL 皆可升降級；`/api/contribution/*` 未授權回 403、授權後回 501；管理後台可見「貢獻分析」模組並可指派權限。
 
+**驗收結果**：
+- migration 升級（base→head）建 3 表 + 7 索引 + 1 複合唯一約束；降級回 `20260703_ma_seed_profile_hotfix` 後 3 表全清（SQLite 往返測試通過；PostgreSQL DDL 為同一份 `op.create_table` 呼叫，欄位型別未用 SQLite 專有語法）。
+- `tests/test_contribution_module.py` 8 項全綠：未授權 GET/POST/PUT 6 端點回 403（訊息含 `contribution`）；授權後 `/ping` 回 200、其餘 6 端點回 501；`/api/permissions/modules` 列出 `contribution`；模組可指派給團隊成員並通過 `check_module_access`；3 表 ORM 可持久化（含唯一約束觸發、FK→users 關聯）；repository snapshot 狀態流轉 queued→processing→completed/failed 正確。
+- 無回歸：`test_permissions/test_auth/test_health` 32 項全綠；Andromeda 套件 38 項 pass / 16 fail 與套用變更前完全一致（16 fail 皆為既有環境/過時斷言問題，非本任務引入）。
+
 **風險/回滾**：純新增，降級 migration 即可移除；不觸碰既有表。
+
 
 #### 任務 1.2 — MMM 引擎移植 + 單元測試（本計劃核心）
 
@@ -333,6 +339,7 @@ contribution/
 3. **即時分析**：本質是批次統計，最小更新粒度為日。
 4. **自動調整預算**：只給建議排序，不寫回 Meta（涉及寫入權限與責任邊界，需另案評估）。
 5. **跨渠道 MMM**（Google/LINE 等）：資料表已預留擴充空間（`account_id` 不綁 Meta 格式），但本計劃只做 Meta。
+6. **跨帳號合併分析**：同品牌多個廣告帳號各自獨立分析，不合併建模（合併會引入跨帳號共線與 y 歸屬模糊問題；真有需求與跨渠道方向一併另案評估）。
 
 ---
 
