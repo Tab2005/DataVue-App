@@ -184,9 +184,9 @@ class ScoreExplanationResponse(BaseModel):
 
 
 class ObservationResponse(BaseModel):
-    prediction_band: str
+    prediction_band: str | None = None
     observed_band: str
-    error: float
+    error: float | None = None
     performance_snapshot: dict[str, Any]
     ad_name: str | None = None
     ad_id: str | None = None
