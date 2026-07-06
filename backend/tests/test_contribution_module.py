@@ -1,11 +1,14 @@
 """
-Contribution 模組任務 1.1 驗收測試（docs/21）
+Contribution 模組任務 1.1 + 1.3 驗收測試（docs/21）
 
 驗收標準：
-  1. /api/contribution/* 未授權回 403、授權後 /ping 回 200、其餘端點回 501
-  2. 管理後台可見「貢獻分析」模組並可指派權限（Module seed enabled=True）
-  3. 三張 contribution_* 資料表可建立 ORM 物件（migration + model 對齊）
+  1.1 /api/contribution/* 未授權回 403、授權後 /ping 回 200、其餘端點回 501
+  1.1 管理後台可見「貢獻分析」模組並可指派權限（Module seed enabled=True）
+  1.1 三張 contribution_* 資料表可建立 ORM 物件（migration + model 對齊）
+  1.3 /campaigns 由快取表 GROUP BY 彙總；/data/refresh 背景抓取 + 4xx token
 """
+
+from unittest.mock import patch
 
 import pytest
 
@@ -101,12 +104,12 @@ def test_contribution_ping_returns_ok_when_authorized(contribution_authorized_cl
 
 @pytest.mark.integration
 def test_contribution_unimplemented_endpoints_return_501(contribution_authorized_client):
-    """授權後，任務 1.1 尚未實作的端點應回 501（非 500、非 404）。"""
+    """任務 1.1–1.3 已實作 `/ping` / `/campaigns` / `/data/refresh`；其餘端點
+    （分組讀寫、分析編排）由任務 1.4 實作，目前應回 501。"""
     client, _ = contribution_authorized_client
 
-    # GET 類
+    # GET 類（task 1.4 尚未實作）
     for path in [
-        "/api/contribution/campaigns?account_id=act_1",
         "/api/contribution/groups?account_id=act_1",
         "/api/contribution/analyses?account_id=act_1",
         "/api/contribution/analyses/csn_dummy",
@@ -132,9 +135,88 @@ def test_contribution_unimplemented_endpoints_return_501(contribution_authorized
     )
     assert resp.status_code == 501
 
-    # POST /data/refresh → 501
-    resp = client.post("/api/contribution/data/refresh?account_id=act_1")
-    assert resp.status_code == 501
+
+# ── 任務 1.3 驗收：/campaigns 與 /data/refresh 實作 ──────────────────
+@pytest.mark.integration
+def test_contribution_campaigns_returns_empty_list_when_cache_empty(
+    contribution_authorized_client,
+):
+    """/campaigns 在快取為空時回 200 + 空 list（前端引導使用者先 refresh）。"""
+    client, _ = contribution_authorized_client
+    resp = client.get("/api/contribution/campaigns?account_id=act_nodata_1")
+    assert resp.status_code == 200
+    payload = resp.json()
+    assert payload["account_id"] == "act_nodata_1"
+    assert payload["campaigns"] == []
+    assert payload["total"] == 0
+
+
+@pytest.mark.integration
+def test_contribution_campaigns_returns_aggregated_summaries(
+    contribution_authorized_client, db
+):
+    """/campaigns 由快取表 GROUP BY campaign_id 彙總；多 campaign 排序正確。"""
+    from database.models.contribution import ContributionDailyMetric
+
+    # 預先 seed 快取表
+    samples = [
+        ("cmp_1", "主力", 100.0, 8.0),
+        ("cmp_1", "主力", 120.0, 10.0),
+        ("cmp_2", "影片", 50.0, 4.0),
+    ]
+    for i, (cid, name, spend, conv) in enumerate(samples):
+        db.add(ContributionDailyMetric(
+            account_id="act_agg",
+            date=f"2026-07-0{i+1}",
+            campaign_id=cid,
+            campaign_name=name,
+            spend=spend,
+            impressions=5000,
+            conversions=conv,
+            conversion_value=conv * 300,
+            metric_key="omni_purchase",
+        ))
+    db.commit()
+
+    client, _ = contribution_authorized_client
+    resp = client.get("/api/contribution/campaigns?account_id=act_agg")
+    assert resp.status_code == 200
+    payload = resp.json()
+    assert payload["total"] == 2
+    # 排序：spend 由大到小 → cmp_1 (220) 在 cmp_2 (50) 之前
+    assert payload["campaigns"][0]["campaign_id"] == "cmp_1"
+    assert payload["campaigns"][0]["spend"] == 220.0
+    assert payload["campaigns"][0]["conversions"] == 18.0
+    assert payload["campaigns"][0]["active_days"] == 2
+    assert payload["campaigns"][1]["campaign_id"] == "cmp_2"
+    assert payload["campaigns"][1]["spend"] == 50.0
+
+    # 清理
+    db.query(ContributionDailyMetric).filter(
+        ContributionDailyMetric.account_id == "act_agg"
+    ).delete()
+    db.commit()
+
+
+@pytest.mark.integration
+def test_contribution_data_refresh_token_missing_returns_4xx(contribution_authorized_client):
+    """token 缺失時 /data/refresh 回 4xx（401/502），訊息不含明文 token。"""
+    client, _ = contribution_authorized_client
+    with patch(
+        "modules.contribution.data_source.get_headers",
+        return_value=None,
+    ):
+        resp = client.post(
+            "/api/contribution/data/refresh?account_id=act_token_test"
+        )
+    # 401 是 Authorization 缺失；實際錯誤碼視 exception 翻譯路徑而定
+    assert 400 <= resp.status_code < 600, f"expected 4xx/5xx, got {resp.status_code}"
+    body = resp.json()
+    # 訊息中不應包含 "Bearer "、token 字串等機敏內容
+    detail_str = str(body)
+    assert "Bearer" not in detail_str
+    assert "token=" not in detail_str.lower()
+    assert "EAA" not in detail_str  # FB token 開頭固定 EAA...
 
 
 # ── 驗收 2：管理後台可見「貢獻分析」模組並可指派權限 ──────────────────

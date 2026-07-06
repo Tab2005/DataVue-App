@@ -1,35 +1,49 @@
 """
 Contribution Module - Router（docs/21 第 3.5 節）
 
-第 1 波任務 1.1：掛載 7 個端點，全部套 require_module("contribution")。
-  - GET  /ping               ：最小健康檢查（回 200，證明模組掛載 + 授權通過）
-  - 其餘 6 端點               ：本波回 501 Not Implemented，於任務 1.3／1.4 填入
+第 1 波任務分階段填入：
+  - 1.1：7 端點骨架（/ping 200，其餘 501）
+  - 1.3：/data/refresh（背景抓取） + /campaigns（快取表彙總）
+  - 1.4：分組讀寫 + analyses 編排 + 背景任務調度
 
 授權邊界：
   - 未授權（無模組存取） → require_module 拋 403（含 'contribution' 字樣）
-  - 授權 → /ping 回 200，其餘回 501
+  - 授權 → /ping 回 200；/campaigns 回 200；/data/refresh 回 202 + 背景抓取
 """
 
-from fastapi import APIRouter, Depends, HTTPException, Query, status
+import logging
+
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query, status
 
 from database import get_db
+from .data_source import (
+    ContributionAPIError,
+    ContributionDataSourceError,
+    ContributionFetchError,
+    ContributionTokenError,
+    fetch_account_daily_metrics,
+)
 from .dependencies import (
     get_current_contribution_user,
     require_contribution_module,
     require_contribution_operate,
 )
+from .repository import repository as contribution_repository
 from .schemas import (
     AnalysisCreateRequest,
     AnalysisCreateResponse,
     AnalysisDetailResponse,
     AnalysisListResponse,
     CampaignListResponse,
+    CampaignSummary,
     DataRefreshResponse,
     GroupsResponse,
     GroupsUpdateRequest,
     GroupsUpdateResponse,
     PingResponse,
 )
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter()
 
@@ -50,15 +64,23 @@ async def ping(
 @router.get("/campaigns", response_model=CampaignListResponse)
 async def list_campaigns(
     account_id: str = Query(..., description="廣告帳戶 ID（act_ 格式）"),
-    days: int = Query(180, ge=1, le=365, description="回溯天數"),
+    metric_key: str = Query("omni_purchase", description="轉換指標鍵"),
     _user=Depends(get_current_contribution_user),
     _access: bool = Depends(require_contribution_module),
     db=Depends(get_db),
 ):
-    """列出帳戶近 N 天活動（含花費/轉換彙總），供分組 UI。任務 1.3 實作。"""
-    raise HTTPException(
-        status_code=status.HTTP_501_NOT_IMPLEMENTED,
-        detail="contribution.campaigns 由任務 1.3（資料抓取與快取）實作",
+    """列出帳戶近 N 天活動（含花費/轉換彙總），供分組 UI。
+
+    讀取 contribution_daily_metrics 快取表並 GROUP BY campaign_id 彙總；
+    若快取為空回空 list（前端會引導使用者先按 /data/refresh 抓取）。
+    """
+    summaries = contribution_repository.list_campaign_summaries(
+        db, account_id=account_id, metric_key=metric_key
+    )
+    return CampaignListResponse(
+        account_id=account_id,
+        campaigns=[CampaignSummary(**row) for row in summaries],
+        total=len(summaries),
     )
 
 
@@ -138,15 +160,156 @@ async def get_analysis(
     )
 
 
-@router.post("/data/refresh", response_model=DataRefreshResponse)
+@router.post(
+    "/data/refresh",
+    response_model=DataRefreshResponse,
+    status_code=status.HTTP_202_ACCEPTED,
+)
 async def refresh_data(
+    background_tasks: BackgroundTasks,
     account_id: str = Query(..., description="廣告帳戶 ID"),
-    _user=Depends(get_current_contribution_user),
+    metric_key: str = Query("omni_purchase", description="轉換指標鍵"),
+    user=Depends(get_current_contribution_user),
     _access: bool = Depends(require_contribution_operate),
     db=Depends(get_db),
 ):
-    """手動觸發每日資料補抓（背景執行）。任務 1.3 實作。"""
-    raise HTTPException(
-        status_code=status.HTTP_501_NOT_IMPLEMENTED,
-        detail="contribution.data/refresh 由任務 1.3（資料抓取與快取）實作",
+    """手動觸發每日資料補抓（背景執行）。
+
+    同步階段：呼叫 `data_source.fetch_account_daily_metrics()` 一次以驗證
+    token 與 API 連線（4xx 立即回應，避免背景任務靜默失敗）；若 token 缺失
+    / API 拋錯則回 4xx 並附明確錯誤訊息（沿用 fb_ads 慣例，不落明文 token）。
+
+    成功 → 背景任務實際執行抓取 + upsert，前端用 202 + status='accepted'
+    表示已進入排程；本端點不阻塞前端等待全量抓取。
+    """
+    user_id = getattr(user, "google_id", None) or getattr(user, "id", None)
+    if not user_id:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="無法識別使用者身分，請重新登入",
+        )
+
+    # 增量視窗：若快取已有資料，只補最近 3 天（歸因回補）；首次全量抓 180 天。
+    db_window = _get_existing_date_window(db, account_id, metric_key)
+
+    try:
+        # 同步觸發一次最小抓取驗證 token（取 1 天即可），成功即排程全量抓取
+        probe = await fetch_account_daily_metrics(
+            account_id,
+            user_id=user_id,
+            db_window=None,  # 強制走全量視窗
+            metric_key=metric_key,
+        )
+    except ContributionTokenError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail=str(exc),
+        ) from exc
+    except ContributionAPIError as exc:
+        # FB API 4xx（權限不足、查詢無效等）→ 回 4xx 給前端
+        if exc.code and 400 <= exc.code < 500:
+            raise HTTPException(
+                status_code=exc.code,
+                detail=f"FB API 拒絕請求：{exc}",
+            ) from exc
+        # 5xx → 包成 502（上游錯誤）
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail=f"FB API 5xx 錯誤：{exc}",
+        ) from exc
+    except ContributionFetchError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail=f"FB API 連線失敗：{exc}",
+        ) from exc
+
+    # 背景任務：實際執行全量/增量抓取 + upsert
+    background_tasks.add_task(
+        _run_refresh_background,
+        account_id=account_id,
+        user_id=user_id,
+        metric_key=metric_key,
+        db_window=db_window,
+        probe_count=len(probe),
     )
+
+    return DataRefreshResponse(
+        account_id=account_id,
+        status="accepted",
+        message=(
+            f"已排程補抓 {account_id} 的 {metric_key} 資料"
+            f"（{'增量最近 3 天' if db_window else '全量 180 天'}，"
+            f"probe 收到 {len(probe)} 列）"
+        ),
+    )
+
+
+def _get_existing_date_window(
+    db,
+    account_id: str,
+    metric_key: str,
+) -> tuple[str, str] | None:
+    """查詢快取表目前該帳戶該指標的 (min_date, max_date)；無資料回 None。"""
+    from sqlalchemy import func, select
+    from database.models.contribution import ContributionDailyMetric
+
+    stmt = (
+        select(
+            func.min(ContributionDailyMetric.date),
+            func.max(ContributionDailyMetric.date),
+        )
+        .where(
+            ContributionDailyMetric.account_id == account_id,
+            ContributionDailyMetric.metric_key == metric_key,
+        )
+    )
+    row = db.execute(stmt).first()
+    if row is None or row[0] is None or row[1] is None:
+        return None
+    return (row[0], row[1])
+
+
+async def _run_refresh_background(
+    *,
+    account_id: str,
+    user_id: str,
+    metric_key: str,
+    db_window: tuple[str, str] | None,
+    probe_count: int,
+) -> None:
+    """背景任務：實際執行抓取 + upsert；錯誤以 log 記錄（不中斷任務）。"""
+    from database import SessionLocal
+
+    db = SessionLocal()
+    try:
+        rows = await fetch_account_daily_metrics(
+            account_id,
+            user_id=user_id,
+            db_window=db_window,
+            metric_key=metric_key,
+        )
+        n = contribution_repository.upsert_daily_metrics(
+            db, [r.to_dict() for r in rows]
+        )
+        db.commit()
+        logger.info(
+            "[Contribution] refresh %s metric=%s window=%s: probe=%d upsert=%d",
+            account_id,
+            metric_key,
+            db_window or "FULL",
+            probe_count,
+            n,
+        )
+    except ContributionDataSourceError as exc:
+        logger.error(
+            "[Contribution] refresh %s failed: %s", account_id, exc
+        )
+    except Exception as exc:  # 防背景任務將錯誤吞掉
+        logger.error(
+            "[Contribution] refresh %s unexpected error: %s",
+            account_id,
+            exc,
+            exc_info=True,
+        )
+    finally:
+        db.close()

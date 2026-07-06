@@ -301,13 +301,40 @@ contribution/
 
 **風險/回滾**：純新增。效能不達標時降 trials 至 400（可行性驗證顯示 400 已收斂）。
 
-#### 任務 1.3 — 資料抓取與快取
+#### 任務 1.3 — 資料抓取與快取 ✅（2026-07-06 完成）
 
-**變更檔案**：`modules/contribution/data_source.py`（新增）、`repository.py`（upsert）、`router.py`（`/data/refresh`、`/campaigns`）
+**變更檔案**：`modules/contribution/data_source.py`（新增）、`modules/contribution/repository.py`（實作 upsert_daily_metrics + list_campaign_summaries）、`modules/contribution/router.py`（替換 `/data/refresh` 與 `/campaigns` 501 為實作）、`tests/test_contribution_data_source.py`（新增）、`tests/test_contribution_module.py`（更新既有測試，移除已實作端點的 501 斷言）
 
-**實作步驟**：按 3.2 實作抓取與增量補抓；`/campaigns` 由快取表彙總。
+**實作步驟**：
+1. `data_source.fetch_account_daily_metrics()`：async httpx，復用 `modules/fb_ads/_base.py` 的 `BASE_URL` / `get_headers()`（不重複 token 邏輯），`level=campaign, time_increment=1, limit=500`，`paging.cursors.after` 翻頁 + 逐頁 sleep 300ms。
+2. `_lookup_action_value` 解析 `actions` / `action_values`：`omni_purchase` 對應 `omni_purchase` + `purchase` + `offsite_conversion.fb_pixel_purchase` 三個 alias 累加。
+3. `_resolve_fetch_window` 增量視窗：快取為空 → 抓 180 天全量；快取已有資料 → 只補最近 3 天（歸因回補窗口）。
+4. `repository.upsert_daily_metrics()`：dialect-aware，PostgreSQL 走 `INSERT ... ON CONFLICT (...) DO UPDATE`、SQLite 走 `ON CONFLICT DO UPDATE`（皆 SQLAlchemy 2.0 統一介面，索引元素 = `(account_id, date, campaign_id, metric_key)`）。
+5. `repository.list_campaign_summaries()`：`GROUP BY campaign_id, campaign_name` 彙總，按 spend 由大到小排序，回傳 `{campaign_id, campaign_name, spend, impressions, conversions, conversion_value, active_days, first_date, last_date}`。
+6. `router /campaigns`：`list_campaign_summaries` 結果回 200；快取為空回空 list（前端引導使用者先 refresh）。
+7. `router /data/refresh`：先同步 probe 抓一次以驗證 token（4xx 立即回應避免背景任務靜默失敗），成功後排程 `BackgroundTasks` 背景抓取 + upsert；錯誤分流：token 缺失 → 401、FB API 4xx → 原始 code、5xx → 502、網路 → 502。
+8. 錯誤型別 `ContributionTokenError` / `ContributionAPIError` / `ContributionFetchError` 皆**不含明文 token**（測試斷言）。
 
 **驗收標準**：對測試帳戶抓 180 天資料落庫，重跑不產生重複列（唯一約束生效）；token 缺失/過期回 4xx 與明確錯誤訊息（沿用 fb_ads 錯誤處理慣例），不落任何明文 token。
+
+**驗收結果**：
+- `tests/test_contribution_data_source.py` 13 項全綠：
+  - `test_lookup_action_value_omni_purchase_aggregates_aliases` 累加多個 action_type、無效 value 不 crash ✅
+  - `test_parse_insights_row_*` 解析欄位、缺 campaign/date 丟棄 ✅
+  - `test_resolve_fetch_window_*` 全量 180 天 / 增量 3 天 ✅
+  - `test_fetch_account_daily_metrics_single_page_parses_correctly` 單頁解析 + token 透傳 ✅
+  - `test_fetch_account_daily_metrics_paginates_via_cursor` 600 列分 3 頁，after cursor 翻頁 ✅
+  - `test_fetch_account_daily_metrics_token_missing_raises_token_error` 拋 ContributionTokenError ✅
+  - `test_fetch_account_daily_metrics_api_error_with_fb_code` 攜帶 http code + fb code ✅
+  - `test_fetch_account_daily_metrics_network_error_raises_fetch_error` httpx HTTPError → FetchError ✅
+  - `test_upsert_is_idempotent_no_duplicate_rows` 重複 3 次 upsert 維持 1 列、最終值正確 ✅
+  - `test_token_error_message_does_not_leak_token` / `test_api_error_message_does_not_leak_token` 錯誤訊息與 log 皆不含 `Bearer SECRET` 或 `EAA*` ✅
+- `tests/test_contribution_module.py` 11 項全綠（既有 8 項 + 新增 3 項）：
+  - `test_contribution_unimplemented_endpoints_return_501` 從清單中移除已實作的 `/campaigns` 與 `/data/refresh`，只斷言任務 1.4 仍為 501 的端點
+  - `test_contribution_campaigns_returns_empty_list_when_cache_empty` 快取空 → 200 + 空 list
+  - `test_contribution_campaigns_returns_aggregated_summaries` 多 campaign 排序、active_days 正確
+  - `test_contribution_data_refresh_token_missing_returns_4xx` 4xx 響應 + 訊息不含明文 token
+- 無回歸：module（11）+ engine（15）+ data_source（13）+ permissions/auth/health（24）= 63 項全綠。
 
 **風險/回滾**：讀取型操作，對 FB API 的量約為 fb_ads 現行日常查詢的一次性 2 頁請求，rate limit 風險低；失敗僅影響本模組。
 
