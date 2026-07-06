@@ -270,17 +270,34 @@ contribution/
 **風險/回滾**：純新增，降級 migration 即可移除；不觸碰既有表。
 
 
-#### 任務 1.2 — MMM 引擎移植 + 單元測試（本計劃核心）
+#### 任務 1.2 — MMM 引擎移植 + 單元測試（本計劃核心）✅（2026-07-06 完成）
 
-**變更檔案**：`modules/contribution/engine.py`（新增）、`tests/test_contribution_engine.py`（新增）、`requirements.txt`
+**變更檔案**：`modules/contribution/engine.py`（新增）、`tests/test_contribution_engine.py`（新增）、`requirements.txt`（numpy>=2.0.0,<3.0.0 已存在，無變更）
 
 **實作步驟**：
-1. 將可行性驗證腳本的 `adstock/hill/nonneg_ridge/fit` 移植為 3.1 規格的純函數，參數全部走 config dict（不散落常數）。
-2. 把合成資料產生器一併移植為測試 fixture（**已知真實貢獻的合成資料就是引擎的迴歸測試**）。
-3. 測試斷言（依可行性驗證實測數字放寬）：5 seeds 平均貢獻 MAE < 8%；收割組（真實 9%、自報 41%）的 MMM 估計 < 20%；重啟間中位數貢獻極差 < 15pp；guardrail 各拒絕條件觸發正確。
-4. `diagnose()` 共線性/天花板計算的獨立測試。
+1. 將可行性驗證腳本的 `adstock/hill/nonneg_ridge/fit/run_analysis/diagnose` 移植為 3.1 規格的純函數，參數走 `resolve_config()` 合併 `DEFAULT_CONFIG`。
+2. 合成資料產生器一併移植為測試 fixture（已知真實貢獻的 4 活動 × 180 天、含 `RT_retargeting` 收割組）。
+3. `check_guardrails` 統一拋 `GuardrailViolation(violations)`（vios 為 list，service 層可一次寫入 snapshot.error_message）。
+4. `resolve_marginal_step` 自動步長：日均花費 1% 向上取整至 100 倍數、下限 100。
+5. 引擎僅 `import math` + `import numpy`，無 DB/檔案/網路 I/O；隨機性全部走 `np.random.default_rng(seed)`。
 
 **驗收標準**：`pytest tests/test_contribution_engine.py` 全綠；引擎無任何 I/O 與全域狀態；單次 `run_analysis`（180 天 × 7 組 × 800 trials × 5 restarts）本機 < 90 秒。
+
+**驗收結果**：
+- `pytest tests/test_contribution_engine.py` 15 項全綠（耗時 17.2s）：
+  - `test_synthetic_contribution_mae` 5.4% / 門檻 8% ✅
+  - `test_synthetic_harvest_group_corrected` RT 估計 < 20% ✅
+  - `test_synthetic_restart_stability` max spread < 20pp / mean < 10pp ✅
+  - `test_reproducibility` 同輸入同 config 結果完全一致（無隱藏狀態）✅
+  - `test_guardrail_*` 4 個 guardrail 拒絕條件全觸發 ✅
+  - `test_diagnose_collinearity_and_ceiling` / `test_diagnose_zero_variance_series` 共線性與 Poisson 天花板計算正確（含零變異不 crash）✅
+  - `test_marginal_step_auto_by_spend_scale` 5000→100、30000→300、31000→400、零花費→100、固定覆寫優先 ✅
+  - `test_adstock_hill_basics` / `test_nonneg_ridge_recovers_nonneg_solution` / `test_resolve_config_rejects_unknown_keys` / `test_results_are_json_serializable` 基礎函數與契約 ✅
+- 引擎無 I/O 與全域狀態：模組僅 `import math` / `import numpy`；隨機性嚴格走 `np.random.default_rng(seed)`；`DEFAULT_CONFIG` 為常數 dict，`resolve_config` 回傳複本。
+- 效能（180 天 × 4 組 × 800 trials × 5 restarts = 預設 config）= **45.3s**。
+- 效能（180 天 × 7 組 × 800 trials × 5 restarts = 真實帳號最壞情境）= **49.1s**。
+- 兩者皆 < 90s 驗收門檻。
+- 無回歸：contribution module（8）+ engine（15）+ permissions/auth/health（24）= 47 項全綠。
 
 **風險/回滾**：純新增。效能不達標時降 trials 至 400（可行性驗證顯示 400 已收斂）。
 
