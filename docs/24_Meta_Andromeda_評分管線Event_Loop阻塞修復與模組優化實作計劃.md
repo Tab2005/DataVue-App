@@ -1,7 +1,7 @@
 # Meta Andromeda 評分管線 Event Loop 阻塞修復與模組優化實作計劃
 
 日期：2026-07-07
-狀態：**Wave 1、Wave 2 已完成並驗證（2026-07-07）**；Wave 3 未動工
+狀態：**Wave 1、Wave 2、Wave 3 已全部完成並驗證（2026-07-07）**
 
 ## 1. 問題確認
 
@@ -159,13 +159,15 @@ Wave 2 拆分 worker process 時，這個限制會自然消失——因為屆時
 3. **同 module 內函式呼叫的 monkeypatch 陷阱**：`queue_host.py` 的 `_schedule_observation_import_message` 用 `from core.scheduler import add_meta_andromeda_observation_import_job` 做**函式內部 lazy import**（而非模組頂層 import），這是刻意的——測試才能透過 `monkeypatch.setattr(scheduler_module, "add_meta_andromeda_observation_import_job", fake_fn)` 生效（若改成模組頂層 import 並直接引用該名稱，monkeypatch 目標模組的屬性不會影響已經綁定的區域變數）。
 4. **`stream` 訊息的 `kind` 欄位向後相容**：舊訊息（Wave 2 之前產生、堆積在 stream 裡尚未消費的）沒有 `kind` 欄位，`_schedule_redis_stream_message` 對缺 `kind` 的訊息預設當作評分事件處理，不會誤判或遺失。
 
-### Wave 3：前端防禦 + 問題二清理
+### Wave 3：前端防禦 + 問題二清理 **【已完成 2026-07-07】**
 
-| # | 任務 | 檔案 | 內容 |
+| # | 任務 | 檔案 | 狀態 |
 |---|---|---|---|
-| 3.1 | 模組權限 sessionStorage 快取 | `frontend/src/hooks/usePermission.jsx` | `useModuleAccess` 比照 `useUserModules` 既有 pattern：先讀 sessionStorage 快取立即渲染，背景 revalidate 更新；權限被撤銷時最多一個 session 的顯示延遲（後端 API 仍會 403，僅影響 UI gate） |
-| 3.2 | 權限請求逾時 | `frontend/src/hooks/usePermission.jsx` | `fetchWithRetry` 加 `AbortSignal.timeout`（例如 10s），逾時顯示可重試的錯誤狀態而非永久轉圈 |
-| 3.3 | 問題二 P1 殘項清理 | 見第 6 節 | 原 P1 四項中三項（`runtime.py` 的 typo 死碼／無意義 sleep／log level）已隨 Wave 1 一併修掉，僅剩 `analytics_service.py` 的 `debug_fields.log` 殘留待清 |
+| 3.1 | 模組權限 sessionStorage 快取 | `frontend/src/hooks/usePermission.jsx` | ✅ `useModuleAccess` 新增 `buildModuleAccessCacheKey(moduleKey, teamId)`；`hasAccess`/`loading` 的初始值改由 sessionStorage 快取決定——有快取時 `loading` 直接是 `false`，`ProtectedModule` 立即渲染快取結果，背景仍會重打 API revalidate；沒有快取才顯示「載入中」。比原計畫描述的「跟 `useUserModules` 一樣先讀快取」更進一步：`useUserModules` 只是把 `modules` 初值換成快取值，`loading` 仍固定從 `true` 開始；這裡額外讓 `loading` 也跟著快取存在與否走，才能真正做到「立即渲染、不轉圈」 |
+| 3.2 | 權限請求逾時 | `frontend/src/hooks/usePermission.jsx` | ✅ `fetchWithRetry` 每次嘗試都掛 `AbortSignal.timeout(10000)`；`ProtectedModule` 新增「⚠️ 連線逾時」分支（`error && !hasAccess`），跟原本「🔒 存取受限」畫面分開，附「重新整理」按鈕，避免逾時被誤讀成沒有權限 |
+| 3.3 | 問題二 P1 殘項清理 | `modules/fb_ads/analytics_service.py` | ✅ 移除 `debug_fields.log` 同步寫檔（連同變成無用的 `from datetime import datetime` 一併清掉）；P1 四項至此全數修復完畢 |
+
+驗收：`npm run build` 通過；`npx eslint src/hooks/usePermission.jsx` 錯誤數與改動前一致（5 個，皆為既有的 `react-refresh/only-export-components` 規則，非本次引入）；`backend/tests/test_report_service.py`（唯一涉及 `get_custom_report` 的測試）通過；全量 `pytest tests/` 17 個失敗與 Wave 2 完成時完全一致（環境既有問題，非本次改動導致）。
 
 ## 6. 問題二：模組優化盤點清單
 
@@ -176,7 +178,7 @@ Wave 2 拆分 worker process 時，這個限制會自然消失——因為屆時
 | typo 產生的死碼 | `runtime.py`（原 1404 行） | `META_ANDROMENS_SCORING_ALLOW_FALLBACK` 拼錯 + `hasattr` 三元式，實際永遠走正確設定，但可讀性極差 | 直接改為 `if not settings.META_ANDROMEDA_SCORING_ALLOW_FALLBACK: raise` | ✅ 已隨 Wave 1（1.1）修復 |
 | log level 不當 | `runtime.py`（原 1378 行） | 每次評分都以 `logger.warning` 印 API key 長度等常態資訊 | 降為 `logger.debug` | ✅ 已隨 Wave 1（1.1）修復 |
 | 無意義延遲 | `runtime.py`（原 1283 行） | `generate_score_result` 開頭 `await asyncio.sleep(0.05)` 無明顯用途 | 刪除 | ✅ 已隨 Wave 1（1.1）修復 |
-| 殘留 debug 碼 | `modules/fb_ads/analytics_service.py:231-235` | 每次報表請求同步 append 寫 `debug_fields.log`，在高頻路徑上 | 移除（或改 `logger.debug`） | ⏳ 待 Wave 3.3 處理（非本次 event loop 阻塞範圍，fb_ads 模組） |
+| 殘留 debug 碼 | `modules/fb_ads/analytics_service.py`（原 231-235 行） | 每次報表請求同步 append 寫 `debug_fields.log`，在高頻路徑上 | 移除 | ✅ 已隨 Wave 3.3 修復 |
 
 ### P2 — 效能與體驗（獨立立案，不阻塞本計劃）
 
@@ -200,7 +202,7 @@ Wave 2 拆分 worker process 時，這個限制會自然消失——因為屆時
 | threadpool 耗盡（大量並發評分各佔一個 thread） | 評分並發已被 semaphore 限制在 2、匯入 5，遠低於預設 threadpool 上限；不需自訂 executor |
 | `web` 角色誤部署但沒跑 worker → 評分永遠 queued | ✅ 已實作：`worker_main.py` 的 `/healthz` 回報 `scheduler.running`／`redis` 狀態；docs/10 2.4 節文件寫明環境變數矩陣與部署後驗證步驟；troubleshooting 新增專門排查 TIP |
 | stream 訊息格式加 `kind` 欄位的相容性 | ✅ 已實作：consumer 對缺 `kind` 的舊訊息預設當評分事件處理（向後相容） |
-| 前端權限快取造成撤權顯示延遲 | 僅快取 UI gate，後端 API 權限檢查不變；快取 key 含 team_id，切團隊即失效 |
+| 前端權限快取造成撤權顯示延遲 | ✅ 已實作：僅快取 UI gate，後端 API 權限檢查不變；快取 key 含 team_id，切團隊即失效；背景 revalidate 完成後會覆蓋快取值 |
 
 ## 8. 里程碑
 
@@ -208,6 +210,15 @@ Wave 2 拆分 worker process 時，這個限制會自然消失——因為屆時
 |---|---|---|---|---|
 | Wave 1 | to_thread 止血 + 迴歸測試 | 0.5–1 天 | ✅（上線後症狀即消失） | **已完成（2026-07-07）** |
 | Wave 2 | SERVICE_ROLE + worker_main + 匯入走 queue + 部署 | 2–3 天 | ✅（需 Zeabur 加開 worker service，見 docs/10 2.4 節） | **已完成（2026-07-07）**，實際 staging 雙 service 部署驗證留待上線時執行 |
-| Wave 3 | 前端快取/逾時 + P1 清理 | 0.5 天 | ✅ | 未動工 |
+| Wave 3 | 前端快取/逾時 + P1 清理 | 0.5 天 | ✅ | **已完成（2026-07-07）** |
 
-依賴關係：Wave 1 → Wave 2（1.1–1.4 的包裝在 worker 內同樣必要，已隨 Wave 2 沿用）；Wave 3 與 Wave 2 無相依，可並行。
+依賴關係：Wave 1 → Wave 2（1.1–1.4 的包裝在 worker 內同樣必要，已隨 Wave 2 沿用）；Wave 3 與 Wave 2 無相依，已並行完成。
+
+## 9. 總結
+
+三波全部完成，問題一（Andromeda 分頁卡在權限讀取）與問題二（模組優化盤點）的 P1 項目已全數修復：
+- **短期止血**（Wave 1）：評分/匯入 pipeline 的同步阻塞段全部 `asyncio.to_thread` 化，單 process 模式下也不會卡住 event loop。
+- **長期架構**（Wave 2）：新增 `SERVICE_ROLE` 角色切換與獨立的 `worker_main.py`，評分/匯入負載可以完全隔離到獨立 process；是否實際拆分部署為選配（見 docs/10 2.4 節與 2.4.4 節的降級路徑），視流量與資源需求決定。
+- **前端防禦與清理**（Wave 3）：`ProtectedModule` 改為快取優先渲染，且對逾時/存取被拒兩種情境給出不同訊息；`analytics_service.py` 的殘留 debug 碼已清除。
+
+P2（大檔記憶體壓力、匯入 fallback 逐筆打 FB API、`repository.py`/`runtime.py` 檔案過大）與 P3（`is_promoted` per-base-profile）維持獨立追蹤，不阻塞本計劃結案。

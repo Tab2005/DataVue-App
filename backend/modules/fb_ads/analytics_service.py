@@ -8,7 +8,6 @@ import sys
 import asyncio
 import logging
 import httpx
-from datetime import datetime
 
 logger = logging.getLogger(__name__)
 
@@ -227,12 +226,6 @@ async def get_custom_report(
     headers = get_headers(user_id, team_id, allow_fallback=not strict_token)
     if not headers:
         return None
-
-    try:
-        with open("debug_fields.log", "a") as f:
-            f.write(f"[{datetime.now()}] Requesting fields: {custom_fields}\n")
-    except Exception:
-        pass
 
     dynamic_fields = build_fb_fields(custom_fields, level=level)
 
