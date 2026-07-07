@@ -63,13 +63,17 @@ class AnalysisCreateRequest(BaseModel):
     date_start: str
     date_end: str
     metric_key: str = "omni_purchase"
-    n_restarts: int = 5
+    n_restarts: int | None = Field(default=None, ge=1, le=20)
+    holdout_days: int | None = Field(default=None, ge=7, le=180)
+    marginal_step: float | None = Field(default=None, gt=0)
 
 
 class AnalysisCreateResponse(BaseModel):
     snapshot_id: str
     status: str
     account_id: str
+    queue_host: str
+    message: str
 
 
 class AnalysisSummary(BaseModel):
@@ -80,6 +84,7 @@ class AnalysisSummary(BaseModel):
     date_end: str
     created_at: datetime | None = None
     completed_at: datetime | None = None
+    error_message: str | None = None
 
 
 class AnalysisListResponse(BaseModel):

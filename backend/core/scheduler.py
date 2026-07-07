@@ -33,6 +33,7 @@ META_ANDROMEDA_QUEUE_SWEEP_JOB_ID = "ma_queue_sweeper"
 META_ANDROMEDA_REDIS_STREAM_CONSUMER_JOB_ID = "ma_redis_stream_consumer"
 META_ANDROMEDA_REDIS_STREAM_RECLAIM_JOB_ID = "ma_redis_stream_reclaim"
 META_ANDROMEDA_WEEKLY_CLOSED_LOOP_JOB_ID = "ma_weekly_closed_loop"
+CONTRIBUTION_ANALYSIS_JOB_PREFIX = "ca_analysis"
 
 
 def is_scheduler_enabled() -> bool:
@@ -53,6 +54,11 @@ def get_job_id(schedule_id: str) -> str:
 def get_meta_andromeda_score_job_id(score_event_id: str) -> str:
     """Meta Andromeda score worker job id."""
     return f"ma_score_{score_event_id}"
+
+
+def get_contribution_analysis_job_id(snapshot_id: str) -> str:
+    """Contribution MMM analysis job id."""
+    return f"{CONTRIBUTION_ANALYSIS_JOB_PREFIX}_{snapshot_id}"
 
 
 def _now_local_aware() -> datetime:
@@ -357,6 +363,17 @@ async def process_meta_andromeda_score_event(score_event_id: str, queue_host: st
     await MetaAndromedaService.process_score_event(score_event_id, queue_host=queue_host)
 
 
+async def process_contribution_analysis(snapshot_id: str) -> None:
+    """Process a queued Contribution MMM analysis snapshot.
+
+    入口由 `add_contribution_analysis_job()` 註冊；service 層若 scheduler 不可用
+    會改走 local async fallback（in-process task），不走此函式。
+    """
+    from modules.contribution.service import process_analysis
+
+    await process_analysis(snapshot_id)
+
+
 async def sweep_meta_andromeda_queue() -> None:
     """Sweep queued Meta Andromeda records for database-backed queue hosting."""
     from database.models.meta_andromeda import MetaAndromedaScoreEvent
@@ -496,6 +513,40 @@ def add_meta_andromeda_score_job(score_event_id: str, delay_seconds: float = 1, 
         max_instances=1,
     )
     logger.info("⏰ [MetaAndromeda] Score job added: %s for %s (delay=%ss)", job_id, score_event_id, delay_seconds)
+    return job
+
+
+def add_contribution_analysis_job(snapshot_id: str, delay_seconds: float = 1):
+    """Enqueue a one-off Contribution MMM analysis job on the shared scheduler.
+
+    Scheduler 不可用時回 None（呼叫端應改走 local async fallback，見
+    modules.contribution.service._dispatch_analysis）。
+    """
+    if not is_scheduler_enabled() or not scheduler.running:
+        logger.info(
+            "⏰ [Contribution] Scheduler unavailable. Caller should use local async fallback for %s.",
+            snapshot_id,
+        )
+        return None
+    run_at = datetime.now(_LOCAL_TIMEZONE) + timedelta(seconds=delay_seconds)
+    job_id = get_contribution_analysis_job_id(snapshot_id)
+    job = scheduler.add_job(
+        process_contribution_analysis,
+        trigger="date",
+        run_date=run_at,
+        args=[snapshot_id],
+        id=job_id,
+        replace_existing=True,
+        misfire_grace_time=DEFAULT_MISFIRE_GRACE_TIME,
+        coalesce=True,
+        max_instances=1,
+    )
+    logger.info(
+        "⏰ [Contribution] Analysis job added: %s for snapshot %s (delay=%ss)",
+        job_id,
+        snapshot_id,
+        delay_seconds,
+    )
     return job
 
 

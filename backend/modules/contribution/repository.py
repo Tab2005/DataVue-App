@@ -1,14 +1,13 @@
 """
-Contribution Module - DB-backed repository（docs/21 任務 1.1 骨架）
+Contribution Module - DB-backed repository（docs/21）
 
-第 1 波任務 1.1：僅建立 ORM 存取的最小骨架（snapshot 狀態流轉、daily metrics
-upsert、group CRUD 的方法簽名）。實際 upsert / 分組 / 編排邏輯於任務 1.3、1.4
-填入；本檔先提供：
-  - create_snapshot / get_snapshot / list_snapshots / set_snapshot_status
-  - upsert_daily_metrics / list_campaign_summaries
-  - get_groups / upsert_groups
-並以 stub（raise NotImplementedError）標示本波不實作的部分，讓 router 的 501
-路徑有明確的「未實作」邊界，而非散落的空行為。
+提供：
+  - snapshot 狀態流轉（create / get / list / set status）
+  - daily metrics upsert / list campaign summaries
+  - 分組讀寫（get_groups / upsert_groups）+ manual 編輯時的 campaign 集合驗證
+
+所有方法皆不自行 commit，由 service 層控制交易邊界（同 Meta Andromeda
+repository 慣例）。
 """
 
 import logging
@@ -241,15 +240,40 @@ class ContributionRepository:
             for r in rows
         ]
 
-    # ── Campaign groups（任務 1.4 實作分組讀寫） ────────────────────────
+    # ── 分組讀寫（任務 1.4 實作） ───────────────────────────────
     def get_groups(
         self,
         db: Session,
         *,
         account_id: str,
     ) -> list[ContributionCampaignGroup]:
-        """讀取分組；無則回空 list（由 service 觸發自動分組）。任務 1.4 實作。"""
-        raise NotImplementedError("get_groups 由任務 1.4 實作")
+        """讀取該帳戶的分組（含 auto 與 manual），依 `group_key` 排序。
+
+        若無資料回空 list，由 service 層決定是否觸發 auto_group() 並寫入。
+        """
+        stmt = (
+            select(ContributionCampaignGroup)
+            .where(ContributionCampaignGroup.account_id == account_id)
+            .order_by(ContributionCampaignGroup.group_key.asc())
+        )
+        return list(db.scalars(stmt).all())
+
+    def get_active_group_source(
+        self,
+        db: Session,
+        *,
+        account_id: str,
+    ) -> str:
+        """回傳目前「生效中」的分組 source：有 manual 則 manual、否則 auto、否則 'none'。"""
+        stmt = select(ContributionCampaignGroup.source).where(
+            ContributionCampaignGroup.account_id == account_id
+        )
+        sources = {row for row in db.scalars(stmt).all() if row}
+        if "manual" in sources:
+            return "manual"
+        if "auto" in sources:
+            return "auto"
+        return "none"
 
     def upsert_groups(
         self,
@@ -259,8 +283,74 @@ class ContributionRepository:
         groups: list[dict[str, Any]],
         updated_by: str | None = None,
     ) -> list[ContributionCampaignGroup]:
-        """整批覆寫分組（前端編輯後提交）。任務 1.4 實作。"""
-        raise NotImplementedError("upsert_groups 由任務 1.4 實作")
+        """整批覆寫分組：先刪除該帳戶既有列，再依 `groups` 寫入新列。
+
+        groups 為 list[dict]，每個 dict 含 keys：
+          `group_key` / `group_name` / `campaign_ids` / `source`
+        service 層已用 `grouping.validate_manual_groups` 校驗過合法性；本方法
+        僅負責寫入。
+
+        回傳新寫入的 ORM 物件 list（依 group_key 排序）。
+        """
+        # 刪除既有列（account_id 範圍）
+        existing = (
+            db.query(ContributionCampaignGroup)
+            .filter(ContributionCampaignGroup.account_id == account_id)
+            .all()
+        )
+        for row in existing:
+            db.delete(row)
+        db.flush()
+
+        now_expr = func.current_timestamp()
+        new_rows: list[ContributionCampaignGroup] = []
+        for g in groups:
+            row = ContributionCampaignGroup(
+                account_id=account_id,
+                group_key=str(g["group_key"]),
+                group_name=str(g["group_name"]),
+                campaign_ids=list(g.get("campaign_ids") or []),
+                source=str(g.get("source") or "manual"),
+                updated_by=updated_by,
+                created_at=now_expr,
+                updated_at=now_expr,
+            )
+            db.add(row)
+            new_rows.append(row)
+        db.flush()
+        # 重排：依 group_key
+        new_rows.sort(key=lambda r: r.group_key)
+        return new_rows
+
+    def get_groups_by_source(
+        self,
+        db: Session,
+        *,
+        account_id: str,
+        source: str,
+    ) -> list[ContributionCampaignGroup]:
+        """讀取指定 source 的分組（service 用以分辨 manual / auto）。"""
+        stmt = (
+            select(ContributionCampaignGroup)
+            .where(
+                ContributionCampaignGroup.account_id == account_id,
+                ContributionCampaignGroup.source == source,
+            )
+            .order_by(ContributionCampaignGroup.group_key.asc())
+        )
+        return list(db.scalars(stmt).all())
+
+    # ── Snapshot 列表分頁（任務 1.4 加強） ─────────────────────────
+    def count_snapshots(
+        self,
+        db: Session,
+        *,
+        account_id: str,
+    ) -> int:
+        stmt = select(func.count(ContributionSnapshot.id)).where(
+            ContributionSnapshot.account_id == account_id
+        )
+        return int(db.execute(stmt).scalar() or 0)
 
 
 repository = ContributionRepository()

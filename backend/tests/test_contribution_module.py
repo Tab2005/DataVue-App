@@ -1,11 +1,12 @@
 """
-Contribution 模組任務 1.1 + 1.3 驗收測試（docs/21）
+Contribution 模組任務 1.1 / 1.3 / 1.4 驗收測試（docs/21）
 
 驗收標準：
-  1.1 /api/contribution/* 未授權回 403、授權後 /ping 回 200、其餘端點回 501
+  1.1 /api/contribution/* 未授權回 403、授權後 /ping 回 200
   1.1 管理後台可見「貢獻分析」模組並可指派權限（Module seed enabled=True）
   1.1 三張 contribution_* 資料表可建立 ORM 物件（migration + model 對齊）
   1.3 /campaigns 由快取表 GROUP BY 彙總；/data/refresh 背景抓取 + 4xx token
+  1.4 /groups 自動分組 + 手動覆寫；/analyses 編排 + scheduler/local fallback
 """
 
 from unittest.mock import patch
@@ -103,37 +104,56 @@ def test_contribution_ping_returns_ok_when_authorized(contribution_authorized_cl
 
 
 @pytest.mark.integration
-def test_contribution_unimplemented_endpoints_return_501(contribution_authorized_client):
-    """任務 1.1–1.3 已實作 `/ping` / `/campaigns` / `/data/refresh`；其餘端點
-    （分組讀寫、分析編排）由任務 1.4 實作，目前應回 501。"""
+def test_contribution_analyses_get_list_and_detail(
+    contribution_authorized_client, db, sample_user
+):
+    """GET /analyses 分頁 + GET /analyses/{id} 單筆。"""
+    from database.models.contribution import ContributionSnapshot
+    from modules.contribution.repository import repository
+
+    # 建 3 個 snapshot
+    for i in range(3):
+        snap = repository.create_snapshot(
+            db,
+            account_id="act_list1",
+            date_start="2026-01-01",
+            date_end="2026-06-30",
+            config={"n_restarts": 5},
+            created_by=sample_user.id,
+        )
+        repository.set_snapshot_status(
+            db,
+            snap.id,
+            status="completed",
+            results={"G1": {"median": 0.5 + i * 0.05}},
+            diagnostics={"data_summary": {"days": 180}},
+        )
+    db.commit()
+
     client, _ = contribution_authorized_client
+    # 列表
+    resp = client.get("/api/contribution/analyses?account_id=act_list1&page=1&page_size=2")
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["total"] == 3
+    assert len(body["analyses"]) == 2
 
-    # GET 類（task 1.4 尚未實作）
-    for path in [
-        "/api/contribution/groups?account_id=act_1",
-        "/api/contribution/analyses?account_id=act_1",
-        "/api/contribution/analyses/csn_dummy",
-    ]:
-        resp = client.get(path)
-        assert resp.status_code == 501, f"GET {path} expected 501, got {resp.status_code}"
+    # 單筆
+    first_id = body["analyses"][0]["snapshot_id"]
+    resp = client.get(f"/api/contribution/analyses/{first_id}")
+    assert resp.status_code == 200
+    detail = resp.json()
+    assert detail["status"] == "completed"
+    assert detail["results"]["G1"]["median"] >= 0.5
 
-    # POST /analyses → 501（注意：端點宣告 status_code=202，但本波主動拋 501）
-    resp = client.post(
-        "/api/contribution/analyses",
-        json={
-            "account_id": "act_1",
-            "date_start": "2026-01-01",
-            "date_end": "2026-06-30",
-        },
-    )
-    assert resp.status_code == 501
+    # 不存在 → 404
+    resp = client.get("/api/contribution/analyses/csn_nonexistent")
+    assert resp.status_code == 404
 
-    # PUT /groups → 501
-    resp = client.put(
-        "/api/contribution/groups",
-        json={"account_id": "act_1", "groups": []},
-    )
-    assert resp.status_code == 501
+    db.query(ContributionSnapshot).filter(
+        ContributionSnapshot.account_id == "act_list1"
+    ).delete()
+    db.commit()
 
 
 # ── 任務 1.3 驗收：/campaigns 與 /data/refresh 實作 ──────────────────

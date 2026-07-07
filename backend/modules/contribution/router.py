@@ -34,6 +34,8 @@ from .schemas import (
     AnalysisCreateResponse,
     AnalysisDetailResponse,
     AnalysisListResponse,
+    AnalysisSummary,
+    CampaignGroup,
     CampaignListResponse,
     CampaignSummary,
     DataRefreshResponse,
@@ -41,6 +43,17 @@ from .schemas import (
     GroupsUpdateRequest,
     GroupsUpdateResponse,
     PingResponse,
+)
+from .service import (
+    GroupValidationRejected,
+    GuardrailRejected,
+    SnapshotNotFound,
+    create_analysis,
+    get_or_create_groups,
+    get_snapshot,
+    list_groups,
+    list_snapshots,
+    update_groups,
 )
 
 logger = logging.getLogger(__name__)
@@ -91,24 +104,71 @@ async def get_groups(
     _access: bool = Depends(require_contribution_module),
     db=Depends(get_db),
 ):
-    """讀取活動分組；無則觸發自動分組並回傳。任務 1.4 實作。"""
-    raise HTTPException(
-        status_code=status.HTTP_501_NOT_IMPLEMENTED,
-        detail="contribution.groups 由任務 1.4（分組與分析編排）實作",
+    """讀取活動分組；無則觸發自動分組並回傳。
+
+    觸發規則（service.get_or_create_groups）：
+      - 有 manual → 回 manual
+      - 僅有 auto → 回 auto
+      - 完全無 → 跑 grouping.auto_group() 並寫入
+    """
+    user_id = getattr(_user, "google_id", None) or getattr(_user, "id", None)
+    rows = get_or_create_groups(db, account_id=account_id, updated_by=user_id)
+    source = "manual" if any(r.source == "manual" for r in rows) else "auto"
+    return GroupsResponse(
+        account_id=account_id,
+        groups=[
+            CampaignGroup(
+                group_key=r.group_key,
+                group_name=r.group_name,
+                campaign_ids=list(r.campaign_ids or []),
+                source=r.source,
+            )
+            for r in rows
+        ],
+        source=source if rows else "auto",
     )
 
 
 @router.put("/groups", response_model=GroupsUpdateResponse)
-async def update_groups(
+async def update_groups_endpoint(
     body: GroupsUpdateRequest,
-    _user=Depends(get_current_contribution_user),
+    user=Depends(get_current_contribution_user),
     _access: bool = Depends(require_contribution_operate),
     db=Depends(get_db),
 ):
-    """覆寫分組（前端編輯後整批提交）。任務 1.4 實作。"""
-    raise HTTPException(
-        status_code=status.HTTP_501_NOT_IMPLEMENTED,
-        detail="contribution.groups (PUT) 由任務 1.4（分組與分析編排）實作",
+    """覆寫分組（前端編輯後整批提交）；寫入後 source='manual'。
+
+    驗證規則（grouping.validate_manual_groups）：
+      - group_key 不可重複
+      - 全部活動 ID 必須屬於該帳戶、不可丟失
+    失敗回 422（語義錯誤）並列出原因。
+    """
+    user_id = getattr(user, "google_id", None) or getattr(user, "id", None)
+    payload = [g.model_dump() for g in body.groups]
+    try:
+        rows = update_groups(
+            db,
+            account_id=body.account_id,
+            groups_payload=payload,
+            updated_by=user_id,
+        )
+    except GroupValidationRejected as exc:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail={"errors": exc.errors, "missing": exc.missing},
+        ) from exc
+    return GroupsUpdateResponse(
+        account_id=body.account_id,
+        groups=[
+            CampaignGroup(
+                group_key=r.group_key,
+                group_name=r.group_name,
+                campaign_ids=list(r.campaign_ids or []),
+                source=r.source,
+            )
+            for r in rows
+        ],
+        updated_count=len(rows),
     )
 
 
@@ -117,16 +177,56 @@ async def update_groups(
     response_model=AnalysisCreateResponse,
     status_code=status.HTTP_202_ACCEPTED,
 )
-async def create_analysis(
+async def create_analysis_endpoint(
     body: AnalysisCreateRequest,
-    _user=Depends(get_current_contribution_user),
+    user=Depends(get_current_contribution_user),
     _access: bool = Depends(require_contribution_operate),
     db=Depends(get_db),
 ):
-    """發起 MMM 分析（背景任務，回 202 + snapshot_id）。任務 1.4 實作。"""
-    raise HTTPException(
-        status_code=status.HTTP_501_NOT_IMPLEMENTED,
-        detail="contribution.analyses (POST) 由任務 1.4（分組與分析編排）實作",
+    """發起 MMM 分析（背景任務）。
+
+    流程：guardrail 預檢 → 建 snapshot(status=queued) → 排程
+    （apscheduler → local_async fallback）。回 202 + snapshot_id；
+    前端以 GET /analyses/{snapshot_id} 輪詢狀態。
+    """
+    user_id = getattr(user, "google_id", None) or getattr(user, "id", None)
+    try:
+        snapshot, queue_host, _mode = create_analysis(
+            db,
+            account_id=body.account_id,
+            date_start=body.date_start,
+            date_end=body.date_end,
+            metric_key=body.metric_key,
+            n_restarts=body.n_restarts,
+            holdout_days=body.holdout_days,
+            marginal_step=body.marginal_step,
+            created_by=user_id,
+        )
+    except GuardrailRejected as exc:
+        # 422 語義錯誤（資料量不足等）
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail={"errors": exc.violations},
+        ) from exc
+
+    if queue_host == "unavailable":
+        # scheduler 與 local loop 都不可用：仍建了 snapshot，但明示前端需重試
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="排程器與本機 fallback 皆不可用，請稍後重試",
+        )
+
+    msg = {
+        "apscheduler": f"已加入背景排程（{snapshot.id}）",
+        "local_async": f"已於本機事件迴圈啟動背景分析（{snapshot.id}）",
+    }.get(queue_host, f"已啟動分析（{snapshot.id}）")
+
+    return AnalysisCreateResponse(
+        snapshot_id=snapshot.id,
+        status=snapshot.status,
+        account_id=snapshot.account_id,
+        queue_host=queue_host,
+        message=msg,
     )
 
 
@@ -139,10 +239,26 @@ async def list_analyses(
     _access: bool = Depends(require_contribution_module),
     db=Depends(get_db),
 ):
-    """分析列表（分頁）。任務 1.4 實作。"""
-    raise HTTPException(
-        status_code=status.HTTP_501_NOT_IMPLEMENTED,
-        detail="contribution.analyses (GET list) 由任務 1.4（分組與分析編排）實作",
+    """分析列表（分頁）。"""
+    items, total = list_snapshots(
+        db, account_id=account_id, page=page, page_size=page_size
+    )
+    return AnalysisListResponse(
+        account_id=account_id,
+        analyses=[
+            AnalysisSummary(
+                snapshot_id=s.id,
+                account_id=s.account_id,
+                status=s.status,
+                date_start=s.date_start,
+                date_end=s.date_end,
+                created_at=s.created_at,
+                completed_at=s.completed_at,
+                error_message=s.error_message,
+            )
+            for s in items
+        ],
+        total=total,
     )
 
 
@@ -153,10 +269,27 @@ async def get_analysis(
     _access: bool = Depends(require_contribution_module),
     db=Depends(get_db),
 ):
-    """單筆分析結果（含 results/diagnostics；processing 時前端輪詢）。任務 1.4 實作。"""
-    raise HTTPException(
-        status_code=status.HTTP_501_NOT_IMPLEMENTED,
-        detail="contribution.analyses/{id} 由任務 1.4（分組與分析編排）實作",
+    """單筆分析結果（含 results/diagnostics；processing 時前端輪詢）。"""
+    try:
+        s = get_snapshot(db, snapshot_id)
+    except SnapshotNotFound:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"snapshot {snapshot_id} 不存在",
+        )
+    return AnalysisDetailResponse(
+        snapshot_id=s.id,
+        account_id=s.account_id,
+        status=s.status,
+        date_start=s.date_start,
+        date_end=s.date_end,
+        config=s.config or {},
+        results=s.results,
+        diagnostics=s.diagnostics,
+        error_message=s.error_message,
+        runtime_job_id=s.runtime_job_id,
+        created_at=s.created_at,
+        completed_at=s.completed_at,
     )
 
 

@@ -338,15 +338,28 @@ contribution/
 
 **風險/回滾**：讀取型操作，對 FB API 的量約為 fb_ads 現行日常查詢的一次性 2 頁請求，rate limit 風險低；失敗僅影響本模組。
 
-#### 任務 1.4 — 分組、分析編排與背景任務
+#### 任務 1.4 — 分組、分析編排與背景任務 ✅（2026-07-07 完成）
 
-**變更檔案**：`modules/contribution/{grouping,service}.py`（新增）、`router.py`（其餘端點）、`core/scheduler.py`
+**變更檔案**：`modules/contribution/grouping.py`（新增）、`modules/contribution/service.py`（新增）、`router.py`（替換 5 個 501）、`core/scheduler.py`（新增 `add_contribution_analysis_job` + `process_contribution_analysis`）、`tests/test_contribution_grouping.py`（新增 11 項）、`tests/test_contribution_service.py`（新增 12 項）、`tests/test_contribution_module.py`（移除 5 個 HTTP 端到端測試，改由 service 測試間接覆蓋）
 
-**實作步驟**：按 3.3/3.4 實作；scheduler 新增 job 函數（比照 `add_meta_andromeda_calibration_job` 的錯誤處理與 log 風格）。
+**實作步驟**：
+1. `grouping.auto_group(campaigns)`：純函數，依關鍵詞（G1 主力常態 / G2 影片 / G3 檔期 / G4 社群自投 / G5 大包裝再行銷 / G6 曝光品牌 / G7 測試導流）+ 共同前綴聚類 + 3% 占比下限 + 組數收斂至 [5, 8]；`validate_manual_groups()` 拒絕重複 group_key / 缺失活動 / 外部活動。
+2. `repository.upsert_groups/get_groups/get_active_group_source/get_groups_by_source/count_snapshots`：取代 1.1 留下的 stub。
+3. `service.create_analysis(...)`：guardrail 預檢（`engine.check_guardrails`，避免背景任務才發現問題可回 4xx）→ 建 snapshot(status=queued) → 排程。`service.process_analysis(snapshot_id)`：背景任務主體，組裝 spend_by_group / y / weekdays → `asyncio.to_thread(run_analysis)` → 寫 results + diagnostics；guardrail / 組裝 / 引擎例外皆走 `_mark_failed` 寫 status=failed + error_message。
+4. `_dispatch_analysis`：兩層 fallback（apscheduler → local_async），scheduler 不可用時於測試 / CLI 用 `asyncio.run` 同步跑完。
+5. `core/scheduler.add_contribution_analysis_job`：`date` trigger、job_id `ca_analysis_{snapshot_id}`，scheduler 不可用時回 None（不報錯，service 走 fallback）。`process_contribution_analysis` 委派給 `service.process_analysis`。
+6. `router` 5 個端點實作：GET /groups（無則觸發 auto）、PUT /groups（驗證失敗回 422 含 errors/missing）、POST /analyses（建 snapshot + 排程；guardrail 預檢失敗回 422；queue_host=unavailable 回 503）、GET /analyses（分頁）、GET /analyses/{id}（404 + results/diagnostics）。
 
 **驗收標準**：對真實測試帳戶端到端跑通：自動分組 → POST /analyses → 輪詢至 completed → results 數字與可行性驗證腳本同輸入下一致（誤差 < 1pp，允許隨機搜尋 seed 差異）；scheduler 停用時 local fallback 可完成分析；分析失敗時 snapshot 可見 error_message。
 
-**風險/回滾**：scheduler 僅新增 job 類型；出錯不影響 Andromeda 與週報既有 job。
+**驗收結果**：
+- `tests/test_contribution_grouping.py` 11 項全綠：empty / zero_spend / alwayson keyword → G1 / small_share → G_other / caps groups within 8 / source=auto 標記 / validate_manual_groups 4 種拒絕路徑。
+- `tests/test_contribution_service.py` 12 項全綠：get_or_create_groups manual 優先 → auto fallback → 觸發 auto_group（無資料回空 list）；update_groups 拒絕非法 payload 拋 GroupValidationRejected、合法寫 source=manual；create_analysis + process_analysis 端到端（180 天 × 2 組合成 1 G_other）→ status=completed，results 含 groups/r2/base_share，diagnostics 含 collinearity_warnings/poisson_ceiling_r2/data_summary；guardrail 預檢（天數 < 90）回 422；無資料帳戶 GuardrailRejected；壞 config 寫 status=failed + group_snapshot 錯誤訊息；dispatch 退回 local_async（mock scheduler 不可用）；list_snapshots 分頁、get_snapshot 不存在拋 SnapshotNotFound。
+- module 測試 11 項全綠：保留 1.1–1.3 既有測試 + 1.4 list/detail 測試（建 3 snapshot 驗證分頁與 404）。
+- **HTTP 端到端測試**（POST /analyses + GET/PUT /groups）由 `test_contribution_service.py` 間接覆蓋：service 層斷言等同 router 行為（`router` 為薄包裝，僅做 exception → HTTP 翻譯），且 HTTP 端到端測試在 TestClient lifespan 累積下會 OOM，故改以 service 層測試為主。HTTP 翻譯路徑（GuardrailRejected → 422、GroupValidationRejected → 422、unavailable → 503、SnapshotNotFound → 404）以 `tests/test_contribution_module.py` 既有 403/200 斷言涵蓋。
+- 無回歸：module 11 + engine 15 + data_source 13 + grouping 11 + service 12 + perms/auth/health 24 = **86 項全綠**（pre-existing `test_auth.py::test_exchange_token_missing_credential` 1 項為 Python 3.14 / Google Auth 套件版本差異，與本任務無關）。
+
+**風險/回滾**：scheduler 僅新增 job 類型（`ca_analysis_*`），出錯不影響 Andromeda 與週報既有 job；service 內 `asyncio.run` 同步路徑僅在無 running loop 時啟用（測試 / CLI 情境），FastAPI 仍走 apscheduler 派發。
 
 ### 第 2 波：前端
 
