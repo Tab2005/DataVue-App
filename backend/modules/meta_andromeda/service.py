@@ -849,6 +849,24 @@ class MetaAndromedaService:
         return queued_score
 
     @staticmethod
+    def dispatch_observed_facebook_ad_import(payload: dict, *, user_id: str, team_id: str | None) -> bool:
+        """docs/24 Wave 2：web 角色下把觀測匯入 job 經 Redis stream 派給獨立
+        worker process，讓匯入負載完全離開 web process（Wave 1 的 to_thread
+        化已確保就算留在本地也不會卡住 event loop，但資源仍會佔用 web）。
+
+        回傳 True 代表已成功派工給 worker，呼叫端（router）不需要再自己執行；
+        回傳 False 代表未派工（非 web 角色，或 web 角色但 Redis 不可用），
+        呼叫端應退回在本 process 用 BackgroundTasks 執行。
+        """
+        if settings.SERVICE_ROLE != "web":
+            return False
+
+        dispatch = queue_host_adapter.enqueue_observation_import_event(
+            payload, user_id=user_id, team_id=team_id
+        )
+        return bool(dispatch.get("accepted"))
+
+    @staticmethod
     async def run_observed_facebook_ad_import_job(payload: dict, *, user_id: str, team_id: str | None = None) -> None:
         observed_creative_id = MetaAndromedaService.build_observed_creative_id(
             payload["ad_id"],

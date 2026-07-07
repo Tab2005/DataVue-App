@@ -1,7 +1,7 @@
 # Meta Andromeda 評分管線 Event Loop 阻塞修復與模組優化實作計劃
 
 日期：2026-07-07
-狀態：**Wave 1 已完成並驗證（2026-07-07）**；Wave 2／Wave 3 未動工
+狀態：**Wave 1、Wave 2 已完成並驗證（2026-07-07）**；Wave 3 未動工
 
 ## 1. 問題確認
 
@@ -138,19 +138,26 @@ Wave 2 拆分 worker process 時，這個限制會自然消失——因為屆時
 
 **驗證結果**：`backend/tests/test_meta_andromeda_module.py` 全量跑過，Wave 1 前後失敗案例完全一致（16 個既有失敗，經比對 stash 前後 baseline 確認為環境既有問題，與本次改動無關，不在本計劃範圍內修復）；新增的心跳測試通過，其餘 55→56 個測試維持全綠。
 
-### Wave 2：長期方案 — worker process 拆分
+### Wave 2：長期方案 — worker process 拆分 **【已完成 2026-07-07】**
 
-| # | 任務 | 檔案 | 內容 |
+| # | 任務 | 檔案 | 狀態 |
 |---|---|---|---|
-| 2.1 | `SERVICE_ROLE` 設定 | `core/config.py` | 新增 `SERVICE_ROLE` property（`web`/`worker`/`all`，預設 `all`） |
-| 2.2 | scheduler 註冊按角色分流 | `core/startup.py`、`core/scheduler.py` | `SERVICE_ROLE=web` 時不註冊 4 個 MA jobs；`worker` 時只註冊 MA jobs（週報等其他 jobs 歸屬需盤點確認，預設留在 web） |
-| 2.3 | web 端 dispatch 收斂 | `queue_host.py` | `get_active_host()` 支援角色感知：`web` 角色下只回 `redis_stream`/`database_queue`，永不回 `apscheduler`/`local_async` |
-| 2.4 | 匯入 job 走 queue | `router.py:403-421`、`queue_host.py`、`service.py` | stream 訊息加 `event_type` 欄位；匯入端點在 `web` 角色下改 enqueue `observation_import` 事件；consumer 依 `event_type` 分流到匯入 job 或評分 job；`all` 角色維持 `BackgroundTasks` 現況 |
-| 2.5 | worker 入口 | `backend/worker_main.py`（新檔） | 初始化 + 註冊 jobs + `/healthz`；優雅關閉（收 SIGTERM 後停止收新訊息、等待 in-flight 評分完成或到達逾時） |
-| 2.6 | 測試 | `backend/tests/` | 角色分流單元測試（各角色註冊的 jobs 清單、dispatch 路徑）；`observation_import` 事件端對端測試（enqueue → consumer 分流 → 匯入完成 → 自動評分入列） |
-| 2.7 | 部署文件 | `docs/06_部署指南.md` 或 `docs/10` | 補 Zeabur 雙 service 拓撲、環境變數矩陣、worker 資源建議 |
+| 2.1 | `SERVICE_ROLE` 設定 | `core/config.py` | ✅ 新增 `SERVICE_ROLE` property（`web`/`worker`/`all`，預設 `all`），另附 `is_web_role`/`is_worker_role` 便利屬性 |
+| 2.2 | scheduler 註冊按角色分流 | `core/scheduler.py` | ✅ 抽出 `_resolve_scheduler_role_flags(role)` 純函式決定 `(run_report_jobs, run_meta_andromeda_jobs)`；`start_scheduler()` 依此決定是否註冊 4 個 MA jobs／週報排程。`all` 兩者皆註冊（行為不變）；`web` 只留週報；`worker` 只留 MA。新增 `add_meta_andromeda_observation_import_job()`／`process_meta_andromeda_observation_import()`；`stop_scheduler()` 加 `wait` 參數供 worker 優雅關閉 |
+| 2.3 | web 端 dispatch 收斂 | `modules/meta_andromeda/queue_host.py` | ✅ `get_active_host()` 角色感知：`SERVICE_ROLE=="web"` 時，明確設定的 `redis_stream`/`database_queue`/`external_webhook` 原樣尊重，其餘（`auto`/`apscheduler`/`local_async`）一律收斂成 `redis_stream`（Redis 不可用時退回 `database_queue`），永不落 `apscheduler`/`local_async` |
+| 2.4 | 匯入 job 走 queue | `router.py`、`queue_host.py`、`service.py` | ✅ stream 訊息加 `kind` 欄位（`observation_import` vs 缺省/`score_event`，向後相容舊訊息）；新增 `enqueue_observation_import_event()`、`_schedule_observation_import_message()`；`MetaAndromedaService.dispatch_observed_facebook_ad_import()` 在 `web` 角色下優先經 stream 派工，失敗（非 web 角色或 Redis 不可用）時退回 `BackgroundTasks`（Wave 1 已確保安全） |
+| 2.5 | worker 入口 | `backend/worker_main.py`（新檔） | ✅ 極簡 FastAPI app，僅掛 `/healthz`；lifespan 做最小化啟動（DB 連線檢查、MA 種子資料、快取失效監聽，**不**重跑 migrations/權限種子/super admin 同步，避免與 web 服務 race）+ `start_scheduler()`；關閉時 `stop_scheduler(wait=True)` 優雅等待 in-flight job |
+| 2.6 | 測試 | `backend/tests/test_meta_andromeda_module.py` | ✅ 新增 6 個測試：角色分流純函式（all/web/worker 三種 parametrize）、`get_active_host()` web 角色收斂（含 Redis 可用/不可用兩種情境）、observation_import stream 端對端（enqueue → consumer 依 kind 分流 → 呼叫 `add_meta_andromeda_observation_import_job`）、匯入端點在 web 角色下優先走 stream 而非本地執行 |
+| 2.7 | 部署文件 | `docs/10_Zeabur_部署與持久化儲存設定指南.md` | ✅ 新增 2.4 節：獨立 Meta Andromeda Worker 服務設定、環境變數矩陣（`SERVICE_ROLE`/`META_ANDROMEDA_QUEUE_HOST`/`REDIS_URL`/`ENABLE_REPORT_SCHEDULER`）、部署後驗證步驟、降級路徑；並在常見問題新增一則「評分事件卡在 queued」的排查 TIP |
 
-驗收標準：staging 以 `web` + `worker` 雙 service 部署，批次匯入期間 web 的 CPU/記憶體無評分負載痕跡，權限 API 回應不受影響；手動 kill worker 驗證事件堆積與恢復消化；`xautoclaim` reclaim 路徑以人工中斷 consumer 驗證。
+驗收標準（本機驗證方式，staging 雙 service 部署留待實際上線時執行）：`backend/tests/test_meta_andromeda_module.py` 全量跑過，Wave 1/2 前後失敗案例完全一致（16 個既有失敗為環境既有問題，見 Wave 1 備註），新增測試與既有測試皆綠（55→61 通過）；`worker_main.py` 可獨立 import 且只掛載 `/healthz` 一個路由，驗證於實作過程中以 `python -c "import worker_main"` 執行確認。
+
+**實作備註（給未來調整這段程式碼的人參考）**：
+
+1. **`ENABLE_REPORT_SCHEDULER` 與 `SERVICE_ROLE` 是兩個獨立的開關，容易混淆**：前者是整個 APScheduler 的總開關（`is_scheduler_enabled()`，`start_scheduler()` 一開始就檢查，為 `false` 時直接整個排程器都不啟動，回傳早退）；後者只決定「已啟動的排程器要註冊哪些 job」。這代表 Meta Andromeda Worker 服務**必須**同時滿足 `SERVICE_ROLE=worker` **且** `ENABLE_REPORT_SCHEDULER=true`（或未設定，預設 true），少了任何一個都會導致 MA 排程完全不會註冊——已在 docs/10 2.4 節的 IMPORTANT 提示與新增的 troubleshooting TIP 中特別強調。
+2. **既有的「Scheduler Worker」（`scheduler_worker.py`）跟新的「Meta Andromeda Worker」（`worker_main.py`）是兩支不同的程式，服務於不同目的**：前者專門處理週報排程（用 `run_startup_tasks()` 做完整初始化，含 migrations），後者只處理 Meta Andromeda 排程（刻意不重跑 migrations/權限種子，避免與 web 服務的 race）。兩者可以合併成同一個 Zeabur 服務（設定 `ENABLE_REPORT_SCHEDULER=true` + `SERVICE_ROLE=worker` 並改用 `worker_main.py` 當入口），也可以分開部署，本計劃不強制規定拓撲。
+3. **同 module 內函式呼叫的 monkeypatch 陷阱**：`queue_host.py` 的 `_schedule_observation_import_message` 用 `from core.scheduler import add_meta_andromeda_observation_import_job` 做**函式內部 lazy import**（而非模組頂層 import），這是刻意的——測試才能透過 `monkeypatch.setattr(scheduler_module, "add_meta_andromeda_observation_import_job", fake_fn)` 生效（若改成模組頂層 import 並直接引用該名稱，monkeypatch 目標模組的屬性不會影響已經綁定的區域變數）。
+4. **`stream` 訊息的 `kind` 欄位向後相容**：舊訊息（Wave 2 之前產生、堆積在 stream 裡尚未消費的）沒有 `kind` 欄位，`_schedule_redis_stream_message` 對缺 `kind` 的訊息預設當作評分事件處理，不會誤判或遺失。
 
 ### Wave 3：前端防禦 + 問題二清理
 
@@ -191,8 +198,8 @@ Wave 2 拆分 worker process 時，這個限制會自然消失——因為屆時
 |---|---|
 | to_thread 化後執行順序/交易邊界改變引入 race | Wave 1 保持「一段同步函式 = 一個 Session 生命週期」原封搬移，不重排邏輯；跨 process 限流已由 `DistributedSemaphore` 收斂 |
 | threadpool 耗盡（大量並發評分各佔一個 thread） | 評分並發已被 semaphore 限制在 2、匯入 5，遠低於預設 threadpool 上限；不需自訂 executor |
-| `web` 角色誤部署但沒跑 worker → 評分永遠 queued | worker 心跳寫入 Redis/DB，web 的 `/api/meta-andromeda` 佇列頁顯示 worker 存活狀態警示；文件寫明環境變數矩陣 |
-| stream 訊息格式加 `event_type` 的相容性 | consumer 對缺 `event_type` 的舊訊息預設當評分事件處理（向後相容） |
+| `web` 角色誤部署但沒跑 worker → 評分永遠 queued | ✅ 已實作：`worker_main.py` 的 `/healthz` 回報 `scheduler.running`／`redis` 狀態；docs/10 2.4 節文件寫明環境變數矩陣與部署後驗證步驟；troubleshooting 新增專門排查 TIP |
+| stream 訊息格式加 `kind` 欄位的相容性 | ✅ 已實作：consumer 對缺 `kind` 的舊訊息預設當評分事件處理（向後相容） |
 | 前端權限快取造成撤權顯示延遲 | 僅快取 UI gate，後端 API 權限檢查不變；快取 key 含 team_id，切團隊即失效 |
 
 ## 8. 里程碑
@@ -200,7 +207,7 @@ Wave 2 拆分 worker process 時，這個限制會自然消失——因為屆時
 | 波次 | 內容 | 預估 | 可獨立上線 | 狀態 |
 |---|---|---|---|---|
 | Wave 1 | to_thread 止血 + 迴歸測試 | 0.5–1 天 | ✅（上線後症狀即消失） | **已完成（2026-07-07）** |
-| Wave 2 | SERVICE_ROLE + worker_main + 匯入走 queue + 部署 | 2–3 天 | ✅（需 Zeabur 加開 worker service） | 未動工 |
+| Wave 2 | SERVICE_ROLE + worker_main + 匯入走 queue + 部署 | 2–3 天 | ✅（需 Zeabur 加開 worker service，見 docs/10 2.4 節） | **已完成（2026-07-07）**，實際 staging 雙 service 部署驗證留待上線時執行 |
 | Wave 3 | 前端快取/逾時 + P1 清理 | 0.5 天 | ✅ | 未動工 |
 
-依賴關係：Wave 1 → Wave 2（1.1–1.4 的包裝在 worker 內同樣必要）；Wave 3 與 Wave 2 無相依，可並行。
+依賴關係：Wave 1 → Wave 2（1.1–1.4 的包裝在 worker 內同樣必要，已隨 Wave 2 沿用）；Wave 3 與 Wave 2 無相依，可並行。

@@ -417,12 +417,21 @@ async def import_facebook_ad_observation(
     try:
         request_payload = payload.model_dump()
         accepted = MetaAndromedaService.queue_observed_facebook_ad_import(request_payload)
-        background_tasks.add_task(
-            MetaAndromedaService.run_observed_facebook_ad_import_job,
-            request_payload,
-            user_id=getattr(user, "google_id", None) or getattr(user, "id", None),
-            team_id=x_team_id,
+        user_id = getattr(user, "google_id", None) or getattr(user, "id", None)
+
+        # docs/24 Wave 2：web 角色優先把匯入 job 經 Redis stream 派給獨立 worker
+        # process；未派工成功（非 web 角色，或 Redis 不可用）時退回本 process
+        # 背景執行（Wave 1 的 to_thread 化已確保這不會卡住 event loop）。
+        dispatched = MetaAndromedaService.dispatch_observed_facebook_ad_import(
+            request_payload, user_id=user_id, team_id=x_team_id
         )
+        if not dispatched:
+            background_tasks.add_task(
+                MetaAndromedaService.run_observed_facebook_ad_import_job,
+                request_payload,
+                user_id=user_id,
+                team_id=x_team_id,
+            )
         return accepted
     except MetaAndromedaValidationError as exc:
         raise HTTPException(status_code=exc.status_code, detail=exc.detail) from exc

@@ -35,6 +35,18 @@ class MetaAndromedaQueueHostAdapter:
     @staticmethod
     def get_active_host() -> str:
         configured = settings.META_ANDROMEDA_QUEUE_HOST
+
+        if settings.SERVICE_ROLE == "web":
+            # docs/24 Wave 2：web process 絕不能在本地執行評分/匯入，即使本地
+            # AsyncIOScheduler 因為週報排程而處於 running 狀態也一樣——否則
+            # Meta Andromeda 負載又會跑回同一個 event loop，等於沒拆分。
+            if configured in {"redis_stream", "database_queue", "external_webhook"}:
+                return configured
+            # auto / apscheduler / local_async 或其他未知值一律收斂成
+            # redis_stream；Redis 不可用時退回 database_queue，交給 worker
+            # process 的 sweeper 補派工。
+            return "redis_stream" if get_redis_client() else "database_queue"
+
         if configured == "apscheduler" and not (is_scheduler_enabled() and scheduler.running):
             if settings.META_ANDROMEDA_SCORE_LOCAL_ASYNC_FALLBACK:
                 return "local_async"
@@ -61,6 +73,44 @@ class MetaAndromedaQueueHostAdapter:
                 raise
 
     @staticmethod
+    def _ack_and_delete(client, message_id: str) -> None:
+        client.xack(
+            settings.META_ANDROMEDA_REDIS_STREAM_KEY,
+            settings.META_ANDROMEDA_REDIS_STREAM_GROUP,
+            message_id,
+        )
+        client.xdel(settings.META_ANDROMEDA_REDIS_STREAM_KEY, message_id)
+
+    @staticmethod
+    def _schedule_observation_import_message(client, message_id: str, payload: dict) -> bool:
+        """docs/24 Wave 2：分流處理 `kind=observation_import` 的 stream 訊息。
+
+        觀測匯入在 dispatch 當下還沒有對應的 DB row 可寫 worker event（那是
+        評分事件才有的表），所以這裡只負責把 job 交給 scheduler，不記錄
+        worker_event——匯入進度改用既有的 import_status_store 追蹤。
+        """
+        from core.scheduler import add_meta_andromeda_observation_import_job
+
+        raw_payload = payload.get("payload")
+        if not raw_payload:
+            MetaAndromedaQueueHostAdapter._ack_and_delete(client, message_id)
+            return False
+
+        import_payload = json.loads(raw_payload)
+        user_id = payload.get("user_id") or None
+        team_id = payload.get("team_id") or None
+        delay_seconds = float(payload.get("delay_seconds", "0") or 0)
+
+        add_meta_andromeda_observation_import_job(
+            import_payload,
+            user_id=user_id,
+            team_id=team_id,
+            delay_seconds=delay_seconds,
+        )
+        MetaAndromedaQueueHostAdapter._ack_and_delete(client, message_id)
+        return True
+
+    @staticmethod
     def _schedule_redis_stream_message(
         client,
         db,
@@ -70,15 +120,17 @@ class MetaAndromedaQueueHostAdapter:
         consumer: str,
         claim_mode: str = "fresh",
     ) -> bool:
+        # docs/24 Wave 2：同一個 stream 現在混合評分事件與觀測匯入兩種訊息，
+        # 靠 `kind` 欄位分流；缺 `kind` 的舊訊息預設當評分事件處理（向後相容）。
+        if payload.get("kind") == "observation_import":
+            return MetaAndromedaQueueHostAdapter._schedule_observation_import_message(
+                client, message_id, payload
+            )
+
         score_event_id = payload.get("score_event_id")
         delay_seconds = float(payload.get("delay_seconds", "0") or 0)
         if not score_event_id:
-            client.xack(
-                settings.META_ANDROMEDA_REDIS_STREAM_KEY,
-                settings.META_ANDROMEDA_REDIS_STREAM_GROUP,
-                message_id,
-            )
-            client.xdel(settings.META_ANDROMEDA_REDIS_STREAM_KEY, message_id)
+            MetaAndromedaQueueHostAdapter._ack_and_delete(client, message_id)
             return False
 
         current = repository.get_review_queue_detail(db, score_event_id)
@@ -103,12 +155,7 @@ class MetaAndromedaQueueHostAdapter:
                 "claim_mode": claim_mode,
             },
         )
-        client.xack(
-            settings.META_ANDROMEDA_REDIS_STREAM_KEY,
-            settings.META_ANDROMEDA_REDIS_STREAM_GROUP,
-            message_id,
-        )
-        client.xdel(settings.META_ANDROMEDA_REDIS_STREAM_KEY, message_id)
+        MetaAndromedaQueueHostAdapter._ack_and_delete(client, message_id)
         return True
 
     def consume_redis_stream_batch(self) -> dict:
@@ -218,6 +265,49 @@ class MetaAndromedaQueueHostAdapter:
             "claimed_count": claimed_count,
             "next_start_id": next_start_id,
             "min_idle_ms": settings.META_ANDROMEDA_REDIS_STREAM_RECLAIM_IDLE_MS,
+        }
+
+    def enqueue_observation_import_event(
+        self,
+        payload: dict,
+        *,
+        user_id: str | None,
+        team_id: str | None = None,
+        delay_seconds: float = 0.0,
+    ) -> dict:
+        """docs/24 Wave 2：把觀測匯入 job 經 Redis stream 派給獨立 worker
+        process。只有 Redis 可用時才會 accepted=True；呼叫端（web 角色的
+        router）在 accepted=False 時應退回本 process 內執行（Wave 1 的
+        to_thread 化已確保這麼做不會卡住 event loop，只是失去負載隔離）。
+        """
+        client = get_redis_client()
+        if not client:
+            return {
+                "accepted": False,
+                "queue_host": "redis_stream",
+                "dispatch_mode": "redis_unavailable",
+            }
+
+        request_id = f"ma_obs_stream_{uuid4().hex[:12]}"
+        stream_payload = {
+            "kind": "observation_import",
+            "request_id": request_id,
+            "payload": json.dumps(payload),
+            "user_id": user_id or "",
+            "team_id": team_id or "",
+            "delay_seconds": str(delay_seconds),
+        }
+        receipt_id = client.xadd(
+            settings.META_ANDROMEDA_REDIS_STREAM_KEY,
+            stream_payload,
+        )
+        return {
+            "accepted": True,
+            "queue_host": "redis_stream",
+            "dispatch_mode": "redis_xadd",
+            "request_id": request_id,
+            "receipt_id": receipt_id,
+            "stream_key": settings.META_ANDROMEDA_REDIS_STREAM_KEY,
         }
 
     def enqueue_score_event(self, score_event_id: str, delay_seconds: float = 1.0) -> dict:

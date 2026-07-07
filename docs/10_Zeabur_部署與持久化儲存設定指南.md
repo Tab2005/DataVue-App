@@ -100,12 +100,53 @@ META_ANDROMEDA_STORAGE_PUBLIC_BASE_URL=https://assets.sitetegy.com/meta-andromed
 | `META_ANDROMEDA_SCORING_PROVIDER` | 評分模組運行者。**生產環境必須設為 `openrouter`**，否則強制走啟發式備用，AI 評分永遠不執行。`auto` 模式需同時設定 `META_ANDROMEDA_SCORING_MODEL` 才會走 AI。本地開發可設 `heuristic` 避免消耗 API 額度。 | `openrouter` |
 | `META_ANDROMEDA_SCORING_MODEL` | 評分使用的 OpenRouter 模型 ID | `nvidia/nemotron-3-nano-omni-30b-a3b-reasoning:free` |
 | `META_ANDROMEDA_SCORING_ALLOW_FALLBACK` | AI 呼叫失敗時是否自動降級為啟發式備用 | `true` |
-| `META_ANDROMEDA_QUEUE_HOST` | 自動評分事件佇列，預設 `auto`（自動選擇），生產環境建議配合 Worker 使用 `database_queue` | `auto` |
+| `META_ANDROMEDA_QUEUE_HOST` | 自動評分事件佇列。**若採用 2.4 節的獨立 Meta Andromeda Worker，Web 與 Worker 服務都必須明確設為 `redis_stream`**（見 2.4 節說明），否則預設 `auto` 在未拆分 Worker 時才適用 | `auto` / 拆分後建議 `redis_stream` |
 | `META_ANDROMEDA_STORAGE_S3_BUCKET` | S3 儲存桶名稱 (方案 B) | `datavue-assets` |
 | `META_ANDROMEDA_STORAGE_S3_ACCESS_KEY_ID` | S3 連線 Key ID (方案 B) | `YOUR_S3_ACCESS_KEY` |
 | `META_ANDROMEDA_STORAGE_S3_SECRET_ACCESS_KEY` | S3 連線 Secret (方案 B) | `YOUR_S3_SECRET_ACCESS_KEY` |
 | `META_ANDROMEDA_STORAGE_S3_ENDPOINT_URL` | 非 AWS S3 (如 Cloudflare R2) 需指定自訂端點 (方案 B) | `https://<account_id>.r2.cloudflarestorage.com` |
 | `META_ANDROMEDA_STORAGE_PUBLIC_BASE_URL` | 靜態資源公開讀取 Base URL (方案 B) | `https://assets.sitetegy.com/meta-andromeda` |
+
+---
+
+### 2.4 Meta Andromeda 獨立 Worker（docs/24 Wave 2，選配但生產環境強烈建議）
+
+**背景**：Meta Andromeda 的素材評分與觀測匯入若跟 API 服務同一個 process，評分期間的 DB/檔案/ffmpeg 等阻塞工作會佔用 event loop，導致整站 API（含權限檢查）在批次評分時全部卡住無回應（根因與修復過程見 [docs/24](file:///C:/Users/BWM2/Documents/python/DataVue-App/docs/24_Meta_Andromeda_評分管線Event_Loop阻塞修復與模組優化實作計劃.md)）。Wave 1 已用 `asyncio.to_thread` 止血，讓同 process 運行也不會卡死；本節的獨立 Worker 是進一步的架構隔離，讓評分負載完全離開 API 服務。
+
+> [!IMPORTANT]
+> 這個「Meta Andromeda Worker」跟 2.1 節既有的「Scheduler Worker」（`scheduler_worker.py`）是**兩個不同的東西**，靠兩個獨立的環境變數切換，彼此不互斥：
+> - `ENABLE_REPORT_SCHEDULER`：控制**週報**排程要不要在這個服務跑。
+> - `SERVICE_ROLE`：控制**Meta Andromeda 評分/匯入**排程要不要在這個服務跑。
+>
+> 兩者同時存在時完全獨立生效——例如 Meta Andromeda Worker 服務可以同時設定 `SERVICE_ROLE=worker` 且 `ENABLE_REPORT_SCHEDULER=false`（不跑週報，只跑評分），也可以視資源需求合併到既有的 Scheduler Worker 服務上（`ENABLE_REPORT_SCHEDULER=true` + `SERVICE_ROLE=worker`）。**唯一不能做的是把 Meta Andromeda Worker 服務的 `ENABLE_REPORT_SCHEDULER` 設為 `false` 又不知道這個變數其實是「整個 APScheduler 排程器」的總開關**——若設為 `false`，週報跑不動也就算了，但 Meta Andromeda 的 stream consumer/reclaim/db queue sweeper 全部一起停擺，評分事件會卡在 queued 狀態永遠不會被處理。這個服務至少要有一項排程需求（週報或 Meta Andromeda）時，`ENABLE_REPORT_SCHEDULER` 就必須是 `true`。
+
+#### 2.4.1 新增服務
+
+1. 新增一個服務，Root Directory 同樣是 `backend`，與 API 服務共用同一個 repo/image。
+2. **Start Command** 改為 `python worker_main.py`。
+3. 不需要掛載 Volume（Meta Andromeda 素材若走 S3 方案，Worker 跟 Web 都是無狀態的；若走 filesystem 方案，Worker 也需要跟 Web 掛同一個 Volume，因為評分時要讀 Web 上傳的素材檔案）。
+4. Port 設定與健康檢查路徑改為 `/healthz`（不是 `/health`——這支程式沒有掛業務 router，僅有這一個端點）。
+
+#### 2.4.2 環境變數對照表
+
+| 變數名稱 | Web (API) 服務 | Meta Andromeda Worker 服務 | 說明 |
+| :--- | :--- | :--- | :--- |
+| `SERVICE_ROLE` | `web` | `worker` | 未設定時預設 `all`（單機開發行為，不拆分） |
+| `META_ANDROMEDA_QUEUE_HOST` | `redis_stream` | `redis_stream` | 兩邊都要設定；Web 端 `get_active_host()` 在 `SERVICE_ROLE=web` 下即使沒設也會自動收斂成 `redis_stream`/`database_queue`，但明確設定可避免混淆 |
+| `ENABLE_REPORT_SCHEDULER` | 依 2.1 節既有規劃 | **必須為 `true`**（見上方 IMPORTANT 提示） | 全域排程器總開關，不是週報專屬開關 |
+| `REDIS_URL` | 必填 | 必填 | Zeabur 可直接加 Redis 服務並注入內網連線字串；兩邊必須連到同一個 Redis |
+| 其餘 `DATABASE_URL`/`ENCRYPTION_KEY`/AI 金鑰等 | 依現有設定 | 與 Web 服務**完全相同** | Worker 需要能查詢/寫入同一個資料庫、解密同一批使用者 API 金鑰 |
+
+#### 2.4.3 部署後驗證
+
+1. 呼叫 Worker 服務的 `/healthz`，確認 `status: "ok"`、`scheduler.running: true`。
+2. 在 Web 服務批次匯入素材，觀察 Web 服務的 CPU/記憶體用量應無評分負載痕跡（評分工作應只出現在 Worker 服務的資源圖表上）。
+3. 批次匯入期間持續呼叫 Web 的 `/api/permissions/me/module/meta_andromeda`，回應時間應維持正常（不應卡住）。
+4. 手動重啟或暫停 Worker 服務，確認 Web 服務仍可正常接受匯入/評分請求（事件會堆積在 Redis stream 或 DB，Worker 恢復後自動繼續消化，不會遺失）。
+
+#### 2.4.4 降級路徑
+
+若暫時不想拆 Worker（例如流量小、先求簡單），不設定 `SERVICE_ROLE`（維持預設 `all`）即可，行為與拆分前完全一致——Wave 1 的 `asyncio.to_thread` 止血已確保這種單 process 模式不會卡住 event loop，只是評分負載仍會佔用 Web 服務的資源。
 
 ---
 
@@ -136,6 +177,13 @@ alembic upgrade head
 > [!TIP]
 > **排程沒跑？**
 > 可呼叫 `/health` 檢查 `checks.scheduler.running` 是否為 `true`。請確保 Web 服務與 Scheduler Worker 服務的 `ENABLE_REPORT_SCHEDULER` 變數互斥（一為 `false`，另一為 `true`），避免重複觸發。
+
+> [!TIP]
+> **拆分 Meta Andromeda Worker（2.4 節）後，評分事件一直卡在 `queued`？**
+> 1. 確認 Worker 服務的 `SERVICE_ROLE=worker` 且 `ENABLE_REPORT_SCHEDULER=true`（兩者缺一都會導致 Meta Andromeda 排程完全沒註冊）。
+> 2. 呼叫 Worker 服務的 `/healthz`，確認 `scheduler.running: true` 且 `redis: "ok"`。
+> 3. 確認 Web 與 Worker 兩邊的 `REDIS_URL` 指向同一個 Redis 實例，且 `META_ANDROMEDA_QUEUE_HOST=redis_stream` 兩邊一致。
+> 4. Redis 若暫時不可用，事件會落在 `database_queue` 模式（DB 裡 `status="queued"`），等 Worker 恢復連線後由 `sweep_meta_andromeda_queue`（預設每 5 秒掃一次）自動補派工，不需要手動介入。
 
 > [!WARNING]
 > **CORS 跨網域政策攔截？**

@@ -964,6 +964,157 @@ def test_meta_andromeda_redis_stream_reclaim_reschedules_stale_pending_messages(
 
 
 @pytest.mark.unit
+@pytest.mark.parametrize(
+    "role,expected_report_jobs,expected_ma_jobs",
+    [
+        ("all", True, True),
+        ("web", True, False),
+        ("worker", False, True),
+    ],
+)
+def test_scheduler_role_flags_resolve_correctly(role, expected_report_jobs, expected_ma_jobs):
+    """docs/24 Wave 2：SERVICE_ROLE 決定 start_scheduler() 該註冊哪些 job。
+    all 維持拆分前行為；web 只留週報排程；worker 只留 Meta Andromeda 排程。
+    """
+    run_report_jobs, run_meta_andromeda_jobs = scheduler_module._resolve_scheduler_role_flags(role)
+    assert run_report_jobs is expected_report_jobs
+    assert run_meta_andromeda_jobs is expected_ma_jobs
+
+
+@pytest.mark.unit
+def test_get_active_host_web_role_never_dispatches_locally(monkeypatch):
+    """docs/24 Wave 2：web 角色下 get_active_host() 絕不能回 apscheduler/local_async，
+    否則評分負載又會跑回 web process 的 event loop，等於沒拆分。"""
+    monkeypatch.setenv("SERVICE_ROLE", "web")
+
+    # 明確設定的 redis_stream/database_queue/external_webhook 原樣尊重
+    monkeypatch.setenv("META_ANDROMEDA_QUEUE_HOST", "database_queue")
+    assert meta_andromeda_queue_host_module.queue_host_adapter.get_active_host() == "database_queue"
+
+    monkeypatch.setenv("META_ANDROMEDA_QUEUE_HOST", "external_webhook")
+    assert meta_andromeda_queue_host_module.queue_host_adapter.get_active_host() == "external_webhook"
+
+    # auto / apscheduler / local_async 一律收斂成 redis_stream（Redis 可用時）
+    redis_mock = Mock()
+    monkeypatch.setattr(meta_andromeda_queue_host_module, "get_redis_client", lambda: redis_mock)
+    for configured in ("auto", "apscheduler", "local_async"):
+        monkeypatch.setenv("META_ANDROMEDA_QUEUE_HOST", configured)
+        assert meta_andromeda_queue_host_module.queue_host_adapter.get_active_host() == "redis_stream"
+
+    # Redis 不可用時退回 database_queue，讓 worker 的 sweeper 補派工
+    monkeypatch.setattr(meta_andromeda_queue_host_module, "get_redis_client", lambda: None)
+    monkeypatch.setenv("META_ANDROMEDA_QUEUE_HOST", "auto")
+    assert meta_andromeda_queue_host_module.queue_host_adapter.get_active_host() == "database_queue"
+
+
+@pytest.mark.unit
+def test_meta_andromeda_observation_import_stream_dispatch_and_consume(monkeypatch):
+    """docs/24 Wave 2 端對端：enqueue_observation_import_event() 產生的 stream 訊息，
+    consume_redis_stream_batch() 能正確依 kind 分流到 add_meta_andromeda_observation_import_job()，
+    而不是誤當評分事件處理。"""
+    monkeypatch.setenv("META_ANDROMEDA_REDIS_STREAM_KEY", "meta_andromeda:test_obs_queue")
+    monkeypatch.setenv("META_ANDROMEDA_REDIS_STREAM_GROUP", "meta_andromeda:test_obs_group")
+    monkeypatch.setenv("META_ANDROMEDA_REDIS_STREAM_CONSUMER", "meta_andromeda:test_obs_consumer")
+
+    redis_mock = Mock()
+    xadd_calls = []
+
+    def fake_xadd(key, payload):
+        xadd_calls.append((key, payload))
+        return "1749388800099-0"
+
+    redis_mock.xadd = Mock(side_effect=fake_xadd)
+    monkeypatch.setattr(meta_andromeda_queue_host_module, "get_redis_client", lambda: redis_mock)
+
+    import_payload = {
+        "account_id": "act_123456789",
+        "ad_id": "120000000000099",
+        "observation_window_kind": "last_7d",
+        "market": "TW",
+        "placement_family": "feed",
+    }
+
+    dispatch = meta_andromeda_queue_host_module.queue_host_adapter.enqueue_observation_import_event(
+        import_payload, user_id="google_user_1", team_id="team_1",
+    )
+    assert dispatch["accepted"] is True
+    assert dispatch["queue_host"] == "redis_stream"
+    assert xadd_calls
+    stream_key, stream_payload = xadd_calls[0]
+    assert stream_key == "meta_andromeda:test_obs_queue"
+    assert stream_payload["kind"] == "observation_import"
+    assert json.loads(stream_payload["payload"])["ad_id"] == "120000000000099"
+
+    # 模擬 consumer 讀到剛剛送出的這則訊息
+    redis_mock.xgroup_create = Mock()
+    redis_mock.xreadgroup = Mock(return_value=[
+        ("meta_andromeda:test_obs_queue", [("1749388800099-0", stream_payload)])
+    ])
+    redis_mock.xack = Mock()
+    redis_mock.xdel = Mock()
+
+    scheduled = []
+    monkeypatch.setattr(
+        scheduler_module,
+        "add_meta_andromeda_observation_import_job",
+        lambda payload, *, user_id, team_id, delay_seconds=0: scheduled.append(
+            {"payload": payload, "user_id": user_id, "team_id": team_id, "delay_seconds": delay_seconds}
+        ),
+    )
+
+    summary = meta_andromeda_queue_host_module.queue_host_adapter.consume_redis_stream_batch()
+    assert summary["accepted"] is True
+    assert summary["consumed_count"] == 1
+    assert scheduled and scheduled[0]["payload"]["ad_id"] == "120000000000099"
+    assert scheduled[0]["user_id"] == "google_user_1"
+    assert scheduled[0]["team_id"] == "team_1"
+    redis_mock.xack.assert_called_once()
+    redis_mock.xdel.assert_called_once()
+
+
+@pytest.mark.unit
+def test_meta_andromeda_import_endpoint_dispatches_to_worker_in_web_role(meta_andromeda_access, monkeypatch):
+    """docs/24 Wave 2：web 角色下匯入端點應該經 Redis stream 派工給 worker，
+    不在本 process 執行 run_observed_facebook_ad_import_job。"""
+    monkeypatch.setenv("SERVICE_ROLE", "web")
+
+    redis_mock = Mock()
+    xadd_calls = []
+    redis_mock.xadd = Mock(side_effect=lambda key, payload: xadd_calls.append((key, payload)) or "1749388800100-0")
+    redis_mock.get = Mock(return_value=None)
+    monkeypatch.setattr(redis_cache_module, "get_redis_client", lambda: redis_mock)
+    monkeypatch.setattr(meta_andromeda_queue_host_module, "get_redis_client", lambda: redis_mock)
+
+    ran_in_process = {"called": False}
+
+    async def fake_run_job(payload, *, user_id, team_id=None):
+        ran_in_process["called"] = True
+
+    monkeypatch.setattr(
+        meta_andromeda_service_module.MetaAndromedaService,
+        "run_observed_facebook_ad_import_job",
+        staticmethod(fake_run_job),
+    )
+
+    response = meta_andromeda_access.post(
+        "/api/meta-andromeda/evaluations/import/facebook-ads",
+        json={
+            "account_id": "act_123456789",
+            "ad_id": "120000000000100",
+            "observation_window_kind": "last_7d",
+            "market": "TW",
+            "placement_family": "feed",
+        },
+    )
+
+    assert response.status_code == 202
+    assert xadd_calls, "web 角色下應該經 Redis stream 派工，而不是留在 web process"
+    assert xadd_calls[0][1]["kind"] == "observation_import"
+    assert json.loads(xadd_calls[0][1]["payload"])["ad_id"] == "120000000000100"
+    assert ran_in_process["called"] is False
+
+
+@pytest.mark.unit
 def test_meta_andromeda_review_queue_supports_filters(meta_andromeda_access):
     response = meta_andromeda_access.get(
         "/api/meta-andromeda/review-queue",

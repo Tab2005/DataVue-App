@@ -97,6 +97,30 @@ class Settings:
     def is_production(self) -> bool:
         return self.ENV == "production"
     
+    # === 服務角色（docs/24 Wave 2：Meta Andromeda worker process 拆分）===
+    @property
+    def SERVICE_ROLE(self) -> str:
+        """
+        web | worker | all（預設）。
+
+        - all：單機開發預設，行為與拆分前完全一致——Meta Andromeda 評分/匯入
+          與 API 同一個 process（Wave 1 的 to_thread 化已確保不會卡住 event loop）。
+        - web：只處理 HTTP 請求，不在本 process 註冊/執行 Meta Andromeda 的
+          排程 job（stream consumer/reclaim/db queue sweeper/週報閉環）；
+          評分與觀測匯入一律經 Redis stream 派工給 worker process。
+        - worker：不掛業務 router，只執行 Meta Andromeda 相關排程 job；透過
+          backend/worker_main.py 啟動。
+        """
+        return os.getenv("SERVICE_ROLE", "all").strip().lower()
+
+    @property
+    def is_web_role(self) -> bool:
+        return self.SERVICE_ROLE == "web"
+
+    @property
+    def is_worker_role(self) -> bool:
+        return self.SERVICE_ROLE == "worker"
+
     # === LINE Messaging API ===
     @property
     def LINE_CHANNEL_ACCESS_TOKEN(self) -> Optional[str]:

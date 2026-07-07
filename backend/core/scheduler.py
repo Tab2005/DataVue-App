@@ -363,6 +363,22 @@ async def process_meta_andromeda_score_event(score_event_id: str, queue_host: st
     await MetaAndromedaService.process_score_event(score_event_id, queue_host=queue_host)
 
 
+async def process_meta_andromeda_observation_import(
+    payload: dict, user_id: str, team_id: str | None = None
+) -> None:
+    """Process a queued Meta Andromeda observation-import job (docs/24 Wave 2).
+
+    入口由 `add_meta_andromeda_observation_import_job()` 註冊，該 job 本身由
+    Redis stream 上收到 `kind=observation_import` 訊息時派發（見
+    modules.meta_andromeda.queue_host._schedule_observation_import_message）。
+    """
+    from modules.meta_andromeda.service import MetaAndromedaService
+
+    await MetaAndromedaService.run_observed_facebook_ad_import_job(
+        payload, user_id=user_id, team_id=team_id
+    )
+
+
 async def process_contribution_analysis(snapshot_id: str) -> None:
     """Process a queued Contribution MMM analysis snapshot.
 
@@ -513,6 +529,52 @@ def add_meta_andromeda_score_job(score_event_id: str, delay_seconds: float = 1, 
         max_instances=1,
     )
     logger.info("⏰ [MetaAndromeda] Score job added: %s for %s (delay=%ss)", job_id, score_event_id, delay_seconds)
+    return job
+
+
+def add_meta_andromeda_observation_import_job(
+    payload: dict, *, user_id: str, team_id: str | None = None, delay_seconds: float = 0
+):
+    """Enqueue an immediate Meta Andromeda observation-import job on the shared
+    scheduler (docs/24 Wave 2；worker process 消費 Redis stream 時呼叫)。
+
+    與 `add_meta_andromeda_score_job` 不同，觀測匯入沒有預先建立的 DB row 可
+    當 job id 去重鍵，所以 job id 加上短亂數尾碼，允許同一 ad_id/window 短時間
+    內的並發匯入各自成一個 job（不會被 `replace_existing` 互相蓋掉）。
+    """
+    if not is_scheduler_enabled() or not scheduler.running:
+        logger.info(
+            "⏰ [MetaAndromeda] Scheduler unavailable. Skipping observation import job registration for ad_id=%s.",
+            payload.get("ad_id"),
+        )
+        return None
+
+    from uuid import uuid4
+
+    from modules.meta_andromeda.service import MetaAndromedaService
+
+    observed_creative_id = MetaAndromedaService.build_observed_creative_id(
+        payload["ad_id"], payload["observation_window_kind"]
+    )
+    run_at = datetime.now(_LOCAL_TIMEZONE) + timedelta(seconds=delay_seconds)
+    job_id = f"ma_obs_import_{observed_creative_id}_{uuid4().hex[:8]}"
+    job = scheduler.add_job(
+        process_meta_andromeda_observation_import,
+        trigger="date",
+        run_date=run_at,
+        args=[payload, user_id, team_id],
+        id=job_id,
+        replace_existing=True,
+        misfire_grace_time=DEFAULT_MISFIRE_GRACE_TIME,
+        coalesce=True,
+        max_instances=1,
+    )
+    logger.info(
+        "⏰ [MetaAndromeda] Observation import job added: %s for %s (delay=%ss)",
+        job_id,
+        observed_creative_id,
+        delay_seconds,
+    )
     return job
 
 
@@ -758,6 +820,21 @@ def add_meta_andromeda_weekly_closed_loop_job():
     return job
 
 
+def _resolve_scheduler_role_flags(role: str | None = None) -> tuple[bool, bool]:
+    """依 SERVICE_ROLE 決定 start_scheduler() 該註冊哪些 job（docs/24 Wave 2）。
+
+    抽成獨立的純函式方便單元測試，不需要真的驅動一次 start_scheduler()
+    （會牽動共用的 AsyncIOScheduler 全域單例與真實 DB session）。
+
+    回傳 (run_report_jobs, run_meta_andromeda_jobs)：
+    - all（預設）：兩者皆 True，行為與拆分前完全一致。
+    - web：只留週報排程，Meta Andromeda 排程交給 worker process。
+    - worker：只留 Meta Andromeda 排程，週報排程留在 web。
+    """
+    resolved_role = (role or settings.SERVICE_ROLE)
+    return resolved_role != "worker", resolved_role != "web"
+
+
 def remove_report_job(schedule_id: str):
     """移除排程。"""
     job_id = get_job_id(schedule_id)
@@ -769,52 +846,71 @@ def remove_report_job(schedule_id: str):
 
 
 async def start_scheduler() -> dict:
-    """啟動 scheduler，載入現有排程並補跑逾期任務。"""
+    """啟動 scheduler，載入現有排程並補跑逾期任務。
+
+    docs/24 Wave 2：依 `SERVICE_ROLE` 決定要註冊哪些 job——
+    - all（預設，單機開發）：週報排程 + Meta Andromeda 排程全部註冊，行為與
+      拆分前完全一致。
+    - web：只註冊週報排程，不註冊 Meta Andromeda 的 stream consumer/reclaim/
+      db queue sweeper/週報閉環（評分/匯入負載交給 worker process）。
+    - worker：只註冊 Meta Andromeda 排程，不註冊週報排程（週報留在 web）。
+    """
     register_scheduler_listeners()
 
     if not is_scheduler_enabled():
         logger.info("⏰ [Scheduler] Disabled via ENABLE_REPORT_SCHEDULER=false")
         return get_scheduler_status()
 
+    role = settings.SERVICE_ROLE
+    run_report_jobs, run_meta_andromeda_jobs = _resolve_scheduler_role_flags(role)
+
     db = SessionLocal()
     overdue_schedule_ids: list[str] = []
+    active_schedules: list[ReportSchedule] = []
+    queued_score_events: list = []
     try:
-        active_schedules = (
-            db.query(ReportSchedule)
-            .filter(ReportSchedule.is_active == True)
-            .all()
-        )
-        overdue_schedule_ids = [
-            schedule.id for schedule in active_schedules if is_schedule_overdue(schedule)
-        ]
+        if run_report_jobs:
+            active_schedules = (
+                db.query(ReportSchedule)
+                .filter(ReportSchedule.is_active == True)
+                .all()
+            )
+            overdue_schedule_ids = [
+                schedule.id for schedule in active_schedules if is_schedule_overdue(schedule)
+            ]
 
         if not scheduler.running:
             scheduler.start()
-            logger.info("⏰ [Scheduler] AsyncIOScheduler started")
-        add_meta_andromeda_queue_sweeper_job()
-        add_meta_andromeda_redis_stream_consumer_job()
-        add_meta_andromeda_redis_stream_reclaim_job()
-        add_meta_andromeda_weekly_closed_loop_job()
+            logger.info("⏰ [Scheduler] AsyncIOScheduler started (SERVICE_ROLE=%s)", role)
 
-        for schedule in active_schedules:
-            add_report_job(schedule, db=db, persist_next_run=True)
+        if run_meta_andromeda_jobs:
+            add_meta_andromeda_queue_sweeper_job()
+            add_meta_andromeda_redis_stream_consumer_job()
+            add_meta_andromeda_redis_stream_reclaim_job()
+            add_meta_andromeda_weekly_closed_loop_job()
 
-        from database.models.meta_andromeda import MetaAndromedaScoreEvent
+        if run_report_jobs:
+            for schedule in active_schedules:
+                add_report_job(schedule, db=db, persist_next_run=True)
 
-        queued_score_events = (
-            db.query(MetaAndromedaScoreEvent)
-            .filter(MetaAndromedaScoreEvent.status.in_(["queued", "processing"]))
-            .all()
-        )
-        if settings.META_ANDROMEDA_QUEUE_HOST not in {"redis_stream", "external_webhook"}:
-            for score_event in queued_score_events:
-                add_meta_andromeda_score_job(score_event.id)
+        if run_meta_andromeda_jobs:
+            from database.models.meta_andromeda import MetaAndromedaScoreEvent
+
+            queued_score_events = (
+                db.query(MetaAndromedaScoreEvent)
+                .filter(MetaAndromedaScoreEvent.status.in_(["queued", "processing"]))
+                .all()
+            )
+            if settings.META_ANDROMEDA_QUEUE_HOST not in {"redis_stream", "external_webhook"}:
+                for score_event in queued_score_events:
+                    add_meta_andromeda_score_job(score_event.id)
 
         db.commit()
-        logger.info(
-            "⏰ [Scheduler] Bootstrapped %s active schedules.",
-            len(active_schedules),
-        )
+        if run_report_jobs:
+            logger.info(
+                "⏰ [Scheduler] Bootstrapped %s active schedules.",
+                len(active_schedules),
+            )
         if queued_score_events:
             logger.info(
                 "⏰ [MetaAndromeda] Bootstrapped %s queued score events.",
@@ -834,14 +930,20 @@ async def start_scheduler() -> dict:
         )
         for schedule_id in overdue_schedule_ids:
             await process_scheduled_report(schedule_id)
-    else:
+    elif run_report_jobs:
         logger.info("⏰ [Scheduler] No overdue schedules found on startup.")
 
     return get_scheduler_status()
 
 
-def stop_scheduler() -> None:
-    """安全關閉 scheduler。"""
+def stop_scheduler(wait: bool = False) -> None:
+    """安全關閉 scheduler。
+
+    `wait=True`（worker process 專用，見 backend/worker_main.py）：等待目前
+    正在執行中的 job（例如尚未跑完的評分/匯入）完成才真正關閉，換取比較
+    優雅的滾動部署；web process 維持 `wait=False` 的既有行為，不因為評分
+    job 拖慢重啟。
+    """
     if scheduler.running:
-        scheduler.shutdown(wait=False)
-        logger.info("⏰ [Scheduler] Scheduler stopped")
+        scheduler.shutdown(wait=wait)
+        logger.info("⏰ [Scheduler] Scheduler stopped (wait=%s)", wait)
