@@ -1,7 +1,7 @@
 # Meta Andromeda 非轉換素材（曝光/流量）預測對照補完計劃
 
 日期：2026-07-07
-狀態：規劃完成，待核准後實作
+狀態：**方案 A 已實作完成**（2026-07-07）
 
 ## 1. 問題確認
 
@@ -78,17 +78,41 @@
 
 ## 5. 實作步驟（單一波次，無需像 docs/20 分三波，範圍集中在 prompt + 顯示層）
 
-1. `objective_routing.py`：新增 `is_predicted_band_eligible()`。
-2. `runtime.py`：修改 `traffic`/`awareness`/`video`/`engagement` 四組的 `user_prompt_template`（新增可比對 band 輸出要求，保留既有「不評估購買意圖」等規則）與 `roas_band_eligible: True`。
-3. `repository.py`：`_score_to_detail`/`_score_to_list_item` 加 `objective_group` 欄位。
-4. 前端：`metaAndromedaLabels.js` 加標籤對照表；`MetaAndromedaReviewQueue.jsx` 第 539 行與其餘寫死「ROAS」文字處改為動態標籤（含清單頁徽章、篩選器文案如需要）。
-5. 補測試：針對四組各寫至少一組「AI 回傳 band → `_validate_provider_result` 正確落地 → `label_observed_band` 產生 observed_band → `sync_calibration_dataset`/`create_drift_report` 正確納入 accuracy 計算」的端對端合成資料測試。
-6. 全程用 mock/injected scorer 驗證，不觸發真實 OpenRouter API 呼叫（比照三波修復的既有驗證慣例）。
-7. 跑 `tests/test_meta_andromeda_module.py` 全量，確認既有測試無新增回歸。
+1. ✅ `objective_routing.py`：新增 `is_predicted_band_eligible()`（回傳 `objective_group in KNOWN_OBJECTIVE_GROUPS`）。`NON_ROAS_GROUPS` 與 `is_roas_band_eligible()` 維持原樣，heuristic fallback 與 labeling 的 CTR/CPC 路由不受影響。
+2. ✅ `runtime.py`：修改 `traffic` / `awareness` / `video` / `engagement` 四組的 `user_prompt_template`，加入「XX 潛力 BAND」輸出要求；保留原本「不評估購買意圖 / CTA 不扣分」等正確設計。`roas_band_eligible: True` 全部改為 True。
+3. ✅ `repository.py`：`_score_to_list_item` 與 `_score_to_detail` 加 `objective_group` 頂層欄位（純 `resolve_objective_group()` 函式呼叫，無 DB 變更）。
+4. ✅ 前端：`metaAndromedaLabels.js` 新增 `PREDICTED_BAND_LABELS_ZH` 對照表與 `getPredictedBandLabel(objectiveGroup, lang)`；`MetaAndromedaReviewQueue.jsx` 第 539 行由寫死「預測 ROAS」改為 `getPredictedBandLabel(detail.objective_group, language)`；第 622 行 placeholder 文字「實際 ROAS」改為中性的「實際成效」（英文版早已如此）。
+5. ✅ 補測試：`test_meta_andromeda_module.py` 新增 16 個測試（執行篩選後的計數），涵蓋：
+   - `is_predicted_band_eligible` / `is_roas_band_eligible` 路由不變
+   - `_DEFAULT_OBJECTIVE_PROFILES` 四組 `roas_band_eligible=True` 且 prompt 內含可比對 band 指示
+   - `_validate_provider_result` 對四組都會保留 band
+   - `_score_to_list_item` / `_score_to_detail` 帶 `objective_group`
+   - `resolve_objective_group` 對各組常見 objective alias（含 parametrize 8 組）路由正確
+   - traffic 素材端對端：mock provider → DB write → `get_review_queue_detail` 仍保留 band
+   - traffic 素材納入 `sync_calibration_dataset` 校準集（`synced_count=1, skipped_not_band_eligible=0`）
+   - awareness 素材納入 drift report `total_band_matched` 與 `matched_details[].band_eligible=true`
+   - heuristic fallback 對四組仍 `roas_band=None`（守降級模式語意）
+6. ✅ 全程用 mock/injected scorer 驗證，無真實 OpenRouter API 呼叫。
+7. ✅ 跑 `test_meta_andromeda_module.py` 全量：新增 16 測試全綠，原 38 個測試照舊綠；16 個 pre-existing 失敗（缺 PIL、缺 storage_backend migration 套用至 in-memory test DB 等環境問題，與本次變更無關）。
+
+### 5.1 額外處理的相容性問題
+
+DB 端的 `meta_andromeda_scoring_profiles.objective_profiles` 過去由 `20260630_meta_andromeda_objective_profiles` / `20260703_ma_seed_profile_hotfix` 兩支 migration 種入 `roas_band_eligible: False` 與舊 prompt；runtime.py 載入 profile 時 DB 優先級高於 hardcoded defaults，會把這次修的 hardcoded default 蓋掉。為此補一支 **新 migration**：
+
+- `backend/alembic/versions/20260707_ma_non_roas_band_enable.py`
+  - `down_revision = 20260706_contribution_module_tables`
+  - `upgrade()`：把 `objective_profiles` 內 traffic/awareness/video/engagement 四組的 `roas_band_eligible` 改為 True、`user_prompt_template` / `system_prompt` / `metric_focus` / `diagnostic_keys` 換成新版，僅在舊值仍為 False 時才寫入（idempotent）
+  - `downgrade()`：把同四組還原為舊值（不檢查 idempotent 條件，覆寫式）
+  - 純資料 migration，不動 schema，不依賴 prompt 文案的具體字串（只依賴 `roas_band_eligible` flag 做 idempotent 判斷）
+
+> 注意：plan 原文未列此 migration，是實作過程才發現 DB 端優先級會吃掉 hardcoded default 而補的；plan §4.1 第一列只列了 `runtime.py` 的修改，沒考慮 DB 已上線資料。如不補此 migration，runtime.py 的修改在 production 環境完全不會生效。
 
 ## 6. 驗收標準
 
-- 曝光/流量/影片/互動四類目標的素材，在成效分析批次匯入後，「已評估素材」明細頁的「✅ 實際成效對照」卡片能顯示非 `--` 的「預測」欄位與對應誤差。
-- Drift report 與校準集 summary 中，這四組素材的樣本數（`matched_count`/`synced_count`）從 0 變為有實際數字。
-- 既有 conversion/lead 的行為與顯示完全不受影響（純新增邏輯分支，不改動這兩組的 prompt/eligibility）。
-- 前端不再對 traffic/awareness/video/engagement 素材顯示「Predicted ROAS」字樣（語意錯誤），改顯示對應目標的正確指標名稱。
+- ✅ 曝光 / 流量 / 影片 / 互動四類目標的素材，在成效分析批次匯入後，「已評估素材」明細頁的「✅ 實際成效對照」卡片能顯示非 `--` 的「預測」欄位與對應誤差。
+  - 驗證點：`test_non_roas_group_end_to_end_ai_band_flows_through_to_detail` —— mock provider 回 `roas_band: "high"` → 寫入 `MetaAndromedaScoreEvent` → `get_review_queue_detail` 回讀仍是 `"high"`，且 `objective_group == "traffic"`。
+- ✅ Drift report 與校準集 summary 中，這四組素材的樣本數從 0 變為有實際數字。
+  - 驗證點：`test_non_roas_group_enters_calibration_dataset_when_band_predicted`（`synced_count=1, skipped_not_band_eligible=0`）+ `test_non_roas_group_enters_drift_report_accuracy_when_band_predicted`（`total_band_matched=1, matched_details[0].band_eligible=true`）。
+- ✅ 既有 conversion / lead 的行為與顯示完全不受影響（純新增邏輯分支，不改動這兩組的 prompt / eligibility）。`lead` profile 仍是 `roas_band_eligible=True` 與原本的「LEAD QUALITY BAND」措辭；`is_roas_band_eligible` 仍回 `True` 給 conversion/lead/app。
+- ✅ 前端不再對 traffic/awareness/video/engagement 素材顯示「Predicted ROAS」字樣（語意錯誤），改顯示對應目標的正確指標名稱。
+  - 驗證點：`_score_to_detail["objective_group"]` 對應 `getPredictedBandLabel("traffic", "zh")` → `"預測 CTR 潛力"`，其他三組依此類推。

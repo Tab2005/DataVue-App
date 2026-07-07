@@ -89,3 +89,18 @@ def is_roas_band_eligible(objective_group: str) -> bool:
     traffic/awareness/engagement/video explicitly opt out (roas_band=null).
     """
     return objective_group not in NON_ROAS_GROUPS
+
+
+def is_predicted_band_eligible(objective_group: str) -> bool:
+    """Whether the prompt for this objective_group asks the model to produce a
+    comparable predicted band (any kind: ROAS, CTR potential, VTR potential, …).
+
+    docs/23: traffic/awareness/video/engagement 原本被排除在 roas_band 之外
+    （heuristic 與 observed_label 仍用 CTR/CPC 走 NON_ROAS 路由），但 prompt 已
+    更新成「產出對應目標的潛力 band」，所以「是否有預測 band」這件事對所有已知
+    group 都是 True。本函式供文件標記、未來統計分析與「這個 group 是不是應該在
+    detail 頁顯示預測欄位」等語意判斷使用；不要拿來取代 is_roas_band_eligible()
+    ——那條路由仍控制「觀測端用 ROAS 還是用 CTR/CPC」以及「heuristic fallback
+    要不要產 band」這兩條獨立邏輯。
+    """
+    return objective_group in KNOWN_OBJECTIVE_GROUPS

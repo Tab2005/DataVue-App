@@ -83,3 +83,25 @@ export function getPerfMetricLabel(key, lang = 'zh') {
     if (lang !== 'zh') return key;
     return PERF_METRIC_LABELS_ZH[String(key).toLowerCase()] ?? key;
 }
+
+// Predicted band column header (docs/23): shown in review-queue detail page
+// right next to the overall score. Each objective_group gets a label that names
+// the metric the band is actually measuring (CTR potential for traffic, brand
+// recall for awareness, etc.) instead of a one-size-fits-all "Predicted ROAS"
+// that is semantically wrong for the non-conversion groups. The underlying
+// roas_band field is reused; only the displayed label changes.
+export const PREDICTED_BAND_LABELS_ZH = {
+    conversion: { en: 'Predicted ROAS',          zh: '預測 ROAS' },
+    lead:       { en: 'Predicted Lead Quality',  zh: '預測名單品質' },
+    traffic:    { en: 'Predicted CTR Potential', zh: '預測 CTR 潛力' },
+    awareness:  { en: 'Predicted Brand Recall',  zh: '預測品牌記憶度' },
+    video:      { en: 'Predicted VTR Potential', zh: '預測 VTR 潛力' },
+    engagement: { en: 'Predicted Engagement Rate', zh: '預測互動率' },
+    app:        { en: 'Predicted App Install Potential', zh: '預測 APP 安裝潛力' },
+    unknown:    { en: 'Predicted Band',          zh: '預測分級' },
+};
+
+export function getPredictedBandLabel(objectiveGroup, lang = 'zh') {
+    const entry = PREDICTED_BAND_LABELS_ZH[objectiveGroup] || PREDICTED_BAND_LABELS_ZH.unknown;
+    return lang === 'zh' ? entry.zh : entry.en;
+}

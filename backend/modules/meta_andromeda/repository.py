@@ -688,6 +688,7 @@ class MetaAndromedaRepository:
             "preview_url": score.preview_url,
             "request_mode": score.request_mode,
             "objective": score.objective,
+            "objective_group": resolve_objective_group(score.objective),
             "placement_family": score.placement_family,
             "market": score.market,
             "prediction_mode": score.prediction_mode,

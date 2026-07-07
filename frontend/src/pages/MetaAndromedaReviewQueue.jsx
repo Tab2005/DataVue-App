@@ -8,7 +8,7 @@ import {
     fetchMetaAndromedaReviewDetail,
     fetchMetaAndromedaReviewQueue,
 } from '../services/metaAndromedaReviewQueueService';
-import { getDiagnosticLabel, getPerfMetricLabel, formatPerfValue } from '../utils/metaAndromedaLabels';
+import { getDiagnosticLabel, getPerfMetricLabel, formatPerfValue, getPredictedBandLabel } from '../utils/metaAndromedaLabels';
 
 const PAGE_SIZE = 25;
 
@@ -536,7 +536,7 @@ const MetaAndromedaReviewQueue = () => {
                                     <div style={{ color: 'var(--text-primary)', fontWeight: 700, fontSize: '1.5rem' }}>{detail.overall_score ?? '--'}</div>
                                 </div>
                                 <div style={detailCardStyle}>
-                                    <div style={labelStyle}>{t('Predicted ROAS', '預測 ROAS')}</div>
+                                    <div style={labelStyle}>{getPredictedBandLabel(detail.objective_group, language)}</div>
                                     <div style={{ fontWeight: 700, fontSize: '1.1rem', color: roasBandColor[detail.roas_prediction?.band] || 'var(--text-secondary)' }}>
                                         {detail.roas_prediction?.band ? detail.roas_prediction.band.toUpperCase() : '--'}
                                     </div>
@@ -619,7 +619,7 @@ const MetaAndromedaReviewQueue = () => {
                                     <div style={{ color: 'var(--text-secondary)', fontSize: '0.85rem', lineHeight: 1.6 }}>
                                         {t(
                                             'Import actual ad data via Analytics → Batch Import to enable comparison.',
-                                            '透過「成效分析」→ 批次匯入後，系統會自動關聯實際 ROAS，即可在此查看預測準確度。'
+                                            '透過「成效分析」→ 批次匯入後，系統會自動關聯實際成效，即可在此查看預測準確度。'
                                         )}
                                     </div>
                                 </div>

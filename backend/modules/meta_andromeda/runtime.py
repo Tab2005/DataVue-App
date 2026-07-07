@@ -157,10 +157,11 @@ _DEFAULT_OBJECTIVE_PROFILES: dict[str, dict] = {
             "3. Landing Relevance: Is the ad message clearly aligned with what users will find after clicking?\n"
             "4. Visual Appeal: Is the creative visually engaging and feed-appropriate?\n\n"
             "IMPORTANT: This is a TRAFFIC/CLICK campaign. Do NOT evaluate purchase intent or ROAS.\n"
-            "Set roas_band to null. Score based on CTR potential ONLY.\n\n"
+            "Do NOT penalize for missing purchase CTAs — this is a traffic campaign.\n\n"
+            "Use roas_band as CTR POTENTIAL BAND: high = expected strong click-through, mid = moderate, low = weak.\n\n"
             "Return JSON only with keys: overall_score, roas_band, top_positive_drivers, top_negative_drivers, risk_tags, diagnostic_breakdown, summary.\n"
             "Use overall_score as integer 0-100.\n"
-            "Set roas_band to null — this campaign type does not use ROAS prediction.\n"
+            "Use roas_band as one of high/mid/low/null to represent click-through potential (not ROAS).\n"
             "The diagnostic_breakdown object MUST contain exactly these keys with short Chinese evaluation:\n"
             "  - thumb_stop: Evaluates visual stopping power and feed scroll interruption strength.\n"
             "  - curiosity_hook: Evaluates click motivation, urgency, curiosity, or intrigue triggers.\n"
@@ -175,7 +176,7 @@ _DEFAULT_OBJECTIVE_PROFILES: dict[str, dict] = {
             "All explanations, summaries, and breakdowns MUST be written in Traditional Chinese (繁體中文)."
         ),
         "metric_focus": "ctr",
-        "roas_band_eligible": False,
+        "roas_band_eligible": True,
     },
     "awareness": {
         "user_prompt_template": (
@@ -187,11 +188,12 @@ _DEFAULT_OBJECTIVE_PROFILES: dict[str, dict] = {
             "3. Visual Distinctiveness: Does the creative stand out in a crowded feed without requiring click intent?\n"
             "4. Emotional Resonance: Does the creative evoke the intended emotion (aspiration, trust, delight, nostalgia)?\n\n"
             "IMPORTANT: This is a BRAND AWARENESS/REACH campaign. Purchase conversion and ROAS are NOT applicable.\n"
-            "Set roas_band to null. A missing or weak CTA does NOT penalize this creative type.\n"
-            "Score based on brand memorability and emotional impact ONLY.\n\n"
+            "Do NOT penalize for weak CTAs or low purchase intent — awareness campaigns are not meant to convert directly.\n"
+            "Score based on brand memorability and emotional impact.\n\n"
+            "Use roas_band as BRAND RECALL POTENTIAL BAND: high = expected strong brand memorability, mid = moderate, low = weak.\n\n"
             "Return JSON only with keys: overall_score, roas_band, top_positive_drivers, top_negative_drivers, risk_tags, diagnostic_breakdown, summary.\n"
             "Use overall_score as integer 0-100.\n"
-            "Set roas_band to null — brand awareness campaigns do not use ROAS prediction.\n"
+            "Use roas_band as one of high/mid/low/null to represent brand recall potential (not ROAS).\n"
             "The diagnostic_breakdown object MUST contain exactly these keys with short Chinese evaluation:\n"
             "  - brand_recall: Evaluates brand memorability, logo/name visibility, and post-exposure recognition.\n"
             "  - message_clarity: Evaluates how quickly and clearly the core brand message is communicated.\n"
@@ -206,7 +208,7 @@ _DEFAULT_OBJECTIVE_PROFILES: dict[str, dict] = {
             "All explanations, summaries, and breakdowns MUST be written in Traditional Chinese (繁體中文)."
         ),
         "metric_focus": "cpm_reach",
-        "roas_band_eligible": False,
+        "roas_band_eligible": True,
     },
     "video": {
         "user_prompt_template": (
@@ -218,10 +220,11 @@ _DEFAULT_OBJECTIVE_PROFILES: dict[str, dict] = {
             "3. Message Delivery: Is the core message communicated before typical drop-off points (usually 6-15s)?\n"
             "4. Brand Integration: Is the brand naturally integrated without disrupting the viewing experience?\n\n"
             "IMPORTANT: This is a VIDEO VIEW campaign. Evaluate for VTR (view-through rate) potential, NOT purchase conversion.\n"
-            "Set roas_band to null. A missing text CTA does NOT penalize this creative.\n\n"
+            "Do NOT penalize for missing text CTAs — video view campaigns are about retention, not click action.\n\n"
+            "Use roas_band as VTR POTENTIAL BAND: high = expected strong watch-through, mid = moderate, low = weak.\n\n"
             "Return JSON only with keys: overall_score, roas_band, top_positive_drivers, top_negative_drivers, risk_tags, diagnostic_breakdown, summary.\n"
             "Use overall_score as integer 0-100.\n"
-            "Set roas_band to null — video view campaigns do not use ROAS prediction.\n"
+            "Use roas_band as one of high/mid/low/null to represent VTR potential (not ROAS).\n"
             "The diagnostic_breakdown object MUST contain exactly these keys with short Chinese evaluation:\n"
             "  - hook_strength: Evaluates the visual and audio power of the opening 1-3 seconds.\n"
             "  - pacing: Evaluates video rhythm, edit speed, and ability to maintain viewer attention.\n"
@@ -236,7 +239,7 @@ _DEFAULT_OBJECTIVE_PROFILES: dict[str, dict] = {
             "All explanations, summaries, and breakdowns MUST be written in Traditional Chinese (繁體中文)."
         ),
         "metric_focus": "vtr",
-        "roas_band_eligible": False,
+        "roas_band_eligible": True,
     },
     "engagement": {
         "user_prompt_template": (
@@ -248,10 +251,11 @@ _DEFAULT_OBJECTIVE_PROFILES: dict[str, dict] = {
             "3. Interaction Trigger: Does the content naturally invite comments, reactions, or discussion?\n"
             "4. Visual Impact: Is the visual quality strong enough to earn organic engagement and stop the scroll?\n\n"
             "IMPORTANT: This is an ENGAGEMENT campaign (likes, comments, shares). Do NOT evaluate purchase intent.\n"
-            "Set roas_band to null. Score based on social engagement rate potential ONLY.\n\n"
+            "Do NOT penalize for missing purchase CTAs — engagement is about social interaction, not conversion.\n\n"
+            "Use roas_band as ENGAGEMENT RATE POTENTIAL BAND: high = expected strong interaction volume, mid = moderate, low = weak.\n\n"
             "Return JSON only with keys: overall_score, roas_band, top_positive_drivers, top_negative_drivers, risk_tags, diagnostic_breakdown, summary.\n"
             "Use overall_score as integer 0-100.\n"
-            "Set roas_band to null — engagement campaigns do not use ROAS prediction.\n"
+            "Use roas_band as one of high/mid/low/null to represent social engagement rate potential (not ROAS).\n"
             "The diagnostic_breakdown object MUST contain exactly these keys with short Chinese evaluation:\n"
             "  - shareability: Evaluates potential for organic sharing and audience tagging behavior.\n"
             "  - emotional_hook: Evaluates strength of emotional trigger and its intensity and authenticity.\n"
@@ -266,7 +270,7 @@ _DEFAULT_OBJECTIVE_PROFILES: dict[str, dict] = {
             "All explanations, summaries, and breakdowns MUST be written in Traditional Chinese (繁體中文)."
         ),
         "metric_focus": "engagement_rate",
-        "roas_band_eligible": False,
+        "roas_band_eligible": True,
     },
 }
 
