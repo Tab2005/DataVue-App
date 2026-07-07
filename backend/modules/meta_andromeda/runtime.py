@@ -1278,104 +1278,119 @@ class MetaAndromedaRuntimeAdapter:
         }
 
     @staticmethod
-    async def generate_score_result(score_payload: dict) -> dict:
-        """Run registry-backed scoring with optional AI provider fallback."""
-        await asyncio.sleep(0.05)
-        registry_entry = model_registry.get_entry()
-        provider_name = registry_entry.provider
-        import os
+    def _prepare_asset_context(score_payload: dict) -> str | None:
+        """同步阻塞版本的素材準備：DB 查詢上傳者金鑰、讀檔/S3 下載、base64 編碼、
+        ffmpeg keyframe 抽取。這些全是阻塞 I/O，必須透過 asyncio.to_thread 呼叫，
+        不可直接 await（否則會卡住 FastAPI 的 event loop，見 docs/24 Wave 1）。
 
-        # 嘗試從資料庫讀取該素材上傳者的 API 金鑰
+        直接 mutate score_payload["request_context"]；回傳素材上傳者自己的
+        OpenRouter API 金鑰（若有）。
+        """
         db_key = None
         asset_id = score_payload.get("asset_id")
-        if asset_id:
+        if not asset_id:
+            return db_key
+
+        try:
+            from database import SessionLocal
+            from database.models.meta_andromeda import MetaAndromedaAsset
+            from database.models.user import User
+            from modules.auth.service import TokenManager
+
+            db_session = SessionLocal()
             try:
-                from database import SessionLocal
-                from database.models.meta_andromeda import MetaAndromedaAsset
-                from database.models.user import User
-                from modules.auth.service import TokenManager
+                asset = db_session.query(MetaAndromedaAsset).filter(MetaAndromedaAsset.id == asset_id).first()
+                if asset and asset.uploaded_by:
+                    user = db_session.query(User).filter(User.id == asset.uploaded_by).first()
+                    if user and user.google_id:
+                        db_key = TokenManager.get_ai_api_key(user.google_id, provider="openrouter")
+                if asset:
+                    request_context = score_payload.setdefault("request_context", {})
+                    request_context.setdefault("asset_public_url", asset.public_url)
+                    request_context.setdefault("asset_source_url", asset.asset_uri)
 
-                db_session = SessionLocal()
-                try:
-                    asset = db_session.query(MetaAndromedaAsset).filter(MetaAndromedaAsset.id == asset_id).first()
-                    if asset and asset.uploaded_by:
-                        user = db_session.query(User).filter(User.id == asset.uploaded_by).first()
-                        if user and user.google_id:
-                            db_key = TokenManager.get_ai_api_key(user.google_id, provider="openrouter")
-                    if asset:
-                        request_context = score_payload.setdefault("request_context", {})
-                        request_context.setdefault("asset_public_url", asset.public_url)
-                        request_context.setdefault("asset_source_url", asset.asset_uri)
+                    # 若為內部儲存協議，將其轉為 Base64 Data URI 直接傳送給 AI
+                    if asset.asset_uri.startswith("storage://") and asset.asset_type == "image":
+                        try:
+                            import base64
+                            from pathlib import Path
 
-                        # 若為內部儲存協議，將其轉為 Base64 Data URI 直接傳送給 AI
-                        if asset.asset_uri.startswith("storage://") and asset.asset_type == "image":
-                            try:
-                                import base64
-                                from pathlib import Path
-
-                                if asset.storage_backend == "filesystem":
-                                    storage_root = Path(settings.META_ANDROMEDA_STORAGE_ROOT)
-                                    safe_path = (storage_root / asset.storage_key).resolve()
-                                    if safe_path.relative_to(storage_root.resolve()) and safe_path.exists():
-                                        file_bytes = safe_path.read_bytes()
-                                        mime = "image/png"
-                                        if asset.source_filename.lower().endswith((".jpg", ".jpeg")):
-                                            mime = "image/jpeg"
-                                        elif asset.source_filename.lower().endswith(".webp"):
-                                            mime = "image/webp"
-                                        elif asset.source_filename.lower().endswith(".gif"):
-                                            mime = "image/gif"
-                                        base64_str = base64.b64encode(file_bytes).decode("utf-8")
-                                        request_context["asset_public_url"] = f"data:{mime};base64,{base64_str}"
-                                
-                                elif asset.storage_backend == "s3_compatible":
-                                    from .storage import storage_adapter
-                                    client = storage_adapter._build_s3_client()
-                                    bucket = settings.META_ANDROMEDA_STORAGE_S3_BUCKET
-                                    response = client.get_object(Bucket=bucket, Key=asset.storage_key)
-                                    file_bytes = response['Body'].read()
-                                    mime = response.get('ContentType', 'image/png')
+                            if asset.storage_backend == "filesystem":
+                                storage_root = Path(settings.META_ANDROMEDA_STORAGE_ROOT)
+                                safe_path = (storage_root / asset.storage_key).resolve()
+                                if safe_path.relative_to(storage_root.resolve()) and safe_path.exists():
+                                    file_bytes = safe_path.read_bytes()
+                                    mime = "image/png"
+                                    if asset.source_filename.lower().endswith((".jpg", ".jpeg")):
+                                        mime = "image/jpeg"
+                                    elif asset.source_filename.lower().endswith(".webp"):
+                                        mime = "image/webp"
+                                    elif asset.source_filename.lower().endswith(".gif"):
+                                        mime = "image/gif"
                                     base64_str = base64.b64encode(file_bytes).decode("utf-8")
                                     request_context["asset_public_url"] = f"data:{mime};base64,{base64_str}"
-                            except Exception as parse_exc:
-                                logger.error(f"[MetaAndromeda] Base64 encoding failed for asset {asset_id}: {parse_exc}")
 
-                        # 影片素材：抽 keyframes 多圖傳入，讓模型能實際「看到」內容而非只憑文案盲評。
-                        # 任何失敗（ffmpeg 不存在、檔案損毀、逾時）都優雅退化為空列表，之後在
-                        # _validate_provider_result 標記 video_content_not_inspected 並顯著調降 confidence。
-                        elif asset.asset_uri.startswith("storage://") and asset.asset_type == "video":
-                            try:
-                                from .video_utils import extract_video_keyframes_base64
+                            elif asset.storage_backend == "s3_compatible":
+                                from .storage import storage_adapter
+                                client = storage_adapter._build_s3_client()
+                                bucket = settings.META_ANDROMEDA_STORAGE_S3_BUCKET
+                                response = client.get_object(Bucket=bucket, Key=asset.storage_key)
+                                file_bytes = response['Body'].read()
+                                mime = response.get('ContentType', 'image/png')
+                                base64_str = base64.b64encode(file_bytes).decode("utf-8")
+                                request_context["asset_public_url"] = f"data:{mime};base64,{base64_str}"
+                        except Exception as parse_exc:
+                            logger.error(f"[MetaAndromeda] Base64 encoding failed for asset {asset_id}: {parse_exc}")
 
-                                video_bytes = None
-                                if asset.storage_backend == "filesystem":
-                                    from pathlib import Path
-                                    storage_root = Path(settings.META_ANDROMEDA_STORAGE_ROOT)
-                                    safe_path = (storage_root / asset.storage_key).resolve()
-                                    if safe_path.relative_to(storage_root.resolve()) and safe_path.exists():
-                                        video_bytes = safe_path.read_bytes()
-                                elif asset.storage_backend == "s3_compatible":
-                                    from .storage import storage_adapter
-                                    client = storage_adapter._build_s3_client()
-                                    bucket = settings.META_ANDROMEDA_STORAGE_S3_BUCKET
-                                    response = client.get_object(Bucket=bucket, Key=asset.storage_key)
-                                    video_bytes = response['Body'].read()
+                    # 影片素材：抽 keyframes 多圖傳入，讓模型能實際「看到」內容而非只憑文案盲評。
+                    # 任何失敗（ffmpeg 不存在、檔案損毀、逾時）都優雅退化為空列表，之後在
+                    # _validate_provider_result 標記 video_content_not_inspected 並顯著調降 confidence。
+                    elif asset.asset_uri.startswith("storage://") and asset.asset_type == "video":
+                        try:
+                            from .video_utils import extract_video_keyframes_base64
 
-                                if video_bytes:
-                                    keyframe_urls = extract_video_keyframes_base64(video_bytes)
-                                    if keyframe_urls:
-                                        request_context["video_keyframe_urls"] = keyframe_urls
-                            except Exception as parse_exc:
-                                logger.warning(f"[MetaAndromeda] Video keyframe extraction failed for asset {asset_id}: {parse_exc}")
-                finally:
-                    db_session.close()
-            except Exception as e:
-                logger.error(f"[MetaAndromeda] Failed to retrieve DB API key for asset {asset_id}: {e}")
+                            video_bytes = None
+                            if asset.storage_backend == "filesystem":
+                                from pathlib import Path
+                                storage_root = Path(settings.META_ANDROMEDA_STORAGE_ROOT)
+                                safe_path = (storage_root / asset.storage_key).resolve()
+                                if safe_path.relative_to(storage_root.resolve()) and safe_path.exists():
+                                    video_bytes = safe_path.read_bytes()
+                            elif asset.storage_backend == "s3_compatible":
+                                from .storage import storage_adapter
+                                client = storage_adapter._build_s3_client()
+                                bucket = settings.META_ANDROMEDA_STORAGE_S3_BUCKET
+                                response = client.get_object(Bucket=bucket, Key=asset.storage_key)
+                                video_bytes = response['Body'].read()
+
+                            if video_bytes:
+                                keyframe_urls = extract_video_keyframes_base64(video_bytes)
+                                if keyframe_urls:
+                                    request_context["video_keyframe_urls"] = keyframe_urls
+                        except Exception as parse_exc:
+                            logger.warning(f"[MetaAndromeda] Video keyframe extraction failed for asset {asset_id}: {parse_exc}")
+            finally:
+                db_session.close()
+        except Exception as e:
+            logger.error(f"[MetaAndromeda] Failed to retrieve DB API key for asset {asset_id}: {e}")
+
+        return db_key
+
+    @staticmethod
+    async def generate_score_result(score_payload: dict) -> dict:
+        """Run registry-backed scoring with optional AI provider fallback."""
+        registry_entry = model_registry.get_entry()
+        provider_name = registry_entry.provider
+
+        # 素材準備（DB 查詢、讀檔、base64、S3 下載、ffmpeg 抽幀）是同步阻塞 I/O，
+        # 丟到 thread 執行避免卡住 event loop（docs/24 Wave 1）。
+        db_key = await asyncio.to_thread(
+            MetaAndromedaRuntimeAdapter._prepare_asset_context, score_payload
+        )
 
         openrouter_key = db_key or settings.OPENROUTER_API_KEY
-        zeabur_key = os.getenv("ZEABUR_AI_HUB_API_KEY")
 
-        logger.warning(
+        logger.debug(
             "[MetaAndromeda] generate_score_result. DB Key present: %s, OPENROUTER_API_KEY len: %s, provider_override: %s",
             bool(db_key),
             len(openrouter_key) if openrouter_key else 0,
@@ -1401,7 +1416,7 @@ class MetaAndromedaRuntimeAdapter:
             return await provider.score(score_payload, registry_entry)
         except Exception as exc:
             logger.warning("Meta Andromeda scoring provider failed: %s", exc, exc_info=True)
-            if not settings.META_ANDROMENS_SCORING_ALLOW_FALLBACK if hasattr(settings, "META_ANDROMENS_SCORING_ALLOW_FALLBACK") else not settings.META_ANDROMEDA_SCORING_ALLOW_FALLBACK:
+            if not settings.META_ANDROMEDA_SCORING_ALLOW_FALLBACK:
                 raise
             fallback_entry = model_registry.get_entry("candidate_v0")
             err_detail = str(exc).replace("\n", " ")

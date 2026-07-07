@@ -555,6 +555,29 @@ class MetaAndromedaService:
         }
 
     @staticmethod
+    def _resolve_observed_uploader_id_sync(db, user_id: str) -> str:
+        """同步版本：查詢 User 資料表，將外部 google_id 轉換為內部 User.id（純 DB I/O，見 docs/24 Wave 1）。"""
+        db_user = db.query(User).filter(User.google_id == user_id).first()
+        return db_user.id if db_user else user_id
+
+    @staticmethod
+    def _store_observed_asset_sync(db, snapshot: dict, user_db_id: str) -> dict:
+        """同步版本：把下載好的素材位元組寫入儲存後端並登記資產紀錄（檔案/S3 寫入 + DB，見 docs/24 Wave 1）。"""
+        asset_record = storage_adapter.store_asset(
+            file_bytes=snapshot["file_bytes"],
+            asset_type=snapshot["asset_type"],
+            source_filename=snapshot["source_filename"],
+            uploaded_by=user_db_id,
+            content_type=snapshot["content_type"],
+        )
+        return repository.create_uploaded_asset(db, asset_record=asset_record)
+
+    @staticmethod
+    def _create_observed_creative_record_sync(db, observed_record: dict) -> dict:
+        """同步版本：寫入觀測素材紀錄（純 DB I/O，見 docs/24 Wave 1）。"""
+        return repository.create_observed_creative(db, observed_record=observed_record)
+
+    @staticmethod
     async def import_observed_facebook_ad(
         db,
         payload: dict,
@@ -568,10 +591,11 @@ class MetaAndromedaService:
             team_id=team_id,
         )
         candidate = ObservedCreativeCandidate.model_validate(candidate)
-        
+
         # 查詢 User 資料表，將外部 google_id 轉換為內部 User.id (UUID)，防止外鍵約束衝突
-        db_user = db.query(User).filter(User.google_id == user_id).first()
-        user_db_id = db_user.id if db_user else user_id
+        user_db_id = await asyncio.to_thread(
+            MetaAndromedaService._resolve_observed_uploader_id_sync, db, user_id
+        )
 
         observed_creative_id = MetaAndromedaService.build_observed_creative_id(
             candidate.ad_id,
@@ -586,14 +610,9 @@ class MetaAndromedaService:
                     ad_id=candidate.ad_id,
                     media_type=candidate.media_type,
                 )
-                asset_record = storage_adapter.store_asset(
-                    file_bytes=snapshot["file_bytes"],
-                    asset_type=snapshot["asset_type"],
-                    source_filename=snapshot["source_filename"],
-                    uploaded_by=user_db_id,
-                    content_type=snapshot["content_type"],
+                stored_asset = await asyncio.to_thread(
+                    MetaAndromedaService._store_observed_asset_sync, db, snapshot, user_db_id
                 )
-                stored_asset = repository.create_uploaded_asset(db, asset_record=asset_record)
             except MetaAndromedaValidationError:
                 raise
             except Exception as e:
@@ -604,9 +623,10 @@ class MetaAndromedaService:
                     exc_info=True
                 )
 
-        observed_record = repository.create_observed_creative(
+        observed_record = await asyncio.to_thread(
+            MetaAndromedaService._create_observed_creative_record_sync,
             db,
-            observed_record={
+            {
                 "id": observed_creative_id,
                 "asset_id": stored_asset["asset_id"] if stored_asset else None,
                 "asset_uri": stored_asset["asset_uri"] if stored_asset else None,
@@ -690,10 +710,16 @@ class MetaAndromedaService:
         return repository.create_score_event(db, score_payload)
 
     @staticmethod
-    def create_and_enqueue_score_event_for_observation(auto_score_payload: dict | None) -> dict | None:
-        if not auto_score_payload:
-            return None
+    def _prepare_score_event_for_observation_sync(auto_score_payload: dict):
+        """同步版本：判斷並準備觀測匯入後的自動評分事件（純 DB/Redis I/O，見 docs/24 Wave 1）。
 
+        回傳 ("linked", result)：重用既有已完成評分，DB 寫入與狀態更新已全部完成，
+        呼叫端直接回傳 result 即可。
+        回傳 ("need_dispatch", info)：呼叫端需留在有運作中 event loop 的執行緒上呼叫
+        MetaAndromedaService.enqueue_score_event() 完成實際派工——該呼叫在
+        local_async fallback 時會用到 asyncio.create_task()，不能丟進 to_thread。
+        回傳 ("error", None)：建立評分事件失敗，狀態已標記為 failed，呼叫端直接回傳 None。
+        """
         from database.models.meta_andromeda import MetaAndromedaScoreEvent as _ScoreEvent
         from sqlalchemy.orm.attributes import flag_modified
 
@@ -747,7 +773,7 @@ class MetaAndromedaService:
                     observed_creative_id,
                     len(linked_ids),
                 )
-                return {"score_event_id": existing.id, "status": "completed"}
+                return "linked", {"score_event_id": existing.id, "status": "completed"}
 
             # 無既有預評，正常建立並排入評分
             payload = {
@@ -762,23 +788,11 @@ class MetaAndromedaService:
             score_event_id = created_score["score_event_id"]
             runtime_job_id = get_meta_andromeda_score_job_id(score_event_id)
             MetaAndromedaService.assign_score_runtime_job(db, score_event_id, runtime_job_id)
-            queued_score = MetaAndromedaService.enqueue_score_event(
-                db,
-                score_event_id=score_event_id,
-                runtime_job_id=runtime_job_id,
-            )
-            logger.info(
-                "[Observation Import] Background auto score-event queued for observed_creative_id %s: %s",
-                observed_creative_id,
-                score_event_id,
-            )
-            MetaAndromedaService._set_observation_import_status(
-                observed_creative_id,
-                score_event_id=score_event_id,
-                score_status=queued_score.get("status") or "queued",
-                runtime_job_id=queued_score.get("runtime_job_id") or runtime_job_id,
-            )
-            return queued_score
+            return "need_dispatch", {
+                "observed_creative_id": observed_creative_id,
+                "score_event_id": score_event_id,
+                "runtime_job_id": runtime_job_id,
+            }
         except Exception as exc:
             logger.warning(
                 "[Observation Import] Background auto score-event creation failed for observed_creative_id %s: %s",
@@ -791,9 +805,48 @@ class MetaAndromedaService:
                 score_status="failed",
                 observation_message=str(exc),
             )
-            return None
+            return "error", None
         finally:
             db.close()
+
+    @staticmethod
+    async def create_and_enqueue_score_event_for_observation(auto_score_payload: dict | None) -> dict | None:
+        if not auto_score_payload:
+            return None
+
+        kind, payload = await asyncio.to_thread(
+            MetaAndromedaService._prepare_score_event_for_observation_sync, auto_score_payload
+        )
+        if kind != "need_dispatch":
+            return payload
+
+        observed_creative_id = payload["observed_creative_id"]
+        score_event_id = payload["score_event_id"]
+        runtime_job_id = payload["runtime_job_id"]
+
+        db = SessionLocal()
+        try:
+            queued_score = MetaAndromedaService.enqueue_score_event(
+                db,
+                score_event_id=score_event_id,
+                runtime_job_id=runtime_job_id,
+            )
+        finally:
+            db.close()
+
+        logger.info(
+            "[Observation Import] Background auto score-event queued for observed_creative_id %s: %s",
+            observed_creative_id,
+            score_event_id,
+        )
+        await asyncio.to_thread(
+            MetaAndromedaService._set_observation_import_status,
+            observed_creative_id,
+            score_event_id=score_event_id,
+            score_status=queued_score.get("status") or "queued",
+            runtime_job_id=queued_score.get("runtime_job_id") or runtime_job_id,
+        )
+        return queued_score
 
     @staticmethod
     async def run_observed_facebook_ad_import_job(payload: dict, *, user_id: str, team_id: str | None = None) -> None:
@@ -801,7 +854,8 @@ class MetaAndromedaService:
             payload["ad_id"],
             payload["observation_window_kind"],
         )
-        MetaAndromedaService._set_observation_import_status(
+        await asyncio.to_thread(
+            MetaAndromedaService._set_observation_import_status,
             observed_creative_id,
             observation_status="queued",
             observation_message="Observation import queued, waiting for concurrency slot",
@@ -809,7 +863,8 @@ class MetaAndromedaService:
         )
 
         async with _observation_import_semaphore.acquire():
-            MetaAndromedaService._set_observation_import_status(
+            await asyncio.to_thread(
+                MetaAndromedaService._set_observation_import_status,
                 observed_creative_id,
                 observation_status="processing",
                 observation_message="Observation import processing",
@@ -824,7 +879,8 @@ class MetaAndromedaService:
                     team_id=team_id,
                 )
                 auto_score_payload = response.pop("_auto_score_payload", None)
-                MetaAndromedaService._set_observation_import_status(
+                await asyncio.to_thread(
+                    MetaAndromedaService._set_observation_import_status,
                     observed_creative_id,
                     observation_status="completed",
                     observation_message="Observation imported",
@@ -834,9 +890,10 @@ class MetaAndromedaService:
                     score_event_id=response.get("score_event_id"),
                 )
                 if auto_score_payload:
-                    MetaAndromedaService.create_and_enqueue_score_event_for_observation(auto_score_payload)
+                    await MetaAndromedaService.create_and_enqueue_score_event_for_observation(auto_score_payload)
                 elif response.get("score_status") == "skipped_no_asset":
-                    MetaAndromedaService._set_observation_import_status(
+                    await asyncio.to_thread(
+                        MetaAndromedaService._set_observation_import_status,
                         observed_creative_id,
                         score_status="skipped_no_asset",
                     )
@@ -847,7 +904,8 @@ class MetaAndromedaService:
                     exc,
                     exc_info=True,
                 )
-                MetaAndromedaService._set_observation_import_status(
+                await asyncio.to_thread(
+                    MetaAndromedaService._set_observation_import_status,
                     observed_creative_id,
                     observation_status="failed",
                     observation_message=str(exc),
@@ -1166,29 +1224,135 @@ class MetaAndromedaService:
         raise ValueError(f"Unsupported external worker event_type: {event_type}")
 
     @staticmethod
-    async def process_score_event(score_event_id: str, queue_host: str = "unknown") -> dict:
-        async with _score_event_semaphore.acquire():
-            db = SessionLocal()
-            try:
-                current = repository.mark_score_processing(db, score_event_id)
-                if current is None:
-                    return repository.get_review_queue_detail(db, score_event_id)
+    def _mark_score_processing_sync(score_event_id: str, queue_host: str) -> tuple[dict | None, dict | None]:
+        """同步版本：DB 標記評分開始處理 + 寫入 worker event。純 DB I/O，
+        透過 asyncio.to_thread 呼叫避免卡住 event loop（docs/24 Wave 1）。
+
+        回傳 (current, not_found_detail)：current 非 None 時代表已標記為
+        processing，可以繼續往下跑評分；not_found_detail 非 None 時代表 score
+        event 已不在可處理狀態，呼叫端應直接回傳它並結束（維持原本提前 return 的行為）。
+        """
+        db = SessionLocal()
+        try:
+            current = repository.mark_score_processing(db, score_event_id)
+            if current is None:
+                return None, repository.get_review_queue_detail(db, score_event_id)
+            repository.log_worker_event(
+                db,
+                score_event_id=score_event_id,
+                event_type="processing_started",
+                queue_host=queue_host,
+                runtime_job_id=current["runtime_job_id"],
+                status="processing",
+                attempt_count=current["attempt_count"],
+                message="worker started",
+                event_payload={
+                    "queue_host": queue_host,
+                    "max_concurrency": settings.META_ANDROMEDA_SCORE_MAX_CONCURRENCY,
+                },
+            )
+            return current, None
+        finally:
+            db.close()
+
+    @staticmethod
+    def _prepare_score_retry_or_failure(score_event_id: str, queue_host: str, error_message: str):
+        """同步版本：判斷是否還有重試次數並寫入對應 DB 狀態（純 DB I/O，見 docs/24 Wave 1）。
+
+        回傳 ("retry", queued) 時，呼叫端需留在 event loop thread 上呼叫
+        MetaAndromedaService.enqueue_score_event() 完成實際派工——該呼叫在
+        local_async fallback 時會呼叫 asyncio.create_task()，必須跑在有運作中
+        event loop 的執行緒，不能丟進 to_thread。回傳 ("failed", failed) 時已是
+        終態，直接回傳給呼叫端即可。
+        """
+        db = SessionLocal()
+        try:
+            latest = repository.get_review_queue_detail(db, score_event_id)
+            if latest["attempt_count"] < settings.META_ANDROMEDA_SCORE_MAX_ATTEMPTS:
+                queued = repository.requeue_score_event(db, score_event_id, error_message)
                 repository.log_worker_event(
                     db,
                     score_event_id=score_event_id,
-                    event_type="processing_started",
+                    event_type="retry_scheduled",
                     queue_host=queue_host,
-                    runtime_job_id=current["runtime_job_id"],
-                    status="processing",
-                    attempt_count=current["attempt_count"],
-                    message="worker started",
-                    event_payload={
-                        "queue_host": queue_host,
-                        "max_concurrency": settings.META_ANDROMEDA_SCORE_MAX_CONCURRENCY,
-                    },
+                    runtime_job_id=queued["runtime_job_id"],
+                    status="queued",
+                    attempt_count=queued["attempt_count"],
+                    message=error_message,
+                    event_payload={"retry_delay_seconds": settings.META_ANDROMEDA_SCORE_RETRY_DELAY_SECONDS},
                 )
-            finally:
-                db.close()
+                return "retry", queued
+
+            failed = repository.mark_score_failed(db, score_event_id, error_message)
+            repository.log_worker_event(
+                db,
+                score_event_id=score_event_id,
+                event_type="failed",
+                queue_host=queue_host,
+                runtime_job_id=failed["runtime_job_id"],
+                status="failed",
+                attempt_count=failed["attempt_count"],
+                message=error_message,
+                event_payload={"queue_host": queue_host},
+            )
+            repository.create_dead_letter(
+                db,
+                score_event_id=score_event_id,
+                queue_host=queue_host,
+                runtime_job_id=failed["runtime_job_id"],
+                failure_stage="runtime",
+                attempt_count=failed["attempt_count"],
+                final_error_message=error_message,
+                dead_letter_payload={
+                    "queue_host": queue_host,
+                    "attempt_count": failed["attempt_count"],
+                    "runtime_job_id": failed["runtime_job_id"],
+                },
+            )
+            repository.log_worker_event(
+                db,
+                score_event_id=score_event_id,
+                event_type="dead_lettered",
+                queue_host=queue_host,
+                runtime_job_id=failed["runtime_job_id"],
+                status="failed",
+                attempt_count=failed["attempt_count"],
+                message=error_message,
+                event_payload={"failure_stage": "runtime"},
+            )
+            return "failed", failed
+        finally:
+            db.close()
+
+    @staticmethod
+    def _complete_score_event_sync(score_event_id: str, queue_host: str, result: dict) -> dict:
+        """同步版本：DB 標記評分完成 + 寫入 worker event（純 DB I/O，見 docs/24 Wave 1）。"""
+        db = SessionLocal()
+        try:
+            completed = repository.mark_score_completed(db, score_event_id, result)
+            repository.log_worker_event(
+                db,
+                score_event_id=score_event_id,
+                event_type="completed",
+                queue_host=queue_host,
+                runtime_job_id=completed["runtime_job_id"],
+                status="completed",
+                attempt_count=completed["attempt_count"],
+                message="worker completed",
+                event_payload={"queue_host": queue_host, "model_version": completed["model_version"]},
+            )
+            return completed
+        finally:
+            db.close()
+
+    @staticmethod
+    async def process_score_event(score_event_id: str, queue_host: str = "unknown") -> dict:
+        async with _score_event_semaphore.acquire():
+            current, not_found_detail = await asyncio.to_thread(
+                MetaAndromedaService._mark_score_processing_sync, score_event_id, queue_host
+            )
+            if current is None:
+                return not_found_detail
 
             try:
                 result = await asyncio.wait_for(
@@ -1201,89 +1365,31 @@ class MetaAndromedaService:
                 ) from exc
             except Exception as exc:
                 error_message = str(exc)
+                kind, payload = await asyncio.to_thread(
+                    MetaAndromedaService._prepare_score_retry_or_failure,
+                    score_event_id,
+                    queue_host,
+                    error_message,
+                )
+                if kind == "failed":
+                    return payload
+
+                queued = payload
                 db = SessionLocal()
                 try:
-                    latest = repository.get_review_queue_detail(db, score_event_id)
-                    if latest["attempt_count"] < settings.META_ANDROMEDA_SCORE_MAX_ATTEMPTS:
-                        queued = repository.requeue_score_event(db, score_event_id, error_message)
-                        repository.log_worker_event(
-                            db,
-                            score_event_id=score_event_id,
-                            event_type="retry_scheduled",
-                            queue_host=queue_host,
-                            runtime_job_id=queued["runtime_job_id"],
-                            status="queued",
-                            attempt_count=queued["attempt_count"],
-                            message=error_message,
-                            event_payload={"retry_delay_seconds": settings.META_ANDROMEDA_SCORE_RETRY_DELAY_SECONDS},
-                        )
-                        self_dispatch = MetaAndromedaService.enqueue_score_event(
-                            db,
-                            score_event_id=score_event_id,
-                            runtime_job_id=queued["runtime_job_id"],
-                            delay_seconds=settings.META_ANDROMEDA_SCORE_RETRY_DELAY_SECONDS,
-                            event_type="retry_dispatch_requested",
-                        )
-                        return self_dispatch
-
-                    failed = repository.mark_score_failed(db, score_event_id, error_message)
-                    repository.log_worker_event(
+                    return MetaAndromedaService.enqueue_score_event(
                         db,
                         score_event_id=score_event_id,
-                        event_type="failed",
-                        queue_host=queue_host,
-                        runtime_job_id=failed["runtime_job_id"],
-                        status="failed",
-                        attempt_count=failed["attempt_count"],
-                        message=error_message,
-                        event_payload={"queue_host": queue_host},
+                        runtime_job_id=queued["runtime_job_id"],
+                        delay_seconds=settings.META_ANDROMEDA_SCORE_RETRY_DELAY_SECONDS,
+                        event_type="retry_dispatch_requested",
                     )
-                    repository.create_dead_letter(
-                        db,
-                        score_event_id=score_event_id,
-                        queue_host=queue_host,
-                        runtime_job_id=failed["runtime_job_id"],
-                        failure_stage="runtime",
-                        attempt_count=failed["attempt_count"],
-                        final_error_message=error_message,
-                        dead_letter_payload={
-                            "queue_host": queue_host,
-                            "attempt_count": failed["attempt_count"],
-                            "runtime_job_id": failed["runtime_job_id"],
-                        },
-                    )
-                    repository.log_worker_event(
-                        db,
-                        score_event_id=score_event_id,
-                        event_type="dead_lettered",
-                        queue_host=queue_host,
-                        runtime_job_id=failed["runtime_job_id"],
-                        status="failed",
-                        attempt_count=failed["attempt_count"],
-                        message=error_message,
-                        event_payload={"failure_stage": "runtime"},
-                    )
-                    return failed
                 finally:
                     db.close()
 
-            db = SessionLocal()
-            try:
-                completed = repository.mark_score_completed(db, score_event_id, result)
-                repository.log_worker_event(
-                    db,
-                    score_event_id=score_event_id,
-                    event_type="completed",
-                    queue_host=queue_host,
-                    runtime_job_id=completed["runtime_job_id"],
-                    status="completed",
-                    attempt_count=completed["attempt_count"],
-                    message="worker completed",
-                    event_payload={"queue_host": queue_host, "model_version": completed["model_version"]},
-                )
-                return completed
-            finally:
-                db.close()
+            return await asyncio.to_thread(
+                MetaAndromedaService._complete_score_event_sync, score_event_id, queue_host, result
+            )
 
     @staticmethod
     def _clear_observation_import_status_entries(score_event_ids: set[str]) -> int:

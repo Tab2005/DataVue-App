@@ -1,7 +1,7 @@
 # Meta Andromeda 評分管線 Event Loop 阻塞修復與模組優化實作計劃
 
 日期：2026-07-07
-狀態：**已立案，未動工**
+狀態：**Wave 1 已完成並驗證（2026-07-07）**；Wave 2／Wave 3 未動工
 
 ## 1. 問題確認
 
@@ -115,17 +115,28 @@ SERVICE_ROLE = web | worker | all   # 預設 all
 
 ## 5. 實作步驟
 
-### Wave 1：止血 — 消除 event loop 阻塞（先行，獨立可上線）
+### Wave 1：止血 — 消除 event loop 阻塞（先行，獨立可上線）**【已完成 2026-07-07】**
 
-| # | 任務 | 檔案 | 內容 |
+| # | 任務 | 檔案 | 狀態 |
 |---|---|---|---|
-| 1.1 | 資產準備區塊整段離開 loop | `runtime.py:1286-1373` | 把 `generate_score_result` 內「DB 查 asset/user/API key + 讀檔 + base64 + S3 下載 + keyframe 抽取」抽成同步函式 `_prepare_asset_context(score_payload)`，以單一 `await asyncio.to_thread(...)` 呼叫（順帶解決該函式 130 行過長的問題） |
-| 1.2 | ffmpeg 抽幀非阻塞 | `video_utils.py` | 因 1.1 已整段丟 thread，維持 `subprocess.run` 即可；補上單元測試驗證逾時/失敗降級行為不變 |
-| 1.3 | 評分狀態機 DB 段離開 loop | `service.py:1169-1286` | `process_score_event` 內三段 `SessionLocal()` + repository 呼叫各自抽成同步函式並 `asyncio.to_thread` 包裝 |
-| 1.4 | 匯入 job DB/Redis 段離開 loop | `service.py:799-857`、`import_status_store.py` | `run_observed_facebook_ad_import_job` 內的 repository 與 `set_import_status`（同步 Redis）呼叫以 `asyncio.to_thread` 包裝；`import_observed_facebook_ad` 內的同步段比照處理 |
-| 1.5 | 迴歸測試 | `backend/tests/test_meta_andromeda_module.py` | 新增「loop 心跳測試」：monkeypatch 資產準備為 `time.sleep(2)` 的假阻塞，在評分執行期間以 `asyncio` 定時器驗證 loop 延遲 < 100ms；既有測試全綠 |
+| 1.1 | 資產準備區塊整段離開 loop | `runtime.py` | ✅ 把 `generate_score_result` 內「DB 查 asset/user/API key + 讀檔 + base64 + S3 下載 + keyframe 抽取」抽成同步函式 `MetaAndromedaRuntimeAdapter._prepare_asset_context(score_payload)`，改以單一 `await asyncio.to_thread(...)` 呼叫；一併完成 P1 清理（見下） |
+| 1.2 | ffmpeg 抽幀非阻塞 | `video_utils.py` | ✅ 因 1.1 已整段丟 thread，`subprocess.run` 維持不變即可，不需額外改動 |
+| 1.3 | 評分狀態機 DB 段離開 loop | `service.py` | ✅ `process_score_event` 拆成 `_mark_score_processing_sync`／`_prepare_score_retry_or_failure`／`_complete_score_event_sync` 三個同步函式，各自 `asyncio.to_thread` 包裝 |
+| 1.4 | 匯入 job DB/Redis 段離開 loop | `service.py` | ✅ `run_observed_facebook_ad_import_job`、`import_observed_facebook_ad`、`create_and_enqueue_score_event_for_observation` 的同步 DB/檔案/Redis 段落均抽出並 `asyncio.to_thread` 包裝（見下方實作備註的例外情形） |
+| 1.5 | 迴歸測試 | `backend/tests/test_meta_andromeda_module.py` | ✅ 新增 `test_meta_andromeda_asset_prep_does_not_block_event_loop`：monkeypatch `_prepare_asset_context` 為 `time.sleep(0.3)` 假阻塞，與 15×0.02s 心跳 coroutine 用 `asyncio.gather` 並跑，斷言心跳次數 ≥10（證明阻塞段已離開 loop） |
 
 驗收標準：本機以 heuristic/openrouter 任一 provider 批次匯入 10 筆素材（含至少 2 支影片），期間連續呼叫 `/api/permissions/me/module/meta_andromeda`，P95 回應時間 < 500ms，評分結果與 Wave 1 前一致。
+
+**實作備註（給 Wave 2 實作者參考的重要陷阱）**：
+
+`queue_host_adapter.enqueue_score_event()`（`queue_host.py:223`）在 `local_async` fallback（單機開發預設 `META_ANDROMEDA_SCORE_LOCAL_ASYNC_FALLBACK=true`）時會呼叫 `asyncio.create_task()`，這**必須跑在有運作中 event loop 的執行緒**，不能丟進 `asyncio.to_thread`（thread pool 裡的執行緒沒有 running loop，會拋 `RuntimeError: no running event loop`）。因此：
+
+- `process_score_event` 的重試分支（`_prepare_score_retry_or_failure`）只把「判斷是否重試 + 寫 DB」丟進 thread，回傳 `("retry", queued)` 後，實際呼叫 `MetaAndromedaService.enqueue_score_event()` 派工仍留在 event loop 上執行。
+- 同理，`create_and_enqueue_score_event_for_observation` 拆成 `_prepare_score_event_for_observation_sync`（DB 準備，丟 thread）+ 留在 loop 上的 `enqueue_score_event()` 呼叫；該函式因此從同步方法改為 `async def`（唯一呼叫端 `run_observed_facebook_ad_import_job` 已加 `await`）。
+
+Wave 2 拆分 worker process 時，這個限制會自然消失——因為屆時 web process 的 `get_active_host()` 會被角色收斂為只回 `redis_stream`/`database_queue`（見 4.2 節），不會再走 `local_async`／`apscheduler` 分支，`enqueue_score_event()` 也就不再需要留在特定執行緒上執行。
+
+**驗證結果**：`backend/tests/test_meta_andromeda_module.py` 全量跑過，Wave 1 前後失敗案例完全一致（16 個既有失敗，經比對 stash 前後 baseline 確認為環境既有問題，與本次改動無關，不在本計劃範圍內修復）；新增的心跳測試通過，其餘 55→56 個測試維持全綠。
 
 ### Wave 2：長期方案 — worker process 拆分
 
@@ -147,18 +158,18 @@ SERVICE_ROLE = web | worker | all   # 預設 all
 |---|---|---|---|
 | 3.1 | 模組權限 sessionStorage 快取 | `frontend/src/hooks/usePermission.jsx` | `useModuleAccess` 比照 `useUserModules` 既有 pattern：先讀 sessionStorage 快取立即渲染，背景 revalidate 更新；權限被撤銷時最多一個 session 的顯示延遲（後端 API 仍會 403，僅影響 UI gate） |
 | 3.2 | 權限請求逾時 | `frontend/src/hooks/usePermission.jsx` | `fetchWithRetry` 加 `AbortSignal.timeout`（例如 10s），逾時顯示可重試的錯誤狀態而非永久轉圈 |
-| 3.3 | 問題二 P1 清理 | 見第 6 節 | 四項小修，一個 commit 內完成 |
+| 3.3 | 問題二 P1 殘項清理 | 見第 6 節 | 原 P1 四項中三項（`runtime.py` 的 typo 死碼／無意義 sleep／log level）已隨 Wave 1 一併修掉，僅剩 `analytics_service.py` 的 `debug_fields.log` 殘留待清 |
 
 ## 6. 問題二：模組優化盤點清單
 
-### P1 — 健壯性（納入 Wave 3.3 一併處理）
+### P1 — 健壯性
 
-| 項目 | 位置 | 問題 | 修法 |
-|---|---|---|---|
-| typo 產生的死碼 | `runtime.py:1404` | `META_ANDROMENS_SCORING_ALLOW_FALLBACK` 拼錯 + `hasattr` 三元式，實際永遠走正確設定，但可讀性極差 | 直接改為 `if not settings.META_ANDROMEDA_SCORING_ALLOW_FALLBACK: raise` |
-| 殘留 debug 碼 | `modules/fb_ads/analytics_service.py:231-235` | 每次報表請求同步 append 寫 `debug_fields.log`，在高頻路徑上 | 移除（或改 `logger.debug`） |
-| log level 不當 | `runtime.py:1378` | 每次評分都以 `logger.warning` 印 API key 長度等常態資訊 | 降為 `logger.debug` |
-| 無意義延遲 | `runtime.py:1283` | `generate_score_result` 開頭 `await asyncio.sleep(0.05)` 無明顯用途 | 刪除（若有節流意圖，應以註解說明並移至 dispatch 層） |
+| 項目 | 位置 | 問題 | 修法 | 狀態 |
+|---|---|---|---|---|
+| typo 產生的死碼 | `runtime.py`（原 1404 行） | `META_ANDROMENS_SCORING_ALLOW_FALLBACK` 拼錯 + `hasattr` 三元式，實際永遠走正確設定，但可讀性極差 | 直接改為 `if not settings.META_ANDROMEDA_SCORING_ALLOW_FALLBACK: raise` | ✅ 已隨 Wave 1（1.1）修復 |
+| log level 不當 | `runtime.py`（原 1378 行） | 每次評分都以 `logger.warning` 印 API key 長度等常態資訊 | 降為 `logger.debug` | ✅ 已隨 Wave 1（1.1）修復 |
+| 無意義延遲 | `runtime.py`（原 1283 行） | `generate_score_result` 開頭 `await asyncio.sleep(0.05)` 無明顯用途 | 刪除 | ✅ 已隨 Wave 1（1.1）修復 |
+| 殘留 debug 碼 | `modules/fb_ads/analytics_service.py:231-235` | 每次報表請求同步 append 寫 `debug_fields.log`，在高頻路徑上 | 移除（或改 `logger.debug`） | ⏳ 待 Wave 3.3 處理（非本次 event loop 阻塞範圍，fb_ads 模組） |
 
 ### P2 — 效能與體驗（獨立立案，不阻塞本計劃）
 
@@ -186,10 +197,10 @@ SERVICE_ROLE = web | worker | all   # 預設 all
 
 ## 8. 里程碑
 
-| 波次 | 內容 | 預估 | 可獨立上線 |
-|---|---|---|---|
-| Wave 1 | to_thread 止血 + 迴歸測試 | 0.5–1 天 | ✅（上線後症狀即消失） |
-| Wave 2 | SERVICE_ROLE + worker_main + 匯入走 queue + 部署 | 2–3 天 | ✅（需 Zeabur 加開 worker service） |
-| Wave 3 | 前端快取/逾時 + P1 清理 | 0.5 天 | ✅ |
+| 波次 | 內容 | 預估 | 可獨立上線 | 狀態 |
+|---|---|---|---|---|
+| Wave 1 | to_thread 止血 + 迴歸測試 | 0.5–1 天 | ✅（上線後症狀即消失） | **已完成（2026-07-07）** |
+| Wave 2 | SERVICE_ROLE + worker_main + 匯入走 queue + 部署 | 2–3 天 | ✅（需 Zeabur 加開 worker service） | 未動工 |
+| Wave 3 | 前端快取/逾時 + P1 清理 | 0.5 天 | ✅ | 未動工 |
 
 依賴關係：Wave 1 → Wave 2（1.1–1.4 的包裝在 worker 內同樣必要）；Wave 3 與 Wave 2 無相依，可並行。

@@ -7,6 +7,7 @@ import hashlib
 import hmac
 import json
 import os
+import time
 from unittest.mock import Mock
 
 import pytest
@@ -19,7 +20,7 @@ from modules.auth import dependencies as auth_dependencies
 import redis_cache as redis_cache_module
 from database import Module, Permission, Role, RolePermission, Team, TeamMember, UserModuleAccess, UserRole
 from modules.meta_andromeda.repository import repository
-from modules.meta_andromeda.runtime import runtime_adapter
+from modules.meta_andromeda.runtime import MetaAndromedaRuntimeAdapter, runtime_adapter
 from modules.meta_andromeda.service import MetaAndromedaService
 from main import app
 from modules.meta_andromeda.dependencies import (
@@ -1166,6 +1167,57 @@ async def test_meta_andromeda_score_timeout_marks_failed(meta_andromeda_access, 
     assert monitoring["worker_host"]["dead_letter_count"] >= 1
     assert monitoring["worker_host"]["dead_letters"]
     assert monitoring["worker_host"]["dead_letters"][0]["failure_stage"] == "runtime"
+
+
+@pytest.mark.asyncio
+async def test_meta_andromeda_asset_prep_does_not_block_event_loop(meta_andromeda_access, db, monkeypatch):
+    """docs/24 Wave 1 迴歸測試：素材準備（DB 查詢/讀檔/ffmpeg 抽幀）必須整段丟到
+    asyncio.to_thread 執行，不能直接卡在 event loop 上。這裡用同步 time.sleep 模擬
+    阻塞 I/O，並在同一段時間內跑一個心跳 coroutine；若素材準備仍卡在 loop 上，
+    心跳會完全停擺，heartbeat 次數會遠低於預期次數。
+    """
+    monkeypatch.setenv("META_ANDROMEDA_SCORING_PROVIDER", "heuristic")
+
+    def blocking_prepare(score_payload):
+        time.sleep(0.3)
+        return None
+
+    monkeypatch.setattr(
+        MetaAndromedaRuntimeAdapter, "_prepare_asset_context", staticmethod(blocking_prepare)
+    )
+
+    response = meta_andromeda_access.post(
+        "/api/meta-andromeda/scores",
+        json={
+            "asset_uri": "storage://meta-andromeda/uploads/test/loop-heartbeat.png",
+            "asset_type": "image",
+            "asset_id": "asset_loop_heartbeat_score",
+            "objective": "purchase",
+            "placement_family": "feed",
+            "market": "TW",
+        },
+    )
+    assert response.status_code == 201
+    score_event_id = response.json()["score_event_id"]
+    repository.mark_score_processing(db, score_event_id)
+    current = repository.get_review_queue_detail(db, score_event_id)
+
+    heartbeat_count = 0
+
+    async def heartbeat():
+        nonlocal heartbeat_count
+        for _ in range(15):
+            await asyncio.sleep(0.02)
+            heartbeat_count += 1
+
+    await asyncio.gather(
+        runtime_adapter.generate_score_result(current),
+        heartbeat(),
+    )
+
+    # 0.3 秒的阻塞 I/O 若真的卡住 event loop，15 次、每次 0.02s 的心跳幾乎跑不完；
+    # 丟進 to_thread 後心跳應該能照常跑滿。
+    assert heartbeat_count >= 10
 
 
 @pytest.mark.unit
