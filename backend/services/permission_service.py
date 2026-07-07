@@ -28,24 +28,15 @@ class PermissionService:
             bool: 是否有存取權
         """
         # 1. 檢查模組是否存在且啟用
-        import sys
-        print(f"[PERM DEBUG] check_module_access: user_id={user_id}, module_key={module_key}, team_id={team_id}", file=sys.stderr)
-        
         module = self.db.query(Module).filter(
             Module.key == module_key, Module.enabled == True
         ).first()
         if not module:
-            print(f"[PERM DEBUG] Module '{module_key}' not found or not enabled!", file=sys.stderr)
             return False
-        
-        print(f"[PERM DEBUG] Module found: id={module.id}, key={module.key}, enabled={module.enabled}", file=sys.stderr)
 
         # 2. 檢查 Super Admin - bypass 所有權限
         user = self.db.query(User).filter(User.id == user_id).first()
-        print(f"[PERM DEBUG] User query result: user={user}, is_super_admin={user.is_super_admin if user else 'N/A'}", file=sys.stderr)
-        
         if user and user.is_super_admin:
-            print(f"[PERM DEBUG] Super Admin bypass - returning True", file=sys.stderr)
             return True
 
         # 3. 檢查 user_module_access 表
@@ -60,10 +51,8 @@ class PermissionService:
             query = query.filter(UserModuleAccess.team_id.is_(None))
         else:
             query = query.filter(UserModuleAccess.team_id == team_id)
-        
+
         access = query.first()
-        
-        print(f"[PERM DEBUG] UserModuleAccess check: access={access}", file=sys.stderr)
         return access is not None
 
 

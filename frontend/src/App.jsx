@@ -30,6 +30,7 @@ const MetaAndromedaReviewQueue = lazy(() => import('./pages/MetaAndromedaReviewQ
 const MetaAndromedaMonitoring = lazy(() => import('./pages/MetaAndromedaMonitoring'));
 const MetaAndromedaRelease = lazy(() => import('./pages/MetaAndromedaRelease'));
 const MetaAndromedaScoreLab = lazy(() => import('./pages/MetaAndromedaScoreLab'));
+const ContributionAnalysis = lazy(() => import('./pages/ContributionAnalysis'));
 
 /**
  * 內層 App 元件（需在 Router 內部才能使用 useNavigate）
@@ -138,6 +139,13 @@ function AppInner() {
                   <ProtectedModule module="meta_andromeda">
                     <ErrorBoundary>
                       <MetaAndromedaScoreLab />
+                    </ErrorBoundary>
+                  </ProtectedModule>
+                } />
+                <Route path="/contribution" element={
+                  <ProtectedModule module="contribution">
+                    <ErrorBoundary>
+                      <ContributionAnalysis />
                     </ErrorBoundary>
                   </ProtectedModule>
                 } />

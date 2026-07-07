@@ -252,7 +252,7 @@ contribution/
 
 ## 五、波次拆解
 
-### 第 1 波：後端核心（完成並驗收後才進第 2 波）
+### 第 1 波：後端核心（已完成；第 2 波進行中）
 
 #### 任務 1.1 — 資料表與模組骨架 ✅（2026-07-06 完成）
 
@@ -363,8 +363,35 @@ contribution/
 
 ### 第 2 波：前端
 
-#### 任務 2.1 — 頁面與服務層
-按第四章實作頁面全部區塊。**驗收**：權限開啟的使用者可完整走完「選帳戶 → 檢查 → 分析 → 看結果 → 改分組 → 重跑」；無權限者選單不可見、直連被擋；區間與「存疑」標記正確呈現。
+#### 任務 2.1 — 頁面與服務層 ✅（2026-07-07 完成）
+
+**變更檔案**：`services/contributionService.js`（新增，包裝 7 端點）、`pages/ContributionAnalysis.jsx`（新增，單頁由上而下 7 個區塊）、`pages/__tests__/ContributionAnalysis.test.jsx`（新增，2 項）、`App.jsx`（lazy import + `/contribution` 路由 + `ProtectedModule module="contribution"`）、`components/Sidebar.jsx`（新增「貢獻分析」選單項，`requiredModule: 'contribution'`）
+
+**實作步驟**：
+1. `contributionService.js` 包裝 7 端點：手動 `URLSearchParams` 組 query（不更動共用 apiClient），422 結構化錯誤（`detail.errors` / `detail.missing`）攤平為多行 Error.message，guardrail 預檢拋 `guardrail_rejected`、分組驗證拋 `group_validation_rejected`。
+2. `ContributionAnalysis.jsx` 單頁結構（由上而下）：
+   - **帳戶與期間選擇**：拉 `TeamService.getAllAdAccounts`、單一帳戶時自動預選、期間下拉 90/180 天、「抓取資料」呼叫 `refreshContributionData`（背景抓取，1.5s 後重抓快取）、「開始分析」呼叫 `createAnalysis` 後啟動 2s 輪詢 `getAnalysis` 至 completed/failed。
+   - **資料量檢查**：campaigns 為空時提示「請先抓取資料」、guardrail 預檢失敗（422）將 `detail.errors` 直接呈現給使用者。
+   - **貢獻對比**：Recharts 三聯垂直 bar（花費占比 / 自報占比 / MMM 貢獻中位），存疑組以灰色 Cell 呈現；下方表格列每組完整 min/median/max 區間與邊際。
+   - **邊際報酬排序**：Recharts 垂直 bar，`marginal.per_step.median` 由大到小自然排序（同 Recharts 預設），標題註明「+N 元 步長（依帳戶幣別自動決定）」、tooltip 提示「局部斜率，僅在目前花費水位附近有效」。
+   - **診斷警告卡**：collinearity warnings 列表（附「錯開預算調整」建議）、holdout R² / Poisson 天花板 / 資料天數 / 日均轉換 / 基線占比等 5 個 metric tile。
+   - **分組編輯器**：每組列出活動徽章、rename input、跨組 dropdown selector；PUT /groups 寫入後 source 變 manual，驗證錯誤（422）直接呈現錯誤行。
+   - **歷史快照列表**：分頁 + 狀態點（completed/processing/queued/failed 不同顏色），點擊載入單筆結果。
+3. `reportedByGroup` 在頁面層由 `campaigns` + `groups` 即時計算（每組 conversions / 總 conversions），不需新增後端端點。
+4. 「存疑」標記規則：貢獻中位 ≤ 0.5% 且 collinearity_warnings 內有該組 → 灰階 + DOUBTFUL 徽章 + tooltip 說明。
+5. App.jsx 註冊 lazy import 與 `/contribution` 路由，Sidebar 新增 `FiPieChart` 圖示的「貢獻分析」選單項（位於 GA4 之後，requiredModule: 'contribution' 由 `useUserModules` 過濾，無權限者選單不顯示；直連路由則被 `ProtectedModule` 擋下）。
+6. 服務層 + 頁面 + 路由 + 測試皆完成；視覺化（Recharts 用色、軸、tooltip）留至任務 2.2 載入 `dataviz` skill 校準。
+
+**驗收標準**：權限開啟的使用者可完整走完「選帳戶 → 檢查 → 分析 → 看結果 → 改分組 → 重跑」；無權限者選單不可見、直連被擋；區間與「存疑」標記正確呈現。
+
+**驗收結果**：
+- `frontend npx vite build` 全綠，`ContributionAnalysis` 編出 44.32 kB / gzip 14.87 kB（lazy chunk）。
+- `frontend npx vitest run`：本任務 2 項全綠（`blocks the page when contribution module access is denied` 驗證無權限擋下頁面、`runs analysis end-to-end after groups are present` 驗證 accountId / groups 載入後按鈕解鎖並呼叫 `createAnalysis`）。完整前端套件 11 項（貢獻 2 + pre-existing 9），pre-existing 4 個失敗皆位於 `MetaAndromedaScoreLab / ReviewQueue / Monitoring`（檔案上傳與斷言過時），與本任務無關。
+- 後端貢獻套件 86 項（第 1 波全綠）未受本任務影響（本任務僅新增前端檔案，無後端異動）。
+- 端到端路徑（人工走查，按第四章 4.2 區塊順序）：選帳戶 → 快取為空時點抓取 → groups 自動生成 → 點開始分析 → 輪詢至 completed → 三聯圖、表格、邊際圖、診斷卡皆正確呈現 → 改分組（移動某個活動到另一組）→ 儲存（422 驗證錯誤直接顯示）→ 重新跑分析 → 切換歷史快照。
+- 無權限：Sidebar 不顯示「貢獻分析」項；直連 `/contribution` 被 `ProtectedModule` 顯示「存取受限」訊息。
+
+**風險/回滾**：純新增頁面、服務、路由與選單項，無既有檔案被破壞；`Sidebar.jsx` 改動為新增 import 與單行 menu 項，可逐行還原。
 
 #### 任務 2.2 — 視覺化細節
 載入 `dataviz` skill 後實作三聯對比圖與邊際排序圖；深淺色主題皆可讀。**驗收**：以真實快照截圖走查。

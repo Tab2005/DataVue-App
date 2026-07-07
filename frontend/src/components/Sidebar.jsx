@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { FiHome, FiBarChart2, FiUsers, FiSettings, FiActivity, FiChevronLeft, FiChevronRight, FiShield, FiChevronDown, FiChevronUp, FiPlus, FiSearch, FiTrendingUp, FiFileText } from 'react-icons/fi';
+import { FiHome, FiBarChart2, FiUsers, FiSettings, FiActivity, FiChevronLeft, FiChevronRight, FiShield, FiChevronDown, FiChevronUp, FiPlus, FiSearch, FiTrendingUp, FiFileText, FiPieChart } from 'react-icons/fi';
 import { Link, useLocation } from 'react-router-dom';
 import SettingsModal from './SettingsModal';
 import CreateTeamModal from './CreateTeamModal';
@@ -34,6 +34,7 @@ const Sidebar = ({ user, language, isCollapsed, setIsCollapsed, isMobile, select
         { icon: <FiActivity size={20} />, label: t('Metrics Manager', '指標管理'), path: '/metrics', requiredModule: 'fb_ads' },
         { icon: <FiSearch size={20} />, label: t('Search Console', '搜尋管理'), path: '/gsc', requiredModule: 'gsc' },
         { icon: <FiTrendingUp size={20} />, label: t('Traffic Analytics', '流量分析'), path: '/ga4', requiredModule: 'ga4' },
+        { icon: <FiPieChart size={20} />, label: t('Contribution Analysis', '貢獻分析'), path: '/contribution', requiredModule: 'contribution' },
         {
             icon: <FiActivity size={20} />,
             label: t('Meta Andromeda', 'Meta Andromeda'),

@@ -1,9 +1,9 @@
 """權限管理 API Endpoints"""
+import asyncio
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
 from typing import List, Optional
 import logging
-import sys
 from pydantic import BaseModel
 
 logger = logging.getLogger(__name__)
@@ -79,8 +79,11 @@ async def my_modules(
     db: Session = Depends(get_db)
 ):
     """取得當前使用者可存取的模組"""
-    service = PermissionService(db)
-    modules = service.get_user_modules(user.id, team_id)
+    # 同步 DB 查詢丟進 thread，避免在批次匯入等高 DB 負載期間卡住 event loop
+    # （這支端點每次頁面導覽都會被打，是全站共用的熱路徑，見 docs/24 後續追蹤記錄）
+    modules = await asyncio.to_thread(
+        PermissionService(db).get_user_modules, user.id, team_id
+    )
     return {"modules": modules, "team_id": team_id}
 
 
@@ -91,8 +94,9 @@ async def my_permissions(
     db: Session = Depends(get_db)
 ):
     """取得當前使用者的所有權限"""
-    service = PermissionService(db)
-    permissions = service.get_user_permissions(user.id, team_id)
+    permissions = await asyncio.to_thread(
+        PermissionService(db).get_user_permissions, user.id, team_id
+    )
     return {"permissions": permissions, "team_id": team_id}
 
 
@@ -104,10 +108,11 @@ async def check_my_permission(
     db: Session = Depends(get_db)
 ):
     """檢查當前使用者是否有指定權限"""
-    service = PermissionService(db)
-    has_permission = service.check_permission(user.id, permission_key, team_id)
+    has_permission = await asyncio.to_thread(
+        PermissionService(db).check_permission, user.id, permission_key, team_id
+    )
     return {
-        "has_permission": has_permission, 
+        "has_permission": has_permission,
         "permission_key": permission_key,
         "team_id": team_id
     }
@@ -121,29 +126,22 @@ async def check_my_module(
     db: Session = Depends(get_db)
 ):
     """檢查當前使用者是否可存取指定模組"""
-    logger.debug(f"[DEBUG] check_my_module called: user_id={user.id}, is_super_admin={user.is_super_admin}, module_key={module_key}, team_id={team_id}")
-    
     # DIRECT Super Admin bypass - highest priority
     if user.is_super_admin:
-        logger.debug("[DEBUG] Super Admin detected, immediate bypass - returning has_access=True")
         return {
-            "has_access": True, 
+            "has_access": True,
             "module_key": module_key,
             "team_id": team_id,
-            "debug_is_super_admin": True,
-            "bypass_reason": "super_admin"
         }
-    
-    service = PermissionService(db)
-    has_access = service.check_module_access(user.id, module_key, team_id)
-    
-    logger.debug(f"[DEBUG] check_my_module result: has_access={has_access}")
-    
+
+    has_access = await asyncio.to_thread(
+        PermissionService(db).check_module_access, user.id, module_key, team_id
+    )
+
     return {
-        "has_access": has_access, 
+        "has_access": has_access,
         "module_key": module_key,
         "team_id": team_id,
-        "debug_is_super_admin": user.is_super_admin
     }
 
 
