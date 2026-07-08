@@ -10,6 +10,7 @@ import {
     ResponsiveContainer,
     Cell,
     Legend,
+    LabelList,
 } from 'recharts';
 
 import { useModuleAccess } from '../hooks/usePermission';
@@ -27,6 +28,44 @@ const DEFAULT_PERIOD_DAYS = 180;
 const POLL_INTERVAL_MS = 2000;
 
 const t = (language, en, zh) => (language === 'en' ? en : zh);
+
+// ── Chart token layer (dark defaults + prefers-color-scheme: light) ──
+// 3 categorical slots: Spend / Platform-Reported / MMM, in the reference order.
+// Validated dark (ΔE 41.3 adjacent) and light (ΔE 47.2 adjacent) on
+//  the surfaces below; chroma/lightness pass for categorical.
+const VIZ_TOKENS = `
+.contribution-chart-root {
+  --viz-surface:        #18191a;
+  --viz-grid:           rgba(255, 255, 255, 0.06);
+  --viz-axis:           rgba(255, 255, 255, 0.18);
+  --viz-text:           #b0b3b8;
+  --viz-text-strong:    #e4e6eb;
+  --viz-tooltip-bg:     #242526;
+  --viz-tooltip-border: rgba(255, 255, 255, 0.10);
+  --viz-series-1:       #3987e5;
+  --viz-series-2:       #199e70;
+  --viz-series-3:       #c98500;
+  --viz-series-muted:   #6b7280;
+  --viz-direct-label:   #e4e6eb;
+}
+@media (prefers-color-scheme: light) {
+  .contribution-chart-root {
+    --viz-surface:        #fcfcfb;
+    --viz-grid:           rgba(11, 11, 11, 0.07);
+    --viz-axis:           rgba(11, 11, 11, 0.22);
+    --viz-text:           #52514e;
+    --viz-text-strong:    #0b0b0b;
+    --viz-tooltip-bg:     #ffffff;
+    --viz-tooltip-border: rgba(11, 11, 11, 0.12);
+    --viz-series-1:       #2a78d6;
+    --viz-series-2:       #1baf7a;
+    --viz-series-3:       #eda100;
+    --viz-series-muted:   #6b7280;
+    --viz-direct-label:   #0b0b0b;
+  }
+}
+.contribution-chart-root text { font-variant-numeric: tabular-nums; }
+`;
 
 const fmtPct = (value, digits = 1) => {
     if (value == null || Number.isNaN(value)) return '--';
@@ -289,58 +328,106 @@ const ContributionChart = ({ language, rows, isMobile }) => {
         mmmMax: row.contributionShare?.max ?? 0,
         doubtful: row.doubtful,
     }));
+    const chartHeight = isMobile ? 320 : Math.max(360, data.length * 64);
+
     return (
-        <div style={{ width: '100%', height: isMobile ? 320 : 380 }}>
+        <div className="contribution-chart-root" style={{ width: '100%', height: chartHeight }}>
             <ResponsiveContainer>
                 <BarChart
                     data={data}
                     layout="vertical"
-                    margin={{ top: 8, right: 24, left: 16, bottom: 8 }}
+                    margin={{ top: 8, right: 28, left: 8, bottom: 8 }}
+                    barCategoryGap="32%"
+                    barGap={2}
                 >
-                    <CartesianGrid stroke="rgba(255,255,255,0.05)" strokeDasharray="3 3" />
+                    <CartesianGrid
+                        stroke="var(--viz-grid)"
+                        horizontal={false}
+                        vertical
+                    />
                     <XAxis
                         type="number"
-                        domain={[0, 'dataMax']}
+                        domain={[0, (dMax) => Math.max(0.05, Math.ceil(dMax * 10) / 10)]}
                         tickFormatter={(v) => `${Math.round(v * 100)}%`}
-                        tick={{ fill: 'var(--text-secondary)', fontSize: 11 }}
+                        tick={{ fill: 'var(--viz-text)', fontSize: 11 }}
+                        stroke="var(--viz-axis)"
+                        tickLine={false}
                     />
                     <YAxis
                         type="category"
                         dataKey="group"
-                        width={120}
-                        tick={{ fill: 'var(--text-secondary)', fontSize: 11 }}
+                        width={140}
+                        tick={{ fill: 'var(--viz-text)', fontSize: 11 }}
+                        stroke="var(--viz-axis)"
+                        tickLine={false}
                     />
                     <Tooltip
+                        cursor={{ fill: 'var(--viz-grid)' }}
                         formatter={(v) => `${(v * 100).toFixed(1)}%`}
                         contentStyle={{
-                            background: 'var(--bg-secondary)',
-                            border: '1px solid var(--glass-border)',
+                            background: 'var(--viz-tooltip-bg)',
+                            border: '1px solid var(--viz-tooltip-border)',
                             borderRadius: '8px',
-                            color: 'var(--text-primary)',
+                            color: 'var(--viz-text-strong)',
                             fontSize: '0.8rem',
+                            padding: '8px 10px',
+                        }}
+                        itemStyle={{ color: 'var(--viz-text-strong)' }}
+                        labelStyle={{
+                            color: 'var(--viz-text)',
+                            marginBottom: '4px',
+                            fontSize: '0.72rem',
                         }}
                     />
-                    <Legend wrapperStyle={{ color: 'var(--text-secondary)', fontSize: '0.78rem' }} />
+                    <Legend
+                        wrapperStyle={{
+                            color: 'var(--viz-text)',
+                            fontSize: '0.78rem',
+                            paddingTop: '4px',
+                        }}
+                        iconType="rect"
+                        iconSize={10}
+                    />
                     <Bar
                         dataKey="spend"
                         name={t(language, 'Spend Share', '花費占比')}
-                        fill="#64748b"
-                        radius={[2, 2, 2, 2]}
-                    />
+                        fill="var(--viz-series-1)"
+                        radius={[0, 2, 2, 0]}
+                        maxBarSize={14}
+                    >
+                        {data.map((row, i) => (
+                            <Cell
+                                key={`spend-${i}`}
+                                fill={row.doubtful ? 'var(--viz-series-muted)' : 'var(--viz-series-1)'}
+                            />
+                        ))}
+                    </Bar>
                     <Bar
                         dataKey="reported"
                         name={t(language, 'Platform-Reported', '自報占比')}
-                        fill="#3b82f6"
-                        radius={[2, 2, 2, 2]}
-                    />
-                    <Bar
-                        dataKey="mmm"
-                        name={t(language, 'MMM Contribution', 'MMM 貢獻 (中位)')}
-                        fill="#10b981"
-                        radius={[2, 2, 2, 2]}
+                        fill="var(--viz-series-2)"
+                        radius={[0, 2, 2, 0]}
+                        maxBarSize={14}
                     >
                         {data.map((row, i) => (
-                            <Cell key={`cell-${i}`} fill={row.doubtful ? '#6b7280' : '#10b981'} />
+                            <Cell
+                                key={`reported-${i}`}
+                                fill={row.doubtful ? 'var(--viz-series-muted)' : 'var(--viz-series-2)'}
+                            />
+                        ))}
+                    </Bar>
+                    <Bar
+                        dataKey="mmm"
+                        name={t(language, 'MMM Contribution (median)', 'MMM 貢獻 (中位)')}
+                        fill="var(--viz-series-3)"
+                        radius={[0, 2, 2, 0]}
+                        maxBarSize={14}
+                    >
+                        {data.map((row, i) => (
+                            <Cell
+                                key={`mmm-${i}`}
+                                fill={row.doubtful ? 'var(--viz-series-muted)' : 'var(--viz-series-3)'}
+                            />
                         ))}
                     </Bar>
                 </BarChart>
@@ -348,15 +435,15 @@ const ContributionChart = ({ language, rows, isMobile }) => {
             <div
                 style={{
                     marginTop: '6px',
-                    color: 'var(--text-secondary)',
+                    color: 'var(--viz-text)',
                     fontSize: '0.74rem',
                     lineHeight: 1.5,
                 }}
             >
                 {t(
                     language,
-                    'MMM contribution is shown as the median across restarts; range (min–max) is reported per row below.',
-                    'MMM 貢獻以多次重啟的中位數呈現；每組的 min–max 範圍列於下方表格。'
+                    'MMM contribution is shown as the median across restarts; the per-group min–max range is reported in the table below. Gray bars mark groups flagged as doubtful due to high collinearity.',
+                    'MMM 貢獻以多次重啟的中位數呈現；每組的 min–max 範圍列於下方表格。標「存疑」的組別以灰階呈現，並附共線性說明。'
                 )}
             </div>
         </div>
@@ -427,56 +514,112 @@ const MarginalChart = ({ language, rows, marginalStep, marginalCurrency, isMobil
         .map((row) => ({
             group: row.label,
             marginal: row.marginalPerStep.median,
+            groupKey: row.groupKey,
             doubtful: row.doubtful,
         }));
     if (!data.length) {
         return <InfoPanel message={t(language, 'No marginal data.', '無邊際資料。')} />;
     }
+    data.sort((a, b) => b.marginal - a.marginal);
+    const topIdx = 0;
+    const chartHeight = isMobile ? 280 : Math.max(320, data.length * 52);
     return (
-        <div style={{ width: '100%', height: isMobile ? 240 : 280 }}>
+        <div className="contribution-chart-root" style={{ width: '100%', height: chartHeight }}>
             <ResponsiveContainer>
-                <BarChart data={data} margin={{ top: 8, right: 16, left: 8, bottom: 24 }}>
-                    <CartesianGrid stroke="rgba(255,255,255,0.05)" strokeDasharray="3 3" />
+                <BarChart
+                    data={data}
+                    margin={{ top: 8, right: 56, left: 8, bottom: 8 }}
+                    barCategoryGap="36%"
+                    barGap={2}
+                >
+                    <CartesianGrid
+                        stroke="var(--viz-grid)"
+                        horizontal={false}
+                        vertical
+                    />
                     <XAxis
-                        dataKey="group"
-                        tick={{ fill: 'var(--text-secondary)', fontSize: 10 }}
-                        angle={isMobile ? -25 : 0}
-                        textAnchor={isMobile ? 'end' : 'middle'}
-                        height={isMobile ? 60 : 30}
+                        type="number"
+                        tickFormatter={(v) => `+${v.toFixed(2)}`}
+                        tick={{ fill: 'var(--viz-text)', fontSize: 11 }}
+                        stroke="var(--viz-axis)"
+                        tickLine={false}
                     />
                     <YAxis
-                        tick={{ fill: 'var(--text-secondary)', fontSize: 11 }}
-                        tickFormatter={(v) => `+${v.toFixed(2)}`}
+                        type="category"
+                        dataKey="group"
+                        width={140}
+                        tick={{ fill: 'var(--viz-text)', fontSize: 11 }}
+                        stroke="var(--viz-axis)"
+                        tickLine={false}
                     />
                     <Tooltip
+                        cursor={{ fill: 'var(--viz-grid)' }}
                         formatter={(v) => `+${Number(v).toFixed(2)} ${t(language, 'conversions', '轉換')}`}
                         contentStyle={{
-                            background: 'var(--bg-secondary)',
-                            border: '1px solid var(--glass-border)',
+                            background: 'var(--viz-tooltip-bg)',
+                            border: '1px solid var(--viz-tooltip-border)',
                             borderRadius: '8px',
-                            color: 'var(--text-primary)',
+                            color: 'var(--viz-text-strong)',
                             fontSize: '0.8rem',
+                            padding: '8px 10px',
+                        }}
+                        itemStyle={{ color: 'var(--viz-text-strong)' }}
+                        labelStyle={{
+                            color: 'var(--viz-text)',
+                            marginBottom: '4px',
+                            fontSize: '0.72rem',
                         }}
                     />
-                    <Bar dataKey="marginal" radius={[4, 4, 0, 0]} fill="#22c55e">
+                    <Bar
+                        dataKey="marginal"
+                        fill="var(--viz-series-3)"
+                        radius={[0, 2, 2, 0]}
+                        maxBarSize={18}
+                    >
                         {data.map((row, i) => (
-                            <Cell key={`marg-cell-${i}`} fill={row.doubtful ? '#6b7280' : '#22c55e'} />
+                            <Cell
+                                key={`marg-cell-${i}`}
+                                fill={row.doubtful ? 'var(--viz-series-muted)' : 'var(--viz-series-3)'}
+                            />
                         ))}
+                        <LabelList
+                            dataKey="marginal"
+                            position="right"
+                            formatter={(v) => `+${Number(v).toFixed(2)}`}
+                            content={(props) => {
+                                if (props.index !== topIdx) return null;
+                                const { x, y, width, value, index } = props;
+                                const offsetX = (x || 0) + (width || 0) + 6;
+                                return (
+                                    <text
+                                        x={offsetX}
+                                        y={y}
+                                        dy={4}
+                                        textAnchor="start"
+                                        fontSize={11}
+                                        fontWeight={700}
+                                        fill="var(--viz-direct-label)"
+                                    >
+                                        {`+${Number(value).toFixed(2)} ${t(language, 'best', '最佳')}`}
+                                    </text>
+                                );
+                            }}
+                        />
                     </Bar>
                 </BarChart>
             </ResponsiveContainer>
             <div
                 style={{
                     marginTop: '6px',
-                    color: 'var(--text-secondary)',
+                    color: 'var(--viz-text)',
                     fontSize: '0.74rem',
                     lineHeight: 1.5,
                 }}
             >
                 {t(
                     language,
-                    'Local slope: estimated additional conversions from +N spend at the current spend level. Not valid for extrapolation outside the current range.',
-                    '局部斜率：在目前花費水位附近，投入 +N 元的預估邊際轉換。不可線性外推到目前水位之外。'
+                    `Local slope: estimated additional conversions from +${marginalStep}${marginalCurrency} spend at the current spend level. Not valid for extrapolation outside the current range. The best ROI group is labeled at the bar tip.`,
+                    `局部斜率：在目前花費水位附近，每 +${marginalStep}${marginalCurrency} 帶來的預估邊際轉換。不可線性外推到目前水位之外。最高邊際組別以端點標籤標示。`
                 )}
             </div>
         </div>
@@ -1299,7 +1442,9 @@ const ContributionAnalysis = () => {
     const canSubmit = Boolean(accountId) && (groups.length > 0 || editingGroups);
 
     return (
-        <div style={{ padding: isMobile ? '16px' : '24px' }}>
+        <>
+            <style>{VIZ_TOKENS}</style>
+            <div style={{ padding: isMobile ? '16px' : '24px' }}>
             <div
                 style={{
                     marginBottom: '20px',
@@ -1420,6 +1565,7 @@ const ContributionAnalysis = () => {
                 )}
             </div>
         </div>
+        </>
     );
 };
 

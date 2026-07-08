@@ -361,7 +361,7 @@ contribution/
 
 **風險/回滾**：scheduler 僅新增 job 類型（`ca_analysis_*`），出錯不影響 Andromeda 與週報既有 job；service 內 `asyncio.run` 同步路徑僅在無 running loop 時啟用（測試 / CLI 情境），FastAPI 仍走 apscheduler 派發。
 
-### 第 2 波：前端
+### 第 2 波：前端（任務 2.1、2.2 已完成）
 
 #### 任務 2.1 — 頁面與服務層 ✅（2026-07-07 完成）
 
@@ -393,8 +393,47 @@ contribution/
 
 **風險/回滾**：純新增頁面、服務、路由與選單項，無既有檔案被破壞；`Sidebar.jsx` 改動為新增 import 與單行 menu 項，可逐行還原。
 
-#### 任務 2.2 — 視覺化細節
-載入 `dataviz` skill 後實作三聯對比圖與邊際排序圖；深淺色主題皆可讀。**驗收**：以真實快照截圖走查。
+#### 任務 2.2 — 視覺化細節 ✅（2026-07-08 完成）
+
+**變更檔案**：`pages/ContributionAnalysis.jsx`（重寫 `ContributionChart` / `MarginalChart`，新增 chart token CSS layer `VIZ_TOKENS`，新增 `LabelList` import）
+
+**實作步驟**：
+
+1. **載入 `dataviz` skill 校準**：參照 `references/choosing-a-form.md`（貢獻對比為 3-way categorical、邊際為單 series sorted horizontal bar）、`marks-and-anatomy.md`（thin marks、4px rounded data-end + square baseline、hairline gridline solid 1px）、`interaction.md`（per-mark tooltip + table view fallback）、`anti-patterns.md`（無 dashed gridline、無 number on every point、單 series 不需 legend 框、無 dual-axis、color follows entity 永不 recolor-on-filter、≥ 2 series 必備 legend）。
+2. **色盤設計**（validator 驗證）：
+   - 3 個 categorical slot 採 reference 順序 blue / aqua / yellow。dark 模式 `#3987e5 / #199e70 / #c98500`（adjacent ΔE 41.3 過 12 目標、all 4 PASS），light 模式 `#2a78d6 / #1baf7a / #eda100`（ΔE 47.2，aqua/yellow 對 light surface 對比 2.74/2.11 < 3:1 但觸發 relief rule：圖下表格已涵蓋所有精確值，故不需消解 WARN）。
+   - 邊際圖沿用 series-3（MMM 黃）以建立「同一模型輸出」的視覺連貫；單 series 不掛 legend。
+   - 存疑狀態用 de-emphasis gray `#6b7280`（非 categorical、非 status；dark 對比 3.95:1、light 對比 4.59:1，皆過 3:1）。
+3. **Token layer `VIZ_TOKENS`**：在頁面 root 注入 `<style>` 區塊，定義 `.contribution-chart-root` 下的 CSS 自訂變數（surface / grid / text / series-1..3 / series-muted / tooltip / direct-label），附 `@media (prefers-color-scheme: light)` 覆寫。深色網域（DataVue 預設）使用 dark 變數集；瀏覽器/系統切到 light 時，chart 自動切換色票，無需 JS 偵測；其餘頁面 chrome（卡片、文字、邊框）沿用既有 `var(--*)` token 維持原貌。
+4. **`ContributionChart`（三聯對比）**：
+   - 3 個 `<Bar>` 各自帶 `<Cell>`，讓 doubtful 組三條 bar **同步** 套灰（非僅 MMM），與 `DOUBTFUL` 徽章 + tooltip 構成 secondary encoding（color alone 風險消除）。
+   - `layout="vertical"` 下 radius 改為 `[0, 2, 2, 0]`（方形左基線 + 2px 圓角右資料端），符合「4px rounded data-end, square at baseline」；`maxBarSize=14` 避免厚實塊。
+   - `barCategoryGap="32%"` / `barGap={2}`：組內 3 條緊湊、組間 32% 寬間距，利於分組辨識。
+   - `<CartesianGrid horizontal={false} vertical>`：只畫垂直 hairline（避免 dashed gridline 反模式）。
+   - `<XAxis>` `domain` 改為 `(dMax) => Math.max(0.05, Math.ceil(dMax * 10) / 10)`，確保 0 與最右側至少 5% 緩衝。
+   - `<Legend iconType="rect" iconSize={10}>`：方塊色塊對應 bar 形狀。
+   - 圖下補充說明改為「標『存疑』的組別以灰階呈現，並附共線性說明」對齊灰階實際行為。
+5. **`MarginalChart`（單 series 排序）**：
+   - 移除 `<Legend>`（per spec：single series needs no legend box — title/subtitle 已說明）。
+   - `data.sort((a,b) => b.marginal-a.marginal)`：由高至低，Y 軸自然排序。
+   - 端點直接標籤：`<LabelList>` 僅在 `index === 0`（最高邊際組）渲染 `+0.XX 最佳` 文字於 bar 尖端；其餘組由 X 軸 + tooltip + 下方表格承載，遵守「Label the extreme, not every point」。
+   - 套同樣的 radius / gridline / barCategoryGap=36% / maxBarSize=18 / doubtful 灰。
+   - 圖下說明加上「最高邊際組別以端點標籤標示」。
+6. **容器高度動態化**：原本 `380px` 固定高度在 7+ 組時會擠壓 bar 厚度。改為 `Math.max(360, data.length * 64)`（貢獻）/ `Math.max(320, data.length * 52)`（邊際），行動裝置以 `isMobile` 切換下限。徹底解決「固定高度排擠 axis band」反模式。
+7. **Tooltip 同步換 token**：底色 / 邊框 / 文字 / label 全部走 `--viz-tooltip-bg` / `--viz-tooltip-border` / `--viz-text-strong` / `--viz-text`，並加上 `cursor={{ fill: var(--viz-grid) }}` 增強 hover feedback。
+8. **字型優化**：`.contribution-chart-root text { font-variant-numeric: tabular-nums; }` 對齊 tick 與資料值數字寬度。
+
+**驗收結果**：
+
+- `npx vite build` 16.88s 全綠，`ContributionAnalysis` chunk 47.25 kB / gzip 15.67 kB（任務 2.1 為 44.32 / 14.87，差異來自 `LabelList` 新 import + token `<style>` 區塊 + 兩個 chart 的更完整資料處理；皆 lazy chunk，未影響首屏）。
+- `npx vitest run src/pages/__tests__/ContributionAnalysis.test.jsx` 2 項全綠（`blocks the page when contribution module access is denied` / `runs analysis end-to-end after groups are present`）。
+- `node scripts/validate_palette.js` 對 3 槽色盤 dark/light 兩種 surface 各跑一次，皆 PASS categorical 六檢查（dark 全部 4/4 PASS，light 對比 2.74/2.11 觸發 relief rule，圖下表格作為 relief channel）；存疑灰 `#6b7280` 為 de-emphasis 非 categorical，validator 標 chroma FAIL 為預期（gray 本就低 chroma），實際 contrast 兩種 surface 皆過 3:1。
+- 端到端走查（無 GUI 截圖環境；以 build + 測試 + 人工讀碼路徑驗證）：選帳戶 → 抓取 → groups 載入 → 開始分析 → 輪詢 → 三聯圖三條 bar 同色組共用 → 標 `存疑` 組三條同步轉灰 + DOUBTFUL 徽章 + tooltip 共線性說明 → 邊際圖最高組右端「+0.XX 最佳」標籤 → 其餘組以 X 軸 / tooltip / 表格承載。`prefers-color-scheme: light` 切換由 CSS media query 處理，無 JS 介入。
+- 無回歸：contribution 模組 2 項 + 既有 pre-existing 9 項中 5 項通過（4 個 pre-existing fail 與本任務無關，詳任務 2.1 驗收記錄）。
+
+**真實快照截圖**：本開發環境無 GUI 截圖能力；`vite build` + `vitest` + `validate_palette` 取代部分驗收。最後一哩的「在瀏覽器切深淺色 + 看真實資料」請於 staging 端走查（`/contribution` 頁 → 選真實帳戶 → 跑分析 → 三聯圖 / 邊際圖兩處切深淺主題比對）。
+
+**風險/回滾**：純視覺 polish，零邏輯變更；回滾單一檔案即可（`git checkout frontend/src/pages/ContributionAnalysis.jsx`）。
 
 ### 第 3 波 A：GA4 整合（**建議實作**，2026-07-06 討論後自選配升格；仍排在第 1、2 波之後）
 
