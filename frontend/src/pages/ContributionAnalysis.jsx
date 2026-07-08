@@ -201,7 +201,7 @@ const ChartMethodNote = ({ lead, detail, language }) => (
     <div
         className="contribution-chart-root"
         style={{
-            marginTop: '12px',
+            marginTop: '16px',
             padding: '10px 12px 10px 14px',
             borderRadius: '8px',
             background: 'rgba(255, 255, 255, 0.025)',
@@ -379,15 +379,16 @@ const ContributionChart = ({ language, rows, isMobile }) => {
     const chartHeight = isMobile ? 320 : Math.max(360, data.length * 64);
 
     return (
-        <div className="contribution-chart-root" style={{ width: '100%', height: chartHeight }}>
-            <ResponsiveContainer>
-                <BarChart
-                    data={data}
-                    layout="vertical"
-                    margin={{ top: 8, right: 28, left: 8, bottom: 8 }}
-                    barCategoryGap="32%"
-                    barGap={2}
-                >
+        <div className="contribution-chart-root" style={{ width: '100%' }}>
+            <div style={{ width: '100%', height: chartHeight }}>
+                <ResponsiveContainer>
+                    <BarChart
+                        data={data}
+                        layout="vertical"
+                        margin={{ top: 8, right: 28, left: 8, bottom: 8 }}
+                        barCategoryGap="32%"
+                        barGap={2}
+                    >
                     <CartesianGrid
                         stroke="var(--viz-grid)"
                         horizontal={false}
@@ -480,6 +481,7 @@ const ContributionChart = ({ language, rows, isMobile }) => {
                     </Bar>
                 </BarChart>
             </ResponsiveContainer>
+            </div>
             <ChartMethodNote
                 language={language}
                 lead={t(
@@ -571,14 +573,15 @@ const MarginalChart = ({ language, rows, marginalStep, marginalCurrency, isMobil
     const topIdx = 0;
     const chartHeight = isMobile ? 280 : Math.max(320, data.length * 52);
     return (
-        <div className="contribution-chart-root" style={{ width: '100%', height: chartHeight }}>
-            <ResponsiveContainer>
-                <BarChart
-                    data={data}
-                    margin={{ top: 8, right: 56, left: 8, bottom: 8 }}
-                    barCategoryGap="36%"
-                    barGap={2}
-                >
+        <div className="contribution-chart-root" style={{ width: '100%' }}>
+            <div style={{ width: '100%', height: chartHeight }}>
+                <ResponsiveContainer>
+                    <BarChart
+                        data={data}
+                        margin={{ top: 8, right: 56, left: 8, bottom: 8 }}
+                        barCategoryGap="36%"
+                        barGap={2}
+                    >
                     <CartesianGrid
                         stroke="var(--viz-grid)"
                         horizontal={false}
@@ -655,6 +658,7 @@ const MarginalChart = ({ language, rows, marginalStep, marginalCurrency, isMobil
                     </Bar>
                 </BarChart>
             </ResponsiveContainer>
+            </div>
             <ChartMethodNote
                 language={language}
                 lead={t(
