@@ -61,8 +61,12 @@ def get_engine():
     if url and (url.startswith("postgresql://") or url.startswith("postgres://")):
         if url.startswith("postgres://"):
             url = url.replace("postgres://", "postgresql://", 1)
-        pool_size = _env_int("DB_POOL_SIZE", 3, minimum=1)
-        max_overflow = _env_int("DB_MAX_OVERFLOW", 5, minimum=0)
+        # 每個 HTTP 請求實際會開 2-3 條 session（auth 依賴鏈與端點各自
+        # Depends 不同的 get_db，FastAPI 依賴快取不共用），一次頁面載入
+        # 4-6 個併發請求就可能耗盡過小的池子；池等待發生在 threadpool
+        # （端點已改 def / to_thread）不會凍結 loop，但仍推高尾延遲。
+        pool_size = _env_int("DB_POOL_SIZE", 5, minimum=1)
+        max_overflow = _env_int("DB_MAX_OVERFLOW", 10, minimum=0)
         pool_timeout = _env_int("DB_POOL_TIMEOUT", 30, minimum=1)
         pool_recycle = _env_int("DB_POOL_RECYCLE", 1800, minimum=30)
         pool_pre_ping = _env_bool("DB_POOL_PRE_PING", True)
