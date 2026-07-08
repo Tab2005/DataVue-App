@@ -214,6 +214,7 @@ async def fetch_account_daily_metrics(
     db_window: tuple[str, str] | None = None,
     metric_key: str = DEFAULT_METRIC_KEY,
     client: httpx.AsyncClient | None = None,
+    since_until: tuple[str, str] | None = None,
 ) -> list[DailyMetricRow]:
     """從 FB Marketing API 抓取指定帳戶的每日活動指標。
 
@@ -223,6 +224,8 @@ async def fetch_account_daily_metrics(
       db_window: 已存在資料的 (min_date, max_date)；None 表示首次全量抓取
       metric_key: 目標轉換事件（預設 omni_purchase）
       client: 注入用的 httpx client（測試用）
+      since_until: 明確指定 [since, until]，優先於 db_window 推導的視窗；
+        供輕量 probe 呼叫使用（避免強制走 180 天全量視窗導致同步阻塞逾時）
 
     回傳：list[DailyMetricRow]，service 層負責寫入 contribution_daily_metrics。
     """
@@ -231,7 +234,7 @@ async def fetch_account_daily_metrics(
         # 不在錯誤訊息中帶任何 token 字串
         raise ContributionTokenError("FB token 缺失或解密失敗，請重新授權")
 
-    since, until = _resolve_fetch_window(db_window)
+    since, until = since_until if since_until else _resolve_fetch_window(db_window)
     url = f"{BASE_URL}/{account_id}/insights"
     params: dict[str, Any] = {
         "level": "campaign",

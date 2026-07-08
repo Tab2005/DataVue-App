@@ -12,6 +12,7 @@ Contribution Module - Router（docs/21 第 3.5 節）
 """
 
 import logging
+from datetime import datetime, timedelta, timezone
 
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query, status
 
@@ -311,6 +312,8 @@ async def refresh_data(
     同步階段：呼叫 `data_source.fetch_account_daily_metrics()` 一次以驗證
     token 與 API 連線（4xx 立即回應，避免背景任務靜默失敗）；若 token 缺失
     / API 拋錯則回 4xx 並附明確錯誤訊息（沿用 fb_ads 慣例，不落明文 token）。
+    probe 固定只抓「昨天」單日（`since_until`），與實際全量/增量視窗無關，
+    避免同步階段被迫等待 180 天全量抓取而觸發前端逾時（曾實測 >30000ms）。
 
     成功 → 背景任務實際執行抓取 + upsert，前端用 202 + status='accepted'
     表示已進入排程；本端點不阻塞前端等待全量抓取。
@@ -325,13 +328,14 @@ async def refresh_data(
     # 增量視窗：若快取已有資料，只補最近 3 天（歸因回補）；首次全量抓 180 天。
     db_window = _get_existing_date_window(db, account_id, metric_key)
 
+    yesterday = (datetime.now(timezone.utc).date() - timedelta(days=1)).isoformat()
     try:
-        # 同步觸發一次最小抓取驗證 token（取 1 天即可），成功即排程全量抓取
+        # 同步觸發一次最小抓取驗證 token（僅昨天 1 天），成功即排程全量/增量抓取
         probe = await fetch_account_daily_metrics(
             account_id,
             user_id=user_id,
-            db_window=None,  # 強制走全量視窗
             metric_key=metric_key,
+            since_until=(yesterday, yesterday),
         )
     except ContributionTokenError as exc:
         raise HTTPException(
