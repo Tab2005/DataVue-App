@@ -11,6 +11,7 @@ Contribution Module - Router（docs/21 第 3.5 節）
   - 授權 → /ping 回 200；/campaigns 回 200；/data/refresh 回 202 + 背景抓取
 """
 
+import asyncio
 import logging
 from datetime import datetime, timedelta, timezone
 
@@ -305,7 +306,6 @@ async def refresh_data(
     metric_key: str = Query("omni_purchase", description="轉換指標鍵"),
     user=Depends(get_current_contribution_user),
     _access: bool = Depends(require_contribution_operate),
-    db=Depends(get_db),
 ):
     """手動觸發每日資料補抓（背景執行）。
 
@@ -314,6 +314,15 @@ async def refresh_data(
     / API 拋錯則回 4xx 並附明確錯誤訊息（沿用 fb_ads 慣例，不落明文 token）。
     probe 固定只抓「昨天」單日（`since_until`），與實際全量/增量視窗無關，
     避免同步階段被迫等待 180 天全量抓取而觸發前端逾時（曾實測 >30000ms）。
+
+    注意：刻意不用 `Depends(get_db)` ——若持有一個請求範圍的 DB session
+    横跨這段「同步等待 Meta API」的期間，連線會在整趟等待中被佔用；DB
+    連線池很小（預設 pool_size=3 + max_overflow=5 = 8），幾次併發的
+    「抓取資料」點擊就會把連線池耗盡，導致其他端點（甚至 /health）也一併
+    卡住排隊等待連線，讓整個服務看起來完全無回應。改為用短生命週期 session
+    只在查詢 db_window 時取用、立刻歸還，Meta API 等待期間不佔用任何連線
+    （實測：曾造成整個 backend event loop 卡死逾時，見 docs/21 任務 2.1
+    追蹤問題）。
 
     成功 → 背景任務實際執行抓取 + upsert，前端用 202 + status='accepted'
     表示已進入排程；本端點不阻塞前端等待全量抓取。
@@ -326,7 +335,14 @@ async def refresh_data(
         )
 
     # 增量視窗：若快取已有資料，只補最近 3 天（歸因回補）；首次全量抓 180 天。
-    db_window = _get_existing_date_window(db, account_id, metric_key)
+    # 短生命週期 session：查完立刻歸還連線，不橫跨後面的 Meta API 等待。
+    from database import SessionLocal as _SessionLocal
+
+    _db = _SessionLocal()
+    try:
+        db_window = _get_existing_date_window(_db, account_id, metric_key)
+    finally:
+        _db.close()
 
     yesterday = (datetime.now(timezone.utc).date() - timedelta(days=1)).isoformat()
     try:
@@ -417,7 +433,17 @@ async def _run_refresh_background(
     """背景任務：實際執行抓取 + upsert；錯誤以 log 記錄（不中斷任務）。"""
     from database import SessionLocal
 
-    db = SessionLocal()
+    def _write(rows_dicts: list[dict]) -> int:
+        # 同步 DB 段（session 開/寫/commit/close 全部在 thread 內完成，
+        # 不佔用事件迴圈執行緒；同一類修法見 refresh_data / get_headers）
+        db = SessionLocal()
+        try:
+            n = contribution_repository.upsert_daily_metrics(db, rows_dicts)
+            db.commit()
+            return n
+        finally:
+            db.close()
+
     try:
         rows = await fetch_account_daily_metrics(
             account_id,
@@ -425,10 +451,7 @@ async def _run_refresh_background(
             db_window=db_window,
             metric_key=metric_key,
         )
-        n = contribution_repository.upsert_daily_metrics(
-            db, [r.to_dict() for r in rows]
-        )
-        db.commit()
+        n = await asyncio.to_thread(_write, [r.to_dict() for r in rows])
         logger.info(
             "[Contribution] refresh %s metric=%s window=%s: probe=%d upsert=%d",
             account_id,
@@ -448,5 +471,3 @@ async def _run_refresh_background(
             exc,
             exc_info=True,
         )
-    finally:
-        db.close()

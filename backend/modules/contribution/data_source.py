@@ -229,7 +229,11 @@ async def fetch_account_daily_metrics(
 
     回傳：list[DailyMetricRow]，service 層負責寫入 contribution_daily_metrics。
     """
-    headers = get_headers(user_id, team_id, allow_fallback=True)
+    # get_headers 內部走同步 SQLAlchemy session（TokenManager），若直接呼叫會
+    # 佔用事件迴圈執行緒；用 to_thread 丟到 threadpool，避免與其他請求爭搶
+    # DB 連線池時卡死整個 event loop（同一類根因見本檔案上方 refresh_data
+    # 的 Depends(get_db) 修法）。
+    headers = await asyncio.to_thread(get_headers, user_id, team_id, allow_fallback=True)
     if not headers:
         # 不在錯誤訊息中帶任何 token 字串
         raise ContributionTokenError("FB token 缺失或解密失敗，請重新授權")
