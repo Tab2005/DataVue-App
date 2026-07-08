@@ -120,7 +120,9 @@ def get_groups(
       - 僅有 auto → 回 auto
       - 完全無 → 跑 grouping.auto_group() 並寫入
     """
-    user_id = getattr(_user, "google_id", None) or getattr(_user, "id", None)
+    # updated_by 外鍵指向 users.id（內部 ID），不可用 google_id——曾因取值
+    # 順序寫反觸發 ForeignKeyViolation（SQLite 測試不驗外鍵故未攔到）
+    user_id = getattr(_user, "id", None)
     rows = get_or_create_groups(db, account_id=account_id, updated_by=user_id)
     source = "manual" if any(r.source == "manual" for r in rows) else "auto"
     return GroupsResponse(
@@ -152,7 +154,8 @@ def update_groups_endpoint(
       - 全部活動 ID 必須屬於該帳戶、不可丟失
     失敗回 422（語義錯誤）並列出原因。
     """
-    user_id = getattr(user, "google_id", None) or getattr(user, "id", None)
+    # updated_by → users.id（內部 ID），同 get_groups 的取值規則
+    user_id = getattr(user, "id", None)
     payload = [g.model_dump() for g in body.groups]
     try:
         rows = update_groups(
@@ -198,7 +201,8 @@ async def create_analysis_endpoint(
     （apscheduler → local_async fallback）。回 202 + snapshot_id；
     前端以 GET /analyses/{snapshot_id} 輪詢狀態。
     """
-    user_id = getattr(user, "google_id", None) or getattr(user, "id", None)
+    # created_by → users.id（內部 ID），同 get_groups 的取值規則
+    user_id = getattr(user, "id", None)
     try:
         snapshot, queue_host, _mode = create_analysis(
             db,
