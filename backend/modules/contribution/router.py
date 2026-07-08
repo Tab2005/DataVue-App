@@ -9,6 +9,13 @@ Contribution Module - Router（docs/21 第 3.5 節）
 授權邊界：
   - 未授權（無模組存取） → require_module 拋 403（含 'contribution' 字樣）
   - 授權 → /ping 回 200；/campaigns 回 200；/data/refresh 回 202 + 背景抓取
+
+端點 async/sync 慣例（2026-07-08 事故第二型態的修法）：
+  - 走同步 SQLAlchemy 的端點一律宣告為 `def`（FastAPI 自動丟 threadpool）。
+    `async def` + 同步 DB 查詢會直接在 event loop 執行；psycopg2 等待資料庫
+    鎖沒有預設 timeout，一次鎖等待就會把整個 backend（含 /health）無限凍結。
+  - 只有真正 await 外部 I/O 或需操作 event loop（背景任務 dispatch）的端點
+    維持 `async def`，且其中的同步段落必須包 `asyncio.to_thread`。
 """
 
 import asyncio
@@ -77,7 +84,7 @@ async def ping(
 
 
 @router.get("/campaigns", response_model=CampaignListResponse)
-async def list_campaigns(
+def list_campaigns(
     account_id: str = Query(..., description="廣告帳戶 ID（act_ 格式）"),
     metric_key: str = Query("omni_purchase", description="轉換指標鍵"),
     _user=Depends(get_current_contribution_user),
@@ -100,7 +107,7 @@ async def list_campaigns(
 
 
 @router.get("/groups", response_model=GroupsResponse)
-async def get_groups(
+def get_groups(
     account_id: str = Query(..., description="廣告帳戶 ID"),
     _user=Depends(get_current_contribution_user),
     _access: bool = Depends(require_contribution_module),
@@ -132,7 +139,7 @@ async def get_groups(
 
 
 @router.put("/groups", response_model=GroupsUpdateResponse)
-async def update_groups_endpoint(
+def update_groups_endpoint(
     body: GroupsUpdateRequest,
     user=Depends(get_current_contribution_user),
     _access: bool = Depends(require_contribution_operate),
@@ -233,7 +240,7 @@ async def create_analysis_endpoint(
 
 
 @router.get("/analyses", response_model=AnalysisListResponse)
-async def list_analyses(
+def list_analyses(
     account_id: str = Query(..., description="廣告帳戶 ID"),
     page: int = Query(1, ge=1),
     page_size: int = Query(20, ge=1, le=100),
@@ -265,7 +272,7 @@ async def list_analyses(
 
 
 @router.get("/analyses/{snapshot_id}", response_model=AnalysisDetailResponse)
-async def get_analysis(
+def get_analysis(
     snapshot_id: str,
     _user=Depends(get_current_contribution_user),
     _access: bool = Depends(require_contribution_module),
@@ -336,13 +343,18 @@ async def refresh_data(
 
     # 增量視窗：若快取已有資料，只補最近 3 天（歸因回補）；首次全量抓 180 天。
     # 短生命週期 session：查完立刻歸還連線，不橫跨後面的 Meta API 等待。
+    # to_thread：本端點是 async def，同步 DB 查詢不可直接在 event loop 執行
+    # （鎖等待會凍結整個 backend，見檔頭慣例說明）。
     from database import SessionLocal as _SessionLocal
 
-    _db = _SessionLocal()
-    try:
-        db_window = _get_existing_date_window(_db, account_id, metric_key)
-    finally:
-        _db.close()
+    def _query_window() -> tuple[str, str] | None:
+        _db = _SessionLocal()
+        try:
+            return _get_existing_date_window(_db, account_id, metric_key)
+        finally:
+            _db.close()
+
+    db_window = await asyncio.to_thread(_query_window)
 
     yesterday = (datetime.now(timezone.utc).date() - timedelta(days=1)).isoformat()
     try:

@@ -4,6 +4,7 @@
 提供取得使用者所有廣告帳號的非同步函式。
 """
 
+import asyncio
 import sys
 import logging
 import httpx
@@ -18,16 +19,22 @@ async def get_all_ad_accounts(user_id, team_id=None, strict_token=False):
     """
     非同步取得所有廣告帳號（含快取）。
 
+    同步段落（Redis 快取、TokenManager 的 DB 查詢+解密）一律包 to_thread：
+    本函式跑在 event loop 上，同步 DB/Redis 呼叫遇到鎖等待或連線池耗盡時
+    會凍結整個 backend（2026-07-08 事故，本函式兩度是凍結前最後一條日誌）。
+
     Returns:
         (accounts: list[dict], error: str | None)
         accounts 格式：[{'id': 'act_123', 'name': 'My Account'}]
     """
     # 先查快取
-    cached = get_account_cache(user_id, team_id)
+    cached = await asyncio.to_thread(get_account_cache, user_id, team_id)
     if cached is not None:
         return cached, None
 
-    headers = get_headers(user_id, team_id, allow_fallback=not strict_token)
+    headers = await asyncio.to_thread(
+        get_headers, user_id, team_id, not strict_token
+    )
     if not headers:
         logger.warning("[FB ASYNC] get_all_ad_accounts: No token available")
         return [], "No access token found for this user."
@@ -56,7 +63,7 @@ async def get_all_ad_accounts(user_id, team_id=None, strict_token=False):
         ]
         formatted.sort(key=lambda x: x["name"])
 
-        set_account_cache(user_id, team_id, formatted)
+        await asyncio.to_thread(set_account_cache, user_id, team_id, formatted)
         return formatted, None
 
     except Exception as e:

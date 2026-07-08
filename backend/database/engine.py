@@ -66,6 +66,14 @@ def get_engine():
         pool_timeout = _env_int("DB_POOL_TIMEOUT", 30, minimum=1)
         pool_recycle = _env_int("DB_POOL_RECYCLE", 1800, minimum=30)
         pool_pre_ping = _env_bool("DB_POOL_PRE_PING", True)
+        # 鎖/語句等待上限（保險絲）：psycopg2 等待資料庫鎖「沒有預設 timeout」，
+        # 一個在 event loop 上直接執行的同步查詢若等到永遠不釋放的鎖，整個
+        # backend 會無限凍結且無任何錯誤日誌（2026-07-08 事故第二型態：/health
+        # 連續 2.5 分鐘以上無回應、app log 全靜默）。設定 lock_timeout 後任何
+        # 鎖等待最多 15 秒即拋錯，statement_timeout 兜底 60 秒防失控長查詢
+        # （上限需容納啟動時的 Alembic migration 與報表彙總查詢）。
+        lock_timeout_ms = _env_int("DB_LOCK_TIMEOUT_MS", 15000, minimum=1000)
+        statement_timeout_ms = _env_int("DB_STATEMENT_TIMEOUT_MS", 60000, minimum=5000)
         return create_engine(
             url,
             pool_size=pool_size,
@@ -74,6 +82,12 @@ def get_engine():
             pool_recycle=pool_recycle,
             pool_pre_ping=pool_pre_ping,
             pool_use_lifo=True,
+            connect_args={
+                "options": (
+                    f"-c lock_timeout={lock_timeout_ms} "
+                    f"-c statement_timeout={statement_timeout_ms}"
+                )
+            },
         )
 
     sqlite_url = os.getenv("SQLITE_DATABASE_URL") or SQLITE_DATABASE_URL
