@@ -87,6 +87,16 @@ def get_engine():
             pool_pre_ping=pool_pre_ping,
             pool_use_lifo=True,
             connect_args={
+                # TCP 連線建立上限：psycopg2 預設無 connect_timeout（OS 層級
+                # 可掛數分鐘）——節點壓力大時新連線 SYN 被丟棄會讓取連線的
+                # 執行緒無限等待，是唯一沒有應用層上限的等待點
+                "connect_timeout": 10,
+                # keepalive：及早偵測半死連線（pod 重啟/凍結遺留），避免
+                # 從池中取出殭屍連線後在首次查詢時長時間卡住
+                "keepalives": 1,
+                "keepalives_idle": 30,
+                "keepalives_interval": 10,
+                "keepalives_count": 3,
                 "options": (
                     f"-c lock_timeout={lock_timeout_ms} "
                     f"-c statement_timeout={statement_timeout_ms}"
