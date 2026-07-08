@@ -140,8 +140,17 @@ def auto_group(
     )
     final: dict[str, dict[str, Any]] = {}
     for gk, b in buckets.items():
+        if gk == "G_other":
+            # G_other 本來就是低占比收容所，不做占比過濾。絕不可在此對
+            # g_other 邊迭代邊 append：g_other 是 buckets 的成員，舊版迭代
+            # 到它時把 <3% 的活動 append 回「正在迭代的同一個 list」，for
+            # 永遠追不到結尾 → 無限追加（實測 RSS 每秒 +7MB 直到整台機器
+            # 記憶體耗盡，2026-07-08 全站反覆死亡的真因；名稱不含任何關鍵
+            # 詞且占比 <3% 的活動即觸發，該組合在真實帳戶極常見）。
+            continue
         kept_ids: list[str] = []
-        for cid in b["campaign_ids"]:
+        # list() 快照：防未來有人在迴圈內改動 b["campaign_ids"] 重蹈覆轍
+        for cid in list(b["campaign_ids"]):
             spend = _lookup_spend(cid, sorted_camps)
             share = spend / total_spend
             if share < min_spend_share:

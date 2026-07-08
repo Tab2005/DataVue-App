@@ -84,6 +84,15 @@ def start_watchdog() -> None:
                 last_rss_log = now
                 if rss >= RSS_ALERT_MB:
                     logger.warning("[Watchdog] RSS=%dMB（超過 %dMB 門檻）", rss, RSS_ALERT_MB)
+                    # 記憶體失控時也傾印全 thread 堆疊：失控的配置迴圈可能在
+                    # threadpool（loop 不凍結、不觸發下方 lag dump），其堆疊
+                    # 會直接指出正在配置記憶體的檔案/行號（2026-07-08 實測
+                    # RSS 每秒 +7MB 線性成長、loop 全程正常的洩漏型態）
+                    if now - last_dump >= DUMP_COOLDOWN:
+                        last_dump = now
+                        logger.error("[Watchdog] RSS 失控——傾印所有 thread 堆疊：")
+                        faulthandler.dump_traceback(file=sys.stderr)
+                        sys.stderr.flush()
                 else:
                     logger.info("[Watchdog] RSS=%dMB", rss)
 

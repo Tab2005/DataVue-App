@@ -50,6 +50,40 @@ def test_auto_group_alwayson_keyword_becomes_G1():
 
 
 @pytest.mark.unit
+def test_auto_group_terminates_with_unmatched_low_share_campaign():
+    """2026-07-08 全站反覆死亡真因的回歸測試。
+
+    「名稱不含任何關鍵詞（Step 1 落入 G_other 桶）且占比 < 3%」的活動，
+    舊版在 Step 2 迭代 G_other 桶時把它 append 回正在迭代的同一個 list，
+    造成無限追加（RSS 每秒 +7MB 直到機器記憶體耗盡）。修正後必須正常
+    終止、該活動留在 G_other 且不重複。
+    """
+    import threading
+
+    camps = [
+        _camp("big", "OB 常態主力", 1000.0),   # 命中 G1
+        _camp("weird", "雙11特賣", 10.0),      # 無關鍵詞 + <3% → 舊版無限迴圈
+    ]
+    result: dict = {}
+
+    def _run() -> None:
+        result["out"] = grouping.auto_group(camps)
+
+    t = threading.Thread(target=_run, daemon=True)
+    t.start()
+    t.join(timeout=10)
+    assert "out" in result, "auto_group 未在 10 秒內返回（無限追加迴圈回歸）"
+
+    out = result["out"]
+    g_other = next(g for g in out if g["group_key"] == "G_other")
+    # 該活動留在 G_other 且恰好一次（舊版會無限重複）
+    assert g_other["campaign_ids"].count("weird") == 1
+    # 全部組別無重複活動
+    all_ids = [cid for g in out for cid in g["campaign_ids"]]
+    assert len(all_ids) == len(set(all_ids))
+
+
+@pytest.mark.unit
 def test_auto_group_small_share_merges_into_G_other():
     out = grouping.auto_group(
         [
