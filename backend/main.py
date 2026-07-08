@@ -68,6 +68,14 @@ async def lifespan(app: FastAPI):
     logger.info("🚀 DataVue Application starting...")
 
     from core.scheduler import start_scheduler, stop_scheduler
+    from core.watchdog import start_watchdog
+
+    try:
+        # 事故診斷工具（2026-07-08）：loop 凍結時自動傾印全 thread 堆疊
+        # + 每分鐘記錄 RSS 曲線，詳 core/watchdog.py
+        start_watchdog()
+    except Exception as e:
+        logger.error(f"Failed to start watchdog: {e}", exc_info=True)
 
     try:
         scheduler_status = await start_scheduler()
