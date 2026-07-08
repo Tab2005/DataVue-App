@@ -48,7 +48,7 @@ class _FakeAsyncClient:
     """模擬 httpx.AsyncClient，回應預錄的 page 序列。
 
     pages 為 list[dict]，每個 dict 對應一次 GET 的回應 payload（含 data + paging）。
-    當 paging.next/cursors.after 皆缺時停止翻頁。"""
+    抓取端只認 paging.next 為續頁訊號（同真實 FB：最後一頁仍帶 cursors.after）。"""
 
     def __init__(self, pages: list[dict[str, Any]]):
         self._pages = list(pages)
@@ -69,15 +69,20 @@ class _FakeAsyncClient:
 
 
 def _make_paged_payload(rows: list[dict[str, Any]], page_size: int = 500) -> list[dict[str, Any]]:
-    """將 rows 切成多個 page payload，每頁最多 page_size 列。"""
+    """將 rows 切成多個 page payload，每頁最多 page_size 列。
+
+    模擬真實 Meta Graph API 行為：**每一頁（含最後一頁）都帶
+    paging.cursors.after**，但只有「還有下一頁」時才有 paging.next——
+    抓取端必須只認 next，誤認 after 會無限重抓最後一頁（2026-07-08 事故）。"""
     pages: list[dict[str, Any]] = []
     for start in range(0, len(rows), page_size):
         chunk = rows[start : start + page_size]
-        page: dict[str, Any] = {"data": chunk}
+        paging: dict[str, Any] = {
+            "cursors": {"before": f"cursor_{start}", "after": f"cursor_{start + page_size}"}
+        }
         if start + page_size < len(rows):
-            # 下一頁 cursor
-            page["paging"] = {"cursors": {"after": f"cursor_{start + page_size}"}}
-        pages.append(page)
+            paging["next"] = f"https://graph.facebook.com/next?after=cursor_{start + page_size}"
+        pages.append({"data": chunk, "paging": paging})
     return pages
 
 
@@ -231,6 +236,75 @@ async def test_fetch_account_daily_metrics_paginates_via_cursor():
     # 第二、三次請求應帶 after cursor
     assert "after" in fake_client._calls[1]["params"]
     assert "after" in fake_client._calls[2]["params"]
+
+
+@pytest.mark.asyncio
+async def test_fetch_terminates_when_last_page_has_cursor_but_no_next():
+    """2026-07-08 事故根因回歸測試：最後一頁帶 cursors.after 但無 next 時必須終止。
+
+    真實 FB 行為是最後一頁仍帶 paging.cursors.after；舊邏輯以 `next 或 after
+    任一存在` 判斷續頁，會用同一 cursor 無限重抓最後一頁（背景任務記憶體無限
+    累積至 2GB 拖垮整台機器）。此測試用「重複回同一頁」的 client 模擬該行為，
+    修正後必須只抓 1 次即結束。"""
+    last_page = {
+        "data": [_fake_insights_row("cmp_1", "2026-07-01", 10.0, purchase_value=1.0)],
+        # 無 next —— 但 cursors.after 仍存在（真實 FB 最後一頁的形狀）
+        "paging": {"cursors": {"before": "cursor_b", "after": "cursor_LAST"}},
+    }
+
+    class _RepeatingLastPageClient:
+        """無論帶什麼 cursor 都回同一頁（模擬 FB 對最後一頁 after 的回應）。"""
+
+        calls = 0
+
+        async def get(self, url: str, *, headers: dict, params: dict) -> _FakeResponse:
+            type(self).calls += 1
+            if type(self).calls > 5:
+                raise AssertionError("翻頁未終止：最後一頁被重複抓取（無限迴圈回歸）")
+            return _FakeResponse(last_page)
+
+        async def aclose(self) -> None:
+            pass
+
+    with patch.object(ds, "get_headers", return_value={"Authorization": "Bearer T"}):
+        result = await fetch_account_daily_metrics(
+            "act_1", user_id="u", client=_RepeatingLastPageClient(),  # type: ignore[arg-type]
+        )
+    assert _RepeatingLastPageClient.calls == 1, "最後一頁只該抓一次"
+    assert len(result) == 1
+
+
+@pytest.mark.asyncio
+async def test_fetch_stops_when_cursor_does_not_advance():
+    """防禦線：next 存在但 cursor 未前進（或缺失）時提前中止，寧可少抓不可迴圈。"""
+    stuck_page = {
+        "data": [_fake_insights_row("cmp_1", "2026-07-01", 10.0, purchase_value=1.0)],
+        # next 存在但 after 永遠是同一值 → 第二頁請求後偵測「未前進」應中止
+        "paging": {
+            "cursors": {"after": "cursor_STUCK"},
+            "next": "https://graph.facebook.com/next?after=cursor_STUCK",
+        },
+    }
+
+    class _StuckCursorClient:
+        calls = 0
+
+        async def get(self, url: str, *, headers: dict, params: dict) -> _FakeResponse:
+            type(self).calls += 1
+            if type(self).calls > 5:
+                raise AssertionError("翻頁未終止：cursor 未前進仍持續抓取")
+            return _FakeResponse(stuck_page)
+
+        async def aclose(self) -> None:
+            pass
+
+    with patch.object(ds, "get_headers", return_value={"Authorization": "Bearer T"}):
+        result = await fetch_account_daily_metrics(
+            "act_1", user_id="u", client=_StuckCursorClient(),  # type: ignore[arg-type]
+        )
+    # 第 1 頁正常收下；第 2 頁發現 cursor 與上一輪相同 → 中止（最多 2 次請求）
+    assert _StuckCursorClient.calls == 2
+    assert len(result) == 2
 
 
 @pytest.mark.asyncio

@@ -38,6 +38,9 @@ logger = logging.getLogger(__name__)
 PAGE_LIMIT = 500
 # 逐頁 sleep 避免 rate limit（沿用 fb_ads 風格）
 INTER_PAGE_SLEEP_SEC = 0.3
+# 翻頁硬上限（防禦性保險）：1000 頁 × 500 列 = 50 萬列，遠超任何真實帳戶的
+# 180 天 campaign-level 資料量；觸頂即中止並記 error，絕不允許無限翻頁
+MAX_PAGES = 1000
 # API 抓取最大回溯天數（Meta 對 insights level=campaign 的實際限制）
 MAX_DATE_RANGE_DAYS = 180
 # 預設轉換指標（無 metric_key 覆寫時使用），對應 FB actions 內 omni_purchase
@@ -303,14 +306,32 @@ async def fetch_account_daily_metrics(
             else:
                 rows.extend(page_rows)
 
-            # 翻頁：FB 使用 cursor-based paging，paging.next 為下一頁完整 URL，
-            # 也可改用 paging.cursors.after 自組參數；兩者並用以下一頁是否存在
-            # 為主訊號，after 為備援（避免漏接）。
+            # 翻頁：Meta Graph API 的「還有下一頁」唯一可靠訊號是 paging.next
+            # ——最後一頁仍會帶 paging.cursors.after（官方文件：next 欄位在最後
+            # 一頁不存在）。禁止以 after 存在與否判斷續頁：舊版 `next 或 after
+            # 任一存在就翻頁`，導致最後一頁以同一 cursor 無限重抓，背景任務把
+            # 同一頁的列無限累積至 2GB 拖垮整台機器（2026-07-08 事故根因）。
             paging = payload.get("paging") or {}
-            cursors = paging.get("cursors") or {}
-            next_after = cursors.get("after")
             next_url = paging.get("next")
-            if not (next_url or next_after):
+            if not next_url:
+                break
+            next_after = (paging.get("cursors") or {}).get("after")
+            if not next_after or next_after == after:
+                # next 存在但 cursor 缺失或未前進：防禦性中止，寧可少抓不可迴圈
+                logger.warning(
+                    "[Contribution] %s 翻頁 cursor 未前進（page=%d），提前結束",
+                    account_id,
+                    page,
+                )
+                break
+            if page >= MAX_PAGES:
+                logger.error(
+                    "[Contribution] %s 翻頁達硬上限 %d 頁，中止抓取（%s..%s）",
+                    account_id,
+                    MAX_PAGES,
+                    since,
+                    until,
+                )
                 break
             after = next_after
             await asyncio.sleep(INTER_PAGE_SLEEP_SEC)
