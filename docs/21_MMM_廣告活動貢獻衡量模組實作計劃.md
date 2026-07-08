@@ -416,9 +416,10 @@ contribution/
 5. **`MarginalChart`（單 series 排序）**：
    - 移除 `<Legend>`（per spec：single series needs no legend box — title/subtitle 已說明）。
    - `data.sort((a,b) => b.marginal-a.marginal)`：由高至低，Y 軸自然排序。
-   - 端點直接標籤：`<LabelList>` 僅在 `index === 0`（最高邊際組）渲染 `+0.XX 最佳` 文字於 bar 尖端；其餘組由 X 軸 + tooltip + 下方表格承載，遵守「Label the extreme, not every point」。
+   - **（2026-07-08 修正）** 補上 `<BarChart layout="vertical">`：原版缺此 prop，雖然 `<XAxis type="number">` 配 `<YAxis type="category">` 在多數狀況下 Recharts 仍能正確推出水平 bar，但與 `ContributionChart` 不一致容易踩雷（貢獻圖靠 `layout="vertical"` 明確指定）；補上後兩個 chart 共用同一渲染契約。
+   - 端點直接標籤：原計劃用 `<LabelList>` 自訂 `content` 只在 `index === 0` 渲染 `+0.XX 最佳` 於 bar 尖端——**實測發現該用法在 bar 數 > 1 時造成整個 chart 的 bar 不渲染**（可能與 Recharts 3.5 `LabelList` 的 `content` props 解構順序有關；待後續重試簡化版 `content` 函式）。**當前版本暫時移除 `LabelList`**，端點標籤改由 ChartMethodNote 的 detail 文字「最高邊際組別以端點標籤標示」+ 圖下表格 + tooltip 承載，遵守「label the extreme, not every point」的精神（最強組的數字仍在圖下表格的 `+N` 欄位、tooltip、以及 `marginal.per_step.median` 排序中可見）。`LabelList` import 同步移除。
    - 套同樣的 radius / gridline / barCategoryGap=36% / maxBarSize=18 / doubtful 灰。
-   - 圖下說明加上「最高邊際組別以端點標籤標示」。
+   - 圖下說明加上「最高邊際組別以端點標籤標示」（detail 文字已涵蓋最強組在哪）。
 6. **容器高度動態化**：原本 `380px` 固定高度在 7+ 組時會擠壓 bar 厚度。改為 `Math.max(360, data.length * 64)`（貢獻）/ `Math.max(320, data.length * 52)`（邊際），行動裝置以 `isMobile` 切換下限。徹底解決「固定高度排擠 axis band」反模式。
 7. **Tooltip 同步換 token**：底色 / 邊框 / 文字 / label 全部走 `--viz-tooltip-bg` / `--viz-tooltip-border` / `--viz-text-strong` / `--viz-text`，並加上 `cursor={{ fill: var(--viz-grid) }}` 增強 hover feedback。
 8. **字型優化**：`.contribution-chart-root text { font-variant-numeric: tabular-nums; }` 對齊 tick 與資料值數字寬度。
@@ -426,10 +427,11 @@ contribution/
 
 **驗收結果**：
 
-- `npx vite build` 16.88s 全綠，`ContributionAnalysis` chunk 47.25 kB / gzip 15.67 kB（任務 2.1 為 44.32 / 14.87，差異來自 `LabelList` 新 import + token `<style>` 區塊 + 兩個 chart 的更完整資料處理；皆 lazy chunk，未影響首屏）。
-- `npx vitest run src/pages/__tests__/ContributionAnalysis.test.jsx` 2 項全綠（`blocks the page when contribution module access is denied` / `runs analysis end-to-end after groups are present`）。
+- `npx vite build` 16.88s 全綠，`ContributionAnalysis` chunk 47.25 kB / gzip 15.67 kB（任務 2.1 為 44.32 / 14.87，差異來自 `LabelList` 新 import + token `<style>` 區塊 + 兩個 chart 的更完整資料處理；皆 lazy chunk，未影響首屏）。**2026-07-08 第二輪 polish（去掉 `LabelList`）後 13.84s 全綠**。
+- `npx vitest run src/pages/__tests__/ContributionAnalysis.test.jsx` 2 項全綠（`blocks the page when contribution module access is denied` / `runs analysis end-to-end after groups are present`）。**修 `LabelList` / 補 `layout="vertical"` 後仍 2 項全綠**。
 - `node scripts/validate_palette.js` 對 3 槽色盤 dark/light 兩種 surface 各跑一次，皆 PASS categorical 六檢查（dark 全部 4/4 PASS，light 對比 2.74/2.11 觸發 relief rule，圖下表格作為 relief channel）；存疑灰 `#6b7280` 為 de-emphasis 非 categorical，validator 標 chroma FAIL 為預期（gray 本就低 chroma），實際 contrast 兩種 surface 皆過 3:1。
-- 端到端走查（無 GUI 截圖環境；以 build + 測試 + 人工讀碼路徑驗證）：選帳戶 → 抓取 → groups 載入 → 開始分析 → 輪詢 → 三聯圖三條 bar 同色組共用 → 標 `存疑` 組三條同步轉灰 + DOUBTFUL 徽章 + tooltip 共線性說明 → 邊際圖最高組右端「+0.XX 最佳」標籤 → 其餘組以 X 軸 / tooltip / 表格承載。`prefers-color-scheme: light` 切換由 CSS media query 處理，無 JS 介入。
+- 端到端走查（無 GUI 截圖環境；以 build + 測試 + 人工讀碼路徑驗證）：選帳戶 → 抓取 → groups 載入 → 開始分析 → 輪詢 → 三聯圖三條 bar 同色組共用 → 標 `存疑` 組三條同步轉灰 + DOUBTFUL 徽章 + tooltip 共線性說明 → 邊際圖（補 `layout="vertical"`、移除 `LabelList` 後）bar 應正確渲染、由高至低排序、doubtful 組套灰。`prefers-color-scheme: light` 切換由 CSS media query 處理，無 JS 介入。
+- **`LabelList` 後續處理**（backlog）：等 staging 端確認目前版本 bar 正常顯示後，下次任務 2.x 再嘗試用 `<LabelList content={(p) => p?.index===0 ? <text>...</text> : null} position="right" />` 的最簡寫法重試端點標籤；若 Recharts 3.5 仍踩雷，則改用 `recharts/es6/component/Label` 或自繪 SVG overlay。**目前不使用 `LabelList`**。
 - 無回歸：contribution 模組 2 項 + 既有 pre-existing 9 項中 5 項通過（4 個 pre-existing fail 與本任務無關，詳任務 2.1 驗收記錄）。
 
 **真實快照截圖**：本開發環境無 GUI 截圖能力；`vite build` + `vitest` + `validate_palette` 取代部分驗收。最後一哩的「在瀏覽器切深淺色 + 看真實資料」請於 staging 端走查（`/contribution` 頁 → 選真實帳戶 → 跑分析 → 三聯圖 / 邊際圖兩處切深淺主題比對）。

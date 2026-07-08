@@ -11,7 +11,6 @@ import {
     ResponsiveContainer,
     Cell,
     Legend,
-    LabelList,
 } from 'recharts';
 
 import { useModuleAccess } from '../hooks/usePermission';
@@ -570,7 +569,6 @@ const MarginalChart = ({ language, rows, marginalStep, marginalCurrency, isMobil
         return <InfoPanel message={t(language, 'No marginal data.', '無邊際資料。')} />;
     }
     data.sort((a, b) => b.marginal - a.marginal);
-    const topIdx = 0;
     const chartHeight = isMobile ? 280 : Math.max(320, data.length * 52);
     return (
         <div className="contribution-chart-root" style={{ width: '100%' }}>
@@ -578,6 +576,7 @@ const MarginalChart = ({ language, rows, marginalStep, marginalCurrency, isMobil
                 <ResponsiveContainer>
                     <BarChart
                         data={data}
+                        layout="vertical"
                         margin={{ top: 8, right: 56, left: 8, bottom: 8 }}
                         barCategoryGap="36%"
                         barGap={2}
@@ -632,29 +631,6 @@ const MarginalChart = ({ language, rows, marginalStep, marginalCurrency, isMobil
                                 fill={row.doubtful ? 'var(--viz-series-muted)' : 'var(--viz-series-3)'}
                             />
                         ))}
-                        <LabelList
-                            dataKey="marginal"
-                            position="right"
-                            formatter={(v) => `+${Number(v).toFixed(2)}`}
-                            content={(props) => {
-                                if (props.index !== topIdx) return null;
-                                const { x, y, width, value, index } = props;
-                                const offsetX = (x || 0) + (width || 0) + 6;
-                                return (
-                                    <text
-                                        x={offsetX}
-                                        y={y}
-                                        dy={4}
-                                        textAnchor="start"
-                                        fontSize={11}
-                                        fontWeight={700}
-                                        fill="var(--viz-direct-label)"
-                                    >
-                                        {`+${Number(value).toFixed(2)} ${t(language, 'best', '最佳')}`}
-                                    </text>
-                                );
-                            }}
-                        />
                     </Bar>
                 </BarChart>
             </ResponsiveContainer>
