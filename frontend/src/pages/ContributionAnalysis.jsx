@@ -1,5 +1,6 @@
 import React, { useEffect, useMemo, useState, useCallback, useRef } from 'react';
 import { useOutletContext } from 'react-router-dom';
+import { FiInfo } from 'react-icons/fi';
 import {
     BarChart,
     Bar,
@@ -195,6 +196,53 @@ const InfoPanel = ({ message, tone = 'info' }) => {
         </div>
     );
 };
+
+const ChartMethodNote = ({ lead, detail, language }) => (
+    <div
+        className="contribution-chart-root"
+        style={{
+            marginTop: '12px',
+            padding: '10px 12px 10px 14px',
+            borderRadius: '8px',
+            background: 'rgba(255, 255, 255, 0.025)',
+            border: '1px solid var(--viz-grid)',
+            display: 'flex',
+            gap: '10px',
+            alignItems: 'flex-start',
+        }}
+    >
+        <FiInfo
+            size={14}
+            color="var(--viz-axis)"
+            style={{ flexShrink: 0, marginTop: '3px' }}
+            aria-hidden="true"
+        />
+        <div
+            style={{
+                fontSize: '0.78rem',
+                lineHeight: 1.6,
+                color: 'var(--viz-text)',
+            }}
+        >
+            <span
+                style={{
+                    color: 'var(--viz-text-strong)',
+                    fontWeight: 600,
+                }}
+            >
+                {lead}
+            </span>
+            {detail && (
+                <>
+                    <span aria-hidden="true" style={{ margin: '0 6px', color: 'var(--viz-axis)' }}>
+                        ·
+                    </span>
+                    {detail}
+                </>
+            )}
+        </div>
+    </div>
+);
 
 const AccountAndPeriod = ({
     language,
@@ -432,20 +480,19 @@ const ContributionChart = ({ language, rows, isMobile }) => {
                     </Bar>
                 </BarChart>
             </ResponsiveContainer>
-            <div
-                style={{
-                    marginTop: '6px',
-                    color: 'var(--viz-text)',
-                    fontSize: '0.74rem',
-                    lineHeight: 1.5,
-                }}
-            >
-                {t(
+            <ChartMethodNote
+                language={language}
+                lead={t(
                     language,
-                    'MMM contribution is shown as the median across restarts; the per-group min–max range is reported in the table below. Gray bars mark groups flagged as doubtful due to high collinearity.',
-                    'MMM 貢獻以多次重啟的中位數呈現；每組的 min–max 範圍列於下方表格。標「存疑」的組別以灰階呈現，並附共線性說明。'
+                    'MMM contribution is the median across restarts.',
+                    'MMM 貢獻 = 多次重啟的中位數。'
                 )}
-            </div>
+                detail={t(
+                    language,
+                    'Per-group min–max range is reported in the table below; gray bars mark groups flagged as doubtful due to high collinearity.',
+                    '每組 min–max 範圍列於下方表格；標「存疑」的組別以灰階呈現並附共線性說明。'
+                )}
+            />
         </div>
     );
 };
@@ -608,20 +655,19 @@ const MarginalChart = ({ language, rows, marginalStep, marginalCurrency, isMobil
                     </Bar>
                 </BarChart>
             </ResponsiveContainer>
-            <div
-                style={{
-                    marginTop: '6px',
-                    color: 'var(--viz-text)',
-                    fontSize: '0.74rem',
-                    lineHeight: 1.5,
-                }}
-            >
-                {t(
+            <ChartMethodNote
+                language={language}
+                lead={t(
                     language,
-                    `Local slope: estimated additional conversions from +${marginalStep}${marginalCurrency} spend at the current spend level. Not valid for extrapolation outside the current range. The best ROI group is labeled at the bar tip.`,
-                    `局部斜率：在目前花費水位附近，每 +${marginalStep}${marginalCurrency} 帶來的預估邊際轉換。不可線性外推到目前水位之外。最高邊際組別以端點標籤標示。`
+                    `Local slope: estimated additional conversions from +${marginalStep}${marginalCurrency} at the current spend level.`,
+                    `局部斜率：在目前花費水位附近，每 +${marginalStep}${marginalCurrency} 帶來的預估增量轉換。`
                 )}
-            </div>
+                detail={t(
+                    language,
+                    'Not valid for extrapolation outside the current range; the best ROI group is labeled at the bar tip.',
+                    '不可線性外推到目前水位之外；最高邊際組別以端點標籤標示。'
+                )}
+            />
         </div>
     );
 };

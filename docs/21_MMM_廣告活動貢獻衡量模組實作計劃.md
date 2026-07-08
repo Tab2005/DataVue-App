@@ -422,6 +422,7 @@ contribution/
 6. **容器高度動態化**：原本 `380px` 固定高度在 7+ 組時會擠壓 bar 厚度。改為 `Math.max(360, data.length * 64)`（貢獻）/ `Math.max(320, data.length * 52)`（邊際），行動裝置以 `isMobile` 切換下限。徹底解決「固定高度排擠 axis band」反模式。
 7. **Tooltip 同步換 token**：底色 / 邊框 / 文字 / label 全部走 `--viz-tooltip-bg` / `--viz-tooltip-border` / `--viz-text-strong` / `--viz-text`，並加上 `cursor={{ fill: var(--viz-grid) }}` 增強 hover feedback。
 8. **字型優化**：`.contribution-chart-root text { font-variant-numeric: tabular-nums; }` 對齊 tick 與資料值數字寬度。
+9. **方法論註腳 `ChartMethodNote`**（2026-07-08 polish）：把貢獻對比與邊際排序兩段圖下說明從「6px 上距 + 0.74rem 淡灰 div」改為共用 `ChartMethodNote` 元件——淡色 hairline 邊框 + 2.5% 白色背景、`FiInfo` 圖示置左、**lead / detail 兩段式**（lead 用 `--viz-text-strong` + 600 weight、detail 用 `--viz-text`，中以小圓點分隔）。貢獻圖 lead =「MMM 貢獻 = 多次重啟的中位數」、detail =「每組 min–max 範圍列於下方表格；標『存疑』的組別以灰階呈現並附共線性說明」；邊際圖 lead =「局部斜率：在目前花費水位附近，每 +N 帶來的預估增量轉換」、detail =「不可線性外推到目前水位之外；最高邊際組別以端點標籤標示」。目的：讓方法論提醒從「藏在角落的灰字」提升為「視覺可辨的 hint 框」，且 lead 一次帶出量測口徑（避免使用者誤把 MMM 貢獻當單點或把邊際當全域報酬）。
 
 **驗收結果**：
 
