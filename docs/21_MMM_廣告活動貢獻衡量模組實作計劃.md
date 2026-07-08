@@ -3,7 +3,7 @@
 - **日期**：2026-07-06
 - **性質**：實作計劃（依可行性驗證結果展開為可執行任務，驗證摘要見本文「零」章）
 - **依據**：2026-07-06 可行性驗證（合成資料 + 真實帳號 act_1077213689343030，脚本見開發 session scratchpad，演算法將於任務 1.2 移植入 repo）
-- **範圍**：新增 `backend/modules/contribution/`、`backend/database/models/contribution.py`、`backend/alembic/versions/`、`backend/core/scheduler.py`、`backend/seeds/permission_seeds.py`、`frontend/src/pages/ContributionAnalysis.jsx`、`frontend/src/services/contributionService.js`
+- **範圍**：新增 `backend/modules/contribution/`、`backend/database/models/contribution.py`、`backend/alembic/versions/`、`backend/core/scheduler.py`、`backend/seeds/permission_seeds.py`、`frontend/src/pages/ContributionAnalysis.jsx`、`frontend/src/services/contributionService.js`；任務 2.3 另觸及 `backend/ai_service.py`（新增貢獻分析白話解讀 prompt 分支）
 - **執行原則**：每個任務獨立可測、可回滾；第 1 波（後端核心 + 演算法移植與測試）完成並通過驗收前，不進入第 2 波（前端）；第 3 波 A（GA4 整合）為建議實作、第 3 波 B（自動化與 Andromeda 整合）為選配，依使用回饋決定。
 
 ---
@@ -140,10 +140,12 @@
 | `diagnostics` | JSON | holdout/full R²、Poisson 天花板、共線性矩陣與警告清單、資料量檢查結果 |
 | `error_message` | Text | 失敗原因（status=failed 時） |
 | `runtime_job_id` | String(120) | 調度器任務 ID |
+| `ai_summary` | Text, nullable | AI 白話解讀（Markdown，任務 2.3；生成後持久化，重開頁面不重打 AI） |
+| `ai_summary_generated_at` | DateTime, nullable | AI 解讀生成時間 |
 | `created_by` | String FK → users.id | 發起者 |
 | `created_at` / `completed_at` | DateTime | 時間戳 |
 
-**Alembic migration**：`20260706_contribution_module_tables.py`（建 3 表 + 唯一約束 + 索引）。
+**Alembic migration**：`20260706_contribution_module_tables.py`（建 3 表 + 唯一約束 + 索引）；`ai_summary` 兩欄因表已於任務 1.1 建立，由任務 2.3 的 `20260708_contribution_snapshot_ai_summary.py` 追加。
 
 ---
 
@@ -211,7 +213,8 @@ contribution/
 | PUT | `/groups` | 覆寫分組（前端編輯後整批提交） |
 | POST | `/analyses` | 發起分析（body：account_id、date range、metric_key、n_restarts）→ 202 + snapshot_id |
 | GET | `/analyses?account_id=` | 分析列表（分頁） |
-| GET | `/analyses/{snapshot_id}` | 單筆結果（含 results/diagnostics；processing 時前端輪詢） |
+| GET | `/analyses/{snapshot_id}` | 單筆結果（含 results/diagnostics/ai_summary；processing 時前端輪詢） |
+| PUT | `/analyses/{snapshot_id}/ai-summary` | 儲存 AI 白話解讀（body：`ai_summary`；生成本身走既有 `/api/ai/analyze` 串流端點，見任務 2.3） |
 | POST | `/data/refresh` | 手動觸發每日資料補抓（背景執行） |
 
 ### 3.6 模組註冊
@@ -243,6 +246,7 @@ contribution/
 | 貢獻對比圖（主圖） | 各組三聯橫條：花費占比 vs 自報占比 vs MMM 貢獻（誤差線 = min–max 範圍） |
 | 邊際報酬排序 | 各組「每 +N 元的邊際轉換」由高至低（N = snapshot config 的 `marginal_step`，介面明示步長與幣別），直接回答加碼順位；tooltip 註明「局部斜率，僅在目前花費水位附近有效，不可線性外推」 |
 | 診斷警告卡 | 共線性配對清單（附「錯開預算調整」建議）、holdout R² 與雜訊天花板、被判 0% 且高共線的組標記「存疑」 |
+| AI 白話解讀卡（任務 2.3） | 同週報「AI 成效分析摘要」模式：「開始 AI 解讀 / 重新解讀」按鈕 → 串流顯示 Markdown → 完成後存回 snapshot；把 results/diagnostics 翻成給不懂統計的人看的白話文（區間語氣、存疑組聲明、術語必附比喻） |
 | 分組編輯器 | 活動清單拖拉/勾選改組，PUT /groups 後可重跑分析 |
 | 歷史快照 | 過往分析列表，點開可比較兩次結果 |
 
@@ -361,7 +365,7 @@ contribution/
 
 **風險/回滾**：scheduler 僅新增 job 類型（`ca_analysis_*`），出錯不影響 Andromeda 與週報既有 job；service 內 `asyncio.run` 同步路徑僅在無 running loop 時啟用（測試 / CLI 情境），FastAPI 仍走 apscheduler 派發。
 
-### 第 2 波：前端（任務 2.1、2.2 已完成）
+### 第 2 波：前端（任務 2.1、2.2 已完成；任務 2.3 AI 白話解讀待實作）
 
 #### 任務 2.1 — 頁面與服務層 ✅（2026-07-07 完成）
 
@@ -438,6 +442,28 @@ contribution/
 
 **風險/回滾**：純視覺 polish，零邏輯變更；回滾單一檔案即可（`git checkout frontend/src/pages/ContributionAnalysis.jsx`）。
 
+#### 任務 2.3 — AI 白話解讀（同週報 AI 摘要模式）
+
+讓不熟統計的使用者也能讀懂分析結果：在診斷警告卡之後提供「AI 白話解讀」卡，一鍵呼叫 AI 模型把 results/diagnostics 翻譯成白話文。**複用週報既有 AI 基礎設施**（`/api/ai/analyze` 串流端點、使用者 AI provider/model/key 設定、前端 `aiService.analyzeDataStream`），不新增 AI 端點、零新增 AI 設定。
+
+**變更檔案**：`backend/ai_service.py`（新增 `report_type="contribution_analysis"` prompt 分支）、`backend/alembic/versions/20260708_contribution_snapshot_ai_summary.py`（新增，追加 2 欄）、`database/models/contribution.py`（ContributionSnapshot +`ai_summary`/`ai_summary_generated_at`）、`modules/contribution/{router,schemas,repository,service}.py`（PUT ai-summary 端點 + GET 回應加欄）、`frontend/src/pages/ContributionAnalysis.jsx`（AI 解讀卡）、`frontend/src/services/contributionService.js`（`saveAiSummary`）、`tests/test_contribution_module.py`（端點測試）
+
+**實作步驟**：
+1. **資料流（同週報模式）**：前端組裝 payload（snapshot 的 results + diagnostics + config 內分組名稱 + 頁面層算出的各組自報占比）→ `aiService.analyzeDataStream(data, context, 'contribution_analysis', ...)` 串流顯示 → 完成後 `PUT /api/contribution/analyses/{snapshot_id}/ai-summary` 持久化；重開頁面直接讀 `snapshot.ai_summary`，不重打 AI。context 帶帳戶名稱與分析期間（同週報的 context 組法）。
+2. **prompt 規格（`ai_service.py` 新分支；白話文為硬性要求）**：
+   - 角色設定：「正在向不懂統計的行銷主管口頭報告的顧問」。
+   - **禁止統計術語直出**：「共線性 / 中位數 / R² / 邊際報酬」等詞出現時必須立刻用生活化比喻解釋（例：共線性 →「這兩組活動總是同時加減預算，模型分不清功勞是誰的」；邊際 →「現在再多投 100 元，大概多帶來幾筆訂單」）。
+   - **呈現原則承接第四章，寫死在 prompt**：貢獻一律用「大約 X%～Y% 之間」的區間語氣，禁止單點斷言；被標「存疑」的組必須明說「這組的數字目前不可信，先不要據此做預算決策」；邊際報酬禁止線性外推（必須提醒「不代表加十倍預算就有十倍效果」）。
+   - 產出結構：① 一句話總結（這次分析最重要的一件事）② 誰的功勞被高估、誰被低估（對照自報占比 vs MMM 貢獻）③ 下一塊錢建議投給誰、為什麼 ④ 這份分析哪些地方要保留（診斷警告的白話版）。
+   - 語言繁體中文、格式 Markdown、關鍵數字加粗、禁止 LaTeX 符號（沿用既有 GA4 prompt 的規則）。
+   - 第 3 波 A 雙 y 上線後：payload 附 `y_source`，prompt 註明口徑（Meta 歸因 / GA4 全站），引擎與端點不需再改。
+3. **後端端點**：`PUT /analyses/{snapshot_id}/ai-summary`（body：`{ai_summary: str}`，掛 `require_contribution_module`；snapshot 不存在回 404、status 非 completed 回 409）；repository 寫 `ai_summary` + `ai_summary_generated_at`；`GET /analyses/{id}` 與列表回應補回這兩欄。
+4. **前端 AI 解讀卡**：置於診斷警告卡之後、分組編輯器之前；UI 同 `WeeklyReportTemplate` 的 AI 區塊（`FiCpu` 按鈕、`isAnalyzing` spinner、`ReactMarkdown` 渲染、已有內容時按鈕文案改「重新解讀」）；卡底常駐免責註記「AI 解讀僅供參考，數字以上方圖表為準」；切換歷史快照時顯示該快照自己的解讀；status 非 completed 的快照不顯示生成按鈕。
+
+**驗收標準**：completed 快照可一鍵生成並串流顯示解讀；重新整理頁面後解讀仍在（DB 持久化）；切換歷史快照各自顯示各自的解讀；對含「存疑」組的真實快照抽查生成內容——區間語氣、存疑聲明、術語比喻三項皆符合 prompt 規格；未設定 AI key 時錯誤訊息引導至 AI 設定頁；migration 可升降級。
+
+**風險/回滾**：純增量（新 prompt 分支 + 新欄位 + 新端點 + 前端卡片）；migration 降級移除 2 欄即可；AI 生成失敗不影響分析結果本體。
+
 ### 第 3 波 A：GA4 整合（**建議實作**，2026-07-06 討論後自選配升格；仍排在第 1、2 波之後）
 
 利用既有 GA4 Data API 整合（`ga4_service.py`，RunReport），**不需 BigQuery Export**、歷史資料可直接回抓。引擎不變，只擴充 X/y 的組合。資料分工原則：**花費永遠來自各平台自己的 API**（Meta 花費走 Meta API），GA4 只提供「結果面」（全站訂單）與「環境面」（渠道 session、Google Ads 花費）。
@@ -491,6 +517,7 @@ contribution/
 | 日轉換量低的帳戶 | 雜訊淹沒訊號 | guardrail 拒絕 + 建議改週粒度（週粒度支援列入 backlog，不在本計劃） |
 | 隨機搜尋的不確定性 | 兩次分析數字不同引發困惑 | 固定 seed 集合（config 記錄）；同輸入同 config 結果可重現 |
 | 使用者把區間當精確值做預算決策 | 錯誤決策歸咎系統 | UI 呈現原則（第四章）+ 頁面常駐方法說明連結 |
+| AI 白話解讀過度斷言（把區間講成單點、替存疑組背書、編造 payload 外數字） | 使用者誤信白話結論做錯決策 | prompt 硬性規則（區間語氣、存疑聲明、只准引用 payload 內數字，見任務 2.3）+ 解讀卡常駐免責註記「數字以圖表為準」；解讀存 snapshot 可回溯 |
 | FB API 欄位/版本變動 | 抓取失敗 | 沿用 fb_ads 的版本常數（v24.0）與錯誤處理；actions 缺欄位時記 warning 不 crash |
 | GA4 憑證失效（per-user OAuth，無團隊 fallback） | GA4-y 分析中斷 | 憑證綁定 `paired_by` 使用者 + refresh 機制既有；失效時明確 error_message 並降級只跑 meta-y，前端提示重新授權或改配對（見第 3 波 A 授權模式） |
 | numpy 新依賴 | 部署映像變大（約 +60MB） | 可接受；Dockerfile 無需變更（pip 安裝自 requirements.txt） |
