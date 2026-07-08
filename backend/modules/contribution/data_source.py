@@ -26,7 +26,7 @@ import asyncio
 import logging
 from dataclasses import dataclass, field
 from datetime import date, datetime, timedelta
-from typing import Any
+from typing import Any, Awaitable, Callable
 
 import httpx
 
@@ -215,6 +215,7 @@ async def fetch_account_daily_metrics(
     metric_key: str = DEFAULT_METRIC_KEY,
     client: httpx.AsyncClient | None = None,
     since_until: tuple[str, str] | None = None,
+    on_rows: Callable[[list[DailyMetricRow]], Awaitable[None]] | None = None,
 ) -> list[DailyMetricRow]:
     """從 FB Marketing API 抓取指定帳戶的每日活動指標。
 
@@ -226,8 +227,13 @@ async def fetch_account_daily_metrics(
       client: 注入用的 httpx client（測試用）
       since_until: 明確指定 [since, until]，優先於 db_window 推導的視窗；
         供輕量 probe 呼叫使用（避免強制走 180 天全量視窗導致同步阻塞逾時）
+      on_rows: 逐頁回呼（async）。提供時每解析完一頁即呼叫一次並「不再」把列
+        累積於記憶體，回傳值為空 list——全量 180 天抓取時所有列（含每列完整
+        actions_payload）一次堆在記憶體曾把 backend 推到 2GB 併發整台機器
+        資源耗盡（2026-07-08 事故），背景抓取一律應以此參數邊抓邊寫。
 
-    回傳：list[DailyMetricRow]，service 層負責寫入 contribution_daily_metrics。
+    回傳：list[DailyMetricRow]（on_rows=None 時），service 層負責寫入
+    contribution_daily_metrics；提供 on_rows 時回傳空 list。
     """
     # get_headers 內部走同步 SQLAlchemy session（TokenManager），若直接呼叫會
     # 佔用事件迴圈執行緒；用 to_thread 丟到 threadpool，避免與其他請求爭搶
@@ -249,6 +255,7 @@ async def fetch_account_daily_metrics(
     }
 
     rows: list[DailyMetricRow] = []
+    fetched = 0
     after: str | None = None
     page = 0
     owns_client = client is None
@@ -283,12 +290,18 @@ async def fetch_account_daily_metrics(
                     fb_code=err.get("code"),
                 )
 
+            page_rows: list[DailyMetricRow] = []
             for raw in payload.get("data") or []:
                 row = _parse_insights_row(
                     raw, account_id=account_id, metric_key=metric_key
                 )
                 if row is not None:
-                    rows.append(row)
+                    page_rows.append(row)
+            fetched += len(page_rows)
+            if on_rows is not None:
+                await on_rows(page_rows)
+            else:
+                rows.extend(page_rows)
 
             # 翻頁：FB 使用 cursor-based paging，paging.next 為下一頁完整 URL，
             # 也可改用 paging.cursors.after 自組參數；兩者並用以下一頁是否存在
@@ -307,7 +320,7 @@ async def fetch_account_daily_metrics(
 
     logger.info(
         "[Contribution] Fetched %d daily-metric rows for %s (%s..%s, %d page(s))",
-        len(rows),
+        fetched,
         account_id,
         since,
         until,

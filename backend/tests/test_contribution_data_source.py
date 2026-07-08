@@ -234,6 +234,34 @@ async def test_fetch_account_daily_metrics_paginates_via_cursor():
 
 
 @pytest.mark.asyncio
+async def test_fetch_account_daily_metrics_streams_pages_via_on_rows():
+    """on_rows 提供時逐頁回呼、回傳空 list（邊抓邊寫，不在記憶體累積全部列）。"""
+    rows = [
+        _fake_insights_row(f"cmp_{i}", "2026-07-01", 100.0, purchase_value=1.0)
+        for i in range(600)
+    ]
+    fake_client = _FakeAsyncClient(_make_paged_payload(rows, page_size=200))
+    seen_pages: list[int] = []
+    collected: list[DailyMetricRow] = []
+
+    async def _on_rows(page_rows: list[DailyMetricRow]) -> None:
+        seen_pages.append(len(page_rows))
+        collected.extend(page_rows)
+
+    with patch.object(ds, "get_headers", return_value={"Authorization": "Bearer T"}):
+        result = await fetch_account_daily_metrics(
+            "act_1", user_id="u", client=fake_client,  # type: ignore[arg-type]
+            on_rows=_on_rows,
+        )
+    # 串流模式：回傳值不累積列
+    assert result == []
+    # 3 頁 × 200 列，逐頁送達且總數不漏
+    assert seen_pages == [200, 200, 200]
+    assert len(collected) == 600
+    assert all(isinstance(r, DailyMetricRow) for r in collected)
+
+
+@pytest.mark.asyncio
 async def test_fetch_account_daily_metrics_token_missing_raises_token_error():
     """token 缺失拋 ContributionTokenError（service 層轉 4xx）。"""
     with patch.object(ds, "get_headers", return_value=None):
@@ -316,6 +344,52 @@ def test_upsert_is_idempotent_no_duplicate_rows(db):
 
     db.query(ContributionDailyMetric).filter(
         ContributionDailyMetric.account_id == "act_idempot"
+    ).delete()
+    db.commit()
+
+
+@pytest.mark.integration
+def test_upsert_chunks_large_batches_and_stays_idempotent(db):
+    """超過 _UPSERT_CHUNK_SIZE 的批次應分批寫入且重跑不產生重複列。"""
+    from modules.contribution.repository import repository
+    from database.models.contribution import ContributionDailyMetric
+
+    n_rows = repository._UPSERT_CHUNK_SIZE * 2 + 50  # 跨 3 個批次
+    rows = [
+        {
+            "account_id": "act_chunked",
+            "date": f"2026-{(i // 28) % 12 + 1:02d}-{i % 28 + 1:02d}",
+            "campaign_id": f"cmp_{i}",
+            "metric_key": "omni_purchase",
+            "campaign_name": f"Campaign_{i}",
+            "spend": float(i),
+            "impressions": 100,
+            "conversions": 1.0,
+            "conversion_value": 300.0,
+            "actions_payload": [{"action_type": "omni_purchase", "value": "1"}],
+        }
+        for i in range(n_rows)
+    ]
+    db.query(ContributionDailyMetric).filter(
+        ContributionDailyMetric.account_id == "act_chunked"
+    ).delete()
+    db.commit()
+
+    assert repository.upsert_daily_metrics(db, rows) == n_rows
+    db.commit()
+    # 重跑：唯一約束生效，不產生重複列
+    assert repository.upsert_daily_metrics(db, rows) == n_rows
+    db.commit()
+
+    count = (
+        db.query(ContributionDailyMetric)
+        .filter(ContributionDailyMetric.account_id == "act_chunked")
+        .count()
+    )
+    assert count == n_rows, f"重複 upsert 應維持 {n_rows} 列，實際 {count}"
+
+    db.query(ContributionDailyMetric).filter(
+        ContributionDailyMetric.account_id == "act_chunked"
     ).delete()
     db.commit()
 

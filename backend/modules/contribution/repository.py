@@ -119,6 +119,11 @@ class ContributionRepository:
         "campaign_id",
         "metric_key",
     )
+    # 每個 INSERT 語句最多攜帶的列數。全量 180 天 × 全活動一次塞進單一
+    # INSERT 時，SQLAlchemy 編譯巨型 VALUES（每列還含 actions_payload JSON）
+    # 的峰值記憶體可達 GB 級，曾把 backend 推到 2GB 拖垮整台機器
+    # （2026-07-08 事故）；分批後峰值只與批次大小成正比。
+    _UPSERT_CHUNK_SIZE = 500
 
     def upsert_daily_metrics(
         self,
@@ -142,34 +147,36 @@ class ContributionRepository:
             return 0
 
         insert_cols = list(rows[0].keys())
-        values = [{k: r.get(k) for k in insert_cols} for r in rows]
 
         bind = db.get_bind()
         dialect_name = bind.dialect.name if bind is not None else ""
         # SQLAlchemy 2.0：pg_insert 與 sqlite_insert 都會回傳帶 .excluded 屬性的
         # Insert 物件，可用以建構「衝突時更新為插入值」的 SET 表達式
         # （例如 stmt.excluded.spend 即 PostgreSQL 的 EXCLUDED.spend）。
-        if dialect_name == "postgresql":
-            stmt = pg_insert(ContributionDailyMetric).values(values)
-        else:
-            stmt = sqlite_insert(ContributionDailyMetric).values(values)
+        insert_fn = pg_insert if dialect_name == "postgresql" else sqlite_insert
 
-        update_cols = {
-            "campaign_name": stmt.excluded.campaign_name,
-            "spend": stmt.excluded.spend,
-            "impressions": stmt.excluded.impressions,
-            "conversions": stmt.excluded.conversions,
-            "conversion_value": stmt.excluded.conversion_value,
-            "actions_payload": stmt.excluded.actions_payload,
-            "fetched_at": func.current_timestamp(),
-        }
-        stmt = stmt.on_conflict_do_update(
-            index_elements=self._DAILY_METRICS_UNIQUE_COLS,
-            set_=update_cols,
-        )
-
-        result = db.execute(stmt)
-        return len(rows) if result is not None else 0
+        total = 0
+        for start in range(0, len(rows), self._UPSERT_CHUNK_SIZE):
+            chunk = rows[start : start + self._UPSERT_CHUNK_SIZE]
+            values = [{k: r.get(k) for k in insert_cols} for r in chunk]
+            stmt = insert_fn(ContributionDailyMetric).values(values)
+            update_cols = {
+                "campaign_name": stmt.excluded.campaign_name,
+                "spend": stmt.excluded.spend,
+                "impressions": stmt.excluded.impressions,
+                "conversions": stmt.excluded.conversions,
+                "conversion_value": stmt.excluded.conversion_value,
+                "actions_payload": stmt.excluded.actions_payload,
+                "fetched_at": func.current_timestamp(),
+            }
+            stmt = stmt.on_conflict_do_update(
+                index_elements=self._DAILY_METRICS_UNIQUE_COLS,
+                set_=update_cols,
+            )
+            result = db.execute(stmt)
+            if result is not None:
+                total += len(chunk)
+        return total
 
     def list_campaign_summaries(
         self,

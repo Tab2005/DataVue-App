@@ -430,7 +430,13 @@ async def _run_refresh_background(
     db_window: tuple[str, str] | None,
     probe_count: int,
 ) -> None:
-    """背景任務：實際執行抓取 + upsert；錯誤以 log 記錄（不中斷任務）。"""
+    """背景任務：實際執行抓取 + upsert；錯誤以 log 記錄（不中斷任務）。
+
+    邊抓邊寫：透過 `fetch_account_daily_metrics(on_rows=...)` 每收到一頁
+    （≤500 列）即刻寫入並釋放，全程不把整段視窗的列堆在記憶體——全量
+    180 天一次累積（每列含完整 actions_payload）曾把 backend 推到 2GB、
+    連帶耗盡整台機器資源使所有請求逾時（2026-07-08 事故）。
+    """
     from database import SessionLocal
 
     def _write(rows_dicts: list[dict]) -> int:
@@ -444,21 +450,34 @@ async def _run_refresh_background(
         finally:
             db.close()
 
+    fetched = 0
+    written = 0
+
+    async def _flush_page(page_rows) -> None:
+        nonlocal fetched, written
+        if not page_rows:
+            return
+        fetched += len(page_rows)
+        written += await asyncio.to_thread(
+            _write, [r.to_dict() for r in page_rows]
+        )
+
     try:
-        rows = await fetch_account_daily_metrics(
+        await fetch_account_daily_metrics(
             account_id,
             user_id=user_id,
             db_window=db_window,
             metric_key=metric_key,
+            on_rows=_flush_page,
         )
-        n = await asyncio.to_thread(_write, [r.to_dict() for r in rows])
         logger.info(
-            "[Contribution] refresh %s metric=%s window=%s: probe=%d upsert=%d",
+            "[Contribution] refresh %s metric=%s window=%s: probe=%d fetched=%d upsert=%d",
             account_id,
             metric_key,
             db_window or "FULL",
             probe_count,
-            n,
+            fetched,
+            written,
         )
     except ContributionDataSourceError as exc:
         logger.error(
