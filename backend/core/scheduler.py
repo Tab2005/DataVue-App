@@ -34,6 +34,7 @@ META_ANDROMEDA_REDIS_STREAM_CONSUMER_JOB_ID = "ma_redis_stream_consumer"
 META_ANDROMEDA_REDIS_STREAM_RECLAIM_JOB_ID = "ma_redis_stream_reclaim"
 META_ANDROMEDA_WEEKLY_CLOSED_LOOP_JOB_ID = "ma_weekly_closed_loop"
 CONTRIBUTION_ANALYSIS_JOB_PREFIX = "ca_analysis"
+CONTRIBUTION_STALE_SWEEP_JOB_ID = "ca_stale_sweeper"
 
 
 def is_scheduler_enabled() -> bool:
@@ -390,6 +391,37 @@ async def process_contribution_analysis(snapshot_id: str) -> None:
     await process_analysis(snapshot_id)
 
 
+async def sweep_contribution_stale_snapshots() -> None:
+    """定期回收永久卡在 queued/processing 的 contribution snapshot（docs/27 任務 2.2）。
+
+    apscheduler 為 in-memory date-trigger：server 在 job 執行前重啟、或
+    scheduler／local async fallback 皆不可用（503 路徑，snapshot 已建但從未
+    真正排程）都會留下永久卡住的 snapshot，前端輪詢會無限轉圈。
+    """
+    from modules.contribution.repository import repository as contribution_repository
+
+    db = SessionLocal()
+    try:
+        reclaimed = contribution_repository.mark_stale_snapshots_failed(
+            db,
+            queued_older_than_minutes=settings.CONTRIBUTION_STALE_QUEUED_MINUTES,
+            processing_older_than_minutes=settings.CONTRIBUTION_STALE_PROCESSING_MINUTES,
+        )
+        db.commit()
+        if reclaimed:
+            logger.warning(
+                "⏰ [Contribution] Reclaimed %s stale snapshot(s) (queued>%smin / processing>%smin).",
+                reclaimed,
+                settings.CONTRIBUTION_STALE_QUEUED_MINUTES,
+                settings.CONTRIBUTION_STALE_PROCESSING_MINUTES,
+            )
+    except Exception:
+        db.rollback()
+        logger.exception("⏰ [Contribution] sweep_contribution_stale_snapshots failed")
+    finally:
+        db.close()
+
+
 async def sweep_meta_andromeda_queue() -> None:
     """Sweep queued Meta Andromeda records for database-backed queue hosting."""
     from database.models.meta_andromeda import MetaAndromedaScoreEvent
@@ -608,6 +640,25 @@ def add_contribution_analysis_job(snapshot_id: str, delay_seconds: float = 1):
         job_id,
         snapshot_id,
         delay_seconds,
+    )
+    return job
+
+
+def add_contribution_stale_sweep_job():
+    """Register periodic sweep for stale contribution snapshots（docs/27 任務 2.2）。"""
+    job = scheduler.add_job(
+        sweep_contribution_stale_snapshots,
+        trigger="interval",
+        seconds=settings.CONTRIBUTION_STALE_SWEEP_INTERVAL_SECONDS,
+        id=CONTRIBUTION_STALE_SWEEP_JOB_ID,
+        replace_existing=True,
+        misfire_grace_time=DEFAULT_MISFIRE_GRACE_TIME,
+        coalesce=True,
+        max_instances=1,
+    )
+    logger.info(
+        "⏰ [Contribution] Stale snapshot sweeper registered (interval=%ss).",
+        settings.CONTRIBUTION_STALE_SWEEP_INTERVAL_SECONDS,
     )
     return job
 
@@ -888,6 +939,12 @@ async def start_scheduler() -> dict:
             add_meta_andromeda_redis_stream_consumer_job()
             add_meta_andromeda_redis_stream_reclaim_job()
             add_meta_andromeda_weekly_closed_loop_job()
+            # Contribution（MMM）目前與 Meta Andromeda 共用背景負載角色（docs/25
+            # Wave 1 規劃將其移入同一 worker），故沿用同一 role flag 註冊殭屍
+            # snapshot 回收排程（docs/27 任務 2.2）。開機當下先掃一次（不等
+            # 第一個 interval 到），立即回收上次崩潰/重啟留下的殭屍 snapshot。
+            add_contribution_stale_sweep_job()
+            await sweep_contribution_stale_snapshots()
 
         if run_report_jobs:
             for schedule in active_schedules:

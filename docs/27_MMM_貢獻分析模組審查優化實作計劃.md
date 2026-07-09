@@ -126,6 +126,11 @@
 
 **驗收標準**：新測試綠；dispatch local_async 路徑既有測試無回歸。
 
+**驗收結果（2026-07-09 完成）**：
+- `service.py` 新增 module-level `_background_tasks: set[asyncio.Task] = set()`；`_dispatch_analysis` 的 `loop.create_task(_run())` 回傳值 `add` 進集合、`task.add_done_callback(_background_tasks.discard)` 完成後自動移除。
+- 新增 `test_dispatch_analysis_keeps_strong_reference_until_task_completes`：用 `asyncio.Event` 控制 fake `process_analysis` 的執行時序，斷言 dispatch 完成當下 task 已在集合中（尚未執行完）、等待完成後集合正確清空。
+- `tests/test_contribution_service.py` 14 項全綠，無回歸。
+
 ### 任務 2.2 — 殭屍 snapshot 回收
 
 **問題**：apscheduler 是 in-memory date-trigger——server 在 job 執行前重啟，snapshot 永久卡 `queued`；`process_analysis` 中途重啟則永久卡 `processing`；503 路徑（scheduler 與 local loop 皆不可用）也留下 queued snapshot。前端輪詢無限轉圈。Andromeda 有 `cleanup_stale_score_events` 對應機制，contribution 沒有。
@@ -138,6 +143,14 @@
 3. 測試：建立過期 queued / processing / 正常 processing 三筆，掃描後前兩筆 failed、第三筆不動。
 
 **驗收標準**：測試綠；重啟 server 後卡住的 snapshot 在 15 分鐘內轉 failed 且前端可見明確錯誤訊息。
+
+**驗收結果（2026-07-09 完成）**：
+- `core/config.py` 新增 3 個設定：`CONTRIBUTION_STALE_QUEUED_MINUTES`（預設 10）、`CONTRIBUTION_STALE_PROCESSING_MINUTES`（預設 30，分析實測 45-90 秒的安全倍數）、`CONTRIBUTION_STALE_SWEEP_INTERVAL_SECONDS`（預設 900 秒 = 15 分鐘）。
+- `repository.mark_stale_snapshots_failed(db, *, queued_older_than_minutes, processing_older_than_minutes, now=None)`：依 `created_at` 判斷超時（`process_analysis` 轉 processing 後未再更新任何時間戳可用，用建立時間近似「已執行多久」，門檻已含安全餘裕），把超時的 queued/processing 分別標 `stale_queued_reclaimed` / `stale_processing_reclaimed`，回傳回收筆數；呼叫端負責 commit。
+- `core/scheduler.py` 新增 `sweep_contribution_stale_snapshots()`（async，短生命週期 `SessionLocal`，比照 `sweep_meta_andromeda_queue` 模式）+ `add_contribution_stale_sweep_job()`（interval trigger）；`start_scheduler()` 在 `run_meta_andromeda_jobs` 旗標下註冊 interval job 並於開機當下立即掃一次（不等第一個 interval）——沿用與 Meta Andromeda 相同的 role flag，理由：docs/25 Wave 1 規劃將 contribution 背景負載併入同一 worker，此處先與其共用註冊時機，未來 worker 化時一併搬遷不需重新設計。
+- 新增 2 項測試：`test_mark_stale_snapshots_failed_reclaims_only_overdue`（4 種情境：過期 queued/processing 各回收、未過期的兩者皆不受影響）、`test_sweep_contribution_stale_snapshots_commits_reclaimed_rows`（monkeypatch `SessionLocal` 綁測試 db，驗證 async 版本確實 commit 寫入）。
+- 過程修正一個小疏漏：`repository.py` 只 import 了 `datetime`，新函式用到 `timedelta` 未 import，補上後測試通過。
+- `test_contribution_module.py`（21 項）+ `test_scheduler.py` 全綠；`test_scheduler.py::test_get_next_run_time_uses_weekly_schedule` 1 項既有失敗經 `git stash` 前後對照確認為修改前即存在的日期相依測試問題，與本任務無關。
 
 ### 任務 2.3 — 引擎 guardrail 補 holdout 上限 + r2 None 防護
 
@@ -155,6 +168,12 @@
 
 **注意**：新 guardrail 會在 `create_analysis` 預檢即回 422，前端 `detail.errors` 直接呈現，無需前端變更。
 
+**驗收結果（2026-07-09 完成，門檻由計劃書的 1/3 調整為 1/2，理由詳列於下）**：
+- 實作時發現 **原計劃的 `n // 3` 門檻會誤傷 docs/21 §3.1 guardrails 明文記載的合法最小組合**：`min_days=90`（下限）搭配 `holdout_days` 預設值 45，比例恰為 50%——若用 1/3 門檻（30 天），這個文件記載的「90 天下限」組合會被直接擋死，等於讓下限形同虛設（因為 `create_analysis` 的 `holdout_days` 未指定時一律用預設 45，使用者若真的只有 90 天資料且未手動調小 holdout，會永遠卡在 422）。改用 **`holdout_days > n // 2`**：90 天+45 holdout（50%）剛好通過，180 天+45 holdout（25%，官方建議組合）不受影響，仍能攔住明顯過高的比例（如 90 天配 46+ 天 holdout）。
+- `check_guardrails` 新增兩條規則（`holdout_days >= n` 與 `holdout_days > n // 2`）；`run_analysis` 內部 `dist()` 改為先過濾 None 值，全為 None 時三個欄位皆回 `None`。
+- 新增 6 項測試：`test_guardrail_holdout_days_equal_to_total_days_rejected`、`test_guardrail_holdout_days_ratio_too_high_rejected`、`test_guardrail_documented_minimum_90_days_with_default_holdout_passes`（驗證文件記載下限不被誤傷）、`test_guardrail_default_180_days_with_default_holdout_passes`、`test_run_analysis_holdout_zero_variance_r2_is_none_not_crash`（holdout 段常數 y，驗證不 crash 且 `r2.holdout` 三欄皆為 `None`，`r2.full` 正常計算）。
+- `tests/test_contribution_engine.py` 20 項全綠（原 15 + 新 5，另有一項寫在既有 guardrail 區塊）；與 service + module 合跑共 52 項全綠，無回歸。
+
 ### 任務 2.4 — 活動改名的彙總分裂修復
 
 **問題**：`repository.list_campaign_summaries` 以 `GROUP BY (campaign_id, campaign_name)`；增量抓取只覆寫最近 3 天的 `campaign_name`，歷史列保留舊名快照——改名後同一 `campaign_id` 出現兩列，花費占比被攤薄、`auto_group` 對同一 cid append 兩次（可能同 cid 進兩個組，後續 manual 驗證報「同時出現在多個組別」）。
@@ -166,6 +185,11 @@
 2. 測試補：同 campaign_id 兩個名稱（舊名 100 天 + 新名 3 天）→ 回傳單列、name 為新名、spend 為兩段合計。
 
 **驗收標準**：測試綠；`/campaigns`、`auto_group`、`update_groups` 驗證路徑對改名活動行為正確。
+
+**驗收結果（2026-07-09 完成）**：
+- `list_campaign_summaries` 改為 `GROUP BY campaign_id` 單欄；主查詢不再 select `campaign_name`。另以一個「`campaign_id` → `max(date)`」子查詢 JOIN 回原表取得該日期的 `campaign_name`——利用資料表既有唯一約束 `(account_id, date, campaign_id, metric_key)` 保證此 JOIN 對每個 `campaign_id` 恰回一列，不需要 `DISTINCT`（`DISTINCT ON` 是 PostgreSQL 特有語法，若真需要會破壞 SQLite 相容性，此設計完全避開）。
+- 新增 `test_contribution_campaigns_renamed_campaign_does_not_split_into_two_rows`：同一 `campaign_id` 三天資料（前兩天舊名、第三天新名），驗證彙總合併為一列、花費為三天加總（未被攤薄）、顯示名稱為最新一天的新名。
+- `test_contribution_module.py` 相關測試（含既有 `test_contribution_campaigns_returns_aggregated_summaries`）3 項全綠，無回歸。
 
 ---
 

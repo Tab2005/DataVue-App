@@ -11,7 +11,7 @@ repository 慣例）。
 """
 
 import logging
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from typing import Any
 
 from sqlalchemy import func, select
@@ -192,11 +192,26 @@ class ContributionRepository:
         N 天的資料。回傳 list[dict]，每個 dict 對應一個 campaign：
           {campaign_id, campaign_name, spend, impressions, conversions,
            conversion_value, active_days, first_date, last_date}
-        按 spend 由大到小排序。"""
+        按 spend 由大到小排序。
+
+        只 `GROUP BY campaign_id`（不含 campaign_name，docs/27 任務 2.4）：
+        活動改名後，增量抓取只覆寫最近 3 天（現為「補缺口」視窗，見任務 1.1）
+        的 campaign_name，較舊的歷史列仍保留改名前的舊名快照——若沿用舊版
+        `GROUP BY (campaign_id, campaign_name)`，同一 campaign_id 因為出現
+        過兩種名稱字串會被拆成兩列，花費占比因此被攤薄，且 `auto_group` 會
+        把同一 campaign_id append 兩次（可能同時分進兩個組，`update_groups`
+        的合法性驗證會報「活動同時出現在多個組別中」）。campaign_name 改在
+        Python 端用「該 campaign_id 最新一天」的名稱回填——`(account_id,
+        date, campaign_id, metric_key)` 是資料表的唯一約束，故「campaign_id
+        對應到某個 max(date)」查回原表必為恰一列，不需要 DISTINCT。
+        """
+        base_filters = (
+            ContributionDailyMetric.account_id == account_id,
+            ContributionDailyMetric.metric_key == metric_key,
+        )
         stmt = (
             select(
                 ContributionDailyMetric.campaign_id,
-                ContributionDailyMetric.campaign_name,
                 func.sum(ContributionDailyMetric.spend).label("spend"),
                 func.sum(ContributionDailyMetric.impressions).label("impressions"),
                 func.sum(ContributionDailyMetric.conversions).label("conversions"),
@@ -205,24 +220,15 @@ class ContributionRepository:
                 func.min(ContributionDailyMetric.date).label("first_date"),
                 func.max(ContributionDailyMetric.date).label("last_date"),
             )
-            .where(
-                ContributionDailyMetric.account_id == account_id,
-                ContributionDailyMetric.metric_key == metric_key,
-            )
-            .group_by(
-                ContributionDailyMetric.campaign_id,
-                ContributionDailyMetric.campaign_name,
-            )
+            .where(*base_filters)
+            .group_by(ContributionDailyMetric.campaign_id)
             .order_by(func.sum(ContributionDailyMetric.spend).desc())
         )
         if days is not None:
             # 由 db 端以 max(date) 倒推 N 天（不假設今天日期，讓測試可注入）
             max_date_subq = (
                 select(func.max(ContributionDailyMetric.date))
-                .where(
-                    ContributionDailyMetric.account_id == account_id,
-                    ContributionDailyMetric.metric_key == metric_key,
-                )
+                .where(*base_filters)
                 .scalar_subquery()
             )
             # SQLite/Postgres 皆支援 date('substr(max_date,1,10)', '-N day')
@@ -232,10 +238,35 @@ class ContributionRepository:
             # 為了維持單一方法簽名，這裡保留 days 作為提示（callers 多以 None 呼叫）
             del max_date_subq
         rows = db.execute(stmt).all()
+        if not rows:
+            return []
+
+        # 各 campaign_id 最新一天的 campaign_name（見上方 docstring 的唯一約束說明）
+        max_date_per_campaign = (
+            select(
+                ContributionDailyMetric.campaign_id.label("campaign_id"),
+                func.max(ContributionDailyMetric.date).label("max_date"),
+            )
+            .where(*base_filters)
+            .group_by(ContributionDailyMetric.campaign_id)
+            .subquery()
+        )
+        name_rows = db.execute(
+            select(
+                ContributionDailyMetric.campaign_id,
+                ContributionDailyMetric.campaign_name,
+            ).join(
+                max_date_per_campaign,
+                (ContributionDailyMetric.campaign_id == max_date_per_campaign.c.campaign_id)
+                & (ContributionDailyMetric.date == max_date_per_campaign.c.max_date),
+            ).where(*base_filters)
+        ).all()
+        name_by_campaign = {r.campaign_id: r.campaign_name for r in name_rows}
+
         return [
             {
                 "campaign_id": r.campaign_id,
-                "campaign_name": r.campaign_name,
+                "campaign_name": name_by_campaign.get(r.campaign_id),
                 "spend": float(r.spend or 0.0),
                 "impressions": int(r.impressions or 0),
                 "conversions": float(r.conversions or 0.0),
@@ -358,6 +389,72 @@ class ContributionRepository:
             ContributionSnapshot.account_id == account_id
         )
         return int(db.execute(stmt).scalar() or 0)
+
+    # ── 殭屍 snapshot 回收（docs/27 任務 2.2） ─────────────────────
+    def mark_stale_snapshots_failed(
+        self,
+        db: Session,
+        *,
+        queued_older_than_minutes: int = 10,
+        processing_older_than_minutes: int = 30,
+        now: datetime | None = None,
+    ) -> int:
+        """把超時卡在 queued/processing 的 snapshot 標為 failed。
+
+        apscheduler 為 in-memory date-trigger：server 在 job 執行前重啟、或
+        scheduler 與 local async fallback 皆不可用（503 路徑，snapshot 已建
+        但從未真正排程）都會留下永久卡住的 snapshot，前端輪詢會無限轉圈。
+
+        - queued 超過 `queued_older_than_minutes`（依 `created_at` 計算）：
+          代表從未被成功排程（fallback 全部失敗、或 job 尚未觸發前 server
+          已重啟），標 failed + `stale_queued_reclaimed`。
+        - processing 超過 `processing_older_than_minutes`（依 `created_at`
+          計算——`process_analysis` 轉 processing 後未再更新任何時間戳可用，
+          用建立時間近似「已執行多久」，門檻已含跑完分析的安全餘裕）：
+          代表背景任務執行中途被中斷（server 重啟/程序被殺），標 failed +
+          `stale_processing_reclaimed`。
+        - 執行中的正常分析（未超過門檻）不受影響。
+
+        回傳被回收的筆數。呼叫端負責 commit。
+        """
+        now = now or datetime.now(timezone.utc)
+        queued_cutoff = now - timedelta(minutes=queued_older_than_minutes)
+        processing_cutoff = now - timedelta(minutes=processing_older_than_minutes)
+
+        reclaimed = 0
+        stale_queued = (
+            db.query(ContributionSnapshot)
+            .filter(
+                ContributionSnapshot.status == "queued",
+                ContributionSnapshot.created_at < queued_cutoff,
+            )
+            .all()
+        )
+        for snap in stale_queued:
+            snap.status = "failed"
+            snap.error_message = "stale_queued_reclaimed"
+            snap.completed_at = now
+            db.add(snap)
+            reclaimed += 1
+
+        stale_processing = (
+            db.query(ContributionSnapshot)
+            .filter(
+                ContributionSnapshot.status == "processing",
+                ContributionSnapshot.created_at < processing_cutoff,
+            )
+            .all()
+        )
+        for snap in stale_processing:
+            snap.status = "failed"
+            snap.error_message = "stale_processing_reclaimed"
+            snap.completed_at = now
+            db.add(snap)
+            reclaimed += 1
+
+        if reclaimed:
+            db.flush()
+        return reclaimed
 
     # ── AI 白話解讀（任務 2.3 追加） ──────────────────────────────
     def set_ai_summary(

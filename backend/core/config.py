@@ -315,6 +315,24 @@ class Settings:
     def META_ANDROMEDA_EXTERNAL_WORKER_SHARED_SECRET(self) -> Optional[str]:
         return os.getenv("META_ANDROMEDA_EXTERNAL_WORKER_SHARED_SECRET")
 
+    # ── Contribution（MMM 貢獻分析）殭屍 snapshot 回收（docs/27 任務 2.2）──
+    # apscheduler 為 in-memory date-trigger：server 在 job 執行前重啟、或
+    # scheduler/local fallback 皆不可用（503 路徑）都會留下永久卡在
+    # queued/processing 的 snapshot，前端輪詢無限轉圈。定期掃描並標為 failed。
+    @property
+    def CONTRIBUTION_STALE_QUEUED_MINUTES(self) -> int:
+        return max(1, int(os.getenv("CONTRIBUTION_STALE_QUEUED_MINUTES", "10")))
+
+    @property
+    def CONTRIBUTION_STALE_PROCESSING_MINUTES(self) -> int:
+        # 分析實測耗時 45-90 秒（docs/21 任務 1.2 效能驗收）；30 分鐘是足夠的
+        # 安全倍數，避免誤殺仍在執行中的正常分析。
+        return max(5, int(os.getenv("CONTRIBUTION_STALE_PROCESSING_MINUTES", "30")))
+
+    @property
+    def CONTRIBUTION_STALE_SWEEP_INTERVAL_SECONDS(self) -> float:
+        return max(60.0, float(os.getenv("CONTRIBUTION_STALE_SWEEP_INTERVAL_SECONDS", "900")))
+
     @property
     def META_ANDROMEDA_EXTERNAL_WORKER_TOKEN(self) -> Optional[str]:
         return os.getenv("META_ANDROMEDA_EXTERNAL_WORKER_TOKEN")

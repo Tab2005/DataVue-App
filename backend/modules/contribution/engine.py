@@ -94,6 +94,21 @@ def check_guardrails(spend_by_group: dict[str, np.ndarray], y: np.ndarray, confi
         violations.append(
             f"日均轉換 {float(np.mean(y)):.1f} < 最低要求 {config['min_daily_conversions']:g}（雜訊會淹沒訊號）"
         )
+    # holdout 天數守門（docs/27 任務 2.3）：holdout_days >= n 時訓練集為空，
+    # nonneg_ridge 權重全 0 → 貢獻全 0，不 crash 不報錯，會產出一份「全部
+    # 沒貢獻」的假報告；holdout 占比過高時訓練資料也已過少，不可信。門檻取
+    # n // 2（而非更嚴格的 1/3）：docs/21 記載的下限「90 天 + 預設 holdout
+    # 45 天」剛好是 50% 比例，若用 1/3 門檻會把這個文件記載的合法最小組合
+    # 直接擋死；n // 2 仍能攔住 holdout 占比明顯過高（如 60/90）的組合。
+    holdout_days = int(config["holdout_days"])
+    if n and holdout_days >= n:
+        violations.append(
+            f"holdout 天數 {holdout_days} >= 資料天數 {n}，無訓練資料"
+        )
+    elif n and holdout_days > n // 2:
+        violations.append(
+            f"holdout 天數 {holdout_days} 占資料天數 {n} 比例過高（> 1/2），訓練資料不足"
+        )
     total_spend = sum(float(s.sum()) for s in spend_by_group.values())
     if total_spend <= 0:
         violations.append("總花費為 0，無可分析的投放")
@@ -267,11 +282,18 @@ def run_analysis(
     names = list(spend_by_group)
     total_spend = sum(float(s.sum()) for s in spend_by_group.values())
 
-    def dist(values: list[float]) -> dict:
+    def dist(values: list) -> dict:
+        """彙整多次重啟結果為 median/min/max；None 值（如 holdout 段零變異時
+        r2_holdout 為 None）先過濾，全數為 None 時三個欄位皆回 None，不讓
+        `np.median([None, ...])` 直接 TypeError 拖垮整筆分析（docs/27 任務 2.3）。
+        """
+        clean = [v for v in values if v is not None]
+        if not clean:
+            return {"median": None, "min": None, "max": None}
         return {
-            "median": round(float(np.median(values)), 4),
-            "min": round(float(np.min(values)), 4),
-            "max": round(float(np.max(values)), 4),
+            "median": round(float(np.median(clean)), 4),
+            "min": round(float(np.min(clean)), 4),
+            "max": round(float(np.max(clean)), 4),
         }
 
     share_by_restart: dict[str, list[float]] = {name: [] for name in names}

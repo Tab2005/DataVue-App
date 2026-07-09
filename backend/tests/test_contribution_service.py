@@ -513,6 +513,47 @@ def test_dispatch_analysis_falls_back_to_local_async(monkeypatch):
     assert mode == "in_process_task"
 
 
+@pytest.mark.unit
+def test_dispatch_analysis_keeps_strong_reference_until_task_completes(monkeypatch):
+    """docs/27 任務 2.1 回歸：`loop.create_task(...)` 的回傳值必須被模組層級的
+    `_background_tasks` 強引用，直到 task 完成才移除——否則長達數十秒的分析
+    task 在中途可能被 GC 回收（CPython 文件明確警告未被引用的 task 有此風險）。
+    """
+    monkeypatch.setattr(
+        "modules.contribution.service.is_scheduler_enabled", lambda: False
+    )
+    monkeypatch.setattr(
+        "modules.contribution.service.scheduler", type("S", (), {"running": False})()
+    )
+
+    async def _run():
+        started = asyncio.Event()
+        finished = asyncio.Event()
+
+        async def _fake_process_analysis(snapshot_id):
+            started.set()
+            await asyncio.sleep(0.05)
+            finished.set()
+
+        monkeypatch.setattr(
+            service_module, "process_analysis", _fake_process_analysis
+        )
+
+        queue_host, mode = service._dispatch_analysis("csn_gc_test")
+        assert queue_host == "local_async"
+        assert mode == "in_process_task"
+        # dispatch 完成當下，task 應已在強引用集合中（尚未執行完）
+        assert len(service._background_tasks) == 1
+
+        await started.wait()
+        await finished.wait()
+        # 讓 event loop 跑一次 done_callback
+        await asyncio.sleep(0)
+        assert len(service._background_tasks) == 0
+
+    asyncio.run(_run())
+
+
 # ── list / get snapshot ────────────────────────────────────────────
 @pytest.mark.integration
 def test_list_snapshots_pagination(db, sample_user):

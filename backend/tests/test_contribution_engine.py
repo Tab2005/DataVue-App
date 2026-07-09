@@ -183,6 +183,37 @@ def test_guardrail_length_mismatch():
     assert any("長度" in v for v in violations)
 
 
+# ── 2b. holdout 天數守門（docs/27 任務 2.3） ────────────────────────────
+
+def test_guardrail_holdout_days_equal_to_total_days_rejected():
+    """holdout_days == n：訓練集為空，必須拒絕，不可 silently 產出全 0 結果。"""
+    spend, y = _tiny_dataset(days=90)
+    with pytest.raises(GuardrailViolation, match="無訓練資料"):
+        run_analysis(spend, y, config_overrides={"holdout_days": 90})
+
+
+def test_guardrail_holdout_days_ratio_too_high_rejected():
+    """holdout 占比 > 1/2：訓練資料不足，拒絕。"""
+    spend, y = _tiny_dataset(days=90)
+    with pytest.raises(GuardrailViolation, match="比例過高"):
+        run_analysis(spend, y, config_overrides={"holdout_days": 46})
+
+
+def test_guardrail_documented_minimum_90_days_with_default_holdout_passes():
+    """docs/21 記載的下限「90 天 + 預設 holdout 45 天」（比例剛好 50%）必須
+    仍可通過 guardrail——這是文件記載的合法最小組合，門檻不可誤傷。"""
+    spend, y = _tiny_dataset(days=90)
+    violations = check_guardrails(spend, y, resolve_config())
+    assert not any("holdout" in v for v in violations)
+
+
+def test_guardrail_default_180_days_with_default_holdout_passes():
+    """預設建議組合「180 天 + 預設 holdout 45 天」（比例 25%）不受新規則影響。"""
+    spend, y = _tiny_dataset(days=180)
+    violations = check_guardrails(spend, y, resolve_config())
+    assert not any("holdout" in v for v in violations)
+
+
 # ── 3. diagnose ────────────────────────────────────────────────────────
 
 def test_diagnose_collinearity_and_ceiling():
@@ -251,3 +282,24 @@ def test_results_are_json_serializable(synthetic_runs):
 
     _, out = synthetic_runs[0]
     json.dumps(out)  # 不可含 numpy 型別
+
+
+def test_run_analysis_holdout_zero_variance_r2_is_none_not_crash():
+    """holdout 段 y 為常數（零變異）時 r2_holdout 為 None；docs/27 任務 2.3
+    修復前 `dist([None, None, ...])` 會直接 `np.median` TypeError 讓整筆分析
+    失敗，修復後應正常完成、r2.holdout 三個欄位皆為 None。"""
+    rng = np.random.default_rng(9)
+    days = 180
+    holdout_days = 45
+    spend = {"A": rng.uniform(500, 1500, days), "B": rng.uniform(500, 1500, days)}
+    y = rng.poisson(20, days).astype(float)
+    y[-holdout_days:] = 15.0  # holdout 段常數 → ss_hold = 0 → r2_holdout = None
+    weekdays = np.arange(days) % 7
+
+    out = run_analysis(
+        spend, y, weekdays=weekdays,
+        config_overrides={"n_trials": 60, "n_restarts": 2, "holdout_days": holdout_days},
+    )
+    assert out["results"]["r2"]["holdout"] == {"median": None, "min": None, "max": None}
+    # full R² 應正常計算（訓練段仍有變異）
+    assert out["results"]["r2"]["full"]["median"] is not None

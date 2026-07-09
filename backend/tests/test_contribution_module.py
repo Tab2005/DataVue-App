@@ -252,6 +252,53 @@ def test_contribution_campaigns_returns_aggregated_summaries(
 
 
 @pytest.mark.integration
+def test_contribution_campaigns_renamed_campaign_does_not_split_into_two_rows(
+    contribution_authorized_client, db
+):
+    """docs/27 任務 2.4：活動改名後（舊名列 + 新名列，同一 campaign_id）彙總
+    仍應合併為一列，花費加總不被攤薄，且顯示名稱取最新一天的值。"""
+    from database.models.contribution import ContributionDailyMetric
+
+    rows = [
+        ("2026-07-01", "舊名稱", 100.0, 5.0),
+        ("2026-07-02", "舊名稱", 100.0, 5.0),
+        ("2026-07-03", "新名稱", 150.0, 7.0),  # 改名當天起
+    ]
+    for date, name, spend, conv in rows:
+        db.add(ContributionDailyMetric(
+            account_id="act_rename",
+            date=date,
+            campaign_id="cmp_renamed",
+            campaign_name=name,
+            spend=spend,
+            impressions=1000,
+            conversions=conv,
+            conversion_value=conv * 300,
+            metric_key="omni_purchase",
+        ))
+    db.commit()
+
+    client, _ = contribution_authorized_client
+    resp = client.get("/api/contribution/campaigns?account_id=act_rename")
+    assert resp.status_code == 200
+    payload = resp.json()
+    # 唯一約束是 (account_id, date, campaign_id, metric_key)：改名前後仍是
+    # 同一 campaign_id，彙總不應分裂成兩列。
+    assert payload["total"] == 1
+    row = payload["campaigns"][0]
+    assert row["campaign_id"] == "cmp_renamed"
+    assert row["campaign_name"] == "新名稱"  # 最新一天（2026-07-03）的名稱
+    assert row["spend"] == 350.0  # 100+100+150，未被攤薄
+    assert row["conversions"] == 17.0
+    assert row["active_days"] == 3
+
+    db.query(ContributionDailyMetric).filter(
+        ContributionDailyMetric.account_id == "act_rename"
+    ).delete()
+    db.commit()
+
+
+@pytest.mark.integration
 def test_contribution_data_refresh_token_missing_returns_4xx(contribution_authorized_client):
     """token 缺失時 /data/refresh 回 4xx（401/502），訊息不含明文 token。"""
     client, _ = contribution_authorized_client
@@ -438,6 +485,116 @@ def test_contribution_repository_snapshot_status_flow(db, sample_user):
     refreshed2 = repository.get_snapshot(db, snap2.id)
     assert refreshed2.status == "failed"
     assert "guardrail" in refreshed2.error_message
+
+
+@pytest.mark.integration
+def test_mark_stale_snapshots_failed_reclaims_only_overdue(db, sample_user):
+    """docs/27 任務 2.2：殭屍 snapshot 回收只動超時的 queued/processing，
+    未超時的正常執行中分析不受影響。"""
+    from datetime import datetime, timedelta, timezone
+    from modules.contribution.repository import repository
+
+    now = datetime.now(timezone.utc)
+
+    def _make(status: str, age_minutes: int) -> ContributionSnapshot:
+        snap = repository.create_snapshot(
+            db,
+            account_id="act_stale_sweep",
+            date_start="2026-01-01",
+            date_end="2026-06-30",
+            config={},
+            created_by=sample_user.id,
+        )
+        db.commit()
+        repository.set_snapshot_status(db, snap.id, status=status)
+        snap.created_at = now - timedelta(minutes=age_minutes)
+        db.add(snap)
+        db.commit()
+        return snap
+
+    stale_queued = _make("queued", age_minutes=15)  # > 10 分鐘門檻
+    fresh_queued = _make("queued", age_minutes=2)  # 未超時
+    stale_processing = _make("processing", age_minutes=45)  # > 30 分鐘門檻
+    fresh_processing = _make("processing", age_minutes=5)  # 正常執行中
+
+    reclaimed = repository.mark_stale_snapshots_failed(
+        db,
+        queued_older_than_minutes=10,
+        processing_older_than_minutes=30,
+        now=now,
+    )
+    db.commit()
+
+    assert reclaimed == 2
+
+    assert repository.get_snapshot(db, stale_queued.id).status == "failed"
+    assert (
+        repository.get_snapshot(db, stale_queued.id).error_message
+        == "stale_queued_reclaimed"
+    )
+    assert repository.get_snapshot(db, stale_processing.id).status == "failed"
+    assert (
+        repository.get_snapshot(db, stale_processing.id).error_message
+        == "stale_processing_reclaimed"
+    )
+    # 未超時的不受影響
+    assert repository.get_snapshot(db, fresh_queued.id).status == "queued"
+    assert repository.get_snapshot(db, fresh_processing.id).status == "processing"
+
+    db.query(ContributionSnapshot).filter(
+        ContributionSnapshot.account_id == "act_stale_sweep"
+    ).delete()
+    db.commit()
+
+
+@pytest.mark.integration
+def test_sweep_contribution_stale_snapshots_commits_reclaimed_rows(
+    db, sample_user, monkeypatch
+):
+    """core.scheduler.sweep_contribution_stale_snapshots 用短生命週期 session
+    掃描並 commit（docs/27 任務 2.2）；以 monkeypatch 把 SessionLocal 綁到測試
+    db，驗證確實寫入 failed 狀態。"""
+    import asyncio
+    from datetime import datetime, timedelta, timezone
+
+    import core.scheduler as scheduler_module
+    from modules.contribution.repository import repository
+
+    class _SessionProxy:
+        def __init__(self, session):
+            self._session = session
+
+        def __getattr__(self, name):
+            return getattr(self._session, name)
+
+        def close(self):
+            return None
+
+    monkeypatch.setattr(scheduler_module, "SessionLocal", lambda: _SessionProxy(db))
+
+    snap = repository.create_snapshot(
+        db,
+        account_id="act_sweep_e2e",
+        date_start="2026-01-01",
+        date_end="2026-06-30",
+        config={},
+        created_by=sample_user.id,
+    )
+    db.commit()
+    snap.created_at = datetime.now(timezone.utc) - timedelta(minutes=20)
+    db.add(snap)
+    db.commit()
+
+    asyncio.run(scheduler_module.sweep_contribution_stale_snapshots())
+
+    refreshed = repository.get_snapshot(db, snap.id)
+    assert refreshed.status == "failed"
+    assert refreshed.error_message == "stale_queued_reclaimed"
+
+    db.query(ContributionSnapshot).filter(
+        ContributionSnapshot.account_id == "act_sweep_e2e"
+    ).delete()
+    db.commit()
 
 
 # ── 任務 2.3 驗收：PUT /analyses/{id}/ai-summary + 列表/單筆帶欄位 ─────

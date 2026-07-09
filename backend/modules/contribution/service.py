@@ -265,6 +265,13 @@ def create_analysis(
     return snapshot, queue_host, dispatch_mode
 
 
+# 背景 task 強引用（docs/27 任務 2.1）：`loop.create_task(...)` 的回傳值若無人
+# 持有任何引用，CPython 文件明確警告該 task 可能在執行中途被垃圾回收——分析
+# 一跑就是數十秒，這個窗口內被 GC 掉會讓 snapshot 永遠卡在 processing。用
+# module-level set 強引用直到完成，`add_done_callback` 完成後自動移除。
+_background_tasks: set[asyncio.Task] = set()
+
+
 def _dispatch_analysis(snapshot_id: str) -> tuple[str, str]:
     """決定背景任務執行位置，回傳 (queue_host, dispatch_mode)。
 
@@ -289,7 +296,9 @@ def _dispatch_analysis(snapshot_id: str) -> tuple[str, str]:
         async def _run() -> None:
             await process_analysis(snapshot_id)
 
-        loop.create_task(_run())
+        task = loop.create_task(_run())
+        _background_tasks.add(task)
+        task.add_done_callback(_background_tasks.discard)
         return "local_async", "in_process_task"
 
     # 同步上下文（測試 / CLI）：以 asyncio.run 阻塞跑完
