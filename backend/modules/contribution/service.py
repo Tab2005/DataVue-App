@@ -41,6 +41,42 @@ from .repository import repository
 
 logger = logging.getLogger(__name__)
 
+# 未分組花費占比超過此門檻即在 diagnostics 附加警告（docs/27 任務 5.3）：
+# `_assemble_arrays` 刻意讓未分組活動的轉換計入 y、花費被丟棄以保持 y 總和，
+# 分組後新上線的活動會把基線（截距）墊高卻無任何提示，故加此診斷。
+UNGROUPED_SPEND_WARNING_THRESHOLD = 0.05
+
+
+def _merge_ungrouped_spend_diagnostics(
+    diagnostics: dict[str, Any], assembly_diagnostics: dict[str, float]
+) -> dict[str, Any]:
+    """把 `_assemble_arrays` 算出的未分組花費占比併入 engine 產出的
+    diagnostics：寫入 `data_summary.ungrouped_spend_share`，占比超過
+    `UNGROUPED_SPEND_WARNING_THRESHOLD` 時在 `data_quality_warnings` 附加
+    一則警告（結構比照 `collinearity_warnings` 皆為 list of dict 的呈現
+    慣例）。純函數，方便獨立單元測試，不需要跑完整個 `process_analysis`。
+    """
+    diagnostics = dict(diagnostics)
+    data_summary = dict(diagnostics.get("data_summary") or {})
+    share = float(assembly_diagnostics.get("ungrouped_spend_share", 0.0))
+    data_summary["ungrouped_spend_share"] = share
+    diagnostics["data_summary"] = data_summary
+
+    warnings: list[dict[str, Any]] = list(diagnostics.get("data_quality_warnings") or [])
+    if share > UNGROUPED_SPEND_WARNING_THRESHOLD:
+        warnings.append(
+            {
+                "type": "ungrouped_spend",
+                "share": share,
+                "message": (
+                    f"有 {share:.1%} 花費未分組，其轉換會被歸入基線，"
+                    "建議重新產生分組後重跑"
+                ),
+            }
+        )
+    diagnostics["data_quality_warnings"] = warnings
+    return diagnostics
+
 
 # ── 例外 ──────────────────────────────────────────────────────────────
 class ContributionServiceError(Exception):
@@ -184,7 +220,7 @@ def prepare_analysis(
         raise GuardrailRejected(["該帳戶尚無活動資料，請先呼叫 /data/refresh 抓取資料"])
 
     # 2. 預檢 guardrail（在背景任務之前發現問題可回 4xx）
-    spend_by_group, y, weekdays, precheck_messages = _assemble_arrays(
+    spend_by_group, y, weekdays, precheck_messages, _assembly_diag = _assemble_arrays(
         db,
         account_id=account_id,
         date_start=date_start,
@@ -363,7 +399,7 @@ async def process_analysis(snapshot_id: str) -> None:
             config_overrides["marginal_step"] = float(marginal_step)
 
         try:
-            spend_by_group, y, weekdays, _ = _assemble_arrays(
+            spend_by_group, y, weekdays, _, assembly_diagnostics = _assemble_arrays(
                 db,
                 account_id=snapshot.account_id,
                 date_start=snapshot.date_start,
@@ -392,12 +428,16 @@ async def process_analysis(snapshot_id: str) -> None:
                 f"引擎執行失敗：{type(exc).__name__}: {exc}"
             ) from exc
 
+        diagnostics = _merge_ungrouped_spend_diagnostics(
+            outcome["diagnostics"], assembly_diagnostics
+        )
+
         repository.set_snapshot_status(
             db,
             snapshot_id,
             status="completed",
             results=outcome["results"],
-            diagnostics=outcome["diagnostics"],
+            diagnostics=diagnostics,
         )
         db.commit()
         logger.info(
@@ -500,7 +540,7 @@ def _assemble_arrays(
     date_end: str,
     metric_key: str,
     groups: list[ContributionCampaignGroup] | list[dict[str, Any]],
-) -> tuple[dict[str, np.ndarray], np.ndarray | None, np.ndarray, list[str]]:
+) -> tuple[dict[str, np.ndarray], np.ndarray | None, np.ndarray, list[str], dict[str, float]]:
     """由 daily metrics 快取組裝模型輸入。
 
     規則：
@@ -508,6 +548,12 @@ def _assemble_arrays(
       - y 為每日 conversions 加總（不分組）
       - spend_by_group 為每組每日花費（缺值補 0）
       - 任何活動若未在 groups 中 → 不計入 spend_by_group，但會貢獻到 y（保持總和）
+
+    回傳值第 5 項 `assembly_diagnostics`（docs/27 任務 5.3）：未分組活動的
+    花費會被丟棄、其轉換卻仍計入 y——分組後新上線的活動會把基線（截距）
+    墊高且無任何提示。回傳 `{total_spend, ungrouped_spend,
+    ungrouped_spend_share}` 供 `process_analysis` 合併進 diagnostics，
+    占比過高時在前端診斷卡顯示警告。
     """
     start = date.fromisoformat(date_start)
     end = date.fromisoformat(date_end)
@@ -515,7 +561,7 @@ def _assemble_arrays(
         end = start
     days = (end - start).days + 1
     if days <= 0:
-        return {}, None, np.array([]), ["分析區間無效"]
+        return {}, None, np.array([]), ["分析區間無效"], {}
 
     # 拉資料
     stmt = (
@@ -552,18 +598,31 @@ def _assemble_arrays(
             group_keys.append(str(gk))
     spend_by_group = {gk: np.zeros(days) for gk in group_keys}
     y = np.zeros(days)
+    total_spend = 0.0
+    grouped_spend = 0.0
 
     for r in rows:
         idx = date_index.get(r.date)
         if idx is None:
             continue
         y[idx] += float(r.conversions or 0.0)
+        spend_val = float(r.spend or 0.0)
+        total_spend += spend_val
         gk = cid_to_group.get(str(r.campaign_id))
         if gk and gk in spend_by_group:
-            spend_by_group[gk][idx] += float(r.spend or 0.0)
+            spend_by_group[gk][idx] += spend_val
+            grouped_spend += spend_val
+
+    ungrouped_spend = max(total_spend - grouped_spend, 0.0)
+    ungrouped_spend_share = (ungrouped_spend / total_spend) if total_spend > 0 else 0.0
+    assembly_diagnostics = {
+        "total_spend": round(total_spend, 2),
+        "ungrouped_spend": round(ungrouped_spend, 2),
+        "ungrouped_spend_share": round(ungrouped_spend_share, 4),
+    }
 
     weekdays = np.array([date.fromisoformat(d).weekday() for d in date_axis])
-    return spend_by_group, y, weekdays, []
+    return spend_by_group, y, weekdays, [], assembly_diagnostics
 
 
 def _group_to_dict(g: ContributionCampaignGroup) -> dict[str, Any]:

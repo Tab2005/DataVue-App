@@ -405,6 +405,147 @@ def test_process_analysis_runs_to_completion(db, sample_user, monkeypatch):
     db.commit()
 
 
+# ── 未分組花費診斷警告（docs/27 任務 5.3） ──────────────────────────
+def test_merge_ungrouped_spend_diagnostics_adds_warning_above_threshold():
+    """純函數層：占比超過門檻時附加 data_quality_warnings 條目。"""
+    diagnostics = {"data_summary": {"days": 180}, "collinearity_warnings": []}
+    merged = service._merge_ungrouped_spend_diagnostics(
+        diagnostics, {"ungrouped_spend_share": 0.12}
+    )
+    assert merged["data_summary"]["ungrouped_spend_share"] == 0.12
+    assert merged["data_summary"]["days"] == 180  # 既有欄位不受影響
+    assert len(merged["data_quality_warnings"]) == 1
+    warning = merged["data_quality_warnings"][0]
+    assert warning["type"] == "ungrouped_spend"
+    assert warning["share"] == 0.12
+    assert "未分組" in warning["message"]
+    assert "基線" in warning["message"]
+
+
+def test_merge_ungrouped_spend_diagnostics_no_warning_below_threshold():
+    """占比未超過門檻（5%）時不附加警告，但仍寫入 data_summary 供顯示。"""
+    diagnostics = {"data_summary": {}}
+    merged = service._merge_ungrouped_spend_diagnostics(
+        diagnostics, {"ungrouped_spend_share": 0.02}
+    )
+    assert merged["data_summary"]["ungrouped_spend_share"] == 0.02
+    assert merged["data_quality_warnings"] == []
+
+
+@pytest.mark.integration
+def test_process_analysis_flags_ungrouped_spend_above_threshold(db, sample_user, monkeypatch):
+    """合成測試：3 活動其中 1 個（c3）不在任何組 → ungrouped_spend_share 正確
+    算出、且因占比 > 5% 而在 diagnostics 附加警告（docs/27 任務 5.3）。"""
+    _seed_180_days(db, "act_ungrouped")
+    # c3：日均花費 30（c1=100、c2=50，c3 占比 30/180=16.7% > 5% 門檻），
+    # 刻意不出現在下方 snapshot 的 group_snapshot 中（保持未分組）。
+    for d in range(180):
+        month = (d // 30) + 1
+        day = (d % 30) + 1
+        if month > 6:
+            break
+        db.add(ContributionDailyMetric(
+            account_id="act_ungrouped",
+            date=f"2026-{month:02d}-{day:02d}",
+            campaign_id="c3",
+            campaign_name="camp_c3_ungrouped",
+            spend=30.0,
+            impressions=2000,
+            conversions=3.0,
+            conversion_value=900.0,
+            metric_key="omni_purchase",
+        ))
+    db.commit()
+
+    monkeypatch.setattr(service_module, "SessionLocal", lambda: _SessionProxy(db))
+
+    snap = repository.create_snapshot(
+        db,
+        account_id="act_ungrouped",
+        date_start="2026-01-01",
+        date_end="2026-06-30",
+        config={
+            "metric_key": "omni_purchase",
+            "n_restarts": 2,
+            "holdout_days": 30,
+            "group_snapshot": [
+                {
+                    "group_key": "G_other",
+                    "group_name": "其他",
+                    "campaign_ids": ["c1", "c2"],  # c3 刻意不分組
+                    "source": "auto",
+                }
+            ],
+        },
+        created_by=sample_user.id,
+    )
+    db.commit()
+
+    asyncio.run(service.process_analysis(snap.id))
+
+    db.expire_all()
+    final = repository.get_snapshot(db, snap.id)
+    assert final.status == "completed", final.error_message
+    share = final.diagnostics["data_summary"]["ungrouped_spend_share"]
+    assert 0.10 < share < 0.25  # 約 16.7%，留合理誤差範圍
+    warnings = final.diagnostics["data_quality_warnings"]
+    assert len(warnings) == 1
+    assert warnings[0]["type"] == "ungrouped_spend"
+
+    db.query(ContributionSnapshot).filter(
+        ContributionSnapshot.account_id == "act_ungrouped"
+    ).delete()
+    db.query(ContributionDailyMetric).filter(
+        ContributionDailyMetric.account_id == "act_ungrouped"
+    ).delete()
+    db.commit()
+
+
+@pytest.mark.integration
+def test_process_analysis_no_ungrouped_spend_warning_when_fully_grouped(db, sample_user, monkeypatch):
+    """全部活動皆已分組 → ungrouped_spend_share 應為 0，無警告。"""
+    _seed_180_days(db, "act_fully_grouped")
+    monkeypatch.setattr(service_module, "SessionLocal", lambda: _SessionProxy(db))
+
+    snap = repository.create_snapshot(
+        db,
+        account_id="act_fully_grouped",
+        date_start="2026-01-01",
+        date_end="2026-06-30",
+        config={
+            "metric_key": "omni_purchase",
+            "n_restarts": 2,
+            "holdout_days": 30,
+            "group_snapshot": [
+                {
+                    "group_key": "G_other",
+                    "group_name": "其他",
+                    "campaign_ids": ["c1", "c2"],
+                    "source": "auto",
+                }
+            ],
+        },
+        created_by=sample_user.id,
+    )
+    db.commit()
+
+    asyncio.run(service.process_analysis(snap.id))
+
+    db.expire_all()
+    final = repository.get_snapshot(db, snap.id)
+    assert final.status == "completed", final.error_message
+    assert final.diagnostics["data_summary"]["ungrouped_spend_share"] == 0.0
+    assert final.diagnostics["data_quality_warnings"] == []
+
+    db.query(ContributionSnapshot).filter(
+        ContributionSnapshot.account_id == "act_fully_grouped"
+    ).delete()
+    db.query(ContributionDailyMetric).filter(
+        ContributionDailyMetric.account_id == "act_fully_grouped"
+    ).delete()
+    db.commit()
+
+
 @pytest.mark.integration
 def test_create_analysis_rejects_guardrail_violation(db, sample_user):
     """天數 < 90：guardrail 拒絕 → 422 訊息。"""

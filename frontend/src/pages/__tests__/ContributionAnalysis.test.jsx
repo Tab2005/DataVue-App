@@ -507,6 +507,91 @@ describe('ContributionAnalysis', () => {
             expect(screen.getByRole('button', { name: '抓取資料' }).disabled).toBe(false);
         });
     }, 10000);
+
+    it('shows ungrouped spend share and its warning in the diagnostics card (docs/27 任務 5.3)', async () => {
+        useModuleAccess.mockReturnValue({ hasAccess: true, loading: false, error: null });
+        usePermission.mockReturnValue({ hasPermission: true, loading: false, error: null });
+
+        getGroups.mockResolvedValue({
+            account_id: 'act_001',
+            source: 'auto',
+            groups: [
+                { group_key: 'G1', group_name: '主力', campaign_ids: ['c1'], source: 'auto' },
+            ],
+        });
+        listAnalyses.mockResolvedValue({
+            account_id: 'act_001',
+            total: 1,
+            analyses: [
+                {
+                    snapshot_id: 'csn_ungrouped_1',
+                    account_id: 'act_001',
+                    status: 'completed',
+                    date_start: '2026-01-01',
+                    date_end: '2026-06-30',
+                    created_at: null,
+                    completed_at: null,
+                    error_message: null,
+                    has_ai_summary: false,
+                },
+            ],
+        });
+        getAnalysis.mockResolvedValue({
+            snapshot_id: 'csn_ungrouped_1',
+            account_id: 'act_001',
+            status: 'completed',
+            date_start: '2026-01-01',
+            date_end: '2026-06-30',
+            config: { metric_key: 'omni_purchase', n_restarts: 5, holdout_days: 45 },
+            results: {
+                groups: {
+                    G1: {
+                        spend_share: 0.8,
+                        contribution_share: { median: 0.75, min: 0.65, max: 0.85 },
+                        marginal: { step: 100, per_step: { median: 1.2, min: 1.0, max: 1.4 } },
+                    },
+                },
+                base_share: { median: 0.1, min: 0.05, max: 0.15 },
+                r2: { holdout: { median: 0.2 }, full: { median: 0.5 } },
+                seeds: [1],
+            },
+            diagnostics: {
+                collinearity_warnings: [],
+                poisson_ceiling_r2: { holdout: 0.3, full: 0.6 },
+                data_summary: { days: 180, mean_daily_conversions: 10, ungrouped_spend_share: 0.167 },
+                data_quality_warnings: [
+                    {
+                        type: 'ungrouped_spend',
+                        share: 0.167,
+                        message: '有 16.7% 花費未分組，其轉換會被歸入基線，建議重新產生分組後重跑',
+                    },
+                ],
+            },
+            error_message: null,
+            runtime_job_id: null,
+            ai_summary: null,
+            ai_summary_generated_at: null,
+            created_at: null,
+            completed_at: null,
+        });
+        listCampaignSummaries.mockResolvedValue({ account_id: 'act_001', total: 0, campaigns: [] });
+
+        renderWithOutlet(<ContributionAnalysis />, {
+            outletContext: { isMobile: false, language: 'zh', selectedTeamId: null },
+        });
+
+        const historyEntry = await screen.findByText('csn_ungrouped_1');
+        fireEvent.click(historyEntry.closest('button'));
+
+        // MetricTile 顯示未分組花費占比
+        await waitFor(() => {
+            expect(screen.getByText('16.7%')).toBeTruthy();
+        });
+        // 資料品質警告區塊顯示後端組好的訊息
+        expect(
+            screen.getByText('有 16.7% 花費未分組，其轉換會被歸入基線，建議重新產生分組後重跑')
+        ).toBeTruthy();
+    });
 });
 
 describe('evaluateRefreshPoll (docs/27 任務 4.5，純函數，脫離計時器測試停止條件)', () => {

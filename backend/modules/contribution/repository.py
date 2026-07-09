@@ -134,11 +134,12 @@ class ContributionRepository:
         唯一約束覆寫（dialect-aware：PostgreSQL 走 ON CONFLICT、SQLite 走
         ON CONFLICT DO UPDATE，兩者皆由 SQLAlchemy 統一介面呼叫）。
 
-        寫入欄位（不含 fetched_at，由 DB 預設 CURRENT_TIMESTAMP 觸發）：
+        寫入欄位（首次 INSERT 不含 fetched_at，由 DB 預設 CURRENT_TIMESTAMP 觸發）：
           account_id, date, campaign_id, campaign_name, spend, impressions,
           conversions, conversion_value, metric_key, actions_payload
-        衝突時更新：以上除主鍵外的全部欄位（不更新 fetched_at — 保留初次抓取時間
-        供診斷；如需刷新時間可用 NOW() 覆寫，但本模組無此需求）。
+        衝突時更新：以上除主鍵外的全部欄位，並以 `func.current_timestamp()`
+        刷新 `fetched_at`（docs/27 任務 5.2 修正：`fetched_at` 語義為「最後一次
+        抓取時間」，每次重抓/補資料皆會更新，並非保留初次抓取時間）。
 
         回傳實際 upsert 成功的列數（rows 數；唯一衝突由 ON CONFLICT 處理，不會
         拋例外）。

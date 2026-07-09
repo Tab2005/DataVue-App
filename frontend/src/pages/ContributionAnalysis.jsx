@@ -807,6 +807,11 @@ const MarginalChart = ({ language, rows, marginalCurrency, isMobile }) => {
 const DiagnosticsPanel = ({ language, diagnostics, r2, baseShare, dataSummary }) => {
     if (!diagnostics) return null;
     const warnings = diagnostics.collinearity_warnings || [];
+    // docs/27 任務 5.3：未分組活動的花費會被丟棄、轉換仍計入 y（維持 y 總和），
+    // 分組後新上線的活動會把基線墊高卻無提示——data_summary.ungrouped_spend_share
+    // 與 data_quality_warnings 由後端 service._merge_ungrouped_spend_diagnostics 附加。
+    const ungroupedSpendShare = dataSummary?.ungrouped_spend_share;
+    const dataQualityWarnings = diagnostics.data_quality_warnings || [];
     return (
         <Section
             title={t(language, 'Diagnostics', '診斷')}
@@ -848,7 +853,32 @@ const DiagnosticsPanel = ({ language, diagnostics, r2, baseShare, dataSummary })
                     label={t(language, 'Base share (median)', '基線占比 (中位)')}
                     value={baseShare?.median != null ? fmtPct(baseShare.median) : '--'}
                 />
+                <MetricTile
+                    label={t(language, 'Ungrouped spend share', '未分組花費占比')}
+                    value={ungroupedSpendShare != null ? fmtPct(ungroupedSpendShare) : '--'}
+                />
             </div>
+
+            {dataQualityWarnings.length > 0 && (
+                <div
+                    style={{
+                        padding: '12px 14px',
+                        borderRadius: '12px',
+                        background: 'rgba(245, 158, 11, 0.07)',
+                        border: '1px solid rgba(245, 158, 11, 0.3)',
+                        marginBottom: '12px',
+                    }}
+                >
+                    <div style={{ fontWeight: 700, color: '#fbbf24', marginBottom: '6px' }}>
+                        {t(language, 'Data Quality Warnings', '資料品質警告')}
+                    </div>
+                    <ul style={{ margin: 0, paddingLeft: '18px', color: 'var(--text-secondary)', lineHeight: 1.7, fontSize: '0.85rem' }}>
+                        {dataQualityWarnings.map((w, idx) => (
+                            <li key={`dqw-${idx}`}>{w.message}</li>
+                        ))}
+                    </ul>
+                </div>
+            )}
 
             {warnings.length > 0 && (
                 <div
@@ -928,6 +958,10 @@ const buildAiPayload = ({ snapshot, groups, reportedByGroup }) => {
         groups: groupRows,
         diagnostics: {
             collinearity_warnings: warnings,
+            // docs/27 任務 5.3：data_summary 內已含 ungrouped_spend_share，
+            // 另把 data_quality_warnings（未分組花費等資料品質警告）一併帶上，
+            // 讓 AI 白話解讀也能引用（prompt 既有「只引用 payload 內數字」規則已涵蓋）。
+            data_quality_warnings: diagnostics.data_quality_warnings || [],
             holdout_r2_median: results.r2?.holdout?.median ?? null,
             poisson_ceiling_r2_holdout: diagnostics.poisson_ceiling_r2?.holdout ?? null,
             data_summary: diagnostics.data_summary || null,
