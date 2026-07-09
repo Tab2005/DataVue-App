@@ -131,6 +131,118 @@ def test_auto_group_marks_source_as_auto():
     assert all(g["source"] == "auto" for g in out)
 
 
+# ── docs/27 任務 3.1：關鍵詞誤判修正 ─────────────────────────────────
+@pytest.mark.unit
+def test_auto_group_smart_shopping_not_misclassified_as_retargeting():
+    """舊版 G5 含裸 `rt`，"Smart Shopping" 會誤含 "rt" 子字串被分進大包裝
+    再行銷；移除裸 `rt` 後不應再誤判（保留 `retargeting`/`再行銷` 等強訊號）。"""
+    out = grouping.auto_group(
+        [
+            _camp("a", "Smart Shopping Main", 1000.0),
+            _camp("b", "Smart Shopping Sub", 800.0),
+        ]
+    )
+    g5 = next((g for g in out if g["group_key"] == "G5"), None)
+    assert g5 is None or ("a" not in g5["campaign_ids"] and "b" not in g5["campaign_ids"])
+
+
+@pytest.mark.unit
+def test_auto_group_contest_not_misclassified_as_test_traffic():
+    """舊版 G7 的 `test` 無邊界，"Contest"/"Latest" 會誤含子字串被分進測試
+    導流；改 `\\btest\\b` 後不應再誤判。"""
+    out = grouping.auto_group(
+        [
+            _camp("a", "Photo Contest Campaign", 1000.0),
+            _camp("b", "Photo Contest Followup", 800.0),
+        ]
+    )
+    g7 = next((g for g in out if g["group_key"] == "G7"), None)
+    assert g7 is None or ("a" not in g7["campaign_ids"] and "b" not in g7["campaign_ids"])
+
+
+@pytest.mark.unit
+def test_auto_group_bare_test_keyword_still_matches_g7():
+    """word boundary 修正後，獨立出現的 "test" 仍應正確匹配 G7（不是矯枉過正）。"""
+    out = grouping.auto_group(
+        [
+            _camp("a", "A/B test 導流", 1000.0),
+            _camp("b", "A/B test 導流 2", 800.0),
+        ]
+    )
+    g7 = next((g for g in out if g["group_key"] == "G7"), None)
+    assert g7 is not None
+    assert set(g7["campaign_ids"]) == {"a", "b"}
+
+
+@pytest.mark.unit
+def test_auto_group_activity_keyword_no_longer_triggers_g3():
+    """`活動` 已從 G3 關鍵詞移除（訊號太弱，中文活動命名極常見）；含此字但
+    無其他強訊號的活動不應被誤分進官網檔期。"""
+    out = grouping.auto_group(
+        [
+            _camp("a", "母親節活動企劃", 1000.0),
+            _camp("b", "母親節活動執行", 800.0),
+        ]
+    )
+    g3 = next((g for g in out if g["group_key"] == "G3"), None)
+    assert g3 is None or ("a" not in g3["campaign_ids"] and "b" not in g3["campaign_ids"])
+
+
+# ── docs/27 任務 3.1：前綴聚類真正實作（取代 dead code） ──────────────
+@pytest.mark.unit
+def test_auto_group_real_prefix_clustering_groups_unmatched_campaigns():
+    """3 個同前綴、無關鍵詞匹配、合計占比達標的活動應被聚為一個
+    `G_prefix_*` 組——舊版 dead code 下這 3 個活動只會各自落入 G_other。"""
+    out = grouping.auto_group(
+        [
+            _camp("a", "嚴選好物 Alpha", 1000.0),
+            _camp("b", "嚴選好物 Beta", 900.0),
+            _camp("c", "嚴選好物 Gamma", 800.0),
+        ]
+    )
+    prefix_groups = [g for g in out if g["group_key"].startswith("G_prefix_")]
+    assert len(prefix_groups) == 1
+    assert set(prefix_groups[0]["campaign_ids"]) == {"a", "b", "c"}
+    # 不應散落在 G_other
+    g_other = next((g for g in out if g["group_key"] == "G_other"), None)
+    if g_other is not None:
+        assert not ({"a", "b", "c"} & set(g_other["campaign_ids"]))
+
+
+@pytest.mark.unit
+def test_auto_group_prefix_cluster_requires_at_least_two_members():
+    """前綴桶內只有 1 個活動時不成組，直接併入 G_other（單一活動的「前綴」
+    不構成分組意義）。"""
+    out = grouping.auto_group(
+        [
+            _camp("big", "OB 主力常態 A", 1000.0),
+            _camp("solo", "嚴選好物 Alpha", 500.0),  # 唯一帶此前綴的活動
+        ]
+    )
+    prefix_groups = [g for g in out if g["group_key"].startswith("G_prefix_")]
+    assert prefix_groups == []
+    g_other = next((g for g in out if g["group_key"] == "G_other"), None)
+    assert g_other is not None
+    assert "solo" in g_other["campaign_ids"]
+
+
+@pytest.mark.unit
+def test_auto_group_prefix_cluster_requires_aggregate_share_above_threshold():
+    """前綴桶合計花費占比 < min_spend_share 時不成組，即使桶內 ≥ 2 個活動。"""
+    out = grouping.auto_group(
+        [
+            _camp("big", "OB 主力常態 A", 10000.0),
+            _camp("p1", "嚴選好物 Alpha", 5.0),  # 兩者合計占比遠低於 3%
+            _camp("p2", "嚴選好物 Beta", 5.0),
+        ]
+    )
+    prefix_groups = [g for g in out if g["group_key"].startswith("G_prefix_")]
+    assert prefix_groups == []
+    g_other = next((g for g in out if g["group_key"] == "G_other"), None)
+    assert g_other is not None
+    assert {"p1", "p2"}.issubset(set(g_other["campaign_ids"]))
+
+
 # ── validate_manual_groups ──────────────────────────────────────────
 @pytest.mark.unit
 def test_validate_manual_groups_accepts_full_coverage():

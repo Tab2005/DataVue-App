@@ -1,5 +1,5 @@
 """
-Contribution Module - 活動自動分組規則（docs/21 §3.3）
+Contribution Module - 活動自動分組規則（docs/21 §3.3，docs/27 任務 3.1 修正）
 
 初版規則（來自 2026-07-06 真實驗證的分組經驗，使用者可在前端改）：
   1. 按活動名稱關鍵詞聚類（`常態`/`檔期`/`測試`/`導流`/`曝光` 等 token + 相同前綴）。
@@ -10,6 +10,17 @@ Contribution Module - 活動自動分組規則（docs/21 §3.3）
 
 設計原則：純函數、無 I/O；`auto_group(...)` 接受 list[dict]（campaign summaries）
 與最小占比參數，回傳 list[dict]（group dicts），由 service 層決定寫庫時機。
+
+docs/27 任務 3.1 修正記錄：
+  - 關鍵詞誤判：舊版 G5 含裸 `rt`（會吃到 "Smart"/"Start"/"sport"）、G7 的
+    `test` 無邊界（會吃到 "contest"/"latest"）、G3 的 `活動` 訊號太弱（中文
+    活動命名極常見，大量無關活動被誤分）。現已移除 `rt`（`retargeting` /
+    `re[_\\-]?target` / `再行銷` 已足夠覆蓋）、`test` 改 `\\btest\\b`、G3 移除
+    `活動`。
+  - 前綴聚類 dead code：舊版對每個活動個別呼叫 `_common_prefix([name])`
+    （單一元素 list），其 `len(cleaned) < 2` 判斷恆為真而永遠回 None，
+    「相同前綴聚類」規則從未生效。現改為先收集所有關鍵詞無匹配的活動，
+    再跨活動依前綴分桶（見 `auto_group` 內 Step 1b），真正實作此規則。
 """
 
 from __future__ import annotations
@@ -21,14 +32,14 @@ from typing import Any
 _KEYWORD_RULES: list[tuple[str, str, str]] = [
     (r"常態|永遠|always[_\- ]?on|evergreen", "G1", "主力常態"),
     (r"影片|video|reels", "G2", "主力影片"),
-    (r"檔期|活動|seasonal|event|promo", "G3", "官網檔期"),
+    (r"檔期|seasonal|\bevent\b|promo", "G3", "官網檔期"),
     (r"社群|social|自投|organic", "G4", "社群自投"),
-    (r"大包|大包裝|retargeting|再行銷|re[_\- ]?target|rt", "G5", "大包裝再行銷"),
-    (r"測試|導流|測試導流|test", "G7", "測試導流"),
+    (r"大包|大包裝|retargeting|再行銷|re[_\- ]?target", "G5", "大包裝再行銷"),
+    (r"測試|導流|測試導流|\btest\b", "G7", "測試導流"),
     (r"曝光|reach|品牌|brand|awareness", "G6", "曝光品牌"),
 ]
 
-# 共通前綴長度（提取活動名稱前 N 個中文字元做群組，例：「OB 嚴選 - 常態 A」
+# 共通前綴長度（提取活動名稱前 N 個字元做群組，例：「OB 嚴選 - 常態 A」
 # 與「OB 嚴選 - 影片 B」會以「OB 嚴選」前綴聚為一組候選）
 _COMMON_PREFIX_LEN = 4
 
@@ -53,20 +64,6 @@ def _match_keyword(name: str) -> tuple[str, str] | None:
     for pattern, gk, gn in _KEYWORD_RULES:
         if re.search(pattern, name, re.IGNORECASE):
             return gk, gn
-    return None
-
-
-def _common_prefix(names: list[str]) -> str | None:
-    """回傳所有名稱共有的前 N 個中文字元；不足 N 字回 None。"""
-    cleaned = [_normalize_name(n) for n in names if _normalize_name(n)]
-    if len(cleaned) < 2:
-        return None
-    first = cleaned[0]
-    if len(first) < _COMMON_PREFIX_LEN:
-        return None
-    candidate = first[:_COMMON_PREFIX_LEN]
-    if all(n.startswith(candidate) for n in cleaned):
-        return candidate
     return None
 
 
@@ -112,32 +109,58 @@ def auto_group(
             }
         ]
 
-    # Step 1：分桶（按關鍵詞 + 共同前綴）
+    # Step 1a：關鍵詞分桶
     buckets: dict[str, dict[str, Any]] = {}
+    unmatched: list[dict[str, Any]] = []
     for c in sorted_camps:
         cid = str(c.get("campaign_id"))
         name = _normalize_name(c.get("campaign_name"))
         matched = _match_keyword(name)
         if matched is not None:
             gk, gn = matched
+            bucket = buckets.setdefault(
+                gk, {"group_key": gk, "group_name": gn, "campaign_ids": []}
+            )
+            bucket["campaign_ids"].append(cid)
         else:
-            # 嘗試以共同前綴聚類（同一品牌的子活動）
-            prefix = _common_prefix([name])
-            if prefix:
-                gk = f"G_prefix_{prefix}"
-                gn = f"前綴 {prefix}"
-            else:
-                gk = "G_other"
-                gn = "其他"
-        bucket = buckets.setdefault(
-            gk, {"group_key": gk, "group_name": gn, "campaign_ids": []}
-        )
-        bucket["campaign_ids"].append(cid)
+            unmatched.append(c)
 
-    # Step 2：低占比小活動併入 G_other（不論原本分到哪）
     g_other = buckets.setdefault(
         "G_other", {"group_key": "G_other", "group_name": "其他", "campaign_ids": []}
     )
+
+    # Step 1b：關鍵詞無匹配的活動跨活動做前綴聚類（真正實作，取代舊版對
+    # 單一名稱呼叫 _common_prefix([name]) 恆回 None 的 dead code——docs/27
+    # 任務 3.1）。依名稱前 _COMMON_PREFIX_LEN 字元分桶；桶內需 ≥ 2 個活動
+    # 且合計花費占比 ≥ min_spend_share 才視為有效前綴組（單一活動的「前綴」
+    # 不構成分組意義，合計占比過低也不值得單獨成組），否則直接併入 G_other。
+    prefix_candidates: dict[str, list[dict[str, Any]]] = {}
+    for c in unmatched:
+        name = _normalize_name(c.get("campaign_name"))
+        prefix = name[:_COMMON_PREFIX_LEN] if len(name) >= _COMMON_PREFIX_LEN else ""
+        prefix_candidates.setdefault(prefix, []).append(c)
+
+    for prefix, members in prefix_candidates.items():
+        member_ids = [str(c["campaign_id"]) for c in members]
+        member_share = (
+            sum(float(c.get("spend") or 0.0) for c in members) / total_spend
+            if total_spend > 0
+            else 0.0
+        )
+        if prefix and len(members) >= 2 and member_share >= min_spend_share:
+            gk = f"G_prefix_{prefix}"
+            bucket = buckets.setdefault(
+                gk, {"group_key": gk, "group_name": f"前綴 {prefix}", "campaign_ids": []}
+            )
+            bucket["campaign_ids"].extend(member_ids)
+        else:
+            # 不成立有效前綴組（前綴太短 / 桶內僅 1 個活動 / 合計占比過低）
+            # → 直接併入 G_other；這裡是對 prefix_candidates（獨立字典）
+            # 迭代並寫入 g_other，並未迭代 buckets/g_other 自身，不會重蹈
+            # 2026-07-08「邊迭代 G_other 邊 append」無限迴圈的覆轍。
+            g_other["campaign_ids"].extend(member_ids)
+
+    # Step 2：低占比小活動併入 G_other（不論原本分到哪）
     final: dict[str, dict[str, Any]] = {}
     for gk, b in buckets.items():
         if gk == "G_other":

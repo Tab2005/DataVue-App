@@ -214,6 +214,15 @@
 
 **注意**：分組規則變更會改變新帳戶的 auto 分組結果；既有帳戶已存 DB 的分組不受影響（manual 優先、auto 不自動重算），無遷移需求。
 
+**驗收結果（2026-07-09 完成，採建議方案 a：真正實作前綴聚類）**：
+- 關鍵詞修正：G5 移除裸 `rt`（`retargeting|re[_\- ]?target|再行銷` 已足夠覆蓋，不需要短字串萬用匹配）；G7 的 `test` 改 `\btest\b`（保留 `測試|導流|測試導流` 不變，中文字無此類子字串誤判風險）；G3 移除 `活動`、`event` 加邊界為 `\bevent\b`。
+- 前綴聚類真正實作（取代 dead code）：`auto_group` 拆成 Step 1a（關鍵詞分桶，無匹配者收進 `unmatched` list）+ Step 1b（對 `unmatched` 依名稱前 `_COMMON_PREFIX_LEN` 字元跨活動分桶；桶內需 ≥ 2 個活動且合計花費占比 ≥ `min_spend_share` 才建立 `G_prefix_*` 組，否則整桶併入 `G_other`）。原本恆回 `None` 的 `_common_prefix()` 輔助函式已刪除（無其他呼叫點）。
+- 新的 Step 1b 對 `prefix_candidates`（獨立字典）迭代並寫入 `g_other["campaign_ids"]`，未迭代 `buckets`/`g_other` 自身，不會重蹈 2026-07-08「邊迭代 G_other 邊 append」無限迴圈的覆轍（`test_auto_group_terminates_with_unmatched_low_share_campaign` 既有回歸測試仍綠）。
+- 新增 8 項測試：`test_auto_group_smart_shopping_not_misclassified_as_retargeting`、`test_auto_group_contest_not_misclassified_as_test_traffic`、`test_auto_group_bare_test_keyword_still_matches_g7`（確認修正不是矯枉過正）、`test_auto_group_activity_keyword_no_longer_triggers_g3`、`test_auto_group_real_prefix_clustering_groups_unmatched_campaigns`（3 個同前綴活動正確聚為一組，舊版 dead code 下這 3 個活動只會各自散落 G_other）、`test_auto_group_prefix_cluster_requires_at_least_two_members`、`test_auto_group_prefix_cluster_requires_aggregate_share_above_threshold`（7 項 + 原 12 項 = 19 項，比計劃列的略多，補了「不是矯枉過正」與「單一活動不成組」「合計占比不足不成組」三個邊界案例）。
+- `tests/test_contribution_grouping.py` 19 項全綠；全套 contribution + permissions/auth/health 回歸 132 項全綠，無回歸。
+- **未完成項**：驗收標準「對真實測試帳戶跑一次 `auto_group`，人工核對分組結果無明顯誤判」——本開發環境無真實帳戶資料存取權限，未執行；建議上線後於 staging 或首個實際使用的帳戶上人工核對一次分組結果。
+- 分組規則變更確認不影響既有帳戶：`auto_group` 只在 `get_or_create_groups` 偵測「完全無分組」時才呼叫（manual 優先、auto 已存在則直接回傳，不重算），已存 DB 的分組不受本次規則變更影響。
+
 ---
 
 ## 四、第 4 波：前端一致性修正
