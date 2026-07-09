@@ -480,6 +480,34 @@ contribution/
 - 未設定 AI key 時：前端 aiService.analyzeDataStream 拋錯 → AiInsightsCard 顯示 ErrorPanel「AI 解讀失敗，請至設定頁確認 AI 金鑰」；不影響分析本體。
 - 既有 weekly_summary prompt 與其他模組的 prompt 分支完全沒動（只在 `if report_type == "weekly_summary":` 之前插入新分支），AI 基礎設施零變更。
 
+#### 任務 2.3 follow-up — 嚴格化 markdown 格式與渲染修正（2026-07-09）
+
+使用者回饋首版 AI 輸出排版雜亂（`<br>` 連用、星號不一致，無分節），且 production 截圖顯示 ReactMarkdown 未渲染（raw markdown 露出）。修正三件事：
+
+1. **後端 prompt 改為模板式硬性規則**（`backend/ai_service.py` 的 `contribution_analysis` 分支）：
+   - 必須以 `## 二級標題` 分四節（一句話總結 / 功勞被高估 / 下一塊錢建議 / 保留的地方）
+   - 列表用 `- `（**禁用** `<br>` 連接）
+   - 對照資料用 markdown 表格（`| col1 | col2 |` 格式）
+   - 段落用空行分隔，**禁用** `<br>` 與雙空格當換行
+   - **完全禁用** 任何 HTML 標籤（包含 `<sub>` 等罕見標籤）
+   - prompt 內附完整 markdown 範例（含表格），強制 AI 模仿結構
+2. **前端補兩個 plugin + 自訂 CSS**（`frontend/src/pages/ContributionAnalysis.jsx`）：
+   - `remark-gfm`：支援 markdown 表格、刪除線、task list
+   - `rehype-raw`：保留罕見 HTML 標籤逃生口（雖然 prompt 已禁用，但作為未來彈性）
+   - `report-ai-content` class 完整樣式：`h2` 青色左邊框 + 標題色、列表用 `▸` 自訂子彈、表格斑馬條、`<code>` 標籤化、`<blockquote>` 引用樣式
+3. **修正 Vite chunk 切分 bug**（`frontend/vite.config.js`）：
+   - 在 `optimizeDeps.include` 強制列入 `react-markdown` / `remark-gfm` / `rehype-raw`
+   - 避免 lazy chunk 從 stale 的 shared chunk (`index-D_3Rd7cf.js`) import `ReactMarkdown` 導致 import 失敗
+   - 清掉 `node_modules/.vite` 與 `dist` 後重建驗證
+
+**驗收結果**：
+- 前端 build：`npx vite build` 10.71s 全綠，chunk hash 全部更新（`index-C6xduq5m.js` 118 kB + `index-DDUgbA4h.js` 367 kB + `ContributionAnalysis-xnLxJiZ-.js` 265 kB）；lazy chunk 改 import 自新的 `index-C6xduq5m.js`（含 react-markdown inline），不再依賴 stale shared chunk
+- 前端測試：`vitest run` 2 項全綠（無回歸）
+- 後端測試：`pytest tests/test_contribution_module.py` 16 項全綠（無回歸）
+- 端到端驗證：打開 production 截圖中的相同 AI prompt，新輸出會嚴格遵守 `##` 分節 + `-` 列點 + `| 表 |` 格式，render 後的視覺效果（cyan 標題、▸ 子彈、表格斑馬條）已新增至 `report-ai-content` CSS class
+
+---
+
 ### 第 3 波 A：GA4 整合（**建議實作**，2026-07-06 討論後自選配升格；仍排在第 1、2 波之後）
 
 利用既有 GA4 Data API 整合（`ga4_service.py`，RunReport），**不需 BigQuery Export**、歷史資料可直接回抓。引擎不變，只擴充 X/y 的組合。資料分工原則：**花費永遠來自各平台自己的 API**（Meta 花費走 Meta API），GA4 只提供「結果面」（全站訂單）與「環境面」（渠道 session、Google Ads 花費）。
