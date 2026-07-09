@@ -427,6 +427,23 @@ class ReleaseActionRequest(BaseModel):
     note: str | None = None
 
 
+class ReleaseCandidateCreateRequest(BaseModel):
+    """建立一筆新的候選版本（docs/27 之外的 Andromeda 版本切換優化，方向 1）。
+
+    正式評分模型過去只能在種子資料建立的 2-3 筆 candidate 之間 approve/rollback，
+    沒有 API 能新增候選——這個端點補上這個入口，approve/rollback 的稽核流程
+    （drift + backtest 檢查、歷史紀錄、rollback 能力）完全不變，只是不再被
+    種子資料鎖死。"""
+
+    model_version: str = Field(min_length=1, max_length=100)
+    provider: str = "openrouter"
+    provider_model: str = Field(min_length=1, max_length=200)
+    # 留空則沿用目前 production 的 scoring_profile（多數情況下操作者只是想
+    # 換一顆 LLM 模型，不想連帶動到 prompt/校準邏輯）
+    scoring_profile: str | None = None
+    note: str | None = None
+
+
 class ReleaseActionResponse(BaseModel):
     status: str
     action: str

@@ -6,6 +6,7 @@ import { renderWithOutlet } from '../../test/renderWithOutlet';
 import { useModuleAccess } from '../../hooks/usePermission';
 import {
     approveMetaAndromedaRelease,
+    createMetaAndromedaReleaseCandidate,
     fetchMetaAndromedaReleaseOverview,
 } from '../../services/metaAndromedaReleaseService';
 import { fetchMetaAndromedaMonitoringSummary } from '../../services/metaAndromedaMonitoringService';
@@ -19,6 +20,7 @@ vi.mock('../../services/metaAndromedaReleaseService', () => ({
     approveMetaAndromedaRelease: vi.fn(),
     rejectMetaAndromedaRelease: vi.fn(),
     rollbackMetaAndromedaRelease: vi.fn(),
+    createMetaAndromedaReleaseCandidate: vi.fn(),
 }));
 
 vi.mock('../../services/metaAndromedaMonitoringService', () => ({
@@ -62,6 +64,15 @@ describe('MetaAndromedaRelease', () => {
         approveMetaAndromedaRelease.mockResolvedValue({
             action: 'approve',
             model_version: 'cand_v2',
+        });
+        createMetaAndromedaReleaseCandidate.mockResolvedValue({
+            model_version: 'cand_v2026_09_01_a',
+            release_status: 'candidate',
+            created_at: '2026-09-01T00:00:00Z',
+            pairwise_ranking_accuracy: 0.0,
+            mean_band_error: 0.0,
+            promotion_gate_summary: {},
+            is_demo_data: true,
         });
         vi.spyOn(window, 'prompt').mockReturnValue('Ship it');
     });
@@ -114,6 +125,43 @@ describe('MetaAndromedaRelease', () => {
 
         // 應該顯示警告訊息
         expect(screen.getByText(/再行核准新模型/)).toBeInTheDocument();
+    });
+
+    it('creates a new release candidate via the form (freely switchable like the backtest model)', async () => {
+        renderWithOutlet(<MetaAndromedaRelease />);
+
+        await screen.findByText('cand_v2');
+
+        fireEvent.click(screen.getByRole('button', { name: '+ New Candidate' }));
+
+        fireEvent.change(screen.getByPlaceholderText('cand_v2026_09_01_a'), {
+            target: { value: 'cand_v2026_09_01_a' },
+        });
+        fireEvent.change(screen.getByPlaceholderText('some-org/some-model:free'), {
+            target: { value: 'some-org/some-model:free' },
+        });
+
+        const createButton = screen.getByRole('button', { name: 'Create Candidate' });
+        expect(createButton).not.toBeDisabled();
+        fireEvent.click(createButton);
+
+        await waitFor(() => expect(createMetaAndromedaReleaseCandidate).toHaveBeenCalledWith({
+            model_version: 'cand_v2026_09_01_a',
+            provider: 'openrouter',
+            provider_model: 'some-org/some-model:free',
+            scoring_profile: null,
+            note: null,
+        }));
+        expect(fetchMetaAndromedaReleaseOverview).toHaveBeenCalledTimes(2);
+    });
+
+    it('disables the create-candidate submit button until required fields are filled', async () => {
+        renderWithOutlet(<MetaAndromedaRelease />);
+
+        await screen.findByText('cand_v2');
+        fireEvent.click(screen.getByRole('button', { name: '+ New Candidate' }));
+
+        expect(screen.getByRole('button', { name: 'Create Candidate' })).toBeDisabled();
     });
 
     it('blocks the page when module access is denied', () => {

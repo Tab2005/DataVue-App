@@ -2154,6 +2154,117 @@ class MetaAndromedaRepository:
 
         return {"total_feedback_events": len(feedback_rows), "reason_code_breakdown": breakdown}
 
+    def create_release_candidate(
+        self,
+        db: Session,
+        *,
+        model_version: str,
+        provider: str,
+        provider_model: str,
+        scoring_profile: str | None,
+        actor: str,
+        note: str | None,
+    ) -> dict:
+        """建立一筆新的候選版本（release_status="candidate"），讓 approve/rollback
+        流程不再被種子資料鎖死——過去唯一能建立 candidate 的地方是一次性的
+        `SEED_RELEASE_RECORDS`（只在表為空時執行一次），沒有 API 能新增候選，
+        這是「正式評分模型無法像回測模型一樣自由切換」的根本原因（approve
+        本身其實沒有強制的 backtest gate，只要求 model_version 對應的
+        candidate record 存在）。
+
+        同時 upsert 對應的 `MetaAndromedaModelRegistryEntry`（release_channel=
+        "candidate"）——approve 時 `_switch_model_registry_production()` 是靠
+        model_version 去查這張表，若只建立 release record 而沒有對應的
+        registry entry，approve 會靜默失敗（只記 warning，`is_current_production`
+        不會真的切換），所以兩者必須一起建立才能保證 approve 真的生效。
+
+        `model_version` 不可與現有 registry entry 重複（避免誤蓋掉正式/回測
+        用的既有設定）；`scoring_profile` 留空時沿用目前 production 的設定，
+        讓操作者只想換模型時不必連帶處理 prompt/校準邏輯。
+        """
+        existing_entry = (
+            db.query(MetaAndromedaModelRegistryEntry)
+            .filter(MetaAndromedaModelRegistryEntry.model_version == model_version)
+            .first()
+        )
+        if existing_entry is not None:
+            raise ReleaseCandidateExistsError(
+                f"model_version '{model_version}' 已存在於 model registry"
+                f"（release_channel={existing_entry.release_channel}），請換一個名稱"
+            )
+        existing_record = (
+            db.query(MetaAndromedaReleaseRecord)
+            .filter(MetaAndromedaReleaseRecord.model_version == model_version)
+            .first()
+        )
+        if existing_record is not None:
+            raise ReleaseCandidateExistsError(
+                f"model_version '{model_version}' 已存在一筆 release record"
+                f"（record_kind={existing_record.record_kind}），請換一個名稱"
+            )
+
+        current_production = (
+            db.query(MetaAndromedaModelRegistryEntry)
+            .filter(MetaAndromedaModelRegistryEntry.is_current_production == True)  # noqa: E712
+            .first()
+        )
+        resolved_scoring_profile = (
+            scoring_profile
+            or (current_production.scoring_profile if current_production else "creative_scoring_v2")
+        )
+
+        now = datetime.now(timezone.utc)
+        db.add(
+            MetaAndromedaModelRegistryEntry(
+                model_version=model_version,
+                provider=provider,
+                provider_model=provider_model,
+                scoring_profile=resolved_scoring_profile,
+                feature_manifest_id=f"fm_cand_{now.strftime('%Y%m%d%H%M%S')}",
+                release_channel="candidate",
+                source_of_truth="datavue.meta_andromeda.registry",
+                is_current_production=False,
+            )
+        )
+        db.add(
+            MetaAndromedaReleaseRecord(
+                record_kind="candidate",
+                model_version=model_version,
+                release_status="candidate",
+                approved_by=None,
+                approved_at=None,
+                created_at=now.isoformat(),
+                pairwise_ranking_accuracy=0.0,
+                mean_band_error=0.0,
+                promotion_gate_summary=None,
+                metrics_source="seed",
+                metrics_sample_count=None,
+            )
+        )
+        db.add(
+            MetaAndromedaReleaseEvent(
+                action="create_candidate",
+                model_version=model_version,
+                actor=actor,
+                note=note,
+                created_at=now.isoformat(),
+            )
+        )
+        db.commit()
+
+        from .model_registry import invalidate_registry_cache
+        invalidate_registry_cache()
+
+        return {
+            "model_version": model_version,
+            "release_status": "candidate",
+            "created_at": now.isoformat(),
+            "pairwise_ranking_accuracy": 0.0,
+            "mean_band_error": 0.0,
+            "promotion_gate_summary": {},
+            "is_demo_data": True,
+        }
+
     def perform_release_action(self, db: Session, action: str, model_version: str, actor: str, note: str | None):
         current = db.query(MetaAndromedaReleaseRecord).filter(MetaAndromedaReleaseRecord.record_kind == "current_production").first()
         previous = db.query(MetaAndromedaReleaseRecord).filter(MetaAndromedaReleaseRecord.record_kind == "previous_production").first()
@@ -2687,6 +2798,11 @@ class PromotionGateError(Exception):
         super().__init__(message)
         self.code = code
         self.message = message
+
+
+class ReleaseCandidateExistsError(Exception):
+    """Raised when create_release_candidate() is given a model_version that already
+    exists (either as a model registry entry or a release record)."""
 
 
 repository = MetaAndromedaRepository()

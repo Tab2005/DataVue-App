@@ -48,6 +48,8 @@ from .schemas import (
     PingResponse,
     ReleaseActionRequest,
     ReleaseActionResponse,
+    ReleaseCandidateCreateRequest,
+    ReleaseCandidateResponse,
     ReleaseMetricsRefreshResponse,
     ReleaseOverviewResponse,
     ReviewQueueDetailResponse,
@@ -725,6 +727,35 @@ async def analyze_feedback_reason_codes(
     (reject/revise = weak, approve = strong) agreed with the later-observed
     market band — validates whether a given reason_code is a trustworthy signal."""
     return MetaAndromedaService.analyze_feedback_reason_codes(db)
+
+
+@router.post("/release/candidates", response_model=ReleaseCandidateResponse, status_code=status.HTTP_201_CREATED)
+async def create_release_candidate(
+    payload: ReleaseCandidateCreateRequest,
+    user=Depends(get_current_meta_andromeda_user),
+    _access: bool = Depends(require_meta_andromeda_release),
+    db=Depends(get_db),
+):
+    """新增一筆候選版本，讓正式評分模型也能像回測模型一樣自由指定要試哪個
+    model_version——過去唯一能建立 candidate 的地方是一次性種子資料，approve/
+    rollback 因此被鎖死在種子時期固定的兩三筆版本。核准/回滾的稽核流程完全
+    不變，這裡只是補上「新增候選」這個原本缺少的入口。"""
+    from .repository import ReleaseCandidateExistsError, repository as _repo
+    try:
+        return _repo.create_release_candidate(
+            db,
+            model_version=payload.model_version,
+            provider=payload.provider,
+            provider_model=payload.provider_model,
+            scoring_profile=payload.scoring_profile,
+            actor=getattr(user, "email", None) or "datavue_operator",
+            note=payload.note,
+        )
+    except ReleaseCandidateExistsError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=str(exc),
+        ) from exc
 
 
 @router.post("/release/approve", response_model=ReleaseActionResponse)

@@ -1571,6 +1571,27 @@ class MetaAndromedaService:
         )
 
     @staticmethod
+    def create_release_candidate(
+        db,
+        *,
+        model_version: str,
+        provider: str,
+        provider_model: str,
+        scoring_profile: str | None,
+        actor: str,
+        note: str | None = None,
+    ) -> dict:
+        return repository.create_release_candidate(
+            db,
+            model_version=model_version,
+            provider=provider,
+            provider_model=provider_model,
+            scoring_profile=scoring_profile,
+            actor=actor,
+            note=note,
+        )
+
+    @staticmethod
     def refresh_release_metrics(db, model_version: str) -> dict:
         return repository.refresh_release_metrics(db, model_version)
 

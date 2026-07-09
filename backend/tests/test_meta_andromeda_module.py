@@ -1403,6 +1403,154 @@ def test_meta_andromeda_release_approve_updates_history(meta_andromeda_access):
 
 
 @pytest.mark.unit
+def test_meta_andromeda_create_release_candidate_appears_in_overview(meta_andromeda_access):
+    """新增候選版本：正式評分模型過去只能在種子資料建立的候選之間切換，
+    這個端點補上「自由新增候選」的入口（優化方向 1）。"""
+    response = meta_andromeda_access.post(
+        "/api/meta-andromeda/release/candidates",
+        json={
+            "model_version": "cand_v2026_09_01_manual",
+            "provider": "openrouter",
+            "provider_model": "some-org/some-new-model:free",
+            "note": "手動測試新候選",
+        },
+    )
+    assert response.status_code == 201
+    payload = response.json()
+    assert payload["model_version"] == "cand_v2026_09_01_manual"
+    assert payload["release_status"] == "candidate"
+    assert payload["is_demo_data"] is True
+
+    overview = meta_andromeda_access.get("/api/meta-andromeda/release/overview")
+    assert overview.status_code == 200
+    candidate_versions = [c["model_version"] for c in overview.json()["candidates"]]
+    assert "cand_v2026_09_01_manual" in candidate_versions
+
+    # 歷史紀錄也應留下一筆稽核事件
+    assert overview.json()["history"][0]["action"] == "create_candidate"
+    assert overview.json()["history"][0]["model_version"] == "cand_v2026_09_01_manual"
+
+
+@pytest.mark.unit
+def test_meta_andromeda_create_release_candidate_inherits_production_scoring_profile(meta_andromeda_access, db):
+    """未指定 scoring_profile 時應沿用目前 production 的設定，讓操作者只想
+    換模型時不必連帶處理 prompt/校準邏輯。
+
+    注意：`ensure_seed_data()` 不會建立 `MetaAndromedaModelRegistryEntry`
+    （那張表只由正式環境的 Alembic migration 種子資料填入，測試 DB 是空的），
+    故這裡先手動插入一筆 is_current_production=True 的 registry entry 來
+    模擬「目前線上已有一顆模型」的情境。"""
+    from database.models.meta_andromeda import MetaAndromedaModelRegistryEntry
+
+    db.add(MetaAndromedaModelRegistryEntry(
+        model_version="prod_test_existing",
+        provider="openrouter",
+        provider_model="some-org/existing-prod-model:free",
+        scoring_profile="creative_scoring_v_test",
+        feature_manifest_id="fm_test_existing",
+        release_channel="production",
+        source_of_truth="datavue.meta_andromeda.registry",
+        is_current_production=True,
+    ))
+    db.commit()
+
+    response = meta_andromeda_access.post(
+        "/api/meta-andromeda/release/candidates",
+        json={
+            "model_version": "cand_v2026_09_01_inherit",
+            "provider": "openrouter",
+            "provider_model": "some-org/another-model:free",
+        },
+    )
+    assert response.status_code == 201
+
+    entry = (
+        db.query(MetaAndromedaModelRegistryEntry)
+        .filter(MetaAndromedaModelRegistryEntry.model_version == "cand_v2026_09_01_inherit")
+        .first()
+    )
+    assert entry is not None
+    assert entry.release_channel == "candidate"
+    assert entry.is_current_production is False
+    assert entry.scoring_profile == "creative_scoring_v_test"
+
+
+@pytest.mark.unit
+def test_meta_andromeda_create_release_candidate_rejects_duplicate_model_version(meta_andromeda_access):
+    """model_version 已存在於 registry（例如既有的 production/candidate/
+    backtest_reference 版本）時應回 409，避免誤蓋掉既有設定。"""
+    response = meta_andromeda_access.post(
+        "/api/meta-andromeda/release/candidates",
+        json={
+            # 種子資料裡既有的 current_production model_version
+            "model_version": "prod_v2026_05_28",
+            "provider": "openrouter",
+            "provider_model": "some-org/duplicate-model:free",
+        },
+    )
+    assert response.status_code == 409
+
+
+@pytest.mark.unit
+def test_meta_andromeda_created_candidate_can_be_approved_to_production(meta_andromeda_access, db, monkeypatch):
+    """端到端：新增的候選版本可以直接走既有的 approve 流程上線，且 runtime
+    的 model_registry 真的會切換過去（不是只有 release record 變了）。
+
+    `model_registry._load_registry_from_db()` 內部用 `from database import
+    SessionLocal` 開全新 session（非 request-scoped 的 `db` fixture）——測試
+    的 `db` fixture 是綁在單一 connection 上、測試結束才 rollback 的交易，
+    另開一個 session 在 SQLite 下看不到這筆尚未真正 commit 到底層的資料，
+    故需 monkeypatch `database.SessionLocal` 讓它改用同一個 session（同檔案
+    第 2757 行既有測試已用過的手法）。
+
+    另外，本機/測試環境的 `META_ANDROMEDA_SCORING_PROVIDER` 若設為
+    "heuristic"（避免測試時打真實 API 的常見設定），`get_entry()` 會直接
+    短路回傳硬編碼的 heuristic entry，完全跳過 DB registry 解析——這與本測試
+    要驗證的「DB 是否真的切換」無關，故用 `monkeypatch.setenv` 暫時覆寫為
+    "auto"。同時 `META_ANDROMEDA_SCORING_MODEL`（若設定為非空字串）在
+    provider="auto" 時也會覆蓋 entry 的 `provider_model`（`get_entry()` 的
+    ops escape hatch 設計），故一併清空，才能驗證「DB 裡真正存的
+    provider_model」而不是被 env 覆寫後的值。"""
+    from modules.meta_andromeda.model_registry import model_registry, invalidate_registry_cache
+
+    monkeypatch.setenv("META_ANDROMEDA_SCORING_PROVIDER", "auto")
+    monkeypatch.setenv("META_ANDROMEDA_SCORING_MODEL", "")
+
+    class SessionProxy:
+        def __init__(self, session):
+            self._session = session
+
+        def __getattr__(self, name):
+            return getattr(self._session, name)
+
+        def close(self):
+            return None
+
+    monkeypatch.setattr("database.SessionLocal", lambda: SessionProxy(db))
+
+    create_resp = meta_andromeda_access.post(
+        "/api/meta-andromeda/release/candidates",
+        json={
+            "model_version": "cand_v2026_09_01_e2e",
+            "provider": "openrouter",
+            "provider_model": "some-org/e2e-model:free",
+        },
+    )
+    assert create_resp.status_code == 201
+
+    approve_resp = meta_andromeda_access.post(
+        "/api/meta-andromeda/release/approve",
+        json={"model_version": "cand_v2026_09_01_e2e", "note": "approve manually created candidate"},
+    )
+    assert approve_resp.status_code == 200
+
+    invalidate_registry_cache()
+    entry = model_registry.get_entry()
+    assert entry.model_version == "cand_v2026_09_01_e2e"
+    assert entry.provider_model == "some-org/e2e-model:free"
+
+
+@pytest.mark.unit
 def test_meta_andromeda_observation_import_accepts_supported_window_contract(meta_andromeda_access, monkeypatch):
     from modules.meta_andromeda.schemas import ObservedCreativeCandidate
 

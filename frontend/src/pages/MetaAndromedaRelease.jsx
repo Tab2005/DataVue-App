@@ -4,6 +4,7 @@ import { useOutletContext } from 'react-router-dom';
 import { useModuleAccess } from '../hooks/usePermission';
 import {
     approveMetaAndromedaRelease,
+    createMetaAndromedaReleaseCandidate,
     fetchMetaAndromedaReleaseOverview,
     rejectMetaAndromedaRelease,
     rollbackMetaAndromedaRelease,
@@ -19,6 +20,19 @@ const MetaAndromedaRelease = () => {
     const [error, setError] = useState(null);
     const [actionMessage, setActionMessage] = useState(null);
     const { hasAccess, loading: loadingModuleAccess } = useModuleAccess('meta_andromeda', selectedTeamId);
+
+    // 新增候選版本表單（讓正式評分模型也能像回測模型一樣自由指定要試哪個
+    // model_version，approve/rollback 的稽核流程完全不變）
+    const [showCreateCandidateForm, setShowCreateCandidateForm] = useState(false);
+    const [newCandidate, setNewCandidate] = useState({
+        model_version: '',
+        provider: 'openrouter',
+        provider_model: '',
+        scoring_profile: '',
+        note: '',
+    });
+    const [creatingCandidate, setCreatingCandidate] = useState(false);
+    const [createCandidateError, setCreateCandidateError] = useState(null);
 
     const t = (en, zh) => (language === 'en' ? en : zh);
 
@@ -176,6 +190,33 @@ const MetaAndromedaRelease = () => {
             setError(err.message || t('Failed to execute release action', '執行發佈動作失敗'));
         } finally {
             setSubmitting(false);
+        }
+    };
+
+    const handleCreateCandidate = async () => {
+        setCreatingCandidate(true);
+        setCreateCandidateError(null);
+        try {
+            await createMetaAndromedaReleaseCandidate({
+                model_version: newCandidate.model_version.trim(),
+                provider: newCandidate.provider,
+                provider_model: newCandidate.provider_model.trim(),
+                scoring_profile: newCandidate.scoring_profile.trim() || null,
+                note: newCandidate.note.trim() || null,
+            });
+            setActionMessage(
+                t(
+                    `New candidate created: ${newCandidate.model_version}`,
+                    `已新增候選版本：${newCandidate.model_version}`
+                )
+            );
+            setNewCandidate({ model_version: '', provider: 'openrouter', provider_model: '', scoring_profile: '', note: '' });
+            setShowCreateCandidateForm(false);
+            await loadOverview();
+        } catch (err) {
+            setCreateCandidateError(err.message || t('Failed to create candidate', '新增候選版本失敗'));
+        } finally {
+            setCreatingCandidate(false);
         }
     };
 
@@ -362,7 +403,97 @@ const MetaAndromedaRelease = () => {
 
                             {/* 候選版本 */}
                             <section style={panelStyle}>
-                                <h2 style={sectionTitleStyle}>{t('Candidates', '候選版本')}</h2>
+                                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
+                                    <h2 style={{ ...sectionTitleStyle, margin: 0 }}>{t('Candidates', '候選版本')}</h2>
+                                    <button
+                                        type="button"
+                                        style={buttonSecondaryStyle}
+                                        onClick={() => setShowCreateCandidateForm((prev) => !prev)}
+                                    >
+                                        {showCreateCandidateForm
+                                            ? t('Cancel', '取消')
+                                            : t('+ New Candidate', '+ 新增候選版本')}
+                                    </button>
+                                </div>
+
+                                {showCreateCandidateForm && (
+                                    <div style={{ ...detailCardStyle, marginBottom: '16px' }}>
+                                        <div style={{ fontSize: '0.82rem', color: 'var(--text-secondary)', marginBottom: '14px', lineHeight: 1.5 }}>
+                                            {t(
+                                                'Register a new candidate model_version so it can be approved/rolled back through the normal release workflow — no more being limited to the handful of candidates created by seed data.',
+                                                '註冊一個新的候選 model_version，之後就能走既有的核准／回滾流程上線——不再只能在種子資料建立的少數幾個候選之間切換。'
+                                            )}
+                                        </div>
+                                        {createCandidateError && (
+                                            <div style={{ ...errorPanelStyle, marginBottom: '12px' }}>{createCandidateError}</div>
+                                        )}
+                                        <div style={{ display: 'grid', gap: '10px' }}>
+                                            <label style={fieldLabelStyle}>
+                                                {t('Model Version (unique ID)', '模型版本（唯一識別碼）')}
+                                                <input
+                                                    type="text"
+                                                    style={fieldInputStyle}
+                                                    value={newCandidate.model_version}
+                                                    onChange={(e) => setNewCandidate((prev) => ({ ...prev, model_version: e.target.value }))}
+                                                    placeholder="cand_v2026_09_01_a"
+                                                />
+                                            </label>
+                                            <label style={fieldLabelStyle}>
+                                                {t('Provider', '供應商')}
+                                                <select
+                                                    style={fieldInputStyle}
+                                                    value={newCandidate.provider}
+                                                    onChange={(e) => setNewCandidate((prev) => ({ ...prev, provider: e.target.value }))}
+                                                >
+                                                    <option value="openrouter">openrouter</option>
+                                                    <option value="heuristic">heuristic</option>
+                                                </select>
+                                            </label>
+                                            <label style={fieldLabelStyle}>
+                                                {t('Provider Model', '供應商模型代號')}
+                                                <input
+                                                    type="text"
+                                                    style={fieldInputStyle}
+                                                    value={newCandidate.provider_model}
+                                                    onChange={(e) => setNewCandidate((prev) => ({ ...prev, provider_model: e.target.value }))}
+                                                    placeholder="some-org/some-model:free"
+                                                />
+                                            </label>
+                                            <label style={fieldLabelStyle}>
+                                                {t('Scoring Profile (optional, defaults to current production)', 'Scoring Profile（選填，留空沿用目前正式版）')}
+                                                <input
+                                                    type="text"
+                                                    style={fieldInputStyle}
+                                                    value={newCandidate.scoring_profile}
+                                                    onChange={(e) => setNewCandidate((prev) => ({ ...prev, scoring_profile: e.target.value }))}
+                                                    placeholder="creative_scoring_v2"
+                                                />
+                                            </label>
+                                            <label style={fieldLabelStyle}>
+                                                {t('Note (optional)', '備註（選填）')}
+                                                <input
+                                                    type="text"
+                                                    style={fieldInputStyle}
+                                                    value={newCandidate.note}
+                                                    onChange={(e) => setNewCandidate((prev) => ({ ...prev, note: e.target.value }))}
+                                                />
+                                            </label>
+                                            <button
+                                                type="button"
+                                                style={{
+                                                    ...buttonPrimaryStyle,
+                                                    opacity: creatingCandidate || !newCandidate.model_version.trim() || !newCandidate.provider_model.trim() ? 0.5 : 1,
+                                                    cursor: creatingCandidate || !newCandidate.model_version.trim() || !newCandidate.provider_model.trim() ? 'not-allowed' : 'pointer',
+                                                }}
+                                                disabled={creatingCandidate || !newCandidate.model_version.trim() || !newCandidate.provider_model.trim()}
+                                                onClick={handleCreateCandidate}
+                                            >
+                                                {creatingCandidate ? t('Creating...', '建立中...') : t('Create Candidate', '建立候選版本')}
+                                            </button>
+                                        </div>
+                                    </div>
+                                )}
+
                                 <div style={{ display: 'grid', gap: '12px' }}>
                                     {(overview?.candidates || []).map((candidate) => {
                                         const isDrifted = driftReport?.drift_status === 'drifted';
@@ -544,6 +675,23 @@ const buttonSecondaryStyle = {
     background: 'rgba(255,255,255,0.02)',
     color: 'var(--text-primary)',
     cursor: 'pointer',
+};
+
+const fieldLabelStyle = {
+    display: 'flex',
+    flexDirection: 'column',
+    gap: '6px',
+    fontSize: '0.8rem',
+    color: 'var(--text-secondary)',
+};
+
+const fieldInputStyle = {
+    padding: '10px 12px',
+    borderRadius: '8px',
+    border: '1px solid var(--glass-border)',
+    background: 'rgba(255,255,255,0.03)',
+    color: 'var(--text-primary)',
+    fontSize: '0.85rem',
 };
 
 const errorPanelStyle = {
