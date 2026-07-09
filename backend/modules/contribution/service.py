@@ -156,7 +156,7 @@ def update_groups(
 
 
 # ── 分析編排 ───────────────────────────────────────────────────────────
-def create_analysis(
+def prepare_analysis(
     db: Session,
     *,
     account_id: str,
@@ -167,12 +167,16 @@ def create_analysis(
     holdout_days: int | None = None,
     marginal_step: float | None = None,
     created_by: str | None = None,
-) -> tuple[ContributionSnapshot, str, str]:
-    """建 snapshot 並排程分析。
+) -> ContributionSnapshot:
+    """同步段：guardrail 預檢 + 建 snapshot（status=queued）。**不做 dispatch**。
 
-    回傳 (snapshot, queue_host, dispatch_mode)。
-      queue_host ∈ {'apscheduler', 'local_async', 'unavailable'}
-      dispatch_mode 為 router 用以決定 202 訊息的提示詞。
+    刻意與 dispatch 分離（docs/27 任務 1.2）：本函式全程為同步 DB + numpy
+    運算，FastAPI 端點應以 `asyncio.to_thread(prepare_analysis, ...)` 呼叫，
+    完成後回到 event loop 再呼叫 `_dispatch_analysis(snapshot.id)`——舊版
+    `create_analysis` 把這整段（含 `_assemble_arrays` 撈最多 180 天全活動
+    資料 + `check_guardrails` 的 numpy 運算）直接跑在 `async def` 端點的
+    event loop 執行緒上，等同 router.py 檔頭自述要避免的模式：一次慢查詢
+    或大量資料組裝就會把整個 backend（含 `/health`）擠到無回應。
     """
     # 1. 預檢：是否有資料、組別、guardrail
     groups = get_or_create_groups(db, account_id=account_id, updated_by=created_by)
@@ -223,10 +227,41 @@ def create_analysis(
     )
     db.commit()
     db.refresh(snapshot)
+    return snapshot
 
-    # 4. 排程：apscheduler → local_async → unavailable（失敗仍建 snapshot，使用者手動看）
+
+def create_analysis(
+    db: Session,
+    *,
+    account_id: str,
+    date_start: str,
+    date_end: str,
+    metric_key: str = "omni_purchase",
+    n_restarts: int | None = None,
+    holdout_days: int | None = None,
+    marginal_step: float | None = None,
+    created_by: str | None = None,
+) -> tuple[ContributionSnapshot, str, str]:
+    """相容包裝：同步 `prepare_analysis` + `_dispatch_analysis`（測試 / CLI
+    直呼叫用；FastAPI 端點改為 `await asyncio.to_thread(prepare_analysis, ...)`
+    後再於 event loop 呼叫 `_dispatch_analysis`，兩段分離見 router.py）。
+
+    回傳 (snapshot, queue_host, dispatch_mode)。
+      queue_host ∈ {'apscheduler', 'local_async', 'unavailable'}
+      dispatch_mode 為 router 用以決定 202 訊息的提示詞。
+    """
+    snapshot = prepare_analysis(
+        db,
+        account_id=account_id,
+        date_start=date_start,
+        date_end=date_end,
+        metric_key=metric_key,
+        n_restarts=n_restarts,
+        holdout_days=holdout_days,
+        marginal_step=marginal_step,
+        created_by=created_by,
+    )
     queue_host, dispatch_mode = _dispatch_analysis(snapshot.id)
-
     return snapshot, queue_host, dispatch_mode
 
 
@@ -570,6 +605,7 @@ __all__ = [
     "get_or_create_groups",
     "list_groups",
     "update_groups",
+    "prepare_analysis",
     "create_analysis",
     "process_analysis",
     "list_snapshots",

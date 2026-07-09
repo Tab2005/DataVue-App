@@ -263,6 +263,92 @@ def test_create_analysis_creates_snapshot_and_dispatches(
 
 
 @pytest.mark.integration
+def test_create_analysis_endpoint_offloads_to_thread_then_dispatches(
+    db, sample_user, monkeypatch
+):
+    """docs/27 任務 1.2 回歸：POST /analyses 端點的同步段（prepare_analysis：
+    guardrail 預檢 + `_assemble_arrays` + 建 snapshot）透過 `asyncio.to_thread`
+    執行，執行緒完成回到 event loop 後才呼叫 `_dispatch_analysis`。
+
+    直接 `asyncio.run()` 呼叫 router coroutine（略過 TestClient/lifespan，
+    docs/21 任務 1.4 附註過 HTTP e2e 在 TestClient lifespan 累積下會 OOM），
+    驗證 wiring 正確：回傳型別正確、dispatch 只在 snapshot 建立後才被呼叫恰
+    一次、且傳入的 snapshot_id 與回傳值一致。
+    """
+    # 注意：`modules/contribution/__init__.py` 執行 `from .router import router`
+    # 後，套件屬性 `modules.contribution.router` 被同名的 APIRouter 實例
+    # 覆蓋——連 `import modules.contribution.router as x` 這種寫法都是靠
+    # 屬性鏈存取（等同 `x = modules.contribution.router`），一樣會撈到被覆蓋
+    # 後的 APIRouter 而非子模組。唯一可靠做法是直接從 sys.modules 取子模組。
+    import sys
+
+    import modules.contribution.router  # noqa: F401 確保子模組已載入
+    from modules.contribution.router import create_analysis_endpoint
+    from modules.contribution.schemas import AnalysisCreateRequest
+
+    router_module = sys.modules["modules.contribution.router"]
+
+    _seed_180_days(db, "act_ep1")
+
+    dispatch_calls: list[str] = []
+
+    def _fake_dispatch(snapshot_id: str):
+        dispatch_calls.append(snapshot_id)
+        return ("local_async", "noop")
+
+    # router.py 是 `from .service import _dispatch_analysis`（值傳入時已綁定），
+    # 故需 patch router 模組自己的名稱，patch service_module 上的同名屬性
+    # 不會影響 router 已綁定的參照。
+    monkeypatch.setattr(router_module, "_dispatch_analysis", _fake_dispatch)
+
+    # docs/27 任務 1.3 帳號授權：直接呼叫 coroutine 略過 FastAPI DI，故
+    # `team` 參數不會被 Depends(get_current_team) 解析，需明確傳入 None
+    # （等同無 X-Team-ID header 的個人帳號範圍）；並 patch 帳號可視性判斷
+    # 為全放行，因為本測試驗證的是 to_thread + dispatch 的 wiring，不是
+    # 授權行為本身（授權行為由 test_contribution_account_access.py 驗證）。
+    async def _fake_ensure_account_access(account_id, *, team, user):
+        return None
+
+    monkeypatch.setattr(
+        router_module, "ensure_account_access", _fake_ensure_account_access
+    )
+
+    body = AnalysisCreateRequest(
+        account_id="act_ep1",
+        date_start="2026-01-01",
+        date_end="2026-06-30",
+        n_restarts=2,
+        holdout_days=30,
+    )
+    result = asyncio.run(
+        create_analysis_endpoint(
+            body, user=sample_user, _access=True, team=None, db=db
+        )
+    )
+
+    assert result.status == "queued"
+    assert result.queue_host == "local_async"
+    assert result.snapshot_id.startswith("csn_")
+    assert dispatch_calls == [result.snapshot_id]
+
+    final = repository.get_snapshot(db, result.snapshot_id)
+    assert final is not None
+    assert final.status == "queued"
+
+    # 清理
+    db.query(ContributionCampaignGroup).filter(
+        ContributionCampaignGroup.account_id == "act_ep1"
+    ).delete()
+    db.query(ContributionSnapshot).filter(
+        ContributionSnapshot.account_id == "act_ep1"
+    ).delete()
+    db.query(ContributionDailyMetric).filter(
+        ContributionDailyMetric.account_id == "act_ep1"
+    ).delete()
+    db.commit()
+
+
+@pytest.mark.integration
 def test_process_analysis_runs_to_completion(db, sample_user, monkeypatch):
     """process_analysis 從 queued 跑到 completed（單獨測試避免 transaction 共享問題）。"""
     _seed_180_days(db, "act_pa1")

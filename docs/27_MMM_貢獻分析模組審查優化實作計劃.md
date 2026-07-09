@@ -55,6 +55,11 @@
 
 **風險/回滾**：讀取型變更，最壞情況是多抓幾天（upsert 冪等，不產生重複列）；單檔回滾。
 
+**驗收結果（2026-07-09 完成）**：
+- `_resolve_fetch_window` 改為 `start = min(existing_end 次日, yesterday - (attribution_recency_days - 1))`，並 clamp 至 180 天全量下限；`existing_end` 解析失敗時防禦性退回全量視窗 + log warning。
+- 新增/改寫 4 項測試取代原本依賴「執行當下實際日曆日」的舊斷言（原測試用固定日期字串巧合通過，改為以 `date.today()` 動態推算，避免未來因日期改變而不穩定）：`test_resolve_fetch_window_recent_gap_uses_3_day_recency_window`（缺口在 3 天回補窗內，行為同舊版）、`test_resolve_fetch_window_fills_gap_beyond_recency_window`（缺口 9 天，起點正確從缺口次日開始）、`test_resolve_fetch_window_clamps_huge_gap_to_full_range`（缺口 400 天，clamp 回 180 天全量）、`test_resolve_fetch_window_falls_back_to_full_range_on_malformed_existing_end`（格式異常退回全量）。
+- `tests/test_contribution_data_source.py` 20 項全綠；與 module + engine 合跑共 51 項全綠，無回歸。
+
 ### 任務 1.2 — `POST /analyses` 同步段移出 event loop
 
 **問題**：`router.py` 的 `create_analysis_endpoint` 是 `async def`（`_dispatch_analysis` 需要 running loop），但直接呼叫的 `service.create_analysis` 內含 `get_or_create_groups`（DB）、`_assemble_arrays`（撈最多 180 天 × 全活動列）、`check_guardrails`（numpy）、`create_snapshot` + commit——全部同步跑在 event loop 上。這違反 `router.py:12-19` 檔頭自述的慣例，也是 docs/24 修過的同類根因（psycopg2 鎖等待無 timeout → 整個 backend 含 `/health` 凍結）。
@@ -74,21 +79,38 @@
 
 **風險/回滾**：行為等價重構；回滾兩檔即可。
 
+**驗收結果（2026-07-09 完成）**：
+- `service.py` 拆為 `prepare_analysis(db, ...)`（同步：guardrail 預檢 + `_assemble_arrays` + 建 snapshot + commit，不含 dispatch）+ 既有 `create_analysis` 降級為薄相容包裝（`prepare_analysis` + `_dispatch_analysis`，供測試/CLI 同步呼叫，行為與呼叫介面不變）。
+- `router.py` 的 `create_analysis_endpoint`：`snapshot = await asyncio.to_thread(prepare_analysis, db, ...)` → 回到 event loop 後才呼叫 `_dispatch_analysis(snapshot.id)`。沿用既有 request-scoped `Depends(get_db)` session（非另建短生命週期 session）——因為 `prepare_analysis` 只涉及本地快速 DB 查詢 + numpy guardrail 運算（無外部網路等待），與 `refresh_data` 需要跨 Meta API 長時間等待、必須避免佔用連線池的情境不同；經 `asyncio.to_thread` 丟到 threadpool 執行緒後即不再佔用 event loop，同一 session 物件在該執行緒內循序使用無執行緒安全疑慮。
+- 新增回歸測試 `test_create_analysis_endpoint_offloads_to_thread_then_dispatches`（`tests/test_contribution_service.py`）：直接 `asyncio.run()` 呼叫 router coroutine（略過 TestClient/lifespan，沿用任務 1.4 附註的「HTTP e2e 在 TestClient lifespan 累積下會 OOM」教訓），驗證 dispatch 只在 snapshot 建立後、於 event loop 上被呼叫恰一次。過程中發現一個匯入陷阱並記錄：`modules/contribution/__init__.py` 執行 `from .router import router` 後，套件屬性 `modules.contribution.router` 被同名 APIRouter 實例覆蓋，連 `import modules.contribution.router as x`（依屬性鏈解析）都會撈到被覆蓋後的物件而非子模組本身；必須改用 `sys.modules["modules.contribution.router"]` 直接取子模組才能正確 monkeypatch 其模組層級名稱。
+- `tests/test_contribution_service.py` 13 項全綠；與 module + engine + data_source + grouping 合跑共 76 項全綠，無回歸。
+
 ### 任務 1.3 — 快取讀取端點加帳號授權檢查
 
 **問題**：`/campaigns`、`/groups`（GET/PUT）、`GET /analyses`、`GET /analyses/{id}`、`PUT .../ai-summary` 都只掛 `require_contribution_module`，然後直接以 query 的 `account_id`（或 snapshot 內的 account_id）查本地快取表。fb_ads 的帳號權限靠「用使用者自己的 token 打 Meta API」隱性把關；contribution 讀本地快取，這層把關不存在——任何有 contribution 模組權限的使用者可用任意 `account_id` 讀到其他團隊帳號的花費、轉換、分析結果與 AI 解讀。docs/21 §3.4「可存取的帳號範圍沿用 FB token 權限（同 fb_ads）」目前只對 `/data/refresh` 成立。
 
-**變更檔案**：`modules/contribution/dependencies.py`（新增帳號授權依賴）、`modules/contribution/router.py`（全讀取端點掛上）、`modules/contribution/service.py`（snapshot 類端點需先取 snapshot 再驗 account）、`tests/test_contribution_module.py`
+**變更檔案**：`modules/contribution/dependencies.py`（新增帳號授權依賴）、`modules/contribution/router.py`（相關端點掛上）、`modules/fb_ads/accounts_service.py`（新增 `resolve_accessible_account_ids`）、`tests/test_contribution_module.py`（既有 fixture 補 patch）、`tests/test_contribution_service.py`（POST /analyses wiring 測試補 team 參數）、`tests/test_contribution_account_access.py`（新增）
 
-**實作步驟**：
-1. 新增 `verify_account_access(user, account_id, db) -> bool`：復用團隊帳號清單的既有查詢（`TeamService.getAllAdAccounts` 的後端對應——實作前先確認後端既有「使用者可存取帳號清單」的服務函數，沿用之，不重造）。結果在 request 生命週期內查一次即可，無需快取層。
-2. `account_id` 為 query/body 參數的端點（campaigns / groups GET+PUT / analyses list / data refresh）：授權失敗回 403，訊息不洩漏該帳號是否存在資料。
-3. `snapshot_id` 為路徑參數的端點（analyses detail / ai-summary）：先取 snapshot，再以 `snapshot.account_id` 驗授權；未授權回 **404**（不回 403，避免探測 snapshot 存在性）。
-4. 測試補：授權使用者正常存取；同模組權限、不同帳號範圍的使用者存取他人 account_id → 403；存取他人 snapshot_id → 404。
+**實作步驟（實作時對照原計劃的兩處調整，理由詳列於下）**：
+1. 研究既有「使用者可存取帳號清單」機制後發現：這不是一張靜態 DB 白名單表，而是 `routers/facebook.py` 的 `/api/ad-accounts` 端點即時判斷——owner 見自己 FB token 下的全部帳號（不受限制）；非 owner 依 `Team.visible_ad_account_ids`（JSON 白名單字串欄位）過濾「team token 可見的帳號」。前端 `apiClient.js` 已對每個請求全域帶上 `X-Team-ID` header（來自 `localStorage.selected_team_id`），故 contribution 端點可直接沿用既有 `get_current_team` 依賴（驗證 header 對應的 team 且使用者為成員，否則 403）取得 team context。
+2. 新增 `modules.fb_ads.accounts_service.resolve_accessible_account_ids(current_user, team) -> (ids: set, error: str | None)`：複製 `/api/ad-accounts` 的可視範圍判斷邏輯（owner 不受白名單限制、非 owner 取交集），但只回傳 ID 集合（同時含 `act_123`/`123` 兩種型式）供 containment 檢查，且不依賴 request-scoped DB session（team 的白名單資料已是傳入 ORM 物件的屬性，無需額外查詢）——複用既有 `get_all_ad_accounts`（含 Redis 快取 + Meta API），不重造 token/快取邏輯。
+3. `modules/contribution/dependencies.py` 新增三個授權工具：`ensure_account_access`（async，供已是 `async def` 的端點如 POST /analyses 直接 `await`）、`verify_account_access_or_403`（sync 包裝，內部 `asyncio.run(...)`，供 6 個既有 `def` 端點呼叫——這些端點在 Starlette threadpool 執行緒內執行、無 running event loop，`asyncio.run` 安全）、`verify_snapshot_account_access_or_404`（snapshot 類端點用，未授權回 404 而非 403，與「snapshot 不存在」同訊息）。
+4. **調整一：`/data/refresh` 刻意不套用此檢查**（原計劃列了此端點）。原因：`/data/refresh` 已一律用「呼叫者自己的」FB token 抓資料（不接受 team token override），Meta 自己的帳號權限本身即是等同 fb_ads 的隱性門檻；而該端點刻意不持有 request-scoped `Depends(get_db)` 以避免在等待 Meta API 期間佔用連線池（2026-07-08 事故教訓，見該端點既有註解）。加上 `team=Depends(get_current_team)` 會 transitively 拉入一個貫穿整個請求生命週期的 `Depends(get_db)` session（FastAPI 對 generator 依賴的 teardown 時機是整個請求完成後，不是子依賴解析完成後），等同重新引入同一類連線池風險，故不在此端點加上檢查；已在 `dependencies.py` 檔頭與程式碼註解說明此決策。
+5. **調整二：額外把 `POST /analyses`（發起分析）也納入檢查**（原計劃只列 campaigns / groups GET+PUT / analyses **列表** / data refresh，未列 POST 建立分析）。理由：POST /analyses 同樣是讀寫本地快取表（`_assemble_arrays` 撈資料 + 建 snapshot），沒有 Meta API 的隱性門檻，任何模組使用者原本可對任意 `account_id` 發起分析並建立 snapshot（雖然結果需再透過 GET /analyses/{id} 才能讀到，該端點已受保護，但仍應在寫入源頭一併把關，且此端點已持有 `Depends(get_db)`，加上 `get_current_team` 不會新增連線池風險）。
+6. 6 個套用檢查的端點：`GET /campaigns`、`GET /groups`、`PUT /groups`、`POST /analyses`、`GET /analyses`（列表）、`GET /analyses/{id}`、`PUT .../ai-summary`（`GET /analyses/{id}` 與 PUT ai-summary 皆先取 snapshot 再驗 `snapshot.account_id`，404 語意一致）。
 
 **驗收標準**：新增授權測試全綠；既有 16 項 module 測試無回歸（測試 fixture 的使用者需補帳號授權關聯）；手動以兩個不同團隊的使用者驗證互相讀不到對方帳號。
 
 **風險/回滾**：行為變更（未授權者從 200 變 403/404）——上線前確認現有使用者的帳號授權資料完整，避免誤傷合法使用者；回滾移除依賴即可。
+
+**驗收結果（2026-07-09 完成）**：
+- 既有 `tests/test_contribution_module.py` 的 `contribution_authorized_client` fixture 新增 monkeypatch：把 `resolve_accessible_account_ids` patch 為「任何 account_id 皆視為可視」（`_AllowAllSet.__contains__` 恆真），因為該檔案 16 項測試聚焦模組骨架/分組/分析編排等既有業務邏輯，不是在測授權行為本身；授權行為改由新檔案獨立驗證。修正時同樣踩到與任務 1.2 相同的套件屬性遮蔽陷阱，改用 `sys.modules["modules.contribution.dependencies"]` 取得真正子模組再 patch。
+- 新增 `tests/test_contribution_account_access.py` 15 項全綠：
+  - 6 項純函數層（`resolve_accessible_account_ids`，mock `get_all_ad_accounts`）：無 team 個人範圍不受限、owner 不受白名單限制、非 owner 依白名單取交集、非 owner 無白名單時僅受 team token 範圍限制、錯誤傳遞為空集合、白名單 JSON 格式異常保守回空集合。
+  - 9 項 router 層（`TestClient` + `app.dependency_overrides[get_current_team]` + mock `get_all_ad_accounts`）：`/campaigns` owner 內外帳號 200/403、非 owner 白名單內外 200/403；`/groups` GET+PUT 未授權 403；`GET /analyses`（列表）未授權 403；`GET /analyses/{id}` 未授權回 **404**（非 403）且訊息與「真的不存在」的 snapshot 完全相同（用以驗證無法從回應分辨兩種情況）、授權後 200；`PUT .../ai-summary` 未授權 404。
+  - 過程中發現本專案的全域 `HTTPException` handler（`main.py`）把錯誤回應改寫為 `{"error": ..., "error_code": ..., "error_type": ...}`（非 FastAPI 預設的 `{"detail": ...}`），測試斷言需讀 `"error"` 欄位，已修正並加註解避免未來重踩。
+  - `tests/test_contribution_service.py` 的新端點 wiring 測試（任務 1.2 新增）補上 `team=None` 顯式傳入（直接呼叫 coroutine 略過 FastAPI DI，`Depends(get_current_team)` 的預設值不會被解析）與 `ensure_account_access` 的 no-op monkeypatch。
+- 全套回歸：`test_contribution_module`(16) + `test_contribution_engine`(15) + `test_contribution_data_source`(20) + `test_contribution_grouping`(11) + `test_contribution_service`(13) + `test_contribution_account_access`(15) + `test_permissions` + `test_auth` + `test_health` = **115 項全綠**，無回歸。
 
 ---
 

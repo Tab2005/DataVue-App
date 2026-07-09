@@ -193,18 +193,43 @@ def _resolve_fetch_window(
     """決定本次抓取的 [since, until]。
 
     db_window 為 None → 抓「近 MAX_DATE_RANGE_DAYS 天」全量初始化。
-    db_window 為 (existing_start, existing_end) → 只補最近 attribution_recency_days
-    天（歸因回補窗口）以降低 API 呼叫量，同時保留長歷史以供後續分析使用。
+    db_window 為 (existing_start, existing_end) → 從 existing_end 次日開始補
+    「缺口」，並至少涵蓋最近 attribution_recency_days 天（歸因回補窗口）——
+    取兩者較早者為起點，確保「已有資料末日之後」與「近幾天回補」都被涵蓋。
+    缺口超過 MAX_DATE_RANGE_DAYS 天（例如帳戶停用數月後重新啟用）時 clamp
+    回全量視窗上限，不無限往前抓。
+
+    舊版曾在有 db_window 時完全忽略 existing_end、一律只抓最近 3 天——超過
+    3 天未刷新即產生永久資料缺口，缺口日在 _assemble_arrays 組裝時變成
+    spend=0/y=0 的假資料直接進模型，guardrail 攔不到（docs/27 任務 1.1）。
 
     until 永遠為「昨天」（歸因資料通常有 1 天延遲；抓今天資料會被回補覆蓋）。
     """
     today = date.today()
     yesterday = today - timedelta(days=1)
+    earliest_allowed_start = yesterday - timedelta(days=MAX_DATE_RANGE_DAYS - 1)
+
     if db_window is None:
-        start = yesterday - timedelta(days=MAX_DATE_RANGE_DAYS - 1)
-    else:
-        _existing_start, _existing_end = db_window
-        start = yesterday - timedelta(days=attribution_recency_days - 1)
+        return earliest_allowed_start.isoformat(), yesterday.isoformat()
+
+    _existing_start, existing_end_str = db_window
+    recency_start = yesterday - timedelta(days=attribution_recency_days - 1)
+    try:
+        existing_end = date.fromisoformat(existing_end_str)
+    except (TypeError, ValueError):
+        # 快取的 max(date) 格式異常：防禦性退回全量視窗，不假設任何缺口範圍
+        logger.warning(
+            "[Contribution] _resolve_fetch_window: existing_end 格式異常 (%r)，"
+            "退回全量 %d 天視窗",
+            existing_end_str,
+            MAX_DATE_RANGE_DAYS,
+        )
+        return earliest_allowed_start.isoformat(), yesterday.isoformat()
+
+    gap_start = existing_end + timedelta(days=1)
+    start = min(gap_start, recency_start)
+    if start < earliest_allowed_start:
+        start = earliest_allowed_start
     return start.isoformat(), yesterday.isoformat()
 
 

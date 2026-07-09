@@ -43,8 +43,16 @@ def contribution_unauthorized_client(client, db, sample_user):
 
 
 @pytest.fixture
-def contribution_authorized_client(client, db, sample_user):
-    """已登入且「授予 contribution 模組存取」的客戶端 → /ping 200、其餘 501。"""
+def contribution_authorized_client(client, db, sample_user, monkeypatch):
+    """已登入且「授予 contribution 模組存取」的客戶端 → /ping 200、其餘 501。
+
+    docs/27 任務 1.3 加了帳號層級授權（依 team context 過濾可視 account_id，
+    見 dependencies.py）。既有測試皆聚焦模組骨架/業務邏輯本身、不是在測授權
+    行為，故此 fixture 把帳號層級的可視集合判斷 patch 成「任何 account_id
+    皆視為可視」（`_AllowAllSet.__contains__` 恆真），等同「未設定 team
+    context 時的個人帳號範圍」語意；授權行為本身由專門的
+    test_contribution_account_access.py 驗證。
+    """
     module = db.query(Module).filter(Module.key == "contribution").first()
     if module is None:
         module = Module(key="contribution", name="貢獻分析", enabled=True, sort_order=5)
@@ -57,6 +65,24 @@ def contribution_authorized_client(client, db, sample_user):
     app.dependency_overrides[get_current_contribution_user] = lambda: sample_user
     app.dependency_overrides[auth_dependencies.get_current_user] = lambda: sample_user
     app.dependency_overrides[auth_dependencies.get_db] = lambda: db
+
+    import sys
+
+    dependencies_module = sys.modules["modules.contribution.dependencies"]
+
+    class _AllowAllSet(set):
+        def __contains__(self, item):
+            return True
+
+    async def _fake_resolve_accessible_account_ids(current_user, team):
+        return _AllowAllSet(), None
+
+    monkeypatch.setattr(
+        dependencies_module,
+        "resolve_accessible_account_ids",
+        _fake_resolve_accessible_account_ids,
+    )
+
     yield client, sample_user
     app.dependency_overrides.pop(get_current_contribution_user, None)
     app.dependency_overrides.pop(auth_dependencies.get_current_user, None)

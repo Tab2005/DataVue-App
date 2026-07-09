@@ -16,6 +16,12 @@ Contribution Module - Router（docs/21 第 3.5 節）
     鎖沒有預設 timeout，一次鎖等待就會把整個 backend（含 /health）無限凍結。
   - 只有真正 await 外部 I/O 或需操作 event loop（背景任務 dispatch）的端點
     維持 `async def`，且其中的同步段落必須包 `asyncio.to_thread`。
+
+帳號層級授權（docs/27 任務 1.3）：讀寫本地快取表的端點（campaigns / groups
+GET+PUT / analyses 列表與單筆 / ai-summary）皆加上 `team=Depends(get_current_team)`
++ `verify_account_access_or_403` / `verify_snapshot_account_access_or_404`，
+未授權回 403（帳號類）或 404（snapshot 類，避免洩漏存在性）。`POST
+/data/refresh` 刻意不套用，原因見 dependencies.py 檔頭說明。
 """
 
 import asyncio
@@ -25,6 +31,7 @@ from datetime import datetime, timedelta, timezone
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query, status
 
 from database import get_db
+from database.models.team import Team
 from .data_source import (
     ContributionAPIError,
     ContributionDataSourceError,
@@ -33,9 +40,13 @@ from .data_source import (
     fetch_account_daily_metrics,
 )
 from .dependencies import (
+    ensure_account_access,
     get_current_contribution_user,
+    get_current_team,
     require_contribution_module,
     require_contribution_operate,
+    verify_account_access_or_403,
+    verify_snapshot_account_access_or_404,
 )
 from .repository import repository as contribution_repository
 from .schemas import (
@@ -60,14 +71,15 @@ from .service import (
     GuardrailRejected,
     SnapshotNotCompleted,
     SnapshotNotFound,
-    create_analysis,
     get_or_create_groups,
     get_snapshot,
     list_groups,
     list_snapshots,
+    prepare_analysis,
     save_ai_summary,
     update_groups,
 )
+from .service import _dispatch_analysis
 
 logger = logging.getLogger(__name__)
 
@@ -91,8 +103,9 @@ async def ping(
 def list_campaigns(
     account_id: str = Query(..., description="廣告帳戶 ID（act_ 格式）"),
     metric_key: str = Query("omni_purchase", description="轉換指標鍵"),
-    _user=Depends(get_current_contribution_user),
+    user=Depends(get_current_contribution_user),
     _access: bool = Depends(require_contribution_module),
+    team: Team | None = Depends(get_current_team),
     db=Depends(get_db),
 ):
     """列出帳戶近 N 天活動（含花費/轉換彙總），供分組 UI。
@@ -100,6 +113,7 @@ def list_campaigns(
     讀取 contribution_daily_metrics 快取表並 GROUP BY campaign_id 彙總；
     若快取為空回空 list（前端會引導使用者先按 /data/refresh 抓取）。
     """
+    verify_account_access_or_403(account_id, team=team, user=user)
     summaries = contribution_repository.list_campaign_summaries(
         db, account_id=account_id, metric_key=metric_key
     )
@@ -115,6 +129,7 @@ def get_groups(
     account_id: str = Query(..., description="廣告帳戶 ID"),
     _user=Depends(get_current_contribution_user),
     _access: bool = Depends(require_contribution_module),
+    team: Team | None = Depends(get_current_team),
     db=Depends(get_db),
 ):
     """讀取活動分組；無則觸發自動分組並回傳。
@@ -124,6 +139,7 @@ def get_groups(
       - 僅有 auto → 回 auto
       - 完全無 → 跑 grouping.auto_group() 並寫入
     """
+    verify_account_access_or_403(account_id, team=team, user=_user)
     # updated_by 外鍵指向 users.id（內部 ID），不可用 google_id——曾因取值
     # 順序寫反觸發 ForeignKeyViolation（SQLite 測試不驗外鍵故未攔到）
     user_id = getattr(_user, "id", None)
@@ -149,6 +165,7 @@ def update_groups_endpoint(
     body: GroupsUpdateRequest,
     user=Depends(get_current_contribution_user),
     _access: bool = Depends(require_contribution_operate),
+    team: Team | None = Depends(get_current_team),
     db=Depends(get_db),
 ):
     """覆寫分組（前端編輯後整批提交）；寫入後 source='manual'。
@@ -158,6 +175,7 @@ def update_groups_endpoint(
       - 全部活動 ID 必須屬於該帳戶、不可丟失
     失敗回 422（語義錯誤）並列出原因。
     """
+    verify_account_access_or_403(body.account_id, team=team, user=user)
     # updated_by → users.id（內部 ID），同 get_groups 的取值規則
     user_id = getattr(user, "id", None)
     payload = [g.model_dump() for g in body.groups]
@@ -197,6 +215,7 @@ async def create_analysis_endpoint(
     body: AnalysisCreateRequest,
     user=Depends(get_current_contribution_user),
     _access: bool = Depends(require_contribution_operate),
+    team: Team | None = Depends(get_current_team),
     db=Depends(get_db),
 ):
     """發起 MMM 分析（背景任務）。
@@ -204,11 +223,19 @@ async def create_analysis_endpoint(
     流程：guardrail 預檢 → 建 snapshot(status=queued) → 排程
     （apscheduler → local_async fallback）。回 202 + snapshot_id；
     前端以 GET /analyses/{snapshot_id} 輪詢狀態。
+
+    同步段（guardrail 預檢 + `_assemble_arrays` 撈資料 + 建 snapshot）以
+    `asyncio.to_thread` 丟到 threadpool 執行，執行緒回到 event loop 後才
+    呼叫 `_dispatch_analysis`（docs/27 任務 1.2）：這段同步 DB + numpy
+    運算若直接跑在 event loop 執行緒上，等同本檔頭慣例明文禁止的模式——
+    一次慢查詢就會把整個 backend（含 `/health`）擠到無回應。
     """
+    await ensure_account_access(body.account_id, team=team, user=user)
     # created_by → users.id（內部 ID），同 get_groups 的取值規則
     user_id = getattr(user, "id", None)
     try:
-        snapshot, queue_host, _mode = create_analysis(
+        snapshot = await asyncio.to_thread(
+            prepare_analysis,
             db,
             account_id=body.account_id,
             date_start=body.date_start,
@@ -225,6 +252,10 @@ async def create_analysis_endpoint(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
             detail={"errors": exc.violations},
         ) from exc
+
+    # snapshot 已建立（status=queued）；dispatch 需要 running event loop，
+    # 在 threadpool 執行緒內呼叫會抓不到 loop，故回到這裡才呼叫。
+    queue_host, _mode = _dispatch_analysis(snapshot.id)
 
     if queue_host == "unavailable":
         # scheduler 與 local loop 都不可用：仍建了 snapshot，但明示前端需重試
@@ -252,11 +283,13 @@ def list_analyses(
     account_id: str = Query(..., description="廣告帳戶 ID"),
     page: int = Query(1, ge=1),
     page_size: int = Query(20, ge=1, le=100),
-    _user=Depends(get_current_contribution_user),
+    user=Depends(get_current_contribution_user),
     _access: bool = Depends(require_contribution_module),
+    team: Team | None = Depends(get_current_team),
     db=Depends(get_db),
 ):
     """分析列表（分頁）。"""
+    verify_account_access_or_403(account_id, team=team, user=user)
     items, total = list_snapshots(
         db, account_id=account_id, page=page, page_size=page_size
     )
@@ -283,8 +316,9 @@ def list_analyses(
 @router.get("/analyses/{snapshot_id}", response_model=AnalysisDetailResponse)
 def get_analysis(
     snapshot_id: str,
-    _user=Depends(get_current_contribution_user),
+    user=Depends(get_current_contribution_user),
     _access: bool = Depends(require_contribution_module),
+    team: Team | None = Depends(get_current_team),
     db=Depends(get_db),
 ):
     """單筆分析結果（含 results/diagnostics；processing 時前端輪詢）。"""
@@ -295,6 +329,9 @@ def get_analysis(
             status_code=status.HTTP_404_NOT_FOUND,
             detail=f"snapshot {snapshot_id} 不存在",
         )
+    verify_snapshot_account_access_or_404(
+        s.account_id, team=team, user=user, snapshot_id=snapshot_id
+    )
     return AnalysisDetailResponse(
         snapshot_id=s.id,
         account_id=s.account_id,
@@ -320,8 +357,9 @@ def get_analysis(
 def update_ai_summary(
     snapshot_id: str,
     body: AiSummaryUpdateRequest,
-    _user=Depends(get_current_contribution_user),
+    user=Depends(get_current_contribution_user),
     _access: bool = Depends(require_contribution_module),
+    team: Team | None = Depends(get_current_team),
     db=Depends(get_db),
 ):
     """儲存 AI 白話解讀到 snapshot（docs/21 任務 2.3）。
@@ -334,7 +372,20 @@ def update_ai_summary(
       - snapshot.status != 'completed' → 409（避免把 AI 解讀綁到
         尚未跑完的 snapshot 上）
       - 寫入成功回傳 200 + 寫入時間
+
+    帳號授權（docs/27 任務 1.3）：寫入前先取 snapshot 驗證 account_id 可視，
+    不可視回 404（與「snapshot 不存在」同訊息，避免洩漏存在性）。
     """
+    try:
+        existing = get_snapshot(db, snapshot_id)
+    except SnapshotNotFound:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"snapshot {snapshot_id} 不存在",
+        )
+    verify_snapshot_account_access_or_404(
+        existing.account_id, team=team, user=user, snapshot_id=snapshot_id
+    )
     try:
         updated = save_ai_summary(
             db,

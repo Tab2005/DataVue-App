@@ -172,7 +172,7 @@ def test_parse_insights_row_drops_missing_campaign_or_date():
     ) is None
 
 
-# ── 2. 抓取視窗 ────────────────────────────────────────────────────────
+# ── 2. 抓取視窗（docs/27 任務 1.1：從「固定只補 3 天」改為「補缺口」） ──
 @pytest.mark.unit
 def test_resolve_fetch_window_full_when_no_db_state():
     since, until = _resolve_fetch_window(None)
@@ -183,12 +183,61 @@ def test_resolve_fetch_window_full_when_no_db_state():
 
 
 @pytest.mark.unit
-def test_resolve_fetch_window_incremental_uses_3_day_recent_window():
-    """db_window 有值時只補最近 3 天（歸因回補），不重新抓整段歷史。"""
-    since, until = _resolve_fetch_window(("2026-01-01", "2026-07-05"))
-    from datetime import date
+def test_resolve_fetch_window_recent_gap_uses_3_day_recency_window():
+    """existing_end 就是最近幾天內（無實質缺口）時，等同舊行為只補 3 天。
+
+    使用相對於 date.today() 的動態日期，避免測試依賴執行當下的實際日曆日。
+    """
+    from datetime import date, timedelta
+    today = date.today()
+    existing_end = (today - timedelta(days=2)).isoformat()  # 前天，落在 3 天回補窗內
+    since, until = _resolve_fetch_window(("2026-01-01", existing_end))
     delta = (date.fromisoformat(until) - date.fromisoformat(since)).days + 1
     assert delta == 3
+
+
+@pytest.mark.unit
+def test_resolve_fetch_window_fills_gap_beyond_recency_window():
+    """existing_end 超過 3 天前（有實質缺口）時，起點應從 existing_end 次日開始補，
+    而非固定只抓最近 3 天——否則缺口日期永遠不會被回補（docs/27 任務 1.1 修復目標）。
+    """
+    from datetime import date, timedelta
+    today = date.today()
+    yesterday = today - timedelta(days=1)
+    existing_end_date = today - timedelta(days=10)  # 10 天前，缺口 = 9 天
+    since, until = _resolve_fetch_window(("2026-01-01", existing_end_date.isoformat()))
+    expected_start = existing_end_date + timedelta(days=1)
+    assert since == expected_start.isoformat()
+    assert until == yesterday.isoformat()
+    delta = (date.fromisoformat(until) - date.fromisoformat(since)).days + 1
+    assert delta == 9  # 涵盖整段缺口，不遺漏
+
+
+@pytest.mark.unit
+def test_resolve_fetch_window_clamps_huge_gap_to_full_range():
+    """缺口超過 MAX_DATE_RANGE_DAYS（帳戶停用數月後重新啟用）時 clamp 回全量視窗，
+    不應無限往前抓。
+    """
+    from datetime import date, timedelta
+    today = date.today()
+    yesterday = today - timedelta(days=1)
+    ancient_end = (today - timedelta(days=400)).isoformat()  # 遠超 180 天缺口
+    since, until = _resolve_fetch_window(("2025-01-01", ancient_end))
+    expected_start = yesterday - timedelta(days=ds.MAX_DATE_RANGE_DAYS - 1)
+    assert since == expected_start.isoformat()
+    assert until == yesterday.isoformat()
+
+
+@pytest.mark.unit
+def test_resolve_fetch_window_falls_back_to_full_range_on_malformed_existing_end():
+    """existing_end 格式異常時防禦性退回全量視窗，不假設任何缺口範圍。"""
+    from datetime import date, timedelta
+    today = date.today()
+    yesterday = today - timedelta(days=1)
+    since, until = _resolve_fetch_window(("2026-01-01", "not-a-date"))
+    expected_start = yesterday - timedelta(days=ds.MAX_DATE_RANGE_DAYS - 1)
+    assert since == expected_start.isoformat()
+    assert until == yesterday.isoformat()
 
 
 # ── 3. 端對端抓取（mock httpx） ─────────────────────────────────────────
