@@ -6,6 +6,8 @@ import ReportTableSection from './ReportTableSection';
 import ReportNoteEditor from './ReportNoteEditor';
 import { FiCpu, FiPrinter, FiRefreshCcw, FiZap } from 'react-icons/fi';
 import ReactMarkdown from 'react-markdown';
+import remarkGfm from 'remark-gfm';
+import rehypeRaw from 'rehype-raw';
 import { getMetricConfig } from '../../constants/analyticsConfig';
 
 const WeeklyReportTemplate = ({ 
@@ -193,7 +195,12 @@ const WeeklyReportTemplate = ({
         }}>
           {report.ai_summary ? (
              <div className="report-ai-content" style={{ color: 'var(--text-primary)', lineHeight: '1.8' }}>
-                <ReactMarkdown>{report.ai_summary}</ReactMarkdown>
+                <ReactMarkdown
+                    remarkPlugins={[remarkGfm]}
+                    rehypePlugins={[rehypeRaw]}
+                >
+                    {report.ai_summary}
+                </ReactMarkdown>
              </div>
           ) : (
             <div style={{ color: 'var(--text-tertiary)', textAlign: 'center', padding: '20px' }}>

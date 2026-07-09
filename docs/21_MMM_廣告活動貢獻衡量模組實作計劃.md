@@ -506,6 +506,20 @@ contribution/
 - 後端測試：`pytest tests/test_contribution_module.py` 16 項全綠（無回歸）
 - 端到端驗證：打開 production 截圖中的相同 AI prompt，新輸出會嚴格遵守 `##` 分節 + `-` 列點 + `| 表 |` 格式，render 後的視覺效果（cyan 標題、▸ 子彈、表格斑馬條）已新增至 `report-ai-content` CSS class
 
+#### 任務 2.3 follow-up（cont.）— 將相同渲染修正套用到週報 AI（2026-07-09）
+
+使用者反應週報的「IV. AI 成效分析摘要」也是同樣的問題（`<br>` 連用、無分節），套用相同的修正：
+
+1. **後端抽共用 markdown 格式規範**（`backend/ai_service.py`）：把 `markdown_format_spec` 抽成 `if report_type == "contribution_analysis":` 之外的共用常數，`weekly_summary` 的 `ga4` 與 `fb_ads` 兩個分支都用 f-string 引用它，確保三個 prompt 強制同樣的 markdown 紀律（`##` 分節、`-` 列點、表格、禁用 `<br>`）。三個 prompt 都附完整 markdown 範例。
+2. **前端 `WeeklyReportTemplate.jsx` 補 plugin**：加入 `remarkGfm` / `rehypeRaw` 傳入 `<ReactMarkdown>`，與 `ContributionAnalysis` 一致。
+3. **CSS 抽到全域 `index.css`**：原本 `.report-ai-content` 樣式只內嵌在 `ContributionAnalysis.jsx` 的 `<style>` 標籤，週報頁面吃不到。改放到 `frontend/src/index.css` 的「AI 白話解讀」區段，全域生效。
+
+**驗證結果**：
+- 前端 build：`npx vite build` 12.19s 全綠；HTML 結構正確：`index.html` 載入 `index-l2ZxnnAd.js`（主程式）並 `<link rel="modulepreload">` 預載 `index-DSR8MZKe.js`（含 react-markdown + remark-gfm + rehype-raw pre-bundled 依賴）；`WeeklyReportTemplate-*.js` 與 `ContributionAnalysis-*.js` 都從 `index-DSR8MZKe.js` import `M`（= react-markdown），無 stale shared chunk 依賴
+- 前端測試：貢獻頁 2 項全綠（無回歸）
+- 後端測試：貢獻模組全 3 個檔共 43 項全綠（無回歸）
+- 已知預存失敗 4 項（`MetaAndromedaScoreLab / ReviewQueue / Monitoring`）與本任務無關，於任務 2.3 驗收記錄已標記
+
 ---
 
 ### 第 3 波 A：GA4 整合（**建議實作**，2026-07-06 討論後自選配升格；仍排在第 1、2 波之後）

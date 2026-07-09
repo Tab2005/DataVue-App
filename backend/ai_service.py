@@ -97,8 +97,8 @@ class AIService:
 
     @staticmethod
     def analyze_data(
-        data: Dict[str, Any], 
-        context: str, 
+        data: Dict[str, Any],
+        context: str,
         api_key: Optional[str] = None,
         provider: str = "zeabur",
         model: str = "deepseek/deepseek-v4-flash",
@@ -110,11 +110,25 @@ class AIService:
         Analyzes the provided data using the LLM.
         Returns a generator for streaming response.
         """
-        
+
+        # 共用 markdown 格式規範（任務 2.3 follow-up）：所有 prompt 都引用此段，
+        # 確保前端 ReactMarkdown + remark-gfm 能正確渲染，視覺一致。
+        markdown_format_spec = """
+        嚴格的 Markdown 格式規範（前端用 ReactMarkdown 渲染，必須遵守才能正確顯示）：
+        - 必須用 `## 二級標題` 開頭分節（**不要**用 `###` 或更大，**不要**用粗體偽裝標題）
+        - 列點必須用 `- ` 開頭（**禁止**用 `<br>` 連接，**禁止**用全形 `·` 或 `、` 拼湊偽清單）
+        - 比較資料用 markdown 表格（`| col1 | col2 |` 格式），**禁止**用 inline 文字拼湊
+        - 關鍵數字與組名用 `**粗體**`，**禁止**用其他格式強調
+        - 段落之間用**空一行**分隔，**禁止**用 `<br>` 或 `  `（雙空格）當換行
+        - 條列與表格上下都要空一行
+        - **完全禁止**使用任何 HTML 標籤（`<br>` `<sub>` 等）
+        - 表情符號僅在分節標題開頭可加一個（✅ ⚠️ ❓），內文不要濫用
+        """
+
         # Build system prompt based on report type, period and module type
         if report_type == "contribution_analysis":
             # MMM 廣告活動貢獻衡量白話解讀（docs/21 任務 2.3）
-            system_prompt = """
+            system_prompt = f"""
             您是一位資深行銷顧問，正在向一位「不懂統計」的行銷主管口頭報告 MMM 廣告活動貢獻分析的結果。
             您的目標是把 MMM 引擎算出的 results / diagnostics 翻成白話文，讓對方可以據此討論預算配置。
 
@@ -133,15 +147,7 @@ class AIService:
             6. **禁止 LaTeX 符號**（不要寫 \\rightarrow、\\Delta 等），改用 → 或一般文字。
             7. **語言**：繁體中文（台灣市場用語，例如「工作」「曝光」）。
 
-            嚴格的 Markdown 格式規範（前端用 ReactMarkdown 渲染，必須遵守才能正確顯示）：
-            - 必須用 `## 二級標題` 開頭分節（**不要**用 `###` 或更大，**不要**用粗體偽裝標題）
-            - 列點必須用 `- ` 開頭（**禁止**用 `<br>` 連接，**禁止**用全形 `·` 或 `、` 拼湊偽清單）
-            - 比較資料用 markdown 表格（`| col1 | col2 |` 格式），**禁止**用 inline 文字拼湊
-            - 關鍵數字與組名用 `**粗體**`，**禁止**用其他格式強調
-            - 段落之間用**空一行**分隔，**禁止**用 `<br>` 或 `  `（雙空格）當換行
-            - 條列與表格上下都要空一行
-            - **完全禁止**使用任何 HTML 標籤（`<br>` `<sub>` 等）
-            - 表情符號僅在分節標題開頭可加一個（✅ ⚠️ ❓），內文不要濫用
+            {markdown_format_spec}
 
             報告結構（依此順序產出四段，每段都用 `##` 開頭）：
             ```markdown
@@ -181,20 +187,33 @@ class AIService:
                 system_prompt = f"""
                 您是一位資深的 網站分析師 與 增長顧問，正在協助客戶撰寫一份 GA4 {label}分析報告。
                 您的目標是根據提供的數據，產出一份專業且具備深度洞察的摘要。
-                
-                重要規則：
-                1. **禁止使用 LaTeX 數學符號** (例如 $\rightarrow$ 或 \Delta)，請改用一般文字或符號 (例如 → 或 成長/下降)。
-                2. **語言與語氣**：必須使用繁體中文 (Traditional Chinese)，且專業術語需符合台灣市場慣例 (例如：使用「工作階段」而非「回話」)。
-                3. **數據導向**：對關鍵指標數字加粗，並解釋數據背後的商業意義。
 
-                報告結構：
-                1. **數據總覽 ({label}核心指標)**：總結網站流量（使用者、工作階段）與品質指標（參與率、平均參與時間），並與前期對比。
-                2. **流量來源分析**：識別表現最優異或成長最顯著的流量管道。
-                3. **轉換與收益分析**：分析轉換數、轉換率與收益趨勢。
-                4. **優化行動建議**：提供 2-3 個針對網站內容優化、流量獲取策略或轉換漏斗改善的具體建議。
+                {markdown_format_spec}
+
+                報告結構（依此順序產出四段，每段都用 `##` 開頭）：
+                ```markdown
+                ## 數據總覽（{label}核心指標）
+                （總結網站流量、使用者、工作階段與品質指標，並與前期對比，用 **粗體** 標關鍵數字）
+
+                ## 流量來源分析
+                - **來源 A**：工作階段大約 X–Y 之間，轉換率 Z%
+                - **來源 B**：…
+
+                | 來源 | 工作階段 | 轉換率 | 趨勢 |
+                |---|---|---|---|
+                | Organic | … | … | 上升/下降 |
+                | Paid | … | … | 上升/下降 |
+
+                ## 轉換與收益分析
+                （重點說明哪個事件/頁面表現最好，與前期對比）
+
+                ## 優化行動建議
+                1. 針對 X 流量來源的具體建議
+                2. 針對 Y 頁面轉換的具體建議
+                3. 針對 Z 漏斗的具體建議
+                ```
 
                 語氣：專業、銳利、數據導向。
-                格式：Markdown。
                 """
             else:
                 # Facebook Ads Prompt (Default)
@@ -209,16 +228,30 @@ class AIService:
                 system_prompt = f"""
                 您是一位資深的 Facebook 廣告顧問，正在協助客戶撰寫一份{label}分析報告。
                 您的目標是根據提供的數據，產出一份專業且具備深度洞察的摘要。
-                
-                報告結構：
-                1. **執行摘要 ({label}總結)**：用 2-3 句話總結整體表現（花費、ROAS、成交數），並嘗試與前期對比。
-                2. **亮點分析**：識別 1-2 個表現優秀的廣告活動或組合（例如高 ROAS 或低 CPA）。
-                3. **優化空間與異常檢測**：{period_focus}
-                4. **後續行動建議**：提供 2-3 個最具體且可執行的建議。
-     
+
+                {markdown_format_spec}
+
+                報告結構（依此順序產出四段，每段都用 `##` 開頭）：
+                ```markdown
+                ## 執行摘要（{label}總結）
+                （2-3 句話總整體表現：花費、ROAS、成交數，並與前期對比）
+
+                ## 亮點分析
+                - **活動/組合 A**：ROAS 大約 X–Y 之間，CPA 表現穩定
+                - **活動/組合 B**：…
+
+                ## 優化空間與異常檢測
+                {period_focus}
+                （以 `- ` 列點呈現問題與異常）
+
+                ## 後續行動建議
+                1. 針對 X 活動的具體建議（含預算調整）
+                2. 針對 Y 受眾的測試建議
+                3. 針對 Z 素材的替換建議
+                ```
+
                 語氣：專業、鼓勵、數據導向。
                 語言：繁體中文 (Traditional Chinese)。
-                格式：Markdown（對關鍵指標數字加粗）。
                 """
         else:
             system_prompt = """

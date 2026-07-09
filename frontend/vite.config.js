@@ -8,8 +8,34 @@ export default defineConfig({
     react(),
     tailwindcss(),
   ],
-  // 強制把 react-markdown 預打包進 entry chunk，避免 lazy chunk 引用
-  // 共享 chunk 時遭遇 hash 漂移導致 import 失敗（任務 2.3 follow-up）。
+  // 強制把 react-markdown + 插件預打包進 entry chunk（不能拆出共享 chunk，
+  // 否則 lazy chunk 引用 shared chunk 時遇到 hash 漂移會 import 失敗 → 渲染壞掉）。
+  // 做法：用 manualChunks 把 react-markdown 與所有 plugin 歸到 entry chunk（空字串函式
+  // 會回傳 undefined → Vite 把它放進 entry chunk），同時 optimizeDeps 預熱依賴。
+  build: {
+    rollupOptions: {
+      output: {
+        manualChunks(id) {
+          if (
+            id.includes('node_modules/react-markdown') ||
+            id.includes('node_modules/remark-gfm') ||
+            id.includes('node_modules/rehype-raw') ||
+            id.includes('node_modules/mdast') ||
+            id.includes('node_modules/micromark') ||
+            id.includes('node_modules/unist') ||
+            id.includes('node_modules/hast') ||
+            id.includes('node_modules/unified') ||
+            id.includes('node_modules/bail') ||
+            id.includes('node_modules/trough') ||
+            id.includes('node_modules/vfile') ||
+            id.includes('node_modules/character-entities')
+          ) {
+            return ''; // → merge into entry chunk
+          }
+        },
+      },
+    },
+  },
   optimizeDeps: {
     include: ['react-markdown', 'remark-gfm', 'rehype-raw'],
   },
