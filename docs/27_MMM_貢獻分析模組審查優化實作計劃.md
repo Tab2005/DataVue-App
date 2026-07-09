@@ -1,0 +1,294 @@
+# 27. MMM 貢獻分析模組審查優化實作計劃
+
+- **日期**：2026-07-09
+- **性質**：實作計劃（依 2026-07-09 對 docs/21 已完成範圍的全面程式碼審查展開）
+- **依據**：審查範圍涵蓋 `backend/modules/contribution/`（engine / data_source / grouping / service / repository / router / schemas / dependencies）、`backend/database/models/contribution.py`、`core/scheduler.py` 貢獻分支、`backend/ai_service.py` contribution prompt、`frontend/src/pages/ContributionAnalysis.jsx`、`frontend/src/services/contributionService.js`
+- **審查總評**：整體架構品質高（純函數引擎、分層乾淨、token 不外洩、2026-07-08 兩型事故防禦皆落實、91 項測試覆蓋主要路徑）。發現的問題集中在三類測試照不到的地方：**時間推移類**（資料缺口、殭屍 snapshot）、**跨請求邊界類**（event loop 阻塞、授權、task GC）、**規則與真實資料的錯配**（分組誤判、活動改名、期間不一致）。
+- **執行原則**：每個任務獨立可測、可回滾；第 1 波為 hotfix 性質，完成並通過驗收前不進入後續波次；第 2–4 波可依資源並行；第 5 波為效能與 polish，排在 docs/25 worker 架構之前先做止血。
+
+---
+
+## 零、問題總覽與波次對映
+
+| # | 問題 | 嚴重度 | 波次任務 |
+|---|---|---|---|
+| 1 | 增量抓取只補最近 3 天、不補缺口 → 永久資料空洞污染模型 | 高 | 1.1 |
+| 2 | `POST /analyses` 在 event loop 上執行同步 DB + numpy 工作 | 高 | 1.2 |
+| 3 | 快取讀取端點缺帳號授權檢查 → 跨帳號資料可讀 | 高 | 1.3 |
+| 4 | `loop.create_task` fire-and-forget 有被 GC 的風險 | 中 | 2.1 |
+| 5 | 殭屍 snapshot（重啟 / 503 路徑後永久卡 queued/processing） | 中 | 2.2 |
+| 6 | 分組關鍵詞誤判（裸 `rt`、`test`、`活動` 無邊界） | 中 | 3.1 |
+| 7 | 前綴聚類為 dead code（`_common_prefix([name])` 永遠 None） | 中 | 3.1 |
+| 8 | `holdout_days` 可 ≥ 資料天數 → 空訓練集 silently 產出全 0 結果 | 中 | 2.3 |
+| 9 | 活動改名 → `GROUP BY (id, name)` 彙總分裂 | 中 | 2.4 |
+| 10 | 歷史快照用「現在的分組」渲染，改組後對不上 | 中 | 4.1 |
+| 11 | 自報占比用全歷史彙總、MMM 用快照區間 → 對照失真且餵給 AI | 中 | 4.2 |
+| 12 | 邊際步長 per-group，UI 只顯示第一組的 step | 中 | 4.3 |
+| 13 | 引擎效能：adstock 重算 5 萬次（實際只需 ~42 次）、ridge 固定 4000 迭代 | 低（收益高） | 5.1 |
+| 14 | `list_campaign_summaries` 的 `days` 參數為死碼 | 低 | 4.2（併入） |
+| 15 | `r2_holdout=None`（holdout 零變異）→ `np.median` TypeError | 低 | 2.3（併入） |
+| 16 | `upsert_daily_metrics` docstring 與程式碼矛盾（fetched_at） | 低 | 5.2 |
+| 17 | GroupEditor 無法刪空組 → 使用者卡死於 422 | 低 | 4.4 |
+| 18 | refresh 固定等 1.5 秒，全量抓取遠不止 → 使用者困惑 | 低 | 4.5 |
+| 19 | 未分組活動轉換計入 y、花費被丟棄 → baseline 被墊高且無警告 | 低 | 5.3 |
+| 20 | Hill K 分位數自含 holdout 的全序列取（輕微選模 leakage） | 記錄 | 不修（見七） |
+
+---
+
+## 一、第 1 波：Hotfix（高優先，先行完成）
+
+### 任務 1.1 — 增量抓取補缺口
+
+**問題**：`data_source.py` 的 `_resolve_fetch_window` 收到 `db_window` 後把 `(existing_start, existing_end)` 拆包即丟棄，一律只抓最近 3 天。使用者超過 3 天未刷新（極常見），中間日期永遠不會回補；缺口日在 `_assemble_arrays` 中變成 spend=0、y=0 的假資料直接進模型，guardrail 攔不到（天數與日均轉換仍可能達標），分析結果靜默劣化。docs/21 §3.2 明寫「已有資料的日期區間只補**缺口**與最近 3 天」，實作只做了後半。
+
+**變更檔案**：`modules/contribution/data_source.py`、`tests/test_contribution_data_source.py`
+
+**實作步驟**：
+1. `_resolve_fetch_window` 改為：
+   - `db_window is None` → 維持現行「近 180 天全量」。
+   - 有 `db_window` → `start = min(existing_end 次日, yesterday - (attribution_recency_days - 1))`，即「從既有資料末日的次日開始補、且至少涵蓋歸因回補 3 天」；再 clamp 至 `yesterday - (MAX_DATE_RANGE_DAYS - 1)` 下限（超過 180 天的缺口退回全量視窗）。
+   - `existing_end` 解析失敗（非 ISO 格式）→ 防禦性退回全量視窗並記 warning。
+2. 缺口可能極大（如停用數月），單次視窗最大即 180 天，已有 `on_rows` 邊抓邊寫與 `MAX_PAGES` 防護，不需額外分段。
+3. 測試補：`existing_end = 昨天`（→ 只補 3 天，現行為）、`existing_end = 10 天前`（→ 從 9 天前補到昨天）、`existing_end = 200 天前`（→ 退回 180 天全量）、`existing_end` 格式異常（→ 全量 + warning）。
+
+**驗收標準**：上述 4 情境測試全綠；對測試帳戶模擬「快取末日為 N 天前」時，抓取視窗起點 = `min(末日+1, 昨天-2)`；既有 13 項 data_source 測試無回歸。
+
+**風險/回滾**：讀取型變更，最壞情況是多抓幾天（upsert 冪等，不產生重複列）；單檔回滾。
+
+### 任務 1.2 — `POST /analyses` 同步段移出 event loop
+
+**問題**：`router.py` 的 `create_analysis_endpoint` 是 `async def`（`_dispatch_analysis` 需要 running loop），但直接呼叫的 `service.create_analysis` 內含 `get_or_create_groups`（DB）、`_assemble_arrays`（撈最多 180 天 × 全活動列）、`check_guardrails`（numpy）、`create_snapshot` + commit——全部同步跑在 event loop 上。這違反 `router.py:12-19` 檔頭自述的慣例，也是 docs/24 修過的同類根因（psycopg2 鎖等待無 timeout → 整個 backend 含 `/health` 凍結）。
+
+**變更檔案**：`modules/contribution/service.py`、`modules/contribution/router.py`、`tests/test_contribution_service.py`
+
+**實作步驟**：
+1. `service.create_analysis` 拆為兩段：
+   - `prepare_analysis(db, ...)`（同步）：預檢 + 建 snapshot + commit，回傳 `snapshot`。**不做 dispatch**。
+   - `_dispatch_analysis(snapshot_id)` 維持原樣（需在 event loop 上呼叫）。
+2. router 端點改為：`snapshot = await asyncio.to_thread(prepare_analysis, ...)` → 回到 loop 後呼叫 `_dispatch_analysis(snapshot.id)`。
+   - 注意：`to_thread` 內不可用 router 的 `Depends(get_db)` session（session 非 thread-safe 且會橫跨等待期間），比照 `refresh_data` 的短生命週期 session 模式，在 thread 內自建 `SessionLocal` 並於 finally close。router 端點簽名移除 `db=Depends(get_db)`。
+3. 既有 `create_analysis` 保留為薄包裝（`prepare` + `dispatch`）供測試與 CLI 同步呼叫，`__all__` 不變。
+4. 測試補：mock `prepare_analysis` 確認 router 走 `to_thread`；service 測試改對 `prepare_analysis` 斷言（原 12 項語義不變）。
+
+**驗收標準**：POST /analyses 行為不變（202 / 422 / 503 路徑全部保留）；service 12 項 + module 16 項無回歸；以人工注入 `time.sleep(3)` 於 `_assemble_arrays` 模擬慢查詢時，並發的 `/health` 請求不被阻塞（本地驗證一次即可，不留為自動化測試）。
+
+**風險/回滾**：行為等價重構；回滾兩檔即可。
+
+### 任務 1.3 — 快取讀取端點加帳號授權檢查
+
+**問題**：`/campaigns`、`/groups`（GET/PUT）、`GET /analyses`、`GET /analyses/{id}`、`PUT .../ai-summary` 都只掛 `require_contribution_module`，然後直接以 query 的 `account_id`（或 snapshot 內的 account_id）查本地快取表。fb_ads 的帳號權限靠「用使用者自己的 token 打 Meta API」隱性把關；contribution 讀本地快取，這層把關不存在——任何有 contribution 模組權限的使用者可用任意 `account_id` 讀到其他團隊帳號的花費、轉換、分析結果與 AI 解讀。docs/21 §3.4「可存取的帳號範圍沿用 FB token 權限（同 fb_ads）」目前只對 `/data/refresh` 成立。
+
+**變更檔案**：`modules/contribution/dependencies.py`（新增帳號授權依賴）、`modules/contribution/router.py`（全讀取端點掛上）、`modules/contribution/service.py`（snapshot 類端點需先取 snapshot 再驗 account）、`tests/test_contribution_module.py`
+
+**實作步驟**：
+1. 新增 `verify_account_access(user, account_id, db) -> bool`：復用團隊帳號清單的既有查詢（`TeamService.getAllAdAccounts` 的後端對應——實作前先確認後端既有「使用者可存取帳號清單」的服務函數，沿用之，不重造）。結果在 request 生命週期內查一次即可，無需快取層。
+2. `account_id` 為 query/body 參數的端點（campaigns / groups GET+PUT / analyses list / data refresh）：授權失敗回 403，訊息不洩漏該帳號是否存在資料。
+3. `snapshot_id` 為路徑參數的端點（analyses detail / ai-summary）：先取 snapshot，再以 `snapshot.account_id` 驗授權；未授權回 **404**（不回 403，避免探測 snapshot 存在性）。
+4. 測試補：授權使用者正常存取；同模組權限、不同帳號範圍的使用者存取他人 account_id → 403；存取他人 snapshot_id → 404。
+
+**驗收標準**：新增授權測試全綠；既有 16 項 module 測試無回歸（測試 fixture 的使用者需補帳號授權關聯）；手動以兩個不同團隊的使用者驗證互相讀不到對方帳號。
+
+**風險/回滾**：行為變更（未授權者從 200 變 403/404）——上線前確認現有使用者的帳號授權資料完整，避免誤傷合法使用者；回滾移除依賴即可。
+
+---
+
+## 二、第 2 波：正確性補強（中優先）
+
+### 任務 2.1 — 背景 task 強引用防 GC
+
+**問題**：`service.py` `_dispatch_analysis` 的 `loop.create_task(_run())` 回傳值未保留；CPython 文件明確警告未被引用的 task 可能在執行中被垃圾回收。分析要跑 ~50 秒，風險真實存在。
+
+**變更檔案**：`modules/contribution/service.py`、`tests/test_contribution_service.py`
+
+**實作步驟**：module-level `_background_tasks: set[asyncio.Task] = set()`；`task = loop.create_task(_run())` → `_background_tasks.add(task)` → `task.add_done_callback(_background_tasks.discard)`。測試斷言 dispatch 後 task 進入集合、完成後自動移除。
+
+**驗收標準**：新測試綠；dispatch local_async 路徑既有測試無回歸。
+
+### 任務 2.2 — 殭屍 snapshot 回收
+
+**問題**：apscheduler 是 in-memory date-trigger——server 在 job 執行前重啟，snapshot 永久卡 `queued`；`process_analysis` 中途重啟則永久卡 `processing`；503 路徑（scheduler 與 local loop 皆不可用）也留下 queued snapshot。前端輪詢無限轉圈。Andromeda 有 `cleanup_stale_score_events` 對應機制，contribution 沒有。
+
+**變更檔案**：`modules/contribution/repository.py`（新增 `mark_stale_snapshots_failed`）、`core/scheduler.py`（開機掃描）、`tests/test_contribution_service.py`
+
+**實作步驟**：
+1. `repository.mark_stale_snapshots_failed(db, *, queued_older_than_minutes=10, processing_older_than_minutes=30) -> int`：把超時的 queued/processing snapshot 標為 `failed`，`error_message` 分別為 `stale_queued_reclaimed`（提示使用者重新發起）與 `stale_processing_reclaimed`（伺服器重啟或任務中斷）。
+2. 掛載時機：app lifespan 啟動時掃一次（同 scheduler 初始化處），另比照 Andromeda 以低頻 interval job（每 15 分鐘）掃描。閾值取分析實際耗時（~50s）的安全倍數，避免誤殺執行中的任務。
+3. 測試：建立過期 queued / processing / 正常 processing 三筆，掃描後前兩筆 failed、第三筆不動。
+
+**驗收標準**：測試綠；重啟 server 後卡住的 snapshot 在 15 分鐘內轉 failed 且前端可見明確錯誤訊息。
+
+### 任務 2.3 — 引擎 guardrail 補 holdout 上限 + r2 None 防護
+
+**問題一**：schema 允許 `holdout_days` 7–180、`min_days` 90 → 傳 90 天資料 + `holdout_days=90` 時 `split=0` → 空訓練集 → `nonneg_ridge` 權重全 0 → 貢獻全 0，不 crash 不報錯，使用者拿到一份「全部沒貢獻」的假報告。
+**問題二**：holdout 段 y 零變異時 `r2_holdout=None`，`run_analysis` 的 `dist([r["r2_holdout"] for r in restarts])` 對 None 做 `np.median` 直接 TypeError → 整筆分析 failed。
+
+**變更檔案**：`modules/contribution/engine.py`、`tests/test_contribution_engine.py`
+
+**實作步驟**：
+1. `check_guardrails` 新增：`holdout_days >= n` → violation「holdout 天數 ≥ 資料天數，無訓練資料」；`holdout_days > n // 3` → violation「holdout 占比過高（建議 ≤ 1/3），訓練資料不足」。
+2. `run_analysis` 的 `dist()` 呼叫前過濾 None：全 None 時該指標回 `None`（JSON 可序列化），部分 None 時以有值者計算。
+3. 測試補：90 天 + holdout 90 → GuardrailViolation；90 天 + holdout 45（= n/2）→ violation；180 天 + holdout 45 → 通過（現行預設不受影響）；holdout 段常數 y → 不 crash、r2.holdout 為 None。
+
+**驗收標準**：新測試綠；既有 15 項 engine 測試無回歸（預設 config 180 天 / holdout 45 = 25% < 1/3，不觸發新規則）。
+
+**注意**：新 guardrail 會在 `create_analysis` 預檢即回 422，前端 `detail.errors` 直接呈現，無需前端變更。
+
+### 任務 2.4 — 活動改名的彙總分裂修復
+
+**問題**：`repository.list_campaign_summaries` 以 `GROUP BY (campaign_id, campaign_name)`；增量抓取只覆寫最近 3 天的 `campaign_name`，歷史列保留舊名快照——改名後同一 `campaign_id` 出現兩列，花費占比被攤薄、`auto_group` 對同一 cid append 兩次（可能同 cid 進兩個組，後續 manual 驗證報「同時出現在多個組別」）。
+
+**變更檔案**：`modules/contribution/repository.py`、`tests/test_contribution_data_source.py`
+
+**實作步驟**：
+1. `list_campaign_summaries` 改為只 `GROUP BY campaign_id`；`campaign_name` 取最新日期列的值——跨 SQLite/PostgreSQL 的安全做法：主查詢不取 name，另以一個「(campaign_id, max(date)) 對 name」的查詢在 Python 端合併（資料量為活動數等級，無效能顧慮）。
+2. 測試補：同 campaign_id 兩個名稱（舊名 100 天 + 新名 3 天）→ 回傳單列、name 為新名、spend 為兩段合計。
+
+**驗收標準**：測試綠；`/campaigns`、`auto_group`、`update_groups` 驗證路徑對改名活動行為正確。
+
+---
+
+## 三、第 3 波：分組規則修正
+
+### 任務 3.1 — 關鍵詞邊界 + 前綴聚類實作或移除
+
+**問題一（誤判）**：`_KEYWORD_RULES` G5 含裸 `rt`——名稱含 "Smart"、"Start"、"sport" 的活動全被分進「大包裝再行銷」；`test` 吃掉 "contest"、"latest"；`活動` 二字在中文活動命名極常見，大量活動被誤分到 G3 檔期。
+**問題二（dead code）**：`auto_group` 對每個活動呼叫 `_common_prefix([name])` 只傳一個名稱，而 `_common_prefix` 對 `len < 2` 永遠回 None——docs/21 §3.3 規則 1 的「相同前綴聚類」從未生效，所有無關鍵詞活動全部落入 G_other。
+
+**變更檔案**：`modules/contribution/grouping.py`、`tests/test_contribution_grouping.py`
+
+**實作步驟**：
+1. 英文關鍵詞加 word boundary：`rt` → `\brt\b`（或直接移除，`retargeting|re[_\- ]?target|再行銷` 已足夠覆蓋）；`test` → `\btest\b`；`event` → `\bevent\b`（防 "prevent"）。
+2. 中文關鍵詞收斂：`活動` 從 G3 移除（訊號太弱），保留 `檔期|seasonal|promo`；視真實帳戶命名習慣可補 `雙11|雙十一|母親節|周年慶` 等強訊號詞（實作時以測試帳戶實際名稱清單校準）。
+3. 前綴聚類二選一（**建議 a**）：
+   - (a) 真正實作：先跑關鍵詞分桶，對落入 G_other 的活動集合做跨活動前綴聚類——以名稱前 `_COMMON_PREFIX_LEN` 字元分桶，桶內 ≥ 2 個活動且合計占比 ≥ `min_spend_share` 才成組（`G_prefix_*`），其餘留 G_other。
+   - (b) 刪除 dead code 並同步修訂 docs/21 §3.3（移除「相同前綴」字樣）。
+4. 測試補：`Smart Shopping` 不進 G5；`contest` 不進 G7；同前綴 3 活動（無關鍵詞、占比達標）聚為一組；既有 11 項分組測試無回歸。
+
+**驗收標準**：新舊測試全綠；對真實測試帳戶跑一次 `auto_group`，人工核對分組結果無明顯誤判。
+
+**注意**：分組規則變更會改變新帳戶的 auto 分組結果；既有帳戶已存 DB 的分組不受影響（manual 優先、auto 不自動重算），無遷移需求。
+
+---
+
+## 四、第 4 波：前端一致性修正
+
+### 任務 4.1 — 歷史快照以 group_snapshot 渲染
+
+**問題**：`AnalysisView` 的 rows 由頁面當前 `groups` state 組出，但 snapshot 的 `results.groups` key 來自分析當時的 `config.group_snapshot`。使用者改組後點開舊快照，對不上的組顯示 0 或消失。
+
+**變更檔案**：`frontend/src/pages/ContributionAnalysis.jsx`、`frontend/src/pages/__tests__/ContributionAnalysis.test.jsx`
+
+**實作步驟**：`AnalysisView` 與 `buildAiPayload` 的 groups 來源改為 `snapshot.config?.group_snapshot ?? groups`（舊快照無 config 時退回現行為）；分組編輯器維持用當前 groups（職責不同）。測試補：mock 一筆 group_snapshot 與當前 groups 不同的快照，斷言渲染行數與 label 來自 snapshot。
+
+**驗收標準**：改組後切歷史快照，各組數字與當時分組一致；vitest 全綠。
+
+### 任務 4.2 — 自報占比改用快照區間（含後端 days 死參數處理）
+
+**問題**：`reportedByGroup` 用 `/campaigns` 的**全歷史**彙總計算，MMM 貢獻只涵蓋快照區間；兩者並排在主圖比較、還餵進 AI payload——90 天分析配 180 天自報占比時對照失真，AI 據此下「高估/低估」結論。後端 `list_campaign_summaries` 的 `days` 參數目前是死碼（建了 subquery 又 `del`）。
+
+**變更檔案**：`modules/contribution/repository.py`、`modules/contribution/router.py`、`modules/contribution/schemas.py`、`frontend/src/services/contributionService.js`、`frontend/src/pages/ContributionAnalysis.jsx`、`tests/test_contribution_module.py`
+
+**實作步驟**：
+1. 後端 `list_campaign_summaries` 把 `days` 死參數改為明確的 `date_start: str | None, date_end: str | None`（Python 端傳入，`WHERE date BETWEEN`），`/campaigns` 端點透傳兩個 optional query 參數。
+2. 前端 `reportedByGroup` 改依 `activeSnapshot` 的 `date_start/date_end` 呼叫 `listCampaignSummaries({ accountId, dateStart, dateEnd })` 計算（快照切換時重算）；分組編輯器與「快取活動數」提示維持全歷史查詢（職責不同，兩次呼叫）。
+3. `buildAiPayload` 的 `reported_share` 隨之對齊快照區間。
+
+**驗收標準**：90 天快照的自報占比只計 90 天內轉換；後端測試補 date-range 過濾斷言；前端 vitest 全綠。
+
+### 任務 4.3 — 邊際步長 per-group 顯示
+
+**問題**：引擎對每組各自算 step（依該組日均花費），前端 `marginalStep` 取 `results.groups` 第一個 key 的 step 套在表頭與圖說——各組花費量級差大時標籤是錯的。
+
+**變更檔案**：`frontend/src/pages/ContributionAnalysis.jsx`
+
+**實作步驟**：`ContributionTable` 表頭改為「邊際轉換（每組步長見列內）」，每列顯示 `+{row.marginalPerStep.median}（/ +{row.marginalStep} 元）`；`MarginalChart` 因各組步長不同不可直接比大小——改為以「每 +100 元」正規化（`per_step.median / step * 100`）排序與顯示，圖說明示正規化口徑；`ChartMethodNote` lead 同步改寫。tooltip 顯示該組原始 step 與原始邊際值。
+
+**驗收標準**：兩組 step 不同（100 vs 500）的快照，表格與圖的數字口徑正確且圖可跨組比較；vitest 全綠。
+
+### 任務 4.4 — GroupEditor 空組處理
+
+**問題**：把某組活動全搬走後，空組被後端 422（`campaign_ids 不可為空`）擋下，UI 又沒有刪組功能，使用者卡死。
+
+**變更檔案**：`frontend/src/pages/ContributionAnalysis.jsx`
+
+**實作步驟**：`handleSaveGroups` 送出前過濾 `campaign_ids.length === 0` 的組；編輯器對空組顯示「此組將於儲存時移除」提示；（可選）加「新增組別」按鈕（group_key 自動取 `G_custom_N`），本任務先做過濾與提示，加組視回饋決定。
+
+**驗收標準**：搬空一組後儲存成功、該組消失；無活動被丟失（後端 `validate_manual_groups` 的完整性檢查仍然把關）。
+
+### 任務 4.5 — refresh 完成度回饋
+
+**問題**：`handleRefreshData` 固定等 1.5 秒重抓快取；全量 180 天背景抓取遠不止 1.5 秒，首次使用者看到仍是 0 筆而困惑。
+
+**變更檔案**：`frontend/src/pages/ContributionAnalysis.jsx`
+
+**實作步驟**：改為輪詢 `listCampaignSummaries`（間隔 3 秒、上限 60 秒）：活動數增加或連續兩次不變且 > 0 即停止並顯示成功；逾時顯示「抓取仍在背景進行，稍後請按重新整理」。輪詢期間按鈕維持「抓取中…」。離開頁面/切換帳戶時清除輪詢 timer。
+
+**驗收標準**：首次全量抓取過程中 UI 有進度回饋、完成後活動清單自動出現；切換帳戶不殘留輪詢。
+
+---
+
+## 五、第 5 波：效能與 polish
+
+### 任務 5.1 — 引擎效能優化（adstock memoize + ridge 早停）
+
+**問題**：`theta_grid` 只有 6 個離散值，`adstock(s, theta)`（純 Python 逐元素迴圈）在 800 trials × 5 restarts × 每組 2 次呼叫下被重算約 5 萬次，實際只需 6 θ × 組數 ≈ 42 次；`nonneg_ridge` 固定 4000 次迭代無早停。50 秒的分析在 `to_thread` 中仍以 Python bytecode 持有 GIL，擠壓 event loop 上其他請求（docs/25 worker 化之前的止血）。
+
+**變更檔案**：`modules/contribution/engine.py`、`tests/test_contribution_engine.py`
+
+**實作步驟**：
+1. `fit` 開頭預計算 `adstock_cache[(group_index, theta)]`（6 θ × 組數個陣列，一次算完），trial 迴圈內查表；同一 cache 供 K 分位數與 `_build_features` 共用（`_build_features` 增加接受預轉換陣列的路徑）。
+2. K 分位數同樣可預計算：`k_cache[(group_index, theta, quantile)]`（6×3×組數個純量）。
+3. `nonneg_ridge` 加收斂早停：`max(abs(w_new - w)) < tol`（tol=1e-8）即 break，`iters` 改為上限語義（預設值與 `DEFAULT_CONFIG` 不變，結果數值容差內一致）。
+4. **驗收關鍵——結果可重現性**：`test_reproducibility` 必須維持「同輸入同 config 完全一致」；memoize 不改變任何數值路徑（同一組 (θ, K) 的特徵完全相同），早停 tol 取足夠小以確保既有合成資料測試（MAE、harvest 糾正、restart 穩定性）全部維持原斷言通過。
+5. 效能基準記錄於本文件：優化前 180 天 × 7 組 × 800 trials × 5 restarts = 49.1s，優化後目標 **< 10s**。
+
+**驗收標準**：engine 15 項（含 reproducibility 與 MAE 門檻）全綠；效能基準達標並記錄實測值。
+
+**風險/回滾**：純引擎內部重構；任一合成測試數值漂移即回滾檢查，不得放寬既有斷言遷就實作。
+
+### 任務 5.2 — repository 文件與死碼清理
+
+**變更檔案**：`modules/contribution/repository.py`
+
+**實作步驟**：`upsert_daily_metrics` docstring 的「不更新 fetched_at」改為與程式碼一致（衝突時以 `current_timestamp()` 刷新，語義為「最後抓取時間」）；`days` 死參數已由任務 4.2 改為 date range，確認無殘留註解。
+
+**驗收標準**：docstring 與行為一致；全部後端測試無回歸。
+
+### 任務 5.3 — 未分組花費診斷警告
+
+**問題**：`_assemble_arrays` 刻意讓未分組活動的轉換計入 y、花費被丟棄（保持 y 總和）——分組後新上線的活動會把 baseline 墊高，且無任何提示。
+
+**變更檔案**：`modules/contribution/service.py`、`modules/contribution/engine.py`（diagnostics 結構）、`frontend/src/pages/ContributionAnalysis.jsx`（診斷卡）、`tests/test_contribution_service.py`
+
+**實作步驟**：
+1. `_assemble_arrays` 回傳值補「未分組花費合計與占比」（分析區間內、該 account 該 metric_key 的總花費 vs 已分組花費）。
+2. `process_analysis` 把 `ungrouped_spend_share` 寫入 `diagnostics.data_summary`；占比 > 5% 時在 `diagnostics` 追加 warning 條目（結構同 collinearity_warnings 的呈現慣例）：「有 X% 花費未分組，其轉換會被歸入基線，建議重新產生分組後重跑」。
+3. 前端診斷卡新增對應 MetricTile 與警告顯示；AI payload 的 diagnostics 一併帶上（prompt 不需改，「只引用 payload 內數字」規則已涵蓋）。
+
+**驗收標準**：合成測試：3 活動其中 1 個不在任何組 → `ungrouped_spend_share` 正確、超閾值出警告；前端診斷卡可見。
+
+---
+
+## 六、建議執行順序與相依
+
+```
+第 1 波（hotfix，串行）：1.1 → 1.2 → 1.3
+第 2 波（可並行）：2.1 / 2.2 / 2.3 / 2.4
+第 3 波：3.1（獨立）
+第 4 波：4.1 / 4.3 / 4.4 / 4.5 可並行；4.2 依賴 2.4（同檔 list_campaign_summaries，先合再改避免衝突）
+第 5 波：5.1（獨立、建議排在 docs/25 worker 化之前）；5.2 依賴 4.2；5.3 獨立
+```
+
+回歸基線：每波完成後跑全量 contribution 後端測試（現行 91 項 + 各波新增）與前端 `ContributionAnalysis.test.jsx`，並比照 docs/21 慣例在本文件各任務下補「驗收結果」。
+
+---
+
+## 七、明確不修（記錄在案）
+
+1. **Hill K 分位數的輕微選模 leakage**（K 自含 holdout 的全序列取）：與可行性驗證腳本行為一致，MAE 門檻由該行為校準；修正需重新驗證所有合成資料斷言，收益（holdout R² 更嚴謹）不成比例。留待 docs/25 worker 化或引擎下次大改時一併處理。
+2. **前後端時區微差**（前端 UTC 昨天 vs 後端 server-local 昨天）：最壞差 1 天且被歸因回補視窗覆蓋，不影響分析正確性。
+3. **GroupEditor 的「新增組別」功能**：任務 4.4 只做空組過濾；加組視使用回饋另議。
+
+---
+
+**站略 (Site-tegy) 技術架構小組**
