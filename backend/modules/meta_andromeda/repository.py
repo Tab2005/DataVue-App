@@ -3,6 +3,7 @@ Meta Andromeda Module - DB-backed repository
 """
 
 import logging
+import os
 from collections import Counter
 from copy import deepcopy
 from datetime import date, datetime, timezone
@@ -10,6 +11,7 @@ import math
 import statistics
 from sqlalchemy.orm import Session
 
+from core.config import settings
 from database.models.meta_andromeda import (
     MetaAndromedaAsset,
     MetaAndromedaCalibrationDataset,
@@ -2743,6 +2745,48 @@ class MetaAndromedaRepository:
             }
             for r in rows
         ]
+
+    @staticmethod
+    def get_effective_scoring_status(db: Session) -> dict:
+        """比較「目前實際生效的互動評分設定」與「資料庫 registry 表裡標記為
+        production 的那一列」，供監控頁面標示兩者是否一致。
+
+        背景：`model_registry.get_entry()` 的 env override（`META_ANDROMEDA_
+        SCORING_PROVIDER` / `_MODEL` / `_MODEL_VERSION`）完全不寫資料庫，只在
+        記憶體裡即時生效——只看版本總覽/監控總覽畫面（讀的是 DB 表）的人會
+        誤以為「換了環境變數但畫面沒變，是不是沒生效」。用直接比對兩邊實際
+        解析出的值（而非重複 get_entry() 內部的 if/elif 分支條件）來判斷是否
+        有覆寫，可以不用跟著 get_entry() 的覆寫邏輯同步維護、更不容易漏改。
+        """
+        resolved = model_registry.get_entry()  # purpose="interactive"：實際評分請求會用的設定
+
+        db_production = (
+            db.query(MetaAndromedaModelRegistryEntry)
+            .filter(MetaAndromedaModelRegistryEntry.is_current_production == True)  # noqa: E712
+            .first()
+        )
+
+        is_overridden = (
+            db_production is None
+            or resolved.provider != db_production.provider
+            or resolved.provider_model != db_production.provider_model
+            or resolved.model_version != db_production.model_version
+        )
+
+        return {
+            "resolved_model_version": resolved.model_version,
+            "resolved_provider": resolved.provider,
+            "resolved_provider_model": resolved.provider_model,
+            "resolved_scoring_profile": resolved.scoring_profile,
+            "resolved_release_channel": resolved.release_channel,
+            "db_production_model_version": db_production.model_version if db_production else None,
+            "db_production_provider": db_production.provider if db_production else None,
+            "db_production_provider_model": db_production.provider_model if db_production else None,
+            "is_overridden": is_overridden,
+            "scoring_provider_setting": settings.META_ANDROMEDA_SCORING_PROVIDER,
+            "scoring_model_setting": settings.META_ANDROMEDA_SCORING_MODEL,
+            "scoring_model_version_env_set": bool(os.getenv("META_ANDROMEDA_SCORING_MODEL_VERSION")),
+        }
 
     @staticmethod
     def set_backtest_reference_model(db: Session, provider: str, provider_model: str) -> dict:

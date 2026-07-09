@@ -15,6 +15,7 @@ import {
     fetchObservedAccounts,
     fetchModelRegistry,
     updateBacktestModel,
+    fetchEffectiveScoringStatus,
 } from '../services/metaAndromedaMonitoringService';
 
 const MetaAndromedaMonitoring = () => {
@@ -53,6 +54,7 @@ const MetaAndromedaMonitoring = () => {
     const [loadingModelRegistry, setLoadingModelRegistry] = useState(false);
     const [backtestModelInput, setBacktestModelInput] = useState('');
     const [savingBacktestModel, setSavingBacktestModel] = useState(false);
+    const [effectiveStatus, setEffectiveStatus] = useState(null);
     const { hasAccess, loading: loadingModuleAccess } = useModuleAccess('meta_andromeda', selectedTeamId);
 
     const t = (en, zh) => (language === 'en' ? en : zh);
@@ -239,6 +241,7 @@ const MetaAndromedaMonitoring = () => {
         loadProfiles();
         loadObservedAccounts();
         loadModelRegistry();
+        loadEffectiveScoringStatus();
     }, [hasAccess]);
 
     useEffect(() => {
@@ -387,6 +390,16 @@ const MetaAndromedaMonitoring = () => {
             setError(err.message || 'Failed to save backtest model');
         } finally {
             setSavingBacktestModel(false);
+        }
+    };
+
+    const loadEffectiveScoringStatus = async () => {
+        try {
+            const data = await fetchEffectiveScoringStatus();
+            setEffectiveStatus(data);
+        } catch (err) {
+            // 非阻斷性資訊：讀取失敗不影響頁面其餘功能，安靜失敗即可
+            setEffectiveStatus(null);
         }
     };
 
@@ -1403,6 +1416,49 @@ const MetaAndromedaMonitoring = () => {
                                     </div>
                                 );
                             })()}
+
+                            {effectiveStatus && (
+                                <div style={{
+                                    marginBottom: '16px',
+                                    padding: '12px 14px',
+                                    borderRadius: '10px',
+                                    background: effectiveStatus.is_overridden ? 'rgba(245, 158, 11, 0.06)' : 'rgba(16, 185, 129, 0.06)',
+                                    border: effectiveStatus.is_overridden ? '1px solid rgba(245, 158, 11, 0.3)' : '1px solid rgba(16, 185, 129, 0.25)',
+                                }}>
+                                    <div style={{
+                                        fontSize: '0.8rem',
+                                        fontWeight: 700,
+                                        color: effectiveStatus.is_overridden ? '#fbbf24' : '#10b981',
+                                        marginBottom: '4px',
+                                    }}>
+                                        {effectiveStatus.is_overridden
+                                            ? t('⚠ Actual scoring uses an env-overridden model', '⚠ 實際評分目前使用環境變數覆寫的模型')
+                                            : t('✓ Actual scoring matches the model shown above', '✓ 實際評分與上方顯示的模型一致')}
+                                    </div>
+                                    {effectiveStatus.is_overridden && (
+                                        <>
+                                            <div style={{ fontSize: '0.85rem', fontWeight: 600, marginBottom: '2px' }}>
+                                                {t('In effect: ', '目前實際使用：')}{effectiveStatus.resolved_provider_model}
+                                                <span style={{ fontWeight: 400, color: 'var(--text-secondary)', marginLeft: '6px' }}>
+                                                    ({effectiveStatus.resolved_model_version})
+                                                </span>
+                                            </div>
+                                            <div style={{ fontSize: '0.78rem', color: 'var(--text-secondary)', marginBottom: '6px' }}>
+                                                {t(
+                                                    `Registry shows: ${effectiveStatus.db_production_provider_model || '--'} (${effectiveStatus.db_production_model_version || '--'})`,
+                                                    `資料庫顯示：${effectiveStatus.db_production_provider_model || '--'}（${effectiveStatus.db_production_model_version || '--'}）`
+                                                )}
+                                            </div>
+                                            <div style={{ fontSize: '0.72rem', color: 'var(--text-secondary)' }}>
+                                                {t(
+                                                    `Caused by deployment env vars (META_ANDROMEDA_SCORING_PROVIDER=${effectiveStatus.scoring_provider_setting}, META_ANDROMEDA_SCORING_MODEL=${effectiveStatus.scoring_model_setting}${effectiveStatus.scoring_model_version_env_set ? ', META_ANDROMEDA_SCORING_MODEL_VERSION is set' : ''}) — approving a new candidate in Release Overview will not change this until the env vars are cleared.`,
+                                                    `原因來自部署環境變數（META_ANDROMEDA_SCORING_PROVIDER=${effectiveStatus.scoring_provider_setting}、META_ANDROMEDA_SCORING_MODEL=${effectiveStatus.scoring_model_setting}${effectiveStatus.scoring_model_version_env_set ? '、META_ANDROMEDA_SCORING_MODEL_VERSION 已設定' : ''}）——在版本總覽核准新候選版本前，這些環境變數不清除的話畫面與實際評分仍會不一致。`
+                                                )}
+                                            </div>
+                                        </>
+                                    )}
+                                </div>
+                            )}
 
                             <div style={{
                                 padding: '12px 14px',

@@ -1551,6 +1551,101 @@ def test_meta_andromeda_created_candidate_can_be_approved_to_production(meta_and
 
 
 @pytest.mark.unit
+def test_effective_scoring_status_reports_no_override_when_env_matches_db(meta_andromeda_access, db, monkeypatch):
+    """沒有任何 env override 生效時，resolved 應與 DB 的 production 列完全一致
+    （`is_overridden=False`）——驗證比對邏輯本身在「一致」情境下不會誤報。"""
+    from database.models.meta_andromeda import MetaAndromedaModelRegistryEntry
+    from modules.meta_andromeda.model_registry import invalidate_registry_cache
+
+    db.add(MetaAndromedaModelRegistryEntry(
+        model_version="prod_test_effective_match",
+        provider="openrouter",
+        provider_model="some-org/effective-match:free",
+        scoring_profile="creative_scoring_v_test",
+        feature_manifest_id="fm_test_effective_match",
+        release_channel="production",
+        source_of_truth="datavue.meta_andromeda.registry",
+        is_current_production=True,
+    ))
+    db.commit()
+
+    # 清空所有可能生效的 env override，讓 get_entry() 原樣回傳 DB 該列
+    monkeypatch.setenv("META_ANDROMEDA_SCORING_PROVIDER", "auto")
+    monkeypatch.setenv("META_ANDROMEDA_SCORING_MODEL", "")
+    monkeypatch.delenv("META_ANDROMEDA_SCORING_MODEL_VERSION", raising=False)
+
+    class SessionProxy:
+        def __init__(self, session):
+            self._session = session
+
+        def __getattr__(self, name):
+            return getattr(self._session, name)
+
+        def close(self):
+            return None
+
+    monkeypatch.setattr("database.SessionLocal", lambda: SessionProxy(db))
+    invalidate_registry_cache()
+
+    response = meta_andromeda_access.get("/api/meta-andromeda/monitoring/model-registry/effective")
+    assert response.status_code == 200
+    body = response.json()
+    assert body["is_overridden"] is False
+    assert body["resolved_model_version"] == "prod_test_effective_match"
+    assert body["resolved_provider_model"] == "some-org/effective-match:free"
+    assert body["db_production_model_version"] == "prod_test_effective_match"
+    assert body["db_production_provider_model"] == "some-org/effective-match:free"
+
+
+@pytest.mark.unit
+def test_effective_scoring_status_flags_override_from_env_model(meta_andromeda_access, db, monkeypatch):
+    """`META_ANDROMEDA_SCORING_MODEL` 覆寫生效時（provider=auto 且 DB production
+    的 provider 為 openrouter），resolved 應顯示 env 覆寫後的模型，`db_production_*`
+    仍顯示 DB 原本存的值，`is_overridden=True`——這是這次新增端點要解決的核心
+    情境：畫面（DB 值）與實際評分（env 覆寫後的值）不一致時要能被看出來。"""
+    from database.models.meta_andromeda import MetaAndromedaModelRegistryEntry
+    from modules.meta_andromeda.model_registry import invalidate_registry_cache
+
+    db.add(MetaAndromedaModelRegistryEntry(
+        model_version="prod_test_effective_override",
+        provider="openrouter",
+        provider_model="some-org/original-db-model:free",
+        scoring_profile="creative_scoring_v_test",
+        feature_manifest_id="fm_test_effective_override",
+        release_channel="production",
+        source_of_truth="datavue.meta_andromeda.registry",
+        is_current_production=True,
+    ))
+    db.commit()
+
+    monkeypatch.setenv("META_ANDROMEDA_SCORING_PROVIDER", "auto")
+    monkeypatch.setenv("META_ANDROMEDA_SCORING_MODEL", "some-org/env-forced-model:free")
+    monkeypatch.delenv("META_ANDROMEDA_SCORING_MODEL_VERSION", raising=False)
+
+    class SessionProxy:
+        def __init__(self, session):
+            self._session = session
+
+        def __getattr__(self, name):
+            return getattr(self._session, name)
+
+        def close(self):
+            return None
+
+    monkeypatch.setattr("database.SessionLocal", lambda: SessionProxy(db))
+    invalidate_registry_cache()
+
+    response = meta_andromeda_access.get("/api/meta-andromeda/monitoring/model-registry/effective")
+    assert response.status_code == 200
+    body = response.json()
+    assert body["is_overridden"] is True
+    assert body["resolved_provider_model"] == "some-org/env-forced-model:free"
+    assert body["db_production_model_version"] == "prod_test_effective_override"
+    assert body["db_production_provider_model"] == "some-org/original-db-model:free"
+    assert body["scoring_model_setting"] == "some-org/env-forced-model:free"
+
+
+@pytest.mark.unit
 def test_meta_andromeda_observation_import_accepts_supported_window_contract(meta_andromeda_access, monkeypatch):
     from modules.meta_andromeda.schemas import ObservedCreativeCandidate
 

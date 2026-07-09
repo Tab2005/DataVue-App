@@ -42,6 +42,7 @@ from .schemas import (
     ScoringProfileListResponse,
     ScoringProfilePromoteResponse,
     BacktestModelUpdateRequest,
+    EffectiveScoringStatusResponse,
     ModelRegistryEntryResponse,
     ModelRegistryListResponse,
     OverviewResponse,
@@ -268,6 +269,23 @@ async def list_model_registry(
     from .repository import repository as _repo
     entries = _repo.list_model_registry_entries(db)
     return {"entries": entries}
+
+
+@router.get("/monitoring/model-registry/effective", response_model=EffectiveScoringStatusResponse)
+async def get_effective_scoring_status(
+    _user=Depends(get_current_meta_andromeda_user),
+    _access: bool = Depends(require_meta_andromeda_module),
+    db=Depends(get_db),
+):
+    """目前實際生效的互動評分設定 vs. 資料庫 registry 標記的 production 列。
+
+    背景：`META_ANDROMEDA_SCORING_PROVIDER` / `_MODEL` / `_MODEL_VERSION` 這幾個
+    env override 完全不寫資料庫、只在記憶體即時生效——只看版本總覽/監控總覽
+    畫面（讀 DB 表）的人會誤以為「改了環境變數但畫面沒變，是不是沒生效」。
+    此端點回傳兩邊實際解析出的值供前端標示是否一致，而不是要求使用者自己
+    比對畫面上的模型名稱與部署環境變數。"""
+    from .repository import repository as _repo
+    return _repo.get_effective_scoring_status(db)
 
 
 @router.put("/monitoring/model-registry/backtest-model", response_model=ModelRegistryEntryResponse)

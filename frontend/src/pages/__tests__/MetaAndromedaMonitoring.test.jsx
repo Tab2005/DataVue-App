@@ -4,7 +4,13 @@ import { fireEvent, screen, waitFor } from '@testing-library/react';
 import MetaAndromedaMonitoring from '../MetaAndromedaMonitoring';
 import { renderWithOutlet } from '../../test/renderWithOutlet';
 import { useModuleAccess } from '../../hooks/usePermission';
-import { fetchMetaAndromedaMonitoringSummary } from '../../services/metaAndromedaMonitoringService';
+import {
+    fetchMetaAndromedaMonitoringSummary,
+    fetchScoringProfiles,
+    fetchObservedAccounts,
+    fetchModelRegistry,
+    fetchEffectiveScoringStatus,
+} from '../../services/metaAndromedaMonitoringService';
 
 vi.mock('../../hooks/usePermission', () => ({
     useModuleAccess: vi.fn(),
@@ -12,6 +18,18 @@ vi.mock('../../hooks/usePermission', () => ({
 
 vi.mock('../../services/metaAndromedaMonitoringService', () => ({
     fetchMetaAndromedaMonitoringSummary: vi.fn(),
+    fetchScoringProfiles: vi.fn(),
+    fetchObservedAccounts: vi.fn(),
+    fetchDriftTrend: vi.fn(),
+    fetchModelRegistry: vi.fn(),
+    updateBacktestModel: vi.fn(),
+    fetchEffectiveScoringStatus: vi.fn(),
+    triggerMetaAndromedaDriftReport: vi.fn(),
+    syncMetaAndromedaCalibrationDataset: vi.fn(),
+    cleanupStaleScoreEvents: vi.fn(),
+    promoteScoringProfile: vi.fn(),
+    runScoringProfileBacktest: vi.fn(),
+    fetchMetaAndromedaMonitoringTimeline: vi.fn(),
 }));
 
 const monitoringSummary = {
@@ -72,6 +90,10 @@ describe('MetaAndromedaMonitoring', () => {
         vi.clearAllMocks();
         useModuleAccess.mockReturnValue({ hasAccess: true, loading: false, error: null });
         fetchMetaAndromedaMonitoringSummary.mockResolvedValue(monitoringSummary);
+        fetchScoringProfiles.mockResolvedValue([]);
+        fetchObservedAccounts.mockResolvedValue({ accounts: [] });
+        fetchModelRegistry.mockResolvedValue({ entries: [] });
+        fetchEffectiveScoringStatus.mockResolvedValue(null);
     });
 
     it('loads monitoring data and filters by query state', async () => {
@@ -106,5 +128,76 @@ describe('MetaAndromedaMonitoring', () => {
 
         expect(screen.getByText('You do not have access to Meta Andromeda in this workspace.')).toBeInTheDocument();
         expect(screen.queryByText('Monitoring Summary')).not.toBeInTheDocument();
+    });
+
+    it('shows a match indicator when actual scoring is not env-overridden', async () => {
+        fetchModelRegistry.mockResolvedValue({
+            entries: [
+                {
+                    model_version: 'prod_v1',
+                    provider: 'openrouter',
+                    provider_model: 'some-org/model-a:free',
+                    scoring_profile: 'creative_scoring_v2',
+                    release_channel: 'production',
+                    is_current_production: true,
+                    created_at: null,
+                },
+            ],
+        });
+        fetchEffectiveScoringStatus.mockResolvedValue({
+            resolved_model_version: 'prod_v1',
+            resolved_provider: 'openrouter',
+            resolved_provider_model: 'some-org/model-a:free',
+            resolved_scoring_profile: 'creative_scoring_v2',
+            resolved_release_channel: 'production',
+            db_production_model_version: 'prod_v1',
+            db_production_provider: 'openrouter',
+            db_production_provider_model: 'some-org/model-a:free',
+            is_overridden: false,
+            scoring_provider_setting: 'auto',
+            scoring_model_setting: '',
+            scoring_model_version_env_set: false,
+        });
+
+        renderWithOutlet(<MetaAndromedaMonitoring />);
+
+        await screen.findByText('✓ Actual scoring matches the model shown above');
+        expect(screen.queryByText(/env-overridden/)).not.toBeInTheDocument();
+    });
+
+    it('warns when actual scoring is using an env-overridden model different from the registry (docs/27 之外 Andromeda 版本切換優化)', async () => {
+        fetchModelRegistry.mockResolvedValue({
+            entries: [
+                {
+                    model_version: 'prod_v1',
+                    provider: 'openrouter',
+                    provider_model: 'nvidia/nemotron-3-nano-omni-30b-a3b-reasoning:free',
+                    scoring_profile: 'creative_scoring_v2',
+                    release_channel: 'production',
+                    is_current_production: true,
+                    created_at: null,
+                },
+            ],
+        });
+        fetchEffectiveScoringStatus.mockResolvedValue({
+            resolved_model_version: 'prod_v1',
+            resolved_provider: 'openrouter',
+            resolved_provider_model: 'nvidia/llama-nemotron-rerank-vl-1b-v2:free',
+            resolved_scoring_profile: 'creative_scoring_v2',
+            resolved_release_channel: 'production',
+            db_production_model_version: 'prod_v1',
+            db_production_provider: 'openrouter',
+            db_production_provider_model: 'nvidia/nemotron-3-nano-omni-30b-a3b-reasoning:free',
+            is_overridden: true,
+            scoring_provider_setting: 'auto',
+            scoring_model_setting: 'nvidia/llama-nemotron-rerank-vl-1b-v2:free',
+            scoring_model_version_env_set: false,
+        });
+
+        renderWithOutlet(<MetaAndromedaMonitoring />);
+
+        await screen.findByText('⚠ Actual scoring uses an env-overridden model');
+        expect(screen.getByText(/In effect:\s*nvidia\/llama-nemotron-rerank-vl-1b-v2:free/)).toBeInTheDocument();
+        expect(screen.getByText(/Registry shows: nvidia\/nemotron-3-nano-omni-30b-a3b-reasoning:free/)).toBeInTheDocument();
     });
 });

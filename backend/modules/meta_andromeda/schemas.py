@@ -558,6 +558,24 @@ class BacktestModelUpdateRequest(BaseModel):
     provider_model: str
 
 
+class EffectiveScoringStatusResponse(BaseModel):
+    """實際生效的互動評分設定 vs. 資料庫 registry 標記的 production 列，供監控
+    頁面標示兩者是否一致（env override 完全不寫資料庫，只在記憶體即時生效）。"""
+
+    resolved_model_version: str
+    resolved_provider: str
+    resolved_provider_model: str
+    resolved_scoring_profile: str | None = None
+    resolved_release_channel: str
+    db_production_model_version: str | None = None
+    db_production_provider: str | None = None
+    db_production_provider_model: str | None = None
+    is_overridden: bool
+    scoring_provider_setting: str
+    scoring_model_setting: str
+    scoring_model_version_env_set: bool
+
+
 class ObservedAccountEntry(BaseModel):
     account_id: str
     platform: str

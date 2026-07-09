@@ -54,6 +54,13 @@ export const updateBacktestModel = async (provider, providerModel) => {
     });
 };
 
+// 目前實際生效的互動評分設定 vs. 資料庫 registry 標記的 production 列——
+// env override（META_ANDROMEDA_SCORING_PROVIDER/_MODEL/_MODEL_VERSION）完全
+// 不寫資料庫，只在記憶體即時生效，畫面若只讀 registry 表會誤以為沒生效。
+export const fetchEffectiveScoringStatus = async () => {
+    return apiClient.get('/api/meta-andromeda/monitoring/model-registry/effective');
+};
+
 export default {
     fetchMetaAndromedaMonitoringSummary,
     fetchMetaAndromedaMonitoringTimeline,
@@ -67,4 +74,5 @@ export default {
     fetchObservedAccounts,
     fetchModelRegistry,
     updateBacktestModel,
+    fetchEffectiveScoringStatus,
 };
