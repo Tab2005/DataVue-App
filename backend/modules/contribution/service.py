@@ -78,6 +78,48 @@ def _merge_ungrouped_spend_diagnostics(
     return diagnostics
 
 
+def _clamp_to_coverage(
+    date_start: str,
+    date_end: str,
+    coverage: tuple[str, str] | None,
+) -> tuple[str, str, str | None]:
+    """依實際快取涵蓋範圍 clamp 請求的分析區間（docs/27 任務 6.1）。
+
+    `_assemble_arrays` 以「逐日建陣列、缺值補 0」為設計，無法自行分辨
+    「這天真的沒花費」與「這天根本沒抓過資料」——請求區間若早於/晚於實際
+    快取範圍，缺口會變成假的 spend=0/y=0 直接進模型，稀釋 guardrail 檢查
+    （例如 mean_daily_conversions）並偏誤迴歸估計。coverage 為 None（帳戶
+    完全無快取）時原樣回傳，交由既有「無資料」guardrail 攔截即可。
+
+    回傳 (effective_start, effective_end, note)；note 為 None 代表未調整。
+    """
+    if coverage is None:
+        return date_start, date_end, None
+    actual_first, actual_last = coverage
+    effective_start = max(date_start, actual_first)
+    effective_end = min(date_end, actual_last)
+    if effective_start == date_start and effective_end == date_end:
+        return date_start, date_end, None
+    note = (
+        f"要求分析區間為 {date_start} ~ {date_end}，實際快取僅涵蓋 "
+        f"{actual_first} ~ {actual_last}，已自動調整為 {effective_start} ~ {effective_end}"
+    )
+    return effective_start, effective_end, note
+
+
+def _append_coverage_warning(
+    diagnostics: dict[str, Any], coverage_note: str
+) -> dict[str, Any]:
+    """把 `_clamp_to_coverage` 產生的調整說明附加進 `data_quality_warnings`
+    （docs/27 任務 6.1），呈現慣例比照 `_merge_ungrouped_spend_diagnostics`。
+    純函數，方便獨立單元測試。"""
+    diagnostics = dict(diagnostics)
+    warnings: list[dict[str, Any]] = list(diagnostics.get("data_quality_warnings") or [])
+    warnings.append({"type": "coverage_adjustment", "message": coverage_note})
+    diagnostics["data_quality_warnings"] = warnings
+    return diagnostics
+
+
 # ── 例外 ──────────────────────────────────────────────────────────────
 class ContributionServiceError(Exception):
     """Service 層錯誤基類；service 內不直接拋 HTTPException，由 router 翻譯。"""
@@ -191,6 +233,28 @@ def update_groups(
     return rows
 
 
+def reset_groups(
+    db: Session,
+    *,
+    account_id: str,
+    updated_by: str | None = None,
+) -> list[ContributionCampaignGroup]:
+    """清除既有分組（manual + auto）並重新觸發 `auto_group()`（docs/27
+    任務 6.2）。
+
+    背景：`get_or_create_groups` 只在該帳戶完全無分組列時才會跑
+    `auto_group()`——grouping.py 的規則修正（任務 3.1：關鍵詞誤判、前綴
+    聚類 dead code）不會自動套用到已有分組紀錄的既有帳戶。此函式讓使用者
+    主動清空後重新產生，直接沿用當下版本的 `auto_group()` 規則。
+
+    會一併清除使用者手動編輯過的 manual 分組——router 層應要求前端在呼叫
+    前明確提示使用者確認（同刪除類動作慣例）。
+    """
+    repository.delete_groups(db, account_id=account_id)
+    db.commit()
+    return get_or_create_groups(db, account_id=account_id, updated_by=updated_by)
+
+
 # ── 分析編排 ───────────────────────────────────────────────────────────
 def prepare_analysis(
     db: Session,
@@ -218,6 +282,14 @@ def prepare_analysis(
     groups = get_or_create_groups(db, account_id=account_id, updated_by=created_by)
     if not groups:
         raise GuardrailRejected(["該帳戶尚無活動資料，請先呼叫 /data/refresh 抓取資料"])
+
+    # 1.5 依實際快取涵蓋範圍 clamp 請求區間（docs/27 任務 6.1）：避免請求
+    # 區間超出實際快取（例如選了 365 天但只抓過 180 天）時，_assemble_arrays
+    # 把缺口日子填成假的 spend=0/y=0 直接進模型。clamp 後的區間會一路沿用
+    # 到 guardrail 檢查與 snapshot 建立，snapshot.date_start/date_end 因此
+    # 反映「實際分析的區間」而非「使用者原始選擇」。
+    coverage = repository.get_data_coverage(db, account_id=account_id, metric_key=metric_key)
+    date_start, date_end, coverage_note = _clamp_to_coverage(date_start, date_end, coverage)
 
     # 2. 預檢 guardrail（在背景任務之前發現問題可回 4xx）
     spend_by_group, y, weekdays, precheck_messages, _assembly_diag = _assemble_arrays(
@@ -252,6 +324,7 @@ def prepare_analysis(
         "holdout_days": holdout_days or 45,
         "marginal_step": marginal_step,
         "group_snapshot": [_group_to_dict(g) for g in groups],
+        "coverage_note": coverage_note,
     }
     snapshot = repository.create_snapshot(
         db,
@@ -431,6 +504,9 @@ async def process_analysis(snapshot_id: str) -> None:
         diagnostics = _merge_ungrouped_spend_diagnostics(
             outcome["diagnostics"], assembly_diagnostics
         )
+        coverage_note = (snapshot.config or {}).get("coverage_note")
+        if coverage_note:
+            diagnostics = _append_coverage_warning(diagnostics, coverage_note)
 
         repository.set_snapshot_status(
             db,
@@ -673,6 +749,7 @@ __all__ = [
     "get_or_create_groups",
     "list_groups",
     "update_groups",
+    "reset_groups",
     "prepare_analysis",
     "create_analysis",
     "process_analysis",

@@ -389,6 +389,37 @@
 - 前端 `npx vitest run`（全套）：contribution 13 項全綠；既有 4 個 pre-existing 失敗（`MetaAndromedaMonitoring`/`ReviewQueue`/`ScoreLab`）與本波修改的檔案無關（未變更）。
 - `npx vite build` 全程全綠。
 
+### 第 6 波（追加，2026-07-09）：分組重設 + 資料涵蓋範圍防呆
+
+**背景**：第 5 波完成後，使用者詢問「重新抓資料/重跑分析是否有必要」與「加入 365 天選項是否有用」。討論釐清兩個既有缺口：
+1. `get_or_create_groups` 只在該帳戶完全無分組列時才會跑 `auto_group()`——任務 3.1 修正的關鍵詞/前綴聚類規則不會自動套用到已有分組紀錄的既有帳戶，且系統原本沒有「清空重來」的入口。
+2. `_assemble_arrays` 逐日建陣列、缺值一律補 0，無法分辨「這天真的沒花費」與「這天根本沒抓過資料」——若使用者選擇的分析區間早於/晚於實際快取範圍（例如新增 365 天選項但帳戶只快取 180 天），缺口會變成假的 `spend=0/y=0` 直接進模型，稀釋 guardrail 檢查（`mean_daily_conversions` 等）並偏誤迴歸估計。
+
+#### 任務 6.1 — 分析請求區間依實際快取涵蓋範圍 clamp
+
+**變更檔案**：`modules/contribution/repository.py`（新增 `get_data_coverage`）、`modules/contribution/service.py`（`_clamp_to_coverage` / `_append_coverage_warning` + `prepare_analysis`/`process_analysis` 整合）、`modules/contribution/schemas.py`（`DataCoverageResponse`）、`modules/contribution/router.py`（`GET /data/coverage`、`create_analysis_endpoint` 附加提示訊息）、`frontend/src/services/contributionService.js`、`frontend/src/pages/ContributionAnalysis.jsx`（365 天選項 + 涵蓋範圍提示）
+
+**實作方式**：不是「檢查後阻擋 365 天選項」，而是從根本修正——`prepare_analysis` 一律查詢實際快取涵蓋範圍，把請求區間 clamp 到 `[max(請求起, 實際起), min(請求迄, 實際迄)]` 再繼續組裝資料與 guardrail 檢查；`snapshot.date_start/date_end` 因此反映「實際分析的區間」而非「使用者原始選擇」，調整說明寫入 `snapshot.config.coverage_note`，並在 `POST /analyses` 回應訊息與完成後的 `diagnostics.data_quality_warnings`（`type=coverage_adjustment`）都能看到。前端新增 `GET /data/coverage` 讓使用者在送出分析前就能看到快取實際涵蓋的日期範圍，365 天選項與其餘既有選項受同一套 clamp 保護（不是只保護新選項）。
+
+**驗收結果（2026-07-09 完成）**：
+- 後端純函數測試：`_clamp_to_coverage`（無快取原樣回傳 / 落在範圍內不調整 / 起始日 clamp / 結束日 clamp）與 `_append_coverage_warning` 共 5 項。
+- 整合測試：`test_prepare_analysis_clamps_request_beyond_cached_coverage`（請求區間早於實際快取起點 → snapshot 實際區間與 `coverage_note` 正確）、`test_prepare_analysis_no_coverage_note_when_within_range`（落在範圍內不誤報）。
+- Router 測試：`GET /data/coverage` 有資料/無資料/未授權 3 項。
+- 前端新增 1 項測試：365 選項存在、選擇後顯示涵蓋範圍提示、「開始分析」按鈕不因此被停用（clamp 由後端把關，前端提示僅供參考）。
+
+#### 任務 6.2 — 分組「重設為自動」端點
+
+**變更檔案**：`modules/contribution/repository.py`（新增 `delete_groups`）、`modules/contribution/service.py`（新增 `reset_groups`）、`modules/contribution/router.py`（`POST /groups/reset`）、`frontend/src/services/contributionService.js`、`frontend/src/pages/ContributionAnalysis.jsx`（GroupEditor 新增「重設為自動分組」按鈕 + 確認對話框）
+
+**實作方式**：`reset_groups` 先呼叫 `repository.delete_groups` 清空該帳戶所有分組列（不分 manual/auto）並 commit，再呼叫既有的 `get_or_create_groups`（此時必為空 → 觸發當下版本的 `auto_group()`）。會一併清除手動編輯過的分組，前端在呼叫前用 `window.confirm` 明確提示使用者。
+
+**驗收結果（2026-07-09 完成）**：
+- Service 測試：`test_reset_groups_clears_manual_and_regenerates_auto`（既有 manual 分組清空後重新產生 auto）、`test_reset_groups_no_campaigns_returns_empty`（無活動資料回空 list，不建空 `G_other`）。
+- Router 測試：`POST /groups/reset` 成功清空重生、未授權 403。
+- 前端新增 2 項測試：確認後呼叫 API 並更新畫面；取消確認則不呼叫 API、畫面不變。
+
+**第 6 波回歸（2026-07-09）**：後端 contribution 全套 **126 項全綠**（較第 5 波 137 項這裡是聚焦 contribution 子集重跑，非疊加口徑）；前端 `ContributionAnalysis.test.jsx` **16 項全綠**（較第 5 波 +3）。既有 4 個 pre-existing 失敗（`MetaAndromedaMonitoring`/`ReviewQueue`/`ScoreLab`）與本波無關（未變更、且未修改的情況下獨立執行亦失敗，確認非本波引入）。
+
 ---
 
 ## 六、建議執行順序與相依

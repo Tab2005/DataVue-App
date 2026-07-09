@@ -829,3 +829,117 @@ def test_contribution_analyses_list_includes_has_ai_summary(
         ContributionSnapshot.account_id == "act_list_ai"
     ).delete()
     db.commit()
+
+
+# ── 任務 6.2：POST /groups/reset ─────────────────────────────────────
+@pytest.mark.integration
+def test_contribution_groups_reset_clears_manual_and_regenerates_auto(
+    contribution_authorized_client, db
+):
+    """既有 manual 分組 → POST /groups/reset 清空後以目前 auto_group() 規則
+    重新產生，回應 source='auto'（docs/27 任務 6.2：讓 grouping.py 規則修正
+    後既有帳戶也能主動重新套用最新規則，不用等 DBA 手動清表）。"""
+    from database.models.contribution import ContributionCampaignGroup, ContributionDailyMetric
+
+    db.add(ContributionDailyMetric(
+        account_id="act_reset_ep",
+        date="2026-06-01",
+        campaign_id="c1",
+        campaign_name="OB 主力常態 A",
+        spend=1000.0,
+        impressions=10000,
+        conversions=50.0,
+        conversion_value=15000.0,
+        metric_key="omni_purchase",
+    ))
+    db.add(ContributionCampaignGroup(
+        account_id="act_reset_ep",
+        group_key="G_custom",
+        group_name="使用者自訂",
+        campaign_ids=["c1"],
+        source="manual",
+    ))
+    db.commit()
+
+    client, _ = contribution_authorized_client
+    resp = client.post("/api/contribution/groups/reset?account_id=act_reset_ep")
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["source"] == "auto"
+    assert all(g["source"] == "auto" for g in body["groups"])
+    assert not any(g["group_key"] == "G_custom" for g in body["groups"])
+    assert any(g["group_key"] == "G1" for g in body["groups"])
+
+    db.query(ContributionCampaignGroup).filter(
+        ContributionCampaignGroup.account_id == "act_reset_ep"
+    ).delete()
+    db.query(ContributionDailyMetric).filter(
+        ContributionDailyMetric.account_id == "act_reset_ep"
+    ).delete()
+    db.commit()
+
+
+@pytest.mark.integration
+def test_contribution_groups_reset_denies_without_module_access(
+    contribution_unauthorized_client,
+):
+    client, _ = contribution_unauthorized_client
+    resp = client.post("/api/contribution/groups/reset?account_id=act_1")
+    assert resp.status_code == 403
+
+
+# ── 任務 6.1：GET /data/coverage ─────────────────────────────────────
+@pytest.mark.integration
+def test_contribution_data_coverage_returns_range_when_cached(
+    contribution_authorized_client, db
+):
+    """快取有資料 → 回傳實際涵蓋範圍 (first_date/last_date/days_covered)。"""
+    from database.models.contribution import ContributionDailyMetric
+
+    for d, day in enumerate(["2026-01-01", "2026-01-02", "2026-01-05"]):
+        db.add(ContributionDailyMetric(
+            account_id="act_coverage_ep",
+            date=day,
+            campaign_id="c1",
+            campaign_name="測試活動",
+            spend=100.0,
+            conversions=5.0,
+            metric_key="omni_purchase",
+        ))
+    db.commit()
+
+    client, _ = contribution_authorized_client
+    resp = client.get("/api/contribution/data/coverage?account_id=act_coverage_ep")
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["first_date"] == "2026-01-01"
+    assert body["last_date"] == "2026-01-05"
+    assert body["days_covered"] == 5  # 首尾相減 +1（含兩端），中間缺 2 天不影響此欄位定義
+
+    db.query(ContributionDailyMetric).filter(
+        ContributionDailyMetric.account_id == "act_coverage_ep"
+    ).delete()
+    db.commit()
+
+
+@pytest.mark.integration
+def test_contribution_data_coverage_returns_zero_when_empty(
+    contribution_authorized_client,
+):
+    """快取為空 → first_date/last_date 為 None、days_covered=0（不是 404/500）。"""
+    client, _ = contribution_authorized_client
+    resp = client.get("/api/contribution/data/coverage?account_id=act_nodata_coverage")
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["first_date"] is None
+    assert body["last_date"] is None
+    assert body["days_covered"] == 0
+
+
+@pytest.mark.integration
+def test_contribution_data_coverage_denies_without_module_access(
+    contribution_unauthorized_client,
+):
+    client, _ = contribution_unauthorized_client
+    resp = client.get("/api/contribution/data/coverage?account_id=act_1")
+    assert resp.status_code == 403

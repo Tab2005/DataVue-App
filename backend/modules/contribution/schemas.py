@@ -125,3 +125,11 @@ class DataRefreshResponse(BaseModel):
     account_id: str
     status: str
     message: str
+
+
+class DataCoverageResponse(BaseModel):
+    account_id: str
+    metric_key: str
+    first_date: str | None = None
+    last_date: str | None = None
+    days_covered: int = 0

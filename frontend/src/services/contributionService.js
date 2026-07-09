@@ -6,10 +6,12 @@
  *   GET  /api/contribution/campaigns
  *   GET  /api/contribution/groups
  *   PUT  /api/contribution/groups
+ *   POST /api/contribution/groups/reset
  *   POST /api/contribution/analyses
  *   GET  /api/contribution/analyses
  *   GET  /api/contribution/analyses/{id}
  *   POST /api/contribution/data/refresh
+ *   GET  /api/contribution/data/coverage
  *
  * 422 / 503 等語意錯誤由後端拋 `detail = { errors: [...], missing?: [...] }`，
  * 此層將其攤平為 Error.message 內含逐行列點的訊息，避免頁面只能看到
@@ -116,6 +118,22 @@ export const updateGroups = async ({ accountId, groups }) => {
     }
 };
 
+export const resetGroups = async ({ accountId } = {}) => {
+    if (!accountId) throw new Error('缺少 accountId');
+    const qs = buildQuery({ account_id: accountId });
+    try {
+        return await apiClient.post(`${BASE}/groups/reset${qs}`, undefined);
+    } catch (err) {
+        throw ensureStructured(err, 'group_reset_failed');
+    }
+};
+
+export const fetchDataCoverage = async ({ accountId, metricKey = 'omni_purchase' } = {}) => {
+    if (!accountId) throw new Error('缺少 accountId');
+    const qs = buildQuery({ account_id: accountId, metric_key: metricKey });
+    return apiClient.get(`${BASE}/data/coverage${qs}`);
+};
+
 export const createAnalysis = async ({
     accountId,
     dateStart,
@@ -179,6 +197,8 @@ const contributionService = {
     refreshContributionData,
     getGroups,
     updateGroups,
+    resetGroups,
+    fetchDataCoverage,
     createAnalysis,
     listAnalyses,
     getAnalysis,

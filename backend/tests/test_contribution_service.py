@@ -594,6 +594,178 @@ def test_create_analysis_rejects_no_data(db, sample_user):
     assert any("尚無活動資料" in v for v in exc_info.value.violations)
 
 
+# ── 資料涵蓋範圍 clamp（docs/27 任務 6.1） ───────────────────────────
+def test_clamp_to_coverage_no_coverage_returns_original_range():
+    """帳戶完全無快取（coverage=None）→ 原樣回傳，交由既有「無資料」guardrail 攔截。"""
+    start, end, note = service._clamp_to_coverage("2026-01-01", "2026-06-30", None)
+    assert (start, end) == ("2026-01-01", "2026-06-30")
+    assert note is None
+
+
+def test_clamp_to_coverage_within_range_no_adjustment():
+    """請求區間完全落在實際快取範圍內 → 不調整、note=None。"""
+    start, end, note = service._clamp_to_coverage(
+        "2026-02-01", "2026-05-01", ("2026-01-01", "2026-06-30")
+    )
+    assert (start, end) == ("2026-02-01", "2026-05-01")
+    assert note is None
+
+
+def test_clamp_to_coverage_start_earlier_than_actual_clamps_and_notes():
+    """要求 365 天但實際只快取 180 天 → 起始日 clamp 到實際快取起點，並附說明。"""
+    start, end, note = service._clamp_to_coverage(
+        "2025-07-01", "2026-06-30", ("2026-01-01", "2026-06-30")
+    )
+    assert (start, end) == ("2026-01-01", "2026-06-30")
+    assert note is not None
+    assert "2025-07-01" in note and "2026-01-01" in note
+
+
+def test_clamp_to_coverage_end_later_than_actual_clamps_and_notes():
+    """要求結束日晚於實際快取最後一天（尚未補抓）→ 結束日 clamp。"""
+    start, end, note = service._clamp_to_coverage(
+        "2026-01-01", "2026-07-09", ("2026-01-01", "2026-06-30")
+    )
+    assert (start, end) == ("2026-01-01", "2026-06-30")
+    assert note is not None
+
+
+def test_append_coverage_warning_adds_entry_and_preserves_existing():
+    """純函數層：附加 coverage_adjustment 警告，不動既有 data_quality_warnings。"""
+    diagnostics = {"data_quality_warnings": [{"type": "ungrouped_spend", "share": 0.1}]}
+    merged = service._append_coverage_warning(diagnostics, "要求區間已自動調整")
+    assert len(merged["data_quality_warnings"]) == 2
+    assert merged["data_quality_warnings"][0]["type"] == "ungrouped_spend"
+    assert merged["data_quality_warnings"][1] == {
+        "type": "coverage_adjustment",
+        "message": "要求區間已自動調整",
+    }
+
+
+@pytest.mark.integration
+def test_prepare_analysis_clamps_request_beyond_cached_coverage(db, sample_user):
+    """端到端：請求區間早於實際快取起點（模擬選了 365 天但只快取 180 天），
+    prepare_analysis 應把 snapshot 的實際區間 clamp 到快取範圍，並在
+    config.coverage_note 留下調整說明——而不是讓 _assemble_arrays 把缺口
+    日子填成假的 spend=0/y=0 直接進模型（docs/27 任務 6.1）。"""
+    _seed_180_days(db, "act_coverage")
+    # 請求區間往前多要 180 天（早於實際快取的 2026-01-01）
+    snapshot = service.prepare_analysis(
+        db,
+        account_id="act_coverage",
+        date_start="2025-07-05",
+        date_end="2026-06-30",
+        n_restarts=2,
+        holdout_days=30,
+        created_by=sample_user.id,
+    )
+    db.commit()
+    assert snapshot.date_start == "2026-01-01"
+    assert snapshot.date_end == "2026-06-30"
+    assert snapshot.config.get("coverage_note") is not None
+    assert "2025-07-05" in snapshot.config["coverage_note"]
+
+    db.query(ContributionCampaignGroup).filter(
+        ContributionCampaignGroup.account_id == "act_coverage"
+    ).delete()
+    db.query(ContributionSnapshot).filter(
+        ContributionSnapshot.account_id == "act_coverage"
+    ).delete()
+    db.query(ContributionDailyMetric).filter(
+        ContributionDailyMetric.account_id == "act_coverage"
+    ).delete()
+    db.commit()
+
+
+@pytest.mark.integration
+def test_prepare_analysis_no_coverage_note_when_within_range(db, sample_user):
+    """請求區間完全落在實際快取範圍內 → config.coverage_note 為 None（不誤報調整）。"""
+    _seed_180_days(db, "act_coverage_ok")
+    snapshot = service.prepare_analysis(
+        db,
+        account_id="act_coverage_ok",
+        date_start="2026-01-01",
+        date_end="2026-06-30",
+        n_restarts=2,
+        holdout_days=30,
+        created_by=sample_user.id,
+    )
+    db.commit()
+    assert snapshot.config.get("coverage_note") is None
+
+    db.query(ContributionCampaignGroup).filter(
+        ContributionCampaignGroup.account_id == "act_coverage_ok"
+    ).delete()
+    db.query(ContributionSnapshot).filter(
+        ContributionSnapshot.account_id == "act_coverage_ok"
+    ).delete()
+    db.query(ContributionDailyMetric).filter(
+        ContributionDailyMetric.account_id == "act_coverage_ok"
+    ).delete()
+    db.commit()
+
+
+# ── 重設為自動分組（docs/27 任務 6.2） ───────────────────────────────
+@pytest.mark.integration
+def test_reset_groups_clears_manual_and_regenerates_auto(db, sample_user):
+    """既有 manual 分組 → reset_groups 清空後重新以目前 auto_group() 規則
+    產生（測試驗證清空與重生兩件事，不驗證 grouping.py 規則本身，規則
+    正確性由 test_contribution_grouping.py 把關）。"""
+    db.add(ContributionDailyMetric(
+        account_id="act_reset",
+        date="2026-06-01",
+        campaign_id="c1",
+        campaign_name="OB 主力常態 A",
+        spend=1000.0,
+        impressions=10000,
+        conversions=50.0,
+        conversion_value=15000.0,
+        metric_key="omni_purchase",
+    ))
+    db.add(ContributionCampaignGroup(
+        account_id="act_reset",
+        group_key="G_custom",
+        group_name="使用者自訂",
+        campaign_ids=["c1"],
+        source="manual",
+    ))
+    db.commit()
+
+    out = service.reset_groups(db, account_id="act_reset", updated_by=sample_user.id)
+    assert all(g.source == "auto" for g in out)
+    assert not any(g.group_key == "G_custom" for g in out)
+    assert any(g.group_key == "G1" for g in out)
+
+    db.query(ContributionCampaignGroup).filter(
+        ContributionCampaignGroup.account_id == "act_reset"
+    ).delete()
+    db.query(ContributionDailyMetric).filter(
+        ContributionDailyMetric.account_id == "act_reset"
+    ).delete()
+    db.commit()
+
+
+@pytest.mark.integration
+def test_reset_groups_no_campaigns_returns_empty(db, sample_user):
+    """帳戶完全無活動資料 → reset_groups 清空後回空 list（不建空 G_other）。"""
+    db.add(ContributionCampaignGroup(
+        account_id="act_reset_empty",
+        group_key="G_stale",
+        group_name="舊分組",
+        campaign_ids=["ghost"],
+        source="auto",
+    ))
+    db.commit()
+
+    out = service.reset_groups(db, account_id="act_reset_empty", updated_by=sample_user.id)
+    assert out == []
+
+    db.query(ContributionCampaignGroup).filter(
+        ContributionCampaignGroup.account_id == "act_reset_empty"
+    ).delete()
+    db.commit()
+
+
 @pytest.mark.integration
 def test_process_analysis_marks_failed_on_invalid_config(db, sample_user, monkeypatch):
     """手動塞入壞 config → 背景任務寫 status=failed + error_message。"""

@@ -378,6 +378,57 @@ class ContributionRepository:
         )
         return list(db.scalars(stmt).all())
 
+    def delete_groups(
+        self,
+        db: Session,
+        *,
+        account_id: str,
+    ) -> int:
+        """刪除該帳戶所有分組列（manual + auto），供「重設為自動分組」使用
+        （docs/27 任務 6.2）：`get_or_create_groups` 只在完全無分組時才會跑
+        `auto_group()`，grouping.py 規則修正後既有帳戶不會自動受益，需要
+        先清空既有列才能重新觸發。回傳刪除筆數；呼叫端負責 commit。
+        """
+        existing = (
+            db.query(ContributionCampaignGroup)
+            .filter(ContributionCampaignGroup.account_id == account_id)
+            .all()
+        )
+        for row in existing:
+            db.delete(row)
+        db.flush()
+        return len(existing)
+
+    # ── 資料涵蓋範圍（docs/27 任務 6.1） ──────────────────────────
+    def get_data_coverage(
+        self,
+        db: Session,
+        *,
+        account_id: str,
+        metric_key: str = "omni_purchase",
+    ) -> tuple[str, str] | None:
+        """查詢該帳戶指定 metric_key 目前快取的 (first_date, last_date)；
+        無資料回 None。
+
+        供兩處使用：`data_source._resolve_fetch_window` 的增量抓取起點
+        判斷（原本各自 inline 一份相同查詢，此處收斂為單一實作）；以及
+        `service.prepare_analysis` 判斷請求分析區間是否超出實際快取範圍
+        ——超出的部分若放給 `_assemble_arrays` 逐日組裝，缺口日子會被填成
+        spend=0/conversions=0 的假資料直接進模型，稀釋 guardrail 檢查並偏
+        誤迴歸估計。
+        """
+        stmt = select(
+            func.min(ContributionDailyMetric.date),
+            func.max(ContributionDailyMetric.date),
+        ).where(
+            ContributionDailyMetric.account_id == account_id,
+            ContributionDailyMetric.metric_key == metric_key,
+        )
+        row = db.execute(stmt).first()
+        if row is None or row[0] is None or row[1] is None:
+            return None
+        return (row[0], row[1])
+
     # ── Snapshot 列表分頁（任務 1.4 加強） ─────────────────────────
     def count_snapshots(
         self,

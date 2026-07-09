@@ -26,7 +26,7 @@ GET+PUT / analyses 列表與單筆 / ai-summary）皆加上 `team=Depends(get_cu
 
 import asyncio
 import logging
-from datetime import datetime, timedelta, timezone
+from datetime import date, datetime, timedelta, timezone
 
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query, status
 
@@ -60,6 +60,7 @@ from .schemas import (
     CampaignGroup,
     CampaignListResponse,
     CampaignSummary,
+    DataCoverageResponse,
     DataRefreshResponse,
     GroupsResponse,
     GroupsUpdateRequest,
@@ -76,6 +77,7 @@ from .service import (
     list_groups,
     list_snapshots,
     prepare_analysis,
+    reset_groups,
     save_ai_summary,
     update_groups,
 )
@@ -215,6 +217,41 @@ def update_groups_endpoint(
     )
 
 
+@router.post("/groups/reset", response_model=GroupsResponse)
+def reset_groups_endpoint(
+    account_id: str = Query(..., description="廣告帳戶 ID"),
+    user=Depends(get_current_contribution_user),
+    _access: bool = Depends(require_contribution_operate),
+    team: Team | None = Depends(get_current_team),
+    db=Depends(get_db),
+):
+    """清除既有分組（manual + auto）並重新以目前版本的 `auto_group()` 規則
+    重新產生（docs/27 任務 6.2）。
+
+    用途：grouping.py 的規則修正（任務 3.1）不會自動套用到已有分組紀錄的
+    既有帳戶——`get_or_create_groups` 只在完全無分組時才會跑 auto_group()。
+    此端點供使用者主動重設；會一併清除手動編輯過的分組，前端應在呼叫前
+    明確提示使用者確認（同刪除類操作慣例）。
+    """
+    verify_account_access_or_403(account_id, team=team, user=user)
+    user_id = getattr(user, "id", None)
+    rows = reset_groups(db, account_id=account_id, updated_by=user_id)
+    source = "manual" if any(r.source == "manual" for r in rows) else "auto"
+    return GroupsResponse(
+        account_id=account_id,
+        groups=[
+            CampaignGroup(
+                group_key=r.group_key,
+                group_name=r.group_name,
+                campaign_ids=list(r.campaign_ids or []),
+                source=r.source,
+            )
+            for r in rows
+        ],
+        source=source if rows else "auto",
+    )
+
+
 @router.post(
     "/analyses",
     response_model=AnalysisCreateResponse,
@@ -277,6 +314,13 @@ async def create_analysis_endpoint(
         "apscheduler": f"已加入背景排程（{snapshot.id}）",
         "local_async": f"已於本機事件迴圈啟動背景分析（{snapshot.id}）",
     }.get(queue_host, f"已啟動分析（{snapshot.id}）")
+
+    # docs/27 任務 6.1：請求區間超出實際快取涵蓋範圍時，prepare_analysis
+    # 已把區間 clamp 到實際可用範圍並記在 snapshot.config；在建立當下就
+    # 提示使用者，不用等分析跑完才在 diagnostics 看到。
+    coverage_note = (snapshot.config or {}).get("coverage_note")
+    if coverage_note:
+        msg = f"{msg}；{coverage_note}"
 
     return AnalysisCreateResponse(
         snapshot_id=snapshot.id,
@@ -530,24 +574,48 @@ def _get_existing_date_window(
     account_id: str,
     metric_key: str,
 ) -> tuple[str, str] | None:
-    """查詢快取表目前該帳戶該指標的 (min_date, max_date)；無資料回 None。"""
-    from sqlalchemy import func, select
-    from database.models.contribution import ContributionDailyMetric
+    """查詢快取表目前該帳戶該指標的 (min_date, max_date)；無資料回 None。
 
-    stmt = (
-        select(
-            func.min(ContributionDailyMetric.date),
-            func.max(ContributionDailyMetric.date),
-        )
-        .where(
-            ContributionDailyMetric.account_id == account_id,
-            ContributionDailyMetric.metric_key == metric_key,
-        )
+    委派給 `repository.get_data_coverage`（docs/27 任務 6.1 收斂為單一實作，
+    `/data/coverage` 端點也共用同一份查詢，避免兩處各自維護一份相同 SQL）。
+    """
+    return contribution_repository.get_data_coverage(
+        db, account_id=account_id, metric_key=metric_key
     )
-    row = db.execute(stmt).first()
-    if row is None or row[0] is None or row[1] is None:
-        return None
-    return (row[0], row[1])
+
+
+@router.get("/data/coverage", response_model=DataCoverageResponse)
+def get_data_coverage(
+    account_id: str = Query(..., description="廣告帳戶 ID"),
+    metric_key: str = Query("omni_purchase", description="轉換指標鍵"),
+    user=Depends(get_current_contribution_user),
+    _access: bool = Depends(require_contribution_module),
+    team: Team | None = Depends(get_current_team),
+    db=Depends(get_db),
+):
+    """回傳該帳戶目前快取資料的實際涵蓋範圍（docs/27 任務 6.1）。
+
+    供前端在選擇分析區間（例如 365 天）前先行參考；`POST /analyses` 本身
+    也會依此把請求區間 clamp 到實際可用範圍（見 service.prepare_analysis），
+    此端點純粹是讓使用者在送出分析前就能看到，不是唯一把關點。
+    """
+    verify_account_access_or_403(account_id, team=team, user=user)
+    coverage = contribution_repository.get_data_coverage(
+        db, account_id=account_id, metric_key=metric_key
+    )
+    if coverage is None:
+        return DataCoverageResponse(
+            account_id=account_id, metric_key=metric_key, days_covered=0
+        )
+    first_date, last_date = coverage
+    days_covered = (date.fromisoformat(last_date) - date.fromisoformat(first_date)).days + 1
+    return DataCoverageResponse(
+        account_id=account_id,
+        metric_key=metric_key,
+        first_date=first_date,
+        last_date=last_date,
+        days_covered=days_covered,
+    )
 
 
 async def _run_refresh_background(

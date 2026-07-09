@@ -5,11 +5,13 @@ import ContributionAnalysis, { evaluateRefreshPoll } from '../ContributionAnalys
 import { renderWithOutlet } from '../../test/renderWithOutlet';
 import {
     createAnalysis,
+    fetchDataCoverage,
     getAnalysis,
     getGroups,
     listAnalyses,
     listCampaignSummaries,
     refreshContributionData,
+    resetGroups,
     updateGroups,
 } from '../../services/contributionService';
 
@@ -20,6 +22,8 @@ vi.mock('../../services/contributionService', () => ({
     listCampaignSummaries: vi.fn(),
     refreshContributionData: vi.fn(),
     updateGroups: vi.fn(),
+    resetGroups: vi.fn(),
+    fetchDataCoverage: vi.fn(),
     getAnalysis: vi.fn(),
     saveAiSummary: vi.fn(),
     pingContribution: vi.fn(),
@@ -56,6 +60,14 @@ describe('ContributionAnalysis', () => {
         getGroups.mockResolvedValue({ account_id: 'act_001', groups: [], source: 'auto' });
         listAnalyses.mockResolvedValue({ account_id: 'act_001', analyses: [], total: 0 });
         refreshContributionData.mockResolvedValue({ account_id: 'act_001', status: 'accepted', message: '已排程' });
+        fetchDataCoverage.mockResolvedValue({
+            account_id: 'act_001',
+            metric_key: 'omni_purchase',
+            first_date: null,
+            last_date: null,
+            days_covered: 0,
+        });
+        resetGroups.mockResolvedValue({ account_id: 'act_001', groups: [], source: 'auto' });
         createAnalysis.mockResolvedValue({
             snapshot_id: 'csn_test_001',
             status: 'queued',
@@ -591,6 +603,104 @@ describe('ContributionAnalysis', () => {
         expect(
             screen.getByText('有 16.7% 花費未分組，其轉換會被歸入基線，建議重新產生分組後重跑')
         ).toBeTruthy();
+    });
+
+    it('resets groups to auto after user confirms (docs/27 任務 6.2)', async () => {
+        useModuleAccess.mockReturnValue({ hasAccess: true, loading: false, error: null });
+        usePermission.mockReturnValue({ hasPermission: true, loading: false, error: null });
+        getGroups.mockResolvedValue({
+            account_id: 'act_001',
+            source: 'manual',
+            groups: [{ group_key: 'G_custom', group_name: '自訂', campaign_ids: ['c1'], source: 'manual' }],
+        });
+        resetGroups.mockResolvedValue({
+            account_id: 'act_001',
+            source: 'auto',
+            groups: [{ group_key: 'G1', group_name: '主力常態', campaign_ids: ['c1'], source: 'auto' }],
+        });
+        const confirmSpy = vi.spyOn(window, 'confirm').mockReturnValue(true);
+
+        renderWithOutlet(<ContributionAnalysis />, {
+            outletContext: { isMobile: false, language: 'zh', selectedTeamId: null },
+        });
+
+        await screen.findByText('G_custom');
+        fireEvent.click(screen.getByRole('button', { name: '重設為自動分組' }));
+
+        await waitFor(() => expect(resetGroups).toHaveBeenCalledWith({ accountId: 'act_001' }));
+        await waitFor(() => expect(screen.getByText('G1')).toBeTruthy());
+        expect(screen.queryByText('G_custom')).toBeNull();
+
+        confirmSpy.mockRestore();
+    });
+
+    it('does not reset groups when the user cancels the confirmation (docs/27 任務 6.2)', async () => {
+        useModuleAccess.mockReturnValue({ hasAccess: true, loading: false, error: null });
+        usePermission.mockReturnValue({ hasPermission: true, loading: false, error: null });
+        getGroups.mockResolvedValue({
+            account_id: 'act_001',
+            source: 'manual',
+            groups: [{ group_key: 'G_custom', group_name: '自訂', campaign_ids: ['c1'], source: 'manual' }],
+        });
+        const confirmSpy = vi.spyOn(window, 'confirm').mockReturnValue(false);
+
+        renderWithOutlet(<ContributionAnalysis />, {
+            outletContext: { isMobile: false, language: 'zh', selectedTeamId: null },
+        });
+
+        await screen.findByText('G_custom');
+        fireEvent.click(screen.getByRole('button', { name: '重設為自動分組' }));
+
+        expect(confirmSpy).toHaveBeenCalled();
+        expect(resetGroups).not.toHaveBeenCalled();
+        expect(screen.getByText('G_custom')).toBeTruthy();
+
+        confirmSpy.mockRestore();
+    });
+
+    it('adds a 365-day period option and shows a coverage hint without blocking submission when it predates cached data (docs/27 任務 6.1)', async () => {
+        useModuleAccess.mockReturnValue({ hasAccess: true, loading: false, error: null });
+        usePermission.mockReturnValue({ hasPermission: true, loading: false, error: null });
+        listCampaignSummaries.mockResolvedValue({
+            account_id: 'act_001',
+            campaigns: [
+                { campaign_id: 'c1', campaign_name: 'C1', spend: 1000, impressions: 100, conversions: 5, conversion_value: 0, active_days: 30 },
+            ],
+            total: 1,
+        });
+        getGroups.mockResolvedValue({
+            account_id: 'act_001',
+            source: 'auto',
+            groups: [{ group_key: 'G1', group_name: '主力', campaign_ids: ['c1'], source: 'auto' }],
+        });
+        // 快取只涵蓋最近 180 天，早於使用者若選 365 天所要求的起點
+        const fmt = (d) => d.toISOString().slice(0, 10);
+        const last = new Date();
+        last.setUTCDate(last.getUTCDate() - 1);
+        const first = new Date(last);
+        first.setUTCDate(first.getUTCDate() - 179);
+        fetchDataCoverage.mockResolvedValue({
+            account_id: 'act_001',
+            metric_key: 'omni_purchase',
+            first_date: fmt(first),
+            last_date: fmt(last),
+            days_covered: 180,
+        });
+
+        renderWithOutlet(<ContributionAnalysis />, {
+            outletContext: { isMobile: false, language: 'zh', selectedTeamId: null },
+        });
+
+        await screen.findByText(/快取資料涵蓋/);
+
+        const periodSelect = screen.getByLabelText('分析區間（天）');
+        expect(periodSelect.querySelector('option[value="365"]')).toBeTruthy();
+        fireEvent.change(periodSelect, { target: { value: '365' } });
+
+        await screen.findByText(/選擇的區間早於實際快取起點/);
+
+        const button = await screen.findByRole('button', { name: '開始分析' });
+        await waitFor(() => expect(button.disabled).toBe(false));
     });
 });
 

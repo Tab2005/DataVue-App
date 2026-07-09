@@ -20,11 +20,13 @@ import { useModuleAccess } from '../hooks/usePermission';
 import { aiService } from '../services/aiService';
 import {
     createAnalysis,
+    fetchDataCoverage,
     getAnalysis,
     getGroups,
     listAnalyses,
     listCampaignSummaries,
     refreshContributionData,
+    resetGroups,
     saveAiSummary,
     updateGroups,
 } from '../services/contributionService';
@@ -381,7 +383,16 @@ const AccountAndPeriod = ({
     canSubmit,
     accountList,
     loadingAccounts,
+    dataCoverage,
 }) => {
+    // docs/27 任務 6.1：分析請求區間若超出實際快取涵蓋範圍，後端會自動
+    // clamp 到快取實際涵蓋範圍（並在結果附加說明），不會把缺口日子當假的
+    // 零花費資料餵進模型。這裡只是先讓使用者知道「選了 N 天但可能沒那麼
+    // 多可用資料」，不是唯一把關點，也不因此停用送出按鈕。
+    const requestedStart = accountId ? computePeriod(periodDays).dateStart : null;
+    const coverageInsufficient = Boolean(
+        dataCoverage?.first_date && requestedStart && requestedStart < dataCoverage.first_date
+    );
     return (
         <Section
             title={t(language, 'Ad Account & Period', '廣告帳戶與分析期間')}
@@ -433,6 +444,7 @@ const AccountAndPeriod = ({
                     >
                         <option value={90}>90</option>
                         <option value={180}>180</option>
+                        <option value={365}>365</option>
                     </select>
                 </label>
 
@@ -479,6 +491,28 @@ const AccountAndPeriod = ({
                         `Cached campaigns: ${campaignsCount}. If 0, click Refresh Data to fetch from Meta.`,
                         `快取中活動數：${campaignsCount}。若為 0 請先按「抓取資料」從 Meta 拉取。`
                     )}
+                    {dataCoverage?.first_date && (
+                        <span>
+                            {' · '}
+                            {t(
+                                language,
+                                `Cached data covers ${dataCoverage.first_date} ~ ${dataCoverage.last_date} (${dataCoverage.days_covered} days).`,
+                                `快取資料涵蓋 ${dataCoverage.first_date} ~ ${dataCoverage.last_date}（共 ${dataCoverage.days_covered} 天）。`
+                            )}
+                        </span>
+                    )}
+                </div>
+            )}
+
+            {coverageInsufficient && (
+                <div style={{ marginTop: '10px' }}>
+                    <InfoPanel
+                        message={t(
+                            language,
+                            `Requested period starts before cached data (${dataCoverage.first_date}). Analysis will automatically use the actually cached range instead of padding missing days with zero.`,
+                            `選擇的區間早於實際快取起點（${dataCoverage.first_date}），分析會自動改用實際可用的快取區間，不會把缺口日子當成 0 花費餵進模型。`
+                        )}
+                    />
                 </div>
             )}
         </Section>
@@ -1163,6 +1197,9 @@ const GroupEditor = ({
     onSave,
     saving,
     saveError,
+    onReset,
+    resetting,
+    resetError,
 }) => {
     const campaignsById = useMemo(() => {
         const map = new Map();
@@ -1204,6 +1241,7 @@ const GroupEditor = ({
             )}
         >
             {saveError && <ErrorPanel message={saveError} />}
+            {resetError && <ErrorPanel message={resetError} />}
 
             {draft.length === 0 && (
                 <InfoPanel message={t(language, 'No groups to edit.', '沒有可編輯的分組。')} />
@@ -1342,6 +1380,25 @@ const GroupEditor = ({
             )}
 
             <div style={{ marginTop: '14px', display: 'flex', gap: '8px', justifyContent: 'flex-end' }}>
+                <button
+                    type="button"
+                    onClick={onReset}
+                    disabled={resetting || saving}
+                    title={t(
+                        language,
+                        'Clear current groups (including manual edits) and regenerate with the latest auto-grouping rules.',
+                        '清除目前分組（含手動編輯）並以最新的自動分組規則重新產生。'
+                    )}
+                    style={{
+                        ...secondaryButtonStyle,
+                        marginRight: 'auto',
+                        opacity: resetting || saving ? 0.5 : 1,
+                    }}
+                >
+                    {resetting
+                        ? t(language, 'Resetting…', '重設中…')
+                        : t(language, 'Reset to Auto', '重設為自動分組')}
+                </button>
                 {editing && (
                     <button type="button" onClick={onCancel} style={secondaryButtonStyle}>
                         {t(language, 'Cancel', '取消')}
@@ -1667,6 +1724,9 @@ const ContributionAnalysis = () => {
     const [editingGroups, setEditingGroups] = useState(null);
     const [savingGroups, setSavingGroups] = useState(false);
     const [groupSaveError, setGroupSaveError] = useState(null);
+    const [resettingGroups, setResettingGroups] = useState(false);
+    const [groupResetError, setGroupResetError] = useState(null);
+    const [dataCoverage, setDataCoverage] = useState(null);
     const [refreshing, setRefreshing] = useState(false);
     const [refreshingError, setRefreshingError] = useState(null);
     const [refreshNotice, setRefreshNotice] = useState(null);
@@ -1715,6 +1775,20 @@ const ContributionAnalysis = () => {
         }
     }, []);
 
+    const loadDataCoverage = useCallback(async (acct) => {
+        if (!acct) {
+            setDataCoverage(null);
+            return;
+        }
+        try {
+            const res = await fetchDataCoverage({ accountId: acct });
+            setDataCoverage(res);
+        } catch (err) {
+            console.error('fetchDataCoverage failed', err);
+            setDataCoverage(null);
+        }
+    }, []);
+
     const loadHistory = useCallback(async (acct) => {
         if (!acct) {
             setHistory([]);
@@ -1750,7 +1824,8 @@ const ContributionAnalysis = () => {
         loadCampaigns(accountId);
         loadGroups(accountId);
         loadHistory(accountId);
-    }, [accountId, loadCampaigns, loadGroups, loadHistory]);
+        loadDataCoverage(accountId);
+    }, [accountId, loadCampaigns, loadGroups, loadHistory, loadDataCoverage]);
 
     // 輪詢 active snapshot
     useEffect(() => {
@@ -1848,6 +1923,7 @@ const ContributionAnalysis = () => {
             });
             if (stop) {
                 stopPolling();
+                loadDataCoverage(acct);
                 setRefreshNotice(
                     reason === 'timeout'
                         ? {
@@ -1906,6 +1982,29 @@ const ContributionAnalysis = () => {
             setActiveSnapshot(next);
         } catch (err) {
             setPageError(err.message || '載入快照失敗');
+        }
+    };
+
+    const handleResetGroups = async () => {
+        if (!accountId) return;
+        const confirmed = window.confirm(
+            t(
+                language,
+                'This clears the current groups (including any manual edits) and regenerates them with the latest auto-grouping rules. Continue?',
+                '此操作將清除目前分組（含任何手動編輯），並以最新的自動分組規則重新產生，確定要繼續嗎？'
+            )
+        );
+        if (!confirmed) return;
+        setResettingGroups(true);
+        setGroupResetError(null);
+        try {
+            const res = await resetGroups({ accountId });
+            setGroups(res.groups || []);
+            setEditingGroups(null);
+        } catch (err) {
+            setGroupResetError(err.message);
+        } finally {
+            setResettingGroups(false);
         }
     };
 
@@ -2113,6 +2212,7 @@ const ContributionAnalysis = () => {
                     canSubmit={canSubmit}
                     accountList={accounts}
                     loadingAccounts={loadingAccounts}
+                    dataCoverage={dataCoverage}
                 />
 
                 {refreshingError && <ErrorPanel message={refreshingError} />}
@@ -2151,6 +2251,9 @@ const ContributionAnalysis = () => {
                         onSave={handleSaveGroups}
                         saving={savingGroups}
                         saveError={groupSaveError}
+                        onReset={handleResetGroups}
+                        resetting={resettingGroups}
+                        resetError={groupResetError}
                     />
                 )}
 
