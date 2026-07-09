@@ -85,6 +85,7 @@ class AnalysisSummary(BaseModel):
     created_at: datetime | None = None
     completed_at: datetime | None = None
     error_message: str | None = None
+    has_ai_summary: bool = False
 
 
 class AnalysisListResponse(BaseModel):
@@ -104,8 +105,20 @@ class AnalysisDetailResponse(BaseModel):
     diagnostics: dict[str, Any] | None = None
     error_message: str | None = None
     runtime_job_id: str | None = None
+    ai_summary: str | None = None
+    ai_summary_generated_at: datetime | None = None
     created_at: datetime | None = None
     completed_at: datetime | None = None
+
+
+class AiSummaryUpdateRequest(BaseModel):
+    ai_summary: str = Field(..., min_length=1, max_length=20000)
+
+
+class AiSummaryUpdateResponse(BaseModel):
+    snapshot_id: str
+    ai_summary: str
+    ai_summary_generated_at: datetime
 
 
 class DataRefreshResponse(BaseModel):

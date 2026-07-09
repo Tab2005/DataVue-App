@@ -88,6 +88,8 @@ class ContributionSnapshot(Base):
     diagnostics = Column(JSON, nullable=True)
     error_message = Column(Text, nullable=True)
     runtime_job_id = Column(String(120), nullable=True, index=True)
+    ai_summary = Column(Text, nullable=True)
+    ai_summary_generated_at = Column(DateTime, nullable=True)
     created_by = Column(String, ForeignKey("users.id"), nullable=True)
     created_at = Column(DateTime, default=text("CURRENT_TIMESTAMP"))
     completed_at = Column(DateTime, nullable=True)

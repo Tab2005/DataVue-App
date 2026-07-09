@@ -1,5 +1,5 @@
 """
-Contribution 模組任務 1.1 / 1.3 / 1.4 驗收測試（docs/21）
+Contribution 模組任務 1.1 / 1.3 / 1.4 / 2.3 驗收測試（docs/21）
 
 驗收標準：
   1.1 /api/contribution/* 未授權回 403、授權後 /ping 回 200
@@ -7,6 +7,12 @@ Contribution 模組任務 1.1 / 1.3 / 1.4 驗收測試（docs/21）
   1.1 三張 contribution_* 資料表可建立 ORM 物件（migration + model 對齊）
   1.3 /campaigns 由快取表 GROUP BY 彙總；/data/refresh 背景抓取 + 4xx token
   1.4 /groups 自動分組 + 手動覆寫；/analyses 編排 + scheduler/local fallback
+  2.3 PUT /analyses/{id}/ai-summary 持久化 AI 白話解讀
+       - 200 寫入 + 回傳時間戳
+       - 404 snapshot 不存在
+       - 409 snapshot 非 completed
+       - 403 未授權
+       - GET 列表帶 has_ai_summary、GET 單筆帶 ai_summary 兩欄
 """
 
 from unittest.mock import patch
@@ -14,6 +20,7 @@ from unittest.mock import patch
 import pytest
 
 from database import Module, Team, TeamMember, UserModuleAccess, UserRole
+from database.models.contribution import ContributionSnapshot
 from modules.auth import dependencies as auth_dependencies
 from modules.contribution.dependencies import (
     get_current_contribution_user,
@@ -405,3 +412,184 @@ def test_contribution_repository_snapshot_status_flow(db, sample_user):
     refreshed2 = repository.get_snapshot(db, snap2.id)
     assert refreshed2.status == "failed"
     assert "guardrail" in refreshed2.error_message
+
+
+# ── 任務 2.3 驗收：PUT /analyses/{id}/ai-summary + 列表/單筆帶欄位 ─────
+@pytest.mark.integration
+def test_contribution_ai_summary_put_persists_and_returns_200(
+    contribution_authorized_client, db, sample_user
+):
+    """PUT ai-summary 對 completed snapshot 寫入並回 200 + 生成時間。"""
+    from modules.contribution.repository import repository
+
+    snap = repository.create_snapshot(
+        db,
+        account_id="act_ai1",
+        date_start="2026-01-01",
+        date_end="2026-06-30",
+        config={"n_restarts": 5},
+        created_by=sample_user.id,
+    )
+    repository.set_snapshot_status(
+        db, snap.id, status="completed", results={"G1": {"median": 0.5}}
+    )
+    db.commit()
+
+    client, _ = contribution_authorized_client
+    body_text = "**G1** 貢獻大約 50%，這組是真正的引擎。"
+    resp = client.put(
+        f"/api/contribution/analyses/{snap.id}/ai-summary",
+        json={"ai_summary": body_text},
+    )
+    assert resp.status_code == 200
+    payload = resp.json()
+    assert payload["snapshot_id"] == snap.id
+    assert payload["ai_summary"] == body_text
+    assert payload["ai_summary_generated_at"] is not None
+
+    # 再次 GET 單筆 → 持久化生效
+    detail = client.get(f"/api/contribution/analyses/{snap.id}").json()
+    assert detail["ai_summary"] == body_text
+    assert detail["ai_summary_generated_at"] is not None
+
+    db.query(ContributionSnapshot).filter(
+        ContributionSnapshot.account_id == "act_ai1"
+    ).delete()
+    db.commit()
+
+
+@pytest.mark.integration
+def test_contribution_ai_summary_put_returns_404_for_missing_snapshot(
+    contribution_authorized_client,
+):
+    """PUT ai-summary 對不存在的 snapshot 回 404。"""
+    client, _ = contribution_authorized_client
+    resp = client.put(
+        "/api/contribution/analyses/csn_nonexistent_xyz/ai-summary",
+        json={"ai_summary": "x" * 50},
+    )
+    assert resp.status_code == 404
+
+
+@pytest.mark.integration
+def test_contribution_ai_summary_put_returns_409_when_not_completed(
+    contribution_authorized_client, db, sample_user
+):
+    """PUT ai-summary 對 queued/processing/failed snapshot 回 409。"""
+    from modules.contribution.repository import repository
+
+    for status_value in ("queued", "processing", "failed"):
+        snap = repository.create_snapshot(
+            db,
+            account_id="act_ai2",
+            date_start="2026-01-01",
+            date_end="2026-06-30",
+            config={"n_restarts": 5},
+            created_by=sample_user.id,
+        )
+        repository.set_snapshot_status(
+            db, snap.id, status=status_value, error_message="x" if status_value == "failed" else None
+        )
+        db.commit()
+
+    client, _ = contribution_authorized_client
+    # 任何一個非 completed 都應回 409
+    snap = (
+        db.query(ContributionSnapshot)
+        .filter(ContributionSnapshot.account_id == "act_ai2")
+        .filter(ContributionSnapshot.status == "queued")
+        .first()
+    )
+    resp = client.put(
+        f"/api/contribution/analyses/{snap.id}/ai-summary",
+        json={"ai_summary": "提早寫入的解讀"},
+    )
+    assert resp.status_code == 409
+    assert "completed" in resp.text
+
+    db.query(ContributionSnapshot).filter(
+        ContributionSnapshot.account_id == "act_ai2"
+    ).delete()
+    db.commit()
+
+
+@pytest.mark.integration
+def test_contribution_ai_summary_put_denies_without_module_access(
+    contribution_unauthorized_client, db, sample_user
+):
+    """未授權使用者 PUT ai-summary 應回 403。"""
+    from modules.contribution.repository import repository
+
+    # 先建一個 completed snapshot
+    snap = repository.create_snapshot(
+        db,
+        account_id="act_ai3",
+        date_start="2026-01-01",
+        date_end="2026-06-30",
+        config={"n_restarts": 5},
+        created_by=sample_user.id,
+    )
+    repository.set_snapshot_status(db, snap.id, status="completed")
+    db.commit()
+
+    client, _ = contribution_unauthorized_client
+    resp = client.put(
+        f"/api/contribution/analyses/{snap.id}/ai-summary",
+        json={"ai_summary": "未授權嘗試"},
+    )
+    assert resp.status_code == 403
+    assert "contribution" in resp.text
+
+    db.query(ContributionSnapshot).filter(
+        ContributionSnapshot.account_id == "act_ai3"
+    ).delete()
+    db.commit()
+
+
+@pytest.mark.integration
+def test_contribution_analyses_list_includes_has_ai_summary(
+    contribution_authorized_client, db, sample_user
+):
+    """GET /analyses 列表帶 has_ai_summary 旗標。"""
+    from modules.contribution.repository import repository
+
+    snap_with = repository.create_snapshot(
+        db,
+        account_id="act_list_ai",
+        date_start="2026-01-01",
+        date_end="2026-06-30",
+        config={"n_restarts": 5},
+        created_by=sample_user.id,
+    )
+    repository.set_snapshot_status(
+        db, snap_with.id, status="completed", results={}
+    )
+    repository.set_ai_summary(db, snap_with.id, ai_summary="預先寫入的解讀")
+
+    snap_without = repository.create_snapshot(
+        db,
+        account_id="act_list_ai",
+        date_start="2026-02-01",
+        date_end="2026-07-30",
+        config={"n_restarts": 5},
+        created_by=sample_user.id,
+    )
+    repository.set_snapshot_status(
+        db, snap_without.id, status="completed", results={}
+    )
+    db.commit()
+
+    client, _ = contribution_authorized_client
+    resp = client.get(
+        "/api/contribution/analyses?account_id=act_list_ai&page=1&page_size=10"
+    )
+    assert resp.status_code == 200
+    body = resp.json()
+    has_map = {row["snapshot_id"]: row["has_ai_summary"] for row in body["analyses"]}
+    assert has_map[snap_with.id] is True
+    assert has_map[snap_without.id] is False
+
+    db.query(ContributionSnapshot).filter(
+        ContributionSnapshot.account_id == "act_list_ai"
+    ).delete()
+    db.commit()

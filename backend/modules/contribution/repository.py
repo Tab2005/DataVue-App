@@ -359,5 +359,26 @@ class ContributionRepository:
         )
         return int(db.execute(stmt).scalar() or 0)
 
+    # ── AI 白話解讀（任務 2.3 追加） ──────────────────────────────
+    def set_ai_summary(
+        self,
+        db: Session,
+        snapshot_id: str,
+        *,
+        ai_summary: str,
+    ) -> ContributionSnapshot | None:
+        """寫入 AI 白話解讀（含生成時間）；snapshot 不存在回 None。
+
+        寫入時同時設置 ai_summary 與 ai_summary_generated_at，呼叫端應
+        先確認 snapshot.status == 'completed'（service 層把關）。"""
+        snapshot = self.get_snapshot(db, snapshot_id)
+        if snapshot is None:
+            return None
+        snapshot.ai_summary = ai_summary
+        snapshot.ai_summary_generated_at = datetime.now(timezone.utc)
+        db.add(snapshot)
+        db.flush()
+        return snapshot
+
 
 repository = ContributionRepository()

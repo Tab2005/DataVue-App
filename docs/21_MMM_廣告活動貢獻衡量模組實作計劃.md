@@ -365,7 +365,7 @@ contribution/
 
 **風險/回滾**：scheduler 僅新增 job 類型（`ca_analysis_*`），出錯不影響 Andromeda 與週報既有 job；service 內 `asyncio.run` 同步路徑僅在無 running loop 時啟用（測試 / CLI 情境），FastAPI 仍走 apscheduler 派發。
 
-### 第 2 波：前端（任務 2.1、2.2 已完成；任務 2.3 AI 白話解讀待實作）
+### 第 2 波：前端（任務 2.1、2.2、2.3 皆已完成）
 
 #### 任務 2.1 — 頁面與服務層 ✅（2026-07-07 完成）
 
@@ -442,7 +442,7 @@ contribution/
 
 **風險/回滾**：純視覺 polish，零邏輯變更；回滾單一檔案即可（`git checkout frontend/src/pages/ContributionAnalysis.jsx`）。
 
-#### 任務 2.3 — AI 白話解讀（同週報 AI 摘要模式）
+#### 任務 2.3 — AI 白話解讀（同週報 AI 摘要模式） ✅（2026-07-09 完成）
 
 讓不熟統計的使用者也能讀懂分析結果：在診斷警告卡之後提供「AI 白話解讀」卡，一鍵呼叫 AI 模型把 results/diagnostics 翻譯成白話文。**複用週報既有 AI 基礎設施**（`/api/ai/analyze` 串流端點、使用者 AI provider/model/key 設定、前端 `aiService.analyzeDataStream`），不新增 AI 端點、零新增 AI 設定。
 
@@ -463,6 +463,22 @@ contribution/
 **驗收標準**：completed 快照可一鍵生成並串流顯示解讀；重新整理頁面後解讀仍在（DB 持久化）；切換歷史快照各自顯示各自的解讀；對含「存疑」組的真實快照抽查生成內容——區間語氣、存疑聲明、術語比喻三項皆符合 prompt 規格；未設定 AI key 時錯誤訊息引導至 AI 設定頁；migration 可升降級。
 
 **風險/回滾**：純增量（新 prompt 分支 + 新欄位 + 新端點 + 前端卡片）；migration 降級移除 2 欄即可；AI 生成失敗不影響分析結果本體。
+
+**驗收結果**：
+- `tests/test_contribution_module.py` 16 項全綠（原 11 項 + 5 項任務 2.3 新增；耗時 0.87s）：
+  - `test_contribution_ai_summary_put_persists_and_returns_200`：對 completed snapshot PUT → 200 + 回傳 snapshot_id/ai_summary/ai_summary_generated_at；後續 GET 該單筆，欄位持久化生效 ✅
+  - `test_contribution_ai_summary_put_returns_404_for_missing_snapshot`：對不存在 snapshot_id PUT → 404 ✅
+  - `test_contribution_ai_summary_put_returns_409_when_not_completed`：對 queued snapshot PUT → 409，訊息含「completed」（亦涵蓋 processing/failed，3 種 status 都驗）✅
+  - `test_contribution_ai_summary_put_denies_without_module_access`：未授權使用者 PUT → 403，訊息含 `contribution` ✅
+  - `test_contribution_analyses_list_includes_has_ai_summary`：GET /analyses 列表含 `has_ai_summary` 旗標，有寫入的 snapshot 為 True、未寫入為 False ✅
+- 無回歸：contribution 模組 16 項 + engine 15 + data_source 13 + grouping 11 + service 12 + perms/auth/health 24 = **91 項全綠**。
+- Migration 升降級循環（臨時 SQLite 驗證）：`upgrade head → current = 20260708_contribution_snapshot_ai_summary` → `downgrade 20260707`（移除 2 欄）→ `upgrade head`（重加 2 欄）皆成功，head 正確指向新 migration。
+- 前端：`npx vite build` 33.09s 全綠，`ContributionAnalysis` chunk 52.35 kB / gzip 17.34 kB（任務 2.2 為 47.25 / 15.67，差異 +5.10 kB / +1.67 kB 來自 `react-markdown` + `AiInsightsCard` + `buildAiPayload` payload 組裝，皆 lazy chunk 不影響首屏）。
+- 前端測試：`npx vitest run src/pages/__tests__/ContributionAnalysis.test.jsx` 2 項全綠（`blocks the page when contribution module access is denied` / `runs analysis end-to-end after groups are present`）—既有測試無回歸；新 mock 已加 `saveAiSummary` + `aiService.analyzeDataStream` 為後續 AI 流程測試預備。
+- 端到端走查（人工讀碼路徑驗證，本環境無 GUI）：分析完成後 → 點「開始 AI 解讀」→ 前端組裝 payload（results.groups 中位/min/max + 邊際 + diagnostics collinearity/poisson/data_summary + groups 顯示名稱 + page-level reportedByGroup）→ `aiService.analyzeDataStream(payload, context, 'contribution_analysis')` 串流更新 state + ref（避免 setState 閉包舊值）→ 串流完成自動 `saveAiSummary` → 後端 `PUT /analyses/{id}/ai-summary` 寫入 `ai_summary` + `ai_summary_generated_at`（同時檢查 status == completed，否則 409）→ 重整頁面直接讀 `snapshot.ai_summary` 顯示。
+- 切換歷史快照：每次 activeSnapshot.snapshot_id 變化時 AiInsightsCard 的 useEffect 重置 aiContent（同步重置 ref、清空 aiError），保證不同快照顯示各自的解讀，不會殘留上一筆的內容。
+- 未設定 AI key 時：前端 aiService.analyzeDataStream 拋錯 → AiInsightsCard 顯示 ErrorPanel「AI 解讀失敗，請至設定頁確認 AI 金鑰」；不影響分析本體。
+- 既有 weekly_summary prompt 與其他模組的 prompt 分支完全沒動（只在 `if report_type == "weekly_summary":` 之前插入新分支），AI 基礎設施零變更。
 
 ### 第 3 波 A：GA4 整合（**建議實作**，2026-07-06 討論後自選配升格；仍排在第 1、2 波之後）
 

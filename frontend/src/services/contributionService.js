@@ -148,6 +148,21 @@ export const getAnalysis = async (snapshotId) => {
     return apiClient.get(`${BASE}/analyses/${snapshotId}`);
 };
 
+export const saveAiSummary = async ({ snapshotId, aiSummary }) => {
+    if (!snapshotId) throw new Error('缺少 snapshotId');
+    if (typeof aiSummary !== 'string' || aiSummary.length === 0) {
+        throw new Error('缺少 aiSummary');
+    }
+    try {
+        return await apiClient.put(
+            `${BASE}/analyses/${snapshotId}/ai-summary`,
+            { ai_summary: aiSummary }
+        );
+    } catch (err) {
+        throw ensureStructured(err, 'ai_summary_save_failed');
+    }
+};
+
 const contributionService = {
     pingContribution,
     listCampaignSummaries,
@@ -157,6 +172,7 @@ const contributionService = {
     createAnalysis,
     listAnalyses,
     getAnalysis,
+    saveAiSummary,
 };
 
 export default contributionService;

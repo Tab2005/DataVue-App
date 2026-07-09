@@ -68,6 +68,10 @@ class SnapshotNotFound(ContributionServiceError):
     pass
 
 
+class SnapshotNotCompleted(ContributionServiceError):
+    """嘗試寫入 AI 摘要但 snapshot 尚未 completed（前端應在生成前輪詢至 completed）。"""
+
+
 # ── 分組（get / create / update） ──────────────────────────────────────
 def get_or_create_groups(
     db: Session,
@@ -414,6 +418,35 @@ def get_snapshot(db: Session, snapshot_id: str) -> ContributionSnapshot:
     return snap
 
 
+def save_ai_summary(
+    db: Session,
+    *,
+    snapshot_id: str,
+    ai_summary: str,
+) -> ContributionSnapshot:
+    """寫入 AI 白話解讀到 snapshot。
+
+    規則：
+      - snapshot 不存在 → 拋 SnapshotNotFound（router 翻 404）
+      - snapshot.status != 'completed' → 拋 SnapshotNotCompleted
+        （router 翻 409，避免前端把尚未分析的結果配上 AI 解讀）
+      - 寫入成功回傳刷新後的 ORM 物件（含 ai_summary_generated_at）
+    """
+    snap = repository.get_snapshot(db, snapshot_id)
+    if snap is None:
+        raise SnapshotNotFound(snapshot_id)
+    if snap.status != "completed":
+        raise SnapshotNotCompleted(
+            f"snapshot {snapshot_id} 狀態為 {snap.status}，僅 completed 可寫入 AI 解讀"
+        )
+    updated = repository.set_ai_summary(db, snapshot_id, ai_summary=ai_summary)
+    if updated is None:  # 競態：get 完到 set 之間被刪除
+        raise SnapshotNotFound(snapshot_id)
+    db.commit()
+    db.refresh(updated)
+    return updated
+
+
 # ── 內部：組裝 spend_by_group / y / weekdays ──────────────────────────
 def _assemble_arrays(
     db: Session,
@@ -533,6 +566,7 @@ __all__ = [
     "GuardrailRejected",
     "GroupValidationRejected",
     "SnapshotNotFound",
+    "SnapshotNotCompleted",
     "get_or_create_groups",
     "list_groups",
     "update_groups",
@@ -540,5 +574,6 @@ __all__ = [
     "process_analysis",
     "list_snapshots",
     "get_snapshot",
+    "save_ai_summary",
     "run_analysis_sync",
 ]

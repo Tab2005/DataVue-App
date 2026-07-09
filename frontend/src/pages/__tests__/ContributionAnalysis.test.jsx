@@ -19,7 +19,15 @@ vi.mock('../../services/contributionService', () => ({
     refreshContributionData: vi.fn(),
     updateGroups: vi.fn(),
     getAnalysis: vi.fn(),
+    saveAiSummary: vi.fn(),
     pingContribution: vi.fn(),
+}));
+
+vi.mock('../../services/aiService', () => ({
+    aiService: {
+        analyzeDataStream: vi.fn(),
+        testConnection: vi.fn(),
+    },
 }));
 
 vi.mock('../../hooks/usePermission', () => ({

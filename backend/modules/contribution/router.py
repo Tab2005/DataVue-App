@@ -39,6 +39,8 @@ from .dependencies import (
 )
 from .repository import repository as contribution_repository
 from .schemas import (
+    AiSummaryUpdateRequest,
+    AiSummaryUpdateResponse,
     AnalysisCreateRequest,
     AnalysisCreateResponse,
     AnalysisDetailResponse,
@@ -56,12 +58,14 @@ from .schemas import (
 from .service import (
     GroupValidationRejected,
     GuardrailRejected,
+    SnapshotNotCompleted,
     SnapshotNotFound,
     create_analysis,
     get_or_create_groups,
     get_snapshot,
     list_groups,
     list_snapshots,
+    save_ai_summary,
     update_groups,
 )
 
@@ -268,6 +272,7 @@ def list_analyses(
                 created_at=s.created_at,
                 completed_at=s.completed_at,
                 error_message=s.error_message,
+                has_ai_summary=bool(s.ai_summary),
             )
             for s in items
         ],
@@ -301,8 +306,55 @@ def get_analysis(
         diagnostics=s.diagnostics,
         error_message=s.error_message,
         runtime_job_id=s.runtime_job_id,
+        ai_summary=s.ai_summary,
+        ai_summary_generated_at=s.ai_summary_generated_at,
         created_at=s.created_at,
         completed_at=s.completed_at,
+    )
+
+
+@router.put(
+    "/analyses/{snapshot_id}/ai-summary",
+    response_model=AiSummaryUpdateResponse,
+)
+def update_ai_summary(
+    snapshot_id: str,
+    body: AiSummaryUpdateRequest,
+    _user=Depends(get_current_contribution_user),
+    _access: bool = Depends(require_contribution_module),
+    db=Depends(get_db),
+):
+    """儲存 AI 白話解讀到 snapshot（docs/21 任務 2.3）。
+
+    流程：前端組裝 payload → 串流呼叫 `/api/ai/analyze` 取得 Markdown
+    → 完成後 PUT 此端點持久化；重開頁面直接讀 snapshot.ai_summary。
+
+    規則（service.save_ai_summary）：
+      - snapshot 不存在 → 404
+      - snapshot.status != 'completed' → 409（避免把 AI 解讀綁到
+        尚未跑完的 snapshot 上）
+      - 寫入成功回傳 200 + 寫入時間
+    """
+    try:
+        updated = save_ai_summary(
+            db,
+            snapshot_id=snapshot_id,
+            ai_summary=body.ai_summary,
+        )
+    except SnapshotNotFound:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"snapshot {snapshot_id} 不存在",
+        )
+    except SnapshotNotCompleted as exc:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=str(exc),
+        ) from exc
+    return AiSummaryUpdateResponse(
+        snapshot_id=updated.id,
+        ai_summary=updated.ai_summary,
+        ai_summary_generated_at=updated.ai_summary_generated_at,
     )
 
 
