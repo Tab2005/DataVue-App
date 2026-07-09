@@ -299,6 +299,59 @@ def test_contribution_campaigns_renamed_campaign_does_not_split_into_two_rows(
 
 
 @pytest.mark.integration
+def test_contribution_campaigns_filters_by_date_range(
+    contribution_authorized_client, db
+):
+    """docs/27 任務 4.2：`/campaigns` 帶 date_start/date_end 時只彙總該區間，
+    不含區間外的花費/轉換（用於前端把自報占比對齊 MMM 快照區間）。"""
+    from database.models.contribution import ContributionDailyMetric
+
+    rows = [
+        ("2026-01-01", 500.0, 20.0),  # 區間外
+        ("2026-06-01", 100.0, 5.0),   # 區間內
+        ("2026-06-02", 100.0, 5.0),   # 區間內
+        ("2026-12-01", 900.0, 40.0),  # 區間外
+    ]
+    for date, spend, conv in rows:
+        db.add(ContributionDailyMetric(
+            account_id="act_daterange",
+            date=date,
+            campaign_id="cmp_1",
+            campaign_name="測試活動",
+            spend=spend,
+            impressions=1000,
+            conversions=conv,
+            conversion_value=conv * 300,
+            metric_key="omni_purchase",
+        ))
+    db.commit()
+
+    client, _ = contribution_authorized_client
+
+    # 全歷史（不帶日期）→ 4 天全部加總
+    resp_all = client.get("/api/contribution/campaigns?account_id=act_daterange")
+    assert resp_all.status_code == 200
+    assert resp_all.json()["campaigns"][0]["spend"] == 1600.0
+    assert resp_all.json()["campaigns"][0]["active_days"] == 4
+
+    # 限定區間 → 只彙總區間內的 2 天
+    resp_ranged = client.get(
+        "/api/contribution/campaigns"
+        "?account_id=act_daterange&date_start=2026-06-01&date_end=2026-06-30"
+    )
+    assert resp_ranged.status_code == 200
+    row = resp_ranged.json()["campaigns"][0]
+    assert row["spend"] == 200.0
+    assert row["conversions"] == 10.0
+    assert row["active_days"] == 2
+
+    db.query(ContributionDailyMetric).filter(
+        ContributionDailyMetric.account_id == "act_daterange"
+    ).delete()
+    db.commit()
+
+
+@pytest.mark.integration
 def test_contribution_data_refresh_token_missing_returns_4xx(contribution_authorized_client):
     """token 缺失時 /data/refresh 回 4xx（401/502），訊息不含明文 token。"""
     client, _ = contribution_authorized_client

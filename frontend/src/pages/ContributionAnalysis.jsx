@@ -31,6 +31,30 @@ import {
 
 const DEFAULT_PERIOD_DAYS = 180;
 const POLL_INTERVAL_MS = 2000;
+// docs/27 任務 4.5：全量 180 天背景抓取遠不止 1.5 秒，改為輪詢快取活動數
+// 直到穩定或逾時，取代固定等待後假裝抓完的舊行為。
+const REFRESH_POLL_INTERVAL_MS = 3000;
+const REFRESH_POLL_TIMEOUT_MS = 60000;
+
+// 純函數：依「本次活動數 / 刷新前基準值 / 上次輪詢的活動數 / 已過時間」決定
+// 這次輪詢是否該停止，及停止原因。抽成獨立函式以便脫離 setInterval/計時器
+// 直接單元測試（docs/27 任務 4.5）。
+// reason: 'increased'（活動數比基準值高，代表已有新資料）
+//       | 'stabilized'（連續兩次不變且 > 0，視為已抓完並穩定）
+//       | 'timeout'（逾時仍未穩定，提示使用者稍後手動重新整理）
+//       | null（尚未達停止條件，continue polling）
+export const evaluateRefreshPoll = ({ count, baselineCount, lastCount, elapsedMs, timeoutMs }) => {
+    if (count > baselineCount) {
+        return { stop: true, reason: 'increased' };
+    }
+    if (lastCount != null && count === lastCount && count > 0) {
+        return { stop: true, reason: 'stabilized' };
+    }
+    if (elapsedMs >= timeoutMs) {
+        return { stop: true, reason: 'timeout' };
+    }
+    return { stop: false, reason: null };
+};
 
 const t = (language, en, zh) => (language === 'en' ? en : zh);
 
@@ -597,7 +621,7 @@ const ContributionChart = ({ language, rows, isMobile }) => {
     );
 };
 
-const ContributionTable = ({ language, rows, marginalStep, marginalCurrency }) => {
+const ContributionTable = ({ language, rows, marginalCurrency }) => {
     if (!rows.length) return null;
     return (
         <div
@@ -623,7 +647,9 @@ const ContributionTable = ({ language, rows, marginalStep, marginalCurrency }) =
                         <th style={thStyle}>{t(language, 'Reported', '自報占比')}</th>
                         <th style={thStyle}>{t(language, 'MMM (median / min / max)', 'MMM (中位 / 最小 / 最大)')}</th>
                         <th style={thStyle}>
-                            {t(language, `Marginal / +${marginalStep}${marginalCurrency}`, `邊際 / +${marginalStep}${marginalCurrency}`)}
+                            {/* docs/27 任務 4.3：每組步長各自不同（依日均花費計算），
+                                表頭不再宣稱單一步長，實際步長改列在每列內。 */}
+                            {t(language, 'Marginal (step per row)', '邊際轉換（每組步長見列內）')}
                         </th>
                     </tr>
                 </thead>
@@ -642,8 +668,8 @@ const ContributionTable = ({ language, rows, marginalStep, marginalCurrency }) =
                                 {fmtPct(row.contributionShare?.median)} / {fmtPct(row.contributionShare?.min)} / {fmtPct(row.contributionShare?.max)}
                             </td>
                             <td style={tdStyle}>
-                                {row.marginalPerStep?.median != null
-                                    ? `+${fmtNumber(row.marginalPerStep.median, 2)}`
+                                {row.marginalPerStep?.median != null && row.marginalStepValue != null
+                                    ? `+${fmtNumber(row.marginalPerStep.median, 2)}（/ +${fmtNumber(row.marginalStepValue, 0)}${marginalCurrency}）`
                                     : '--'}
                             </td>
                         </tr>
@@ -654,16 +680,57 @@ const ContributionTable = ({ language, rows, marginalStep, marginalCurrency }) =
     );
 };
 
-const MarginalChart = ({ language, rows, marginalStep, marginalCurrency, isMobile }) => {
+const MarginalTooltipContent = ({ active, payload, language }) => {
+    if (!active || !payload?.length) return null;
+    const row = payload[0]?.payload;
+    if (!row) return null;
+    return (
+        <div
+            style={{
+                background: 'var(--viz-tooltip-bg)',
+                border: '1px solid var(--viz-tooltip-border)',
+                borderRadius: '8px',
+                color: 'var(--viz-text-strong)',
+                fontSize: '0.8rem',
+                padding: '8px 10px',
+            }}
+        >
+            <div style={{ color: 'var(--viz-text)', marginBottom: '4px', fontSize: '0.72rem' }}>
+                {row.group}
+            </div>
+            <div>
+                +{row.marginal.toFixed(2)} {t(language, 'per +100', '每 +100 元')}
+            </div>
+            <div style={{ color: 'var(--viz-text)', fontSize: '0.72rem', marginTop: '2px' }}>
+                {t(
+                    language,
+                    `raw: +${row.rawMarginal.toFixed(2)} per +${row.step}`,
+                    `原始：+${row.rawMarginal.toFixed(2)} / +${row.step} 元`
+                )}
+            </div>
+        </div>
+    );
+};
+
+const MarginalChart = ({ language, rows, marginalCurrency, isMobile }) => {
     if (!rows.length) return null;
+    // docs/27 任務 4.3：各組步長不同（依日均花費各自計算），原始邊際值不能
+    // 直接跨組比大小——正規化為「每 +100 元」的邊際轉換後才可公平排序/比較，
+    // 原始 step 與原始邊際值改在 tooltip 顯示。
     const data = rows
-        .filter((row) => row.marginalPerStep?.median != null)
-        .map((row) => ({
-            group: row.label,
-            marginal: row.marginalPerStep.median,
-            groupKey: row.groupKey,
-            doubtful: row.doubtful,
-        }));
+        .filter((row) => row.marginalPerStep?.median != null && row.marginalStepValue)
+        .map((row) => {
+            const step = row.marginalStepValue;
+            const rawMarginal = row.marginalPerStep.median;
+            return {
+                group: row.label,
+                marginal: (rawMarginal / step) * 100,
+                rawMarginal,
+                step,
+                groupKey: row.groupKey,
+                doubtful: row.doubtful,
+            };
+        });
     if (!data.length) {
         return <InfoPanel message={t(language, 'No marginal data.', '無邊際資料。')} />;
     }
@@ -702,21 +769,7 @@ const MarginalChart = ({ language, rows, marginalStep, marginalCurrency, isMobil
                     />
                     <Tooltip
                         cursor={{ fill: 'var(--viz-grid)' }}
-                        formatter={(v) => `+${Number(v).toFixed(2)} ${t(language, 'conversions', '轉換')}`}
-                        contentStyle={{
-                            background: 'var(--viz-tooltip-bg)',
-                            border: '1px solid var(--viz-tooltip-border)',
-                            borderRadius: '8px',
-                            color: 'var(--viz-text-strong)',
-                            fontSize: '0.8rem',
-                            padding: '8px 10px',
-                        }}
-                        itemStyle={{ color: 'var(--viz-text-strong)' }}
-                        labelStyle={{
-                            color: 'var(--viz-text)',
-                            marginBottom: '4px',
-                            fontSize: '0.72rem',
-                        }}
+                        content={<MarginalTooltipContent language={language} />}
                     />
                     <Bar
                         dataKey="marginal"
@@ -738,13 +791,13 @@ const MarginalChart = ({ language, rows, marginalStep, marginalCurrency, isMobil
                 language={language}
                 lead={t(
                     language,
-                    `Local slope: estimated additional conversions from +${marginalStep}${marginalCurrency} at the current spend level.`,
-                    `局部斜率：在目前花費水位附近，每 +${marginalStep}${marginalCurrency} 帶來的預估增量轉換。`
+                    'Local slope, normalized to "+100" spend per group so groups are directly comparable.',
+                    '局部斜率：每組已依各自步長正規化為「每 +100 元」，可跨組直接比較。'
                 )}
                 detail={t(
                     language,
-                    'Not valid for extrapolation outside the current range; the best ROI group is labeled at the bar tip.',
-                    '不可線性外推到目前水位之外；最高邊際組別以端點標籤標示。'
+                    'Not valid for extrapolation outside the current range; hover a bar for the raw per-group step and value.',
+                    '不可線性外推到目前水位之外；每組原始步長與邊際值可從 tooltip 查看。'
                 )}
             />
         </div>
@@ -1165,8 +1218,31 @@ const GroupEditor = ({
                                 {group.campaign_ids.length} {t(language, 'campaigns', '個活動')}
                             </span>
                         </div>
+                        {/* docs/27 任務 4.4：把某組活動全搬走後，明確告知使用者這個
+                            空組會在儲存時被移除（handleSaveGroups 送出前已過濾），
+                            避免使用者以為卡住、無從得知空組的下場。只在「有未儲存
+                            編輯」時顯示——已儲存的分組理論上不會有空組。 */}
+                        {editing && group.campaign_ids.length === 0 && (
+                            <div
+                                style={{
+                                    marginBottom: '8px',
+                                    padding: '6px 10px',
+                                    borderRadius: '8px',
+                                    background: 'rgba(245, 158, 11, 0.08)',
+                                    border: '1px dashed rgba(245, 158, 11, 0.35)',
+                                    color: '#fbbf24',
+                                    fontSize: '0.74rem',
+                                }}
+                            >
+                                {t(
+                                    language,
+                                    'This group has no campaigns left and will be removed when you save.',
+                                    '此組已無任何活動，將於儲存時移除。'
+                                )}
+                            </div>
+                        )}
                         <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px' }}>
-                            {group.campaign_ids.length === 0 && (
+                            {group.campaign_ids.length === 0 && !editing && (
                                 <span style={{ fontSize: '0.78rem', color: 'var(--text-secondary)' }}>
                                     {t(language, 'No campaigns.', '無活動。')}
                                 </span>
@@ -1359,12 +1435,20 @@ const HistoryList = ({ language, history, loading, onSelect, onRefresh, selected
     );
 };
 
-const AnalysisView = ({ language, isMobile, snapshot, groups, reportedByGroup, marginalStep, marginalCurrency, accountName, onAiSummarySaved }) => {
+const AnalysisView = ({ language, isMobile, snapshot, groups, reportedByGroup, marginalCurrency, accountName, onAiSummarySaved }) => {
     const results = snapshot?.results || null;
     const diagnostics = snapshot?.diagnostics || null;
 
+    // docs/27 任務 4.1：歷史快照應以「分析當時的分組」渲染，不是頁面目前的
+    // groups state——使用者改組後點開舊快照，用當前 groups 對不上會顯示 0
+    // 或缺組。snapshot.config.group_snapshot 是 create_analysis 當下寫入的
+    // 分組快照（service._group_to_dict，形狀與 groups state 相同：
+    // group_key/group_name/campaign_ids/source）；理論上自任務 1.4 起每筆
+    // snapshot 都會有此欄位，缺欄位時仍安全退回目前 groups。
+    const effectiveGroups = snapshot?.config?.group_snapshot ?? groups;
+
     const rows = useMemo(() => {
-        if (!results || !groups.length) return [];
+        if (!results || !effectiveGroups.length) return [];
         const warnings = diagnostics?.collinearity_warnings || [];
         const correlatedPairs = new Set();
         warnings.forEach((w) => {
@@ -1372,7 +1456,7 @@ const AnalysisView = ({ language, isMobile, snapshot, groups, reportedByGroup, m
             correlatedPairs.add(w.group_b);
         });
         const groupsData = results.groups || {};
-        return groups.map((g) => {
+        return effectiveGroups.map((g) => {
             const data = groupsData[g.group_key] || {};
             const median = data.contribution_share?.median ?? 0;
             const doubtful = median <= 0.005 && correlatedPairs.has(g.group_key);
@@ -1383,10 +1467,14 @@ const AnalysisView = ({ language, isMobile, snapshot, groups, reportedByGroup, m
                 reportedShare: reportedByGroup[g.group_key] || 0,
                 contributionShare: data.contribution_share,
                 marginalPerStep: data.marginal?.per_step,
+                // docs/27 任務 4.3：邊際步長是各組依自己日均花費各自計算的
+                // （engine.resolve_marginal_step），不是全帳戶統一的單一值。
+                // 每列需帶自己的 step 才能正確標示「+N 元」。
+                marginalStepValue: data.marginal?.step ?? null,
                 doubtful,
             };
         });
-    }, [results, groups, diagnostics, reportedByGroup]);
+    }, [results, effectiveGroups, diagnostics, reportedByGroup]);
 
     if (snapshot?.status !== 'completed' || !results) {
         return null;
@@ -1406,7 +1494,6 @@ const AnalysisView = ({ language, isMobile, snapshot, groups, reportedByGroup, m
                 <ContributionTable
                     language={language}
                     rows={rows}
-                    marginalStep={marginalStep}
                     marginalCurrency={marginalCurrency}
                 />
             </Section>
@@ -1415,14 +1502,13 @@ const AnalysisView = ({ language, isMobile, snapshot, groups, reportedByGroup, m
                 title={t(language, 'Marginal ROI Ranking', '邊際報酬排序')}
                 subtitle={t(
                     language,
-                    'Higher = more incremental conversions per +N spend at the current spend level.',
-                    '數值越高代表在目前花費水位附近，每 +N 元帶來的增量轉換越多。'
+                    'Higher = more incremental conversions per +100 spend at the current spend level (normalized across groups).',
+                    '數值越高代表在目前花費水位附近，每 +100 元帶來的增量轉換越多（已跨組正規化）。'
                 )}
             >
                 <MarginalChart
                     language={language}
                     rows={rows}
-                    marginalStep={marginalStep}
                     marginalCurrency={marginalCurrency}
                     isMobile={isMobile}
                 />
@@ -1439,7 +1525,7 @@ const AnalysisView = ({ language, isMobile, snapshot, groups, reportedByGroup, m
             <AiInsightsCard
                 language={language}
                 snapshot={snapshot}
-                groups={groups}
+                groups={effectiveGroups}
                 reportedByGroup={reportedByGroup}
                 accountName={accountName}
                 onAiSummarySaved={onAiSummarySaved}
@@ -1549,6 +1635,8 @@ const ContributionAnalysis = () => {
     const [groupSaveError, setGroupSaveError] = useState(null);
     const [refreshing, setRefreshing] = useState(false);
     const [refreshingError, setRefreshingError] = useState(null);
+    const [refreshNotice, setRefreshNotice] = useState(null);
+    const refreshPollRef = useRef(null);
     const [submitting, setSubmitting] = useState(false);
     const [submitError, setSubmitError] = useState(null);
     const [activeSnapshot, setActiveSnapshot] = useState(null);
@@ -1611,6 +1699,16 @@ const ContributionAnalysis = () => {
     }, []);
 
     useEffect(() => {
+        // docs/27 任務 4.5：切換帳戶時清掉尚在進行的「抓取資料」輪詢，避免
+        // 舊帳戶的輪詢殘留繼續跑並把結果寫進新帳戶的畫面狀態。
+        if (refreshPollRef.current) {
+            clearInterval(refreshPollRef.current);
+            refreshPollRef.current = null;
+        }
+        setRefreshing(false);
+        setRefreshingError(null);
+        setRefreshNotice(null);
+
         if (!accountId) {
             setActiveSnapshot(null);
             return;
@@ -1657,23 +1755,84 @@ const ContributionAnalysis = () => {
 
     useEffect(() => () => {
         if (pollRef.current) clearInterval(pollRef.current);
+        if (refreshPollRef.current) clearInterval(refreshPollRef.current);
     }, []);
 
     const handleRefreshData = async () => {
         if (!accountId) return;
+        const acct = accountId;
         setRefreshing(true);
         setRefreshingError(null);
+        setRefreshNotice(null);
+        if (refreshPollRef.current) {
+            clearInterval(refreshPollRef.current);
+            refreshPollRef.current = null;
+        }
+
         try {
-            await refreshContributionData({ accountId });
-            // 等待 1.5s 後重抓快取（背景抓取已排入）
-            setTimeout(async () => {
-                await loadCampaigns(accountId);
-                setRefreshing(false);
-            }, 1500);
+            await refreshContributionData({ accountId: acct });
         } catch (err) {
             setRefreshingError(err.message);
             setRefreshing(false);
+            return;
         }
+
+        // docs/27 任務 4.5：全量 180 天背景抓取遠不止 1.5 秒；固定等待後就
+        // 假裝抓完會讓首次使用者看到仍是 0 筆而困惑。改為輪詢快取活動數，
+        // 直到「活動數增加」或「連續兩次不變且 > 0」（視為已抓完並穩定）
+        // 才停止；60 秒逾時仍未穩定則提示使用者稍後手動重新整理，按鈕在
+        // 整個輪詢期間維持「抓取中…」。
+        const baselineCount = campaigns.length;
+        let lastCount = null;
+        let elapsedMs = 0;
+
+        const stopPolling = () => {
+            if (refreshPollRef.current) {
+                clearInterval(refreshPollRef.current);
+                refreshPollRef.current = null;
+            }
+            setRefreshing(false);
+        };
+
+        refreshPollRef.current = setInterval(async () => {
+            elapsedMs += REFRESH_POLL_INTERVAL_MS;
+            let count = lastCount ?? baselineCount;
+            try {
+                const res = await listCampaignSummaries({ accountId: acct });
+                setCampaigns(res.campaigns || []);
+                count = (res.campaigns || []).length;
+            } catch (err) {
+                console.error('listCampaignSummaries (refresh poll) failed', err);
+            }
+
+            const { stop, reason } = evaluateRefreshPoll({
+                count,
+                baselineCount,
+                lastCount,
+                elapsedMs,
+                timeoutMs: REFRESH_POLL_TIMEOUT_MS,
+            });
+            if (stop) {
+                stopPolling();
+                setRefreshNotice(
+                    reason === 'timeout'
+                        ? {
+                            tone: 'info',
+                            message: t(
+                                language,
+                                'Refresh is still running in the background. Please try refreshing again later.',
+                                '抓取仍在背景進行，稍後請按重新整理。'
+                            ),
+                        }
+                        : {
+                            tone: 'success',
+                            message: t(language, 'Data refreshed.', '資料已抓取完成。'),
+                        }
+                );
+                return;
+            }
+            lastCount = count;
+        }, REFRESH_POLL_INTERVAL_MS);
     };
 
     const handleSubmitAnalysis = async () => {
@@ -1731,7 +1890,15 @@ const ContributionAnalysis = () => {
         setSavingGroups(true);
         setGroupSaveError(null);
         try {
-            await updateGroups({ accountId, groups: editingGroups });
+            // docs/27 任務 4.4：把某組活動全搬走後，該組會變成空的
+            // campaign_ids；後端 validate_manual_groups 對空組回 422
+            // 「campaign_ids 不可為空」，但編輯器本身沒有刪組功能，使用者
+            // 會卡在無法儲存也無法移除的狀態。送出前直接過濾掉空組——
+            // 完整性檢查（活動不遺失）仍由後端 validate_manual_groups 把關。
+            const nonEmptyGroups = editingGroups.filter(
+                (g) => (g.campaign_ids || []).length > 0
+            );
+            await updateGroups({ accountId, groups: nonEmptyGroups });
             await loadGroups(accountId);
             setEditingGroups(null);
         } catch (err) {
@@ -1741,15 +1908,54 @@ const ContributionAnalysis = () => {
         }
     };
 
+    // docs/27 任務 4.2：自報占比改用快照區間，而非 campaigns 的全歷史彙總。
+    // MMM 貢獻只涵蓋 activeSnapshot 的分析區間，若自報占比用全歷史彙總，
+    // 90 天分析配 180 天自報占比時兩者對照本身失真（且會餵進 AI payload
+    // 誤導「高估/低估」判斷）。`campaigns`（全歷史）仍保留給分組編輯器與
+    // 「快取活動數」提示使用（職責不同，見 loadCampaigns）。
+    const [snapshotCampaigns, setSnapshotCampaigns] = useState([]);
+
+    useEffect(() => {
+        if (!accountId || !activeSnapshot?.date_start || !activeSnapshot?.date_end) {
+            setSnapshotCampaigns([]);
+            return;
+        }
+        let cancelled = false;
+        listCampaignSummaries({
+            accountId,
+            dateStart: activeSnapshot.date_start,
+            dateEnd: activeSnapshot.date_end,
+        })
+            .then((res) => {
+                if (cancelled) return;
+                setSnapshotCampaigns(res.campaigns || []);
+            })
+            .catch((err) => {
+                console.error('listCampaignSummaries (snapshot-scoped) failed', err);
+                if (!cancelled) setSnapshotCampaigns([]);
+            });
+        return () => {
+            cancelled = true;
+        };
+        // activeSnapshot 的其餘欄位（status 等）變動不需重查，只在
+        // snapshot_id 或區間本身改變時重打
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [accountId, activeSnapshot?.snapshot_id, activeSnapshot?.date_start, activeSnapshot?.date_end]);
+
     const reportedByGroup = useMemo(() => {
-        if (!campaigns.length) return {};
+        if (!snapshotCampaigns.length) return {};
+        // 與任務 4.1 呼應：cid → group_key 的對應也應用「分析當時的分組」
+        // （snapshot.config.group_snapshot），而非頁面目前的 groups state，
+        // 否則自報占比的分組口徑會與 MMM 貢獻的分組口徑（已改用
+        // group_snapshot）對不上。
+        const effectiveGroups = activeSnapshot?.config?.group_snapshot ?? groups;
         const cidToGroup = new Map();
-        groups.forEach((g) => {
+        effectiveGroups.forEach((g) => {
             (g.campaign_ids || []).forEach((cid) => cidToGroup.set(String(cid), g.group_key));
         });
         let totalConversions = 0;
         const groupConversions = {};
-        campaigns.forEach((c) => {
+        snapshotCampaigns.forEach((c) => {
             const conv = Number(c.conversions || 0);
             const gk = cidToGroup.get(String(c.campaign_id));
             if (!gk) return;
@@ -1763,9 +1969,12 @@ const ContributionAnalysis = () => {
             });
         }
         return out;
-    }, [campaigns, groups]);
+    }, [snapshotCampaigns, groups, activeSnapshot?.config]);
 
-    const marginalStep = activeSnapshot?.results?.groups?.[Object.keys(activeSnapshot.results.groups)[0]]?.marginal?.step;
+    // docs/27 任務 4.3：舊版在此取「第一組」的 step 當全域顯示值——但每組
+    // step 依各自日均花費各自計算，用第一組代表全部在花費量級差異大的帳戶
+    // 上會顯示錯誤數字。步長改為在 AnalysisView 內逐列使用該組自己的
+    // marginal.step（見 rows 的 marginalStepValue），此處不再需要單一值。
     const marginalCurrency = ''; // 未來可由帳戶 metadata 取得
 
     // 由目前選擇的 accountId 找對應帳戶名稱（傳入 AI 解讀卡當 context 開頭）
@@ -1873,6 +2082,9 @@ const ContributionAnalysis = () => {
                 />
 
                 {refreshingError && <ErrorPanel message={refreshingError} />}
+                {refreshNotice && (
+                    <InfoPanel message={refreshNotice.message} tone={refreshNotice.tone} />
+                )}
 
                 {!accountId && (
                     <InfoPanel
@@ -1929,7 +2141,6 @@ const ContributionAnalysis = () => {
                             snapshot={activeSnapshot}
                             groups={groups}
                             reportedByGroup={reportedByGroup}
-                            marginalStep={marginalStep}
                             marginalCurrency={marginalCurrency}
                             accountName={accountName}
                             onAiSummarySaved={handleAiSummarySaved}

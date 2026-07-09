@@ -70,9 +70,19 @@ export const pingContribution = async () => {
     return apiClient.get(`${BASE}/ping`);
 };
 
-export const listCampaignSummaries = async ({ accountId, metricKey = 'omni_purchase' } = {}) => {
+export const listCampaignSummaries = async ({
+    accountId,
+    metricKey = 'omni_purchase',
+    dateStart,
+    dateEnd,
+} = {}) => {
     if (!accountId) throw new Error('缺少 accountId');
-    const qs = buildQuery({ account_id: accountId, metric_key: metricKey });
+    const qs = buildQuery({
+        account_id: accountId,
+        metric_key: metricKey,
+        date_start: dateStart,
+        date_end: dateEnd,
+    });
     return apiClient.get(`${BASE}/campaigns${qs}`);
 };
 

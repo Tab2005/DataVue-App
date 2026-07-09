@@ -103,19 +103,28 @@ async def ping(
 def list_campaigns(
     account_id: str = Query(..., description="廣告帳戶 ID（act_ 格式）"),
     metric_key: str = Query("omni_purchase", description="轉換指標鍵"),
+    date_start: str | None = Query(None, description="彙總起始日（YYYY-MM-DD，選填）"),
+    date_end: str | None = Query(None, description="彙總結束日（YYYY-MM-DD，選填）"),
     user=Depends(get_current_contribution_user),
     _access: bool = Depends(require_contribution_module),
     team: Team | None = Depends(get_current_team),
     db=Depends(get_db),
 ):
-    """列出帳戶近 N 天活動（含花費/轉換彙總），供分組 UI。
+    """列出帳戶活動（含花費/轉換彙總），供分組 UI 與自報占比計算。
 
     讀取 contribution_daily_metrics 快取表並 GROUP BY campaign_id 彙總；
     若快取為空回空 list（前端會引導使用者先按 /data/refresh 抓取）。
+    `date_start`/`date_end` 皆不提供 → 全歷史彙總（分組 UI 用）；皆提供 →
+    只彙總該區間（前端用於把自報占比對齊 MMM 分析的快照區間，docs/27
+    任務 4.2）。
     """
     verify_account_access_or_403(account_id, team=team, user=user)
     summaries = contribution_repository.list_campaign_summaries(
-        db, account_id=account_id, metric_key=metric_key
+        db,
+        account_id=account_id,
+        metric_key=metric_key,
+        date_start=date_start,
+        date_end=date_end,
     )
     return CampaignListResponse(
         account_id=account_id,

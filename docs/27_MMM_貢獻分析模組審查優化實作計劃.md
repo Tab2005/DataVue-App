@@ -237,6 +237,11 @@
 
 **驗收標準**：改組後切歷史快照，各組數字與當時分組一致；vitest 全綠。
 
+**驗收結果（2026-07-09 完成）**：
+- `AnalysisView` 新增 `effectiveGroups = snapshot?.config?.group_snapshot ?? groups`，`rows` useMemo 與傳給 `AiInsightsCard`（進而 `buildAiPayload`）的 `groups` 皆改用 `effectiveGroups`；分組編輯器（`GroupEditor`）維持用當前 `groups` state 不變。
+- 新增測試 `renders a historical snapshot using its own group_snapshot, not the current groups state`：mock 一筆歷史快照的 `config.group_snapshot` 群組名稱與目前 `groups` state 不同，點選該歷史快照後斷言表格顯示 `group_snapshot` 的名稱（`G1 · 舊名稱（分析當時）`）而非目前 state 的新名稱。斷言鎖定 `ContributionTable`（純 HTML table）的渲染文字，避開 Recharts 在 JSDOM 下 width/height 為 -1 無法可靠渲染 SVG 文字的已知限制。
+- `ContributionAnalysis.test.jsx` 3 項全綠（原 2 + 新 1）。
+
 ### 任務 4.2 — 自報占比改用快照區間（含後端 days 死參數處理）
 
 **問題**：`reportedByGroup` 用 `/campaigns` 的**全歷史**彙總計算，MMM 貢獻只涵蓋快照區間；兩者並排在主圖比較、還餵進 AI payload——90 天分析配 180 天自報占比時對照失真，AI 據此下「高估/低估」結論。後端 `list_campaign_summaries` 的 `days` 參數目前是死碼（建了 subquery 又 `del`）。
@@ -250,6 +255,14 @@
 
 **驗收標準**：90 天快照的自報占比只計 90 天內轉換；後端測試補 date-range 過濾斷言；前端 vitest 全綠。
 
+**驗收結果（2026-07-09 完成）**：
+- `repository.list_campaign_summaries` 的 `days: int | None` 死參數改為 `date_start: str | None, date_end: str | None`，`base_filters` 依兩者是否提供動態加上 `date >= date_start` / `date <= date_end`；連帶名稱回填的兩個子查詢也共用同一組 `base_filters`（若指定區間，「最新一天的名稱」也限縮在該區間內，口徑一致）。`/campaigns` 端點新增對應的可選 query 參數並透傳。
+- 前端 `contributionService.listCampaignSummaries` 增加 `dateStart`/`dateEnd` 參數（沿用既有 `buildQuery` 對 undefined 的過濾邏輯，不影響既有無參數呼叫）。
+- `ContributionAnalysis.jsx` 新增 `snapshotCampaigns` state + `useEffect`（依 `accountId` / `activeSnapshot.snapshot_id` / `date_start` / `date_end` 變化重打），`reportedByGroup` 改依 `snapshotCampaigns` 計算；同時比照任務 4.1，cid→group_key 的對應也改用 `activeSnapshot?.config?.group_snapshot ?? groups`，確保「MMM 貢獻」與「自報占比」用同一套分組口徑對照，不會出現半邊用歷史分組、半邊用當前分組的不一致。`campaigns`（全歷史）state 不變，仍供分組編輯器與「快取活動數」提示使用。
+- 新增後端測試 `test_contribution_campaigns_filters_by_date_range`：4 天資料中只有 2 天落在指定區間，斷言全歷史彙總（4 天/1600 花費）與限定區間彙總（2 天/200 花費）皆正確。
+- 新增前端測試 `computes reportedByGroup from the snapshot date range, not the full campaign history`：故意讓全歷史彙總（c1/c2 轉換相同 → 50/50）與快照區間彙總（8:2 → 80/20）產生截然不同的結果，斷言渲染出的自報占比是 80.0%/20.0%（快照區間），驗證此為修復後行為而非巧合。
+- 後端 `test_contribution_module.py` 相關測試全綠；前端 `ContributionAnalysis.test.jsx` 4 項全綠（新增 1）。
+
 ### 任務 4.3 — 邊際步長 per-group 顯示
 
 **問題**：引擎對每組各自算 step（依該組日均花費），前端 `marginalStep` 取 `results.groups` 第一個 key 的 step 套在表頭與圖說——各組花費量級差大時標籤是錯的。
@@ -259,6 +272,14 @@
 **實作步驟**：`ContributionTable` 表頭改為「邊際轉換（每組步長見列內）」，每列顯示 `+{row.marginalPerStep.median}（/ +{row.marginalStep} 元）`；`MarginalChart` 因各組步長不同不可直接比大小——改為以「每 +100 元」正規化（`per_step.median / step * 100`）排序與顯示，圖說明示正規化口徑；`ChartMethodNote` lead 同步改寫。tooltip 顯示該組原始 step 與原始邊際值。
 
 **驗收標準**：兩組 step 不同（100 vs 500）的快照，表格與圖的數字口徑正確且圖可跨組比較；vitest 全綠。
+
+**驗收結果（2026-07-09 完成）**：
+- `AnalysisView` 的 `rows` 新增 `marginalStepValue: data.marginal?.step ?? null`（每組自己的步長，取代舊版全域 `marginalStep`）。
+- `ContributionTable` 表頭改為「邊際轉換（每組步長見列內）」；每列改用 `+{median}（/ +{step}{currency}）` 格式，各列使用自己的 `row.marginalStepValue`。
+- `MarginalChart` 改用正規化值 `(rawMarginal / step) * 100`（每 +100 元的邊際轉換）排序與繪圖，才可跨組公平比較；原始 tooltip 的 `formatter` 換成自訂 `MarginalTooltipContent` 元件，同時顯示正規化值與原始 step/原始邊際值。`ChartMethodNote` 的 lead/detail 改寫為描述正規化口徑。
+- 移除全域 `marginalStep`（原本取 `results.groups` 第一個 key 的 step 套用到所有列的 bug 根源）：刪除頂層 `ContributionAnalysis` 元件內的計算、`AnalysisView` 的 prop、`ContributionTable`/`MarginalChart` 的 prop，全面改為逐列讀取。
+- 新增測試 `shows each group's own marginal step, not the first group's step for all rows`：G1 step=100、G2 step=500，斷言表格分別顯示 `+1.20（/ +100）` 與 `+3.00（/ +500）`（若舊 bug 仍在，G2 會誤顯示 `/ +100`）。
+- `npx vite build` 全綠；`ContributionAnalysis.test.jsx` 5 項全綠（新增 1）。
 
 ### 任務 4.4 — GroupEditor 空組處理
 
@@ -270,6 +291,12 @@
 
 **驗收標準**：搬空一組後儲存成功、該組消失；無活動被丟失（後端 `validate_manual_groups` 的完整性檢查仍然把關）。
 
+**驗收結果（2026-07-09 完成）**：
+- `handleSaveGroups` 送出前以 `editingGroups.filter((g) => (g.campaign_ids || []).length > 0)` 過濾空組，完整性把關仍交給後端 `validate_manual_groups`（未新增前端側的完整性邏輯，避免前後端規則分岔）。
+- `GroupEditor` 新增條件渲染：`editing && group.campaign_ids.length === 0` 時顯示警示區塊「此組已無任何活動，將於儲存時移除。」（虛線警示樣式，與既有錯誤/警告色調一致）；未在編輯狀態下的空組維持原本「無活動。」的低調提示（理論上不會出現，因為已存 DB 的分組不會是空的）。
+- 新增測試 `warns about and filters out emptied groups on save`：把唯一活動從 G1 移到 G2（透過活動徽章上的 select），斷言 G1 顯示移除警示，點擊「儲存分組」後 `updateGroups` 收到的 payload 只含 G2（G1 已被過濾掉）。
+- `npx vite build` 全綠；`ContributionAnalysis.test.jsx` 6 項全綠（新增 1）。
+
 ### 任務 4.5 — refresh 完成度回饋
 
 **問題**：`handleRefreshData` 固定等 1.5 秒重抓快取；全量 180 天背景抓取遠不止 1.5 秒，首次使用者看到仍是 0 筆而困惑。
@@ -279,6 +306,19 @@
 **實作步驟**：改為輪詢 `listCampaignSummaries`（間隔 3 秒、上限 60 秒）：活動數增加或連續兩次不變且 > 0 即停止並顯示成功；逾時顯示「抓取仍在背景進行，稍後請按重新整理」。輪詢期間按鈕維持「抓取中…」。離開頁面/切換帳戶時清除輪詢 timer。
 
 **驗收標準**：首次全量抓取過程中 UI 有進度回饋、完成後活動清單自動出現；切換帳戶不殘留輪詢。
+
+**驗收結果（2026-07-09 完成）**：
+- 停止條件抽成獨立純函數 `evaluateRefreshPoll({ count, baselineCount, lastCount, elapsedMs, timeoutMs })`（具名匯出），回傳 `{ stop, reason }`（`reason` ∈ `increased` / `stabilized` / `timeout` / `null`）——刻意脫離 `setInterval` 直接可單元測試，避免用 fake timers 模擬 async `setInterval` callback 交錯造成的測試脆弱性。
+- `handleRefreshData` 呼叫 `refreshContributionData` 成功後，以 `REFRESH_POLL_INTERVAL_MS`（3000）建立 `setInterval`，每次呼叫 `listCampaignSummaries` 取得最新活動數並丟給 `evaluateRefreshPoll` 判斷；`stop=true` 時清除計時器、`setRefreshing(false)`，並依 `reason` 顯示對應的 `refreshNotice`（`success` 或 `info` 語氣）。
+- 新增 `refreshPollRef` 於帳戶切換的 `useEffect` 與元件卸載的清理 effect 中一併清除，避免切換帳戶或離開頁面時輪詢殘留（呼應驗收標準「切換帳戶不殘留輪詢」）。
+- 移除舊版固定 `setTimeout(..., 1500)` 假裝抓完的邏輯。
+- 新增 5 項 `evaluateRefreshPoll` 純函數單元測試（increased / stabilized / 尚為 0 不算 stabilized / timeout / 皆不成立則繼續輪詢）+ 1 項使用真實計時器（非 fake timers）的整合測試：點擊「抓取資料」→ 斷言按鈕變為「抓取中…」→ 等待兩次真實輪詢 tick（間隔 3 秒，共等待 ~6 秒；測試逾時上限拉高至 10 秒）→ 第二次活動數增加，斷言顯示「資料已抓取完成。」提示且按鈕恢復可點擊。過程中修正一個測試撰寫疏漏：`findByRole` 找到的按鈕即使被 disabled 也會匹配（accessible name 不受 disabled 影響），須額外等待 `accountId` 自動帶入後按鈕實際啟用，才能點擊觸發 `handleRefreshData`（否則會因 `accountId` 仍為空字串而提前 return，導致「抓取中…」永遠不出現）。
+- `npx vite build` 全綠；`ContributionAnalysis.test.jsx` 12 項全綠（新增 6：1 項整合測試 + 5 項純函數單元測試）。
+
+**第 4 波全量回歸（2026-07-09）**：
+- 前端 `npx vitest run`（全套）：contribution 12 項全綠；既有 4 個 pre-existing 失敗（`MetaAndromedaMonitoring` / `MetaAndromedaReviewQueue` / `MetaAndromedaScoreLab` 各檔案，皆為過時斷言/檔案上傳 mock 問題）與本波修改的檔案無關（git status 確認這些檔案本波未變更）。
+- 後端 `pytest`：contribution 全套 + permissions + auth + health = **133 項全綠**，無回歸。
+- `npx vite build` 全程全綠。
 
 ---
 

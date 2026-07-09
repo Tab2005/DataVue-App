@@ -184,12 +184,17 @@ class ContributionRepository:
         *,
         account_id: str,
         metric_key: str = "omni_purchase",
-        days: int | None = None,
+        date_start: str | None = None,
+        date_end: str | None = None,
     ) -> list[dict[str, Any]]:
-        """由快取表彙總活動近 N 天花費/轉換，供分組 UI。
+        """由快取表彙總活動花費/轉換，供分組 UI 與自報占比計算。
 
-        days=None → 全歷史彙總（首次全量抓取後即用此）；days 指定 → 只彙總近
-        N 天的資料。回傳 list[dict]，每個 dict 對應一個 campaign：
+        `date_start`/`date_end` 皆為 None → 全歷史彙總（首次全量抓取後即用
+        此，分組編輯器與「快取活動數」提示走這個模式）；兩者皆提供 →
+        只彙總該區間內的資料（`WHERE date BETWEEN`，前端用於把自報占比對齊
+        MMM 分析的快照區間，docs/27 任務 4.2——取代原本永遠是死碼的 `days`
+        參數，改為呼叫端直接傳明確日期界線，不易出錯）。回傳 list[dict]，
+        每個 dict 對應一個 campaign：
           {campaign_id, campaign_name, spend, impressions, conversions,
            conversion_value, active_days, first_date, last_date}
         按 spend 由大到小排序。
@@ -203,12 +208,19 @@ class ContributionRepository:
         的合法性驗證會報「活動同時出現在多個組別中」）。campaign_name 改在
         Python 端用「該 campaign_id 最新一天」的名稱回填——`(account_id,
         date, campaign_id, metric_key)` 是資料表的唯一約束，故「campaign_id
-        對應到某個 max(date)」查回原表必為恰一列，不需要 DISTINCT。
+        對應到某個 max(date)」查回原表必為恰一列，不需要 DISTINCT（若有指定
+        日期區間，「最新一天」也限縮在該區間內，與彙總口徑一致）。
         """
-        base_filters = (
+        base_filters = [
             ContributionDailyMetric.account_id == account_id,
             ContributionDailyMetric.metric_key == metric_key,
-        )
+        ]
+        if date_start is not None:
+            base_filters.append(ContributionDailyMetric.date >= date_start)
+        if date_end is not None:
+            base_filters.append(ContributionDailyMetric.date <= date_end)
+        base_filters = tuple(base_filters)
+
         stmt = (
             select(
                 ContributionDailyMetric.campaign_id,
@@ -224,19 +236,6 @@ class ContributionRepository:
             .group_by(ContributionDailyMetric.campaign_id)
             .order_by(func.sum(ContributionDailyMetric.spend).desc())
         )
-        if days is not None:
-            # 由 db 端以 max(date) 倒推 N 天（不假設今天日期，讓測試可注入）
-            max_date_subq = (
-                select(func.max(ContributionDailyMetric.date))
-                .where(*base_filters)
-                .scalar_subquery()
-            )
-            # SQLite/Postgres 皆支援 date('substr(max_date,1,10)', '-N day')
-            # 但跨 dialect 的安全做法是在 Python 端算好 cutoff（callers 傳入）
-            # 此處直接接由呼叫端在 date 欄位上篩選 — 提供 days 提示，但實際
-            # 過濾交由 service 層傳入明確 date_start/date_end 較不易出錯。
-            # 為了維持單一方法簽名，這裡保留 days 作為提示（callers 多以 None 呼叫）
-            del max_date_subq
         rows = db.execute(stmt).all()
         if not rows:
             return []
