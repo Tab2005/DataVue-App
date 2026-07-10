@@ -187,7 +187,8 @@ class GA4AnalyticsService:
                             "averageSessionDuration", "bounceRate", "engagementRate",
                             "purchaseRevenue", "itemRevenue", "totalRevenue",
                             "sessionConversionRate", "userConversionRate", "sessionKeyEventRate",
-                            "averageEngagementTime", "screenPageViewsPerSession", "sessionsPerUser"
+                            "averageEngagementTime", "screenPageViewsPerSession", "sessionsPerUser",
+                            "cartToViewRate", "purchaseToViewRate"
                         ]:
                             row_data[metric] = float(value)
                         else:

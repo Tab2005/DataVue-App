@@ -147,6 +147,7 @@ const badgeStyle = (kind) => {
         product: { bg: 'rgba(57, 135, 229, 0.16)', fg: '#93c5fd', border: 'rgba(57, 135, 229, 0.35)' },
         article: { bg: 'rgba(201, 133, 0, 0.18)', fg: '#fbbf24', border: 'rgba(201, 133, 0, 0.4)' },
         functional: { bg: 'rgba(25, 158, 112, 0.16)', fg: '#86efac', border: 'rgba(25, 158, 112, 0.35)' },
+        new_entry: { bg: 'rgba(57, 135, 229, 0.16)', fg: '#93c5fd', border: 'rgba(57, 135, 229, 0.35)' },
     }[kind] || { bg: 'rgba(107, 114, 128, 0.1)', fg: '#9ca3af', border: 'rgba(107, 114, 128, 0.25)' };
     return {
         display: 'inline-block',
@@ -539,11 +540,13 @@ const GA4Insights = () => {
     const [landingRuleSaving, setLandingRuleSaving] = useState(false);
     const [landingRuleForm, setLandingRuleForm] = useState({ category: 'product', match_type: 'prefix', pattern: '', priority: 0 });
 
-    // 第 2 波：商品
+    // 第 2/6 波：商品
     const [itemsDays, setItemsDays] = useState(7);
     const [itemsSnapshot, setItemsSnapshot] = useState(null);
     const [itemsLoading, setItemsLoading] = useState(false);
     const [itemsError, setItemsError] = useState('');
+    const [itemsCategoryFilter, setItemsCategoryFilter] = useState('all');
+    const [itemsSearchQuery, setItemsSearchQuery] = useState('');
 
     // 第 3 波：KPI 目標追蹤
     const [kpiTargets, setKpiTargets] = useState(null);
@@ -802,6 +805,8 @@ const GA4Insights = () => {
         setLandingCategoryFilter('all');
         setLandingKeyEvent('');
         setItemsSnapshot(null);
+        setItemsCategoryFilter('all');
+        setItemsSearchQuery('');
         setKpiTargets(null);
         setRefreshNotice('');
         await load(next);
@@ -1354,46 +1359,116 @@ const GA4Insights = () => {
                         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px', flexWrap: 'wrap', gap: '8px' }}>
                             <div>
                                 <div style={{ color: 'var(--text-primary)', fontWeight: 700 }}>{t('Items', '商品分析')}</div>
-                                <div style={{ color: 'var(--text-secondary)', fontSize: '0.8rem' }}>
-                                    {t('View growth compares the last 7 days vs. the prior 7 days.', '瀏覽成長比較固定用近 7 天 vs 前 7 天。')}
+                                <div
+                                    style={{ color: 'var(--text-secondary)', fontSize: '0.8rem', cursor: 'help' }}
+                                    title={t(
+                                        'Always compares the last 7 days vs. the prior 7 days, independent of the date range above. Items with a small prior base can swing wildly — cross-check the raw counts.',
+                                        '固定比較近 7 天 vs 前 7 天，與上方期間選擇無關；前期瀏覽極少的商品成長率波動大，請搭配原始次數判讀。'
+                                    )}
+                                >
+                                    {t('View growth compares the last 7 days vs. the prior 7 days.', '瀏覽成長比較固定用近 7 天 vs 前 7 天。')} ⓘ
                                 </div>
                             </div>
                             <DaySelector value={itemsDays} onChange={(d) => { setItemsDays(d); loadItems(propertyId, d); }} />
                         </div>
                         {itemsError && <div style={{ color: '#fca5a5', fontSize: '0.85rem', marginBottom: '10px' }}>{itemsError}</div>}
+                        {itemsSnapshot?.payload?.used_fallback_conversion_metrics && (
+                            <div style={{ color: '#fbbf24', fontSize: '0.78rem', marginBottom: '10px' }}>
+                                {t(
+                                    'GA4 could not return the official cart/purchase rate for this property; showing a locally computed rate instead.',
+                                    '此屬性無法取得 GA4 官方加購/購買率，改顯示本地計算的比率。'
+                                )}
+                            </div>
+                        )}
                         {itemsLoading && !itemsSnapshot ? (
                             emptyState(t('Loading items…', '載入商品資料中…'))
                         ) : itemsSnapshot?.payload?.items?.length ? (
-                            <div style={{ overflowX: 'auto' }}>
-                                <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.85rem' }}>
-                                    <thead>
-                                        <tr style={{ color: 'var(--text-secondary)', textAlign: 'left' }}>
-                                            <th style={{ padding: '6px' }}>{t('Item', '商品')}</th>
-                                            <th style={{ padding: '6px' }}>{t('Views', '瀏覽')}</th>
-                                            <th style={{ padding: '6px' }}>{t('Add-to-cart rate', '加購率')}</th>
-                                            <th style={{ padding: '6px' }}>{t('View growth', '瀏覽成長')}</th>
-                                            <th style={{ padding: '6px' }}>{t('Revenue', '營收')}</th>
-                                            <th style={{ padding: '6px' }}>{t('Flag', '標記')}</th>
-                                        </tr>
-                                    </thead>
-                                    <tbody>
-                                        {[...itemsSnapshot.payload.items]
-                                            .sort((a, b) => (b.is_potential ? 1 : 0) - (a.is_potential ? 1 : 0))
-                                            .map((row) => (
-                                                <tr key={row.itemName} style={{ borderTop: '1px solid var(--glass-border)' }}>
-                                                    <td style={{ padding: '6px', color: 'var(--text-primary)' }}>{row.itemName}</td>
-                                                    <td style={{ padding: '6px', color: 'var(--text-secondary)' }}>{fmtNumber(row.itemsViewed)}</td>
-                                                    <td style={{ padding: '6px', color: 'var(--text-secondary)' }}>{fmtPct(row.add_to_cart_rate)}</td>
-                                                    <td style={{ padding: '6px', color: 'var(--text-secondary)' }}>{fmtPct(row.views_growth_rate)}</td>
-                                                    <td style={{ padding: '6px', color: 'var(--text-secondary)' }}>{fmtNumber(row.itemRevenue)}</td>
-                                                    <td style={{ padding: '6px' }}>
-                                                        {row.is_potential && <span style={badgeStyle('potential')}>{t('Potential', '潛力商品')}</span>}
-                                                    </td>
-                                                </tr>
-                                            ))}
-                                    </tbody>
-                                </table>
-                            </div>
+                            <>
+                                <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap', marginBottom: '12px', alignItems: 'center' }}>
+                                    <select
+                                        value={itemsCategoryFilter}
+                                        onChange={(event) => setItemsCategoryFilter(event.target.value)}
+                                        style={{ ...inputStyle, width: 'auto', padding: '8px 10px' }}
+                                    >
+                                        <option value="all">{t('All categories', '全部分類')} ({itemsSnapshot.payload.items.length})</option>
+                                        {Object.entries(itemsSnapshot.payload.category_counts || {}).map(([cat, count]) => (
+                                            <option key={cat} value={cat}>
+                                                {cat === '(not set)' ? t('Uncategorized', '未分類') : cat} ({count})
+                                            </option>
+                                        ))}
+                                    </select>
+                                    <input
+                                        type="text"
+                                        value={itemsSearchQuery}
+                                        onChange={(event) => setItemsSearchQuery(event.target.value)}
+                                        placeholder={t('Search item name…', '搜尋商品名稱…')}
+                                        style={{ ...inputStyle, width: 'auto', padding: '8px 10px' }}
+                                    />
+                                </div>
+                                <div style={{ overflowX: 'auto' }}>
+                                    <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.85rem' }}>
+                                        <thead>
+                                            <tr style={{ color: 'var(--text-secondary)', textAlign: 'left' }}>
+                                                <th style={{ padding: '6px' }}>{t('Item', '商品')}</th>
+                                                <th style={{ padding: '6px' }}>{t('Category', '分類')}</th>
+                                                <th style={{ padding: '6px' }}>{t('Views', '瀏覽')}</th>
+                                                <th
+                                                    style={{ padding: '6px', cursor: 'help' }}
+                                                    title={itemsSnapshot.payload.cart_to_view_rate_definition || ''}
+                                                >
+                                                    {t('Add-to-cart rate', '瀏覽後加購率')} ⓘ
+                                                </th>
+                                                <th
+                                                    style={{ padding: '6px', cursor: 'help' }}
+                                                    title={itemsSnapshot.payload.purchase_to_view_rate_definition || ''}
+                                                >
+                                                    {t('Purchase rate', '瀏覽後購買率')} ⓘ
+                                                </th>
+                                                <th style={{ padding: '6px' }}>{t('View growth', '瀏覽成長')}</th>
+                                                <th style={{ padding: '6px' }}>{t('Revenue', '營收')}</th>
+                                                <th style={{ padding: '6px' }}>{t('Flag', '標記')}</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody>
+                                            {itemsSnapshot.payload.items
+                                                .filter((row) => itemsCategoryFilter === 'all' || row.item_category === itemsCategoryFilter)
+                                                .filter((row) => !itemsSearchQuery.trim() || row.itemName?.toLowerCase().includes(itemsSearchQuery.trim().toLowerCase()))
+                                                .sort((a, b) => (b.is_potential ? 1 : 0) - (a.is_potential ? 1 : 0))
+                                                .map((row) => {
+                                                    const isNewEntry = row.views_prior_7d === 0 && row.views_recent_7d > 0;
+                                                    return (
+                                                        <tr key={row.itemName} style={{ borderTop: '1px solid var(--glass-border)' }}>
+                                                            <td style={{ padding: '6px', color: 'var(--text-primary)' }}>{row.itemName}</td>
+                                                            <td style={{ padding: '6px', color: 'var(--text-secondary)' }}>
+                                                                {row.item_category === '(not set)' ? t('Uncategorized', '未分類') : row.item_category}
+                                                            </td>
+                                                            <td style={{ padding: '6px', color: 'var(--text-secondary)' }}>{fmtNumber(row.itemsViewed)}</td>
+                                                            <td style={{ padding: '6px', color: 'var(--text-secondary)' }}>{fmtPct(row.cart_to_view_rate)}</td>
+                                                            <td style={{ padding: '6px', color: 'var(--text-secondary)' }}>{fmtPct(row.purchase_to_view_rate)}</td>
+                                                            <td
+                                                                style={{ padding: '6px', color: 'var(--text-secondary)', cursor: 'help' }}
+                                                                title={t(
+                                                                    `Last 7 days: ${fmtNumber(row.views_recent_7d)} / Prior 7 days: ${fmtNumber(row.views_prior_7d)}`,
+                                                                    `近 7 天 ${fmtNumber(row.views_recent_7d)} 次 / 前 7 天 ${fmtNumber(row.views_prior_7d)} 次`
+                                                                )}
+                                                            >
+                                                                {isNewEntry ? (
+                                                                    <span style={badgeStyle('new_entry')}>{t('New entry', '新進榜')}</span>
+                                                                ) : (
+                                                                    fmtPct(row.views_growth_rate)
+                                                                )}
+                                                            </td>
+                                                            <td style={{ padding: '6px', color: 'var(--text-secondary)' }}>{fmtNumber(row.itemRevenue)}</td>
+                                                            <td style={{ padding: '6px' }}>
+                                                                {row.is_potential && <span style={badgeStyle('potential')}>{t('Potential', '潛力商品')}</span>}
+                                                            </td>
+                                                        </tr>
+                                                    );
+                                                })}
+                                        </tbody>
+                                    </table>
+                                </div>
+                            </>
                         ) : (
                             emptyState(t('No item data.', '暫無商品資料。'))
                         )}
@@ -1407,7 +1482,10 @@ const GA4Insights = () => {
                             `Property ${propertyId}; period ${itemsSnapshot?.payload?.start_date || ''} ~ ${itemsSnapshot?.payload?.end_date || ''}`,
                             `屬性 ${propertyId}；期間 ${itemsSnapshot?.payload?.start_date || ''} ~ ${itemsSnapshot?.payload?.end_date || ''}`
                         )}
-                        buildPayload={() => ({ items: itemsSnapshot?.payload?.items || [] })}
+                        buildPayload={() => ({
+                            items: itemsSnapshot?.payload?.items || [],
+                            category_counts: itemsSnapshot?.payload?.category_counts || {},
+                        })}
                     />
                 </>
             )}

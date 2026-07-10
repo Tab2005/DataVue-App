@@ -85,6 +85,17 @@ LANDING_PAGE_KEY_EVENTS_COUNT_DEFINITION = (
 # key_event 白名單格式（GA4 事件名規則），防任意指標注入。
 LANDING_PAGE_KEY_EVENT_PATTERN = re.compile(r"^[A-Za-z0-9_]{1,40}$")
 
+# 第 6 波：商品分析篩選＋購買轉換率＋口徑對齊（docs/22 5 節，追加）
+ITEM_METRICS_WITH_OFFICIAL_RATES = [
+    "itemsViewed", "itemsAddedToCart", "itemsPurchased", "itemRevenue",
+    "cartToViewRate", "purchaseToViewRate",
+]
+# 相容性保險（任務 1.4）：若 GA4 回相容性錯誤（cartToViewRate/purchaseToViewRate
+# 與 itemName 無法同查），退回不含官方比率的基礎指標，改用本地件數比計算。
+ITEM_METRICS_FALLBACK = ["itemsViewed", "itemsAddedToCart", "itemsPurchased", "itemRevenue"]
+ITEM_CART_TO_VIEW_RATE_DEFINITION = "看過此商品的使用者中，把它加入購物車的比率（使用者去重）"
+ITEM_PURCHASE_TO_VIEW_RATE_DEFINITION = "看過此商品的使用者中，購買它的比率（使用者去重）"
+
 
 def _percentile(sorted_values: list[float], fraction: float) -> float:
     """線性插值百分位數（同 numpy 預設方法），輸入須已排序。"""
@@ -714,17 +725,28 @@ class GA4InsightsService:
     def delete_landing_page_rule(db, *, rule_id: str) -> bool:
         return repository.delete_landing_page_rule(db, rule_id)
 
-    # ─── 第 2 波：商品分析（3.4 節） ───────────────────────────────────
+    # ─── 第 2/6 波：商品分析（3.4 節；第 6 波加分類篩選＋官方口徑） ────
     @staticmethod
     def get_items(db, *, user: User, property_id: str, days: int = 7):
         start_date, end_date = GA4InsightsService._trailing_period(days)
+
         data, error = GA4Service.get_analytics(
             user=user, property_id=property_id, start_date=start_date, end_date=end_date,
-            metrics=["itemsViewed", "itemsAddedToCart", "itemsPurchased", "itemRevenue"],
-            dimensions=["itemName"], db=db,
+            metrics=ITEM_METRICS_WITH_OFFICIAL_RATES, dimensions=["itemName"], db=db,
         )
+        used_fallback_conversion_metrics = False
         if error:
-            raise RuntimeError(error)
+            logger.warning(
+                "[GA4Insights] items official rate metrics failed %s: %s; falling back to local ratios",
+                property_id, error,
+            )
+            data, error = GA4Service.get_analytics(
+                user=user, property_id=property_id, start_date=start_date, end_date=end_date,
+                metrics=ITEM_METRICS_FALLBACK, dimensions=["itemName"], db=db,
+            )
+            if error:
+                raise RuntimeError(error)
+            used_fallback_conversion_metrics = True
         rows = (data or {}).get("rows", [])
 
         # 瀏覽成長比較固定用「近 7 天 vs 前 7 天」（3.4 節），與 days 參數（表格期間）無關
@@ -743,34 +765,82 @@ class GA4InsightsService:
         recent_views = {row["itemName"]: row.get("itemsViewed", 0) for row in (recent_data or {}).get("rows", [])}
         prior_views = {row["itemName"]: row.get("itemsViewed", 0) for row in (prior_data or {}).get("rows", [])}
 
+        # 商品主要分類：itemName × itemCategory，同商品多分類時取瀏覽量最高者
+        # （查詢失敗只記警告、不中斷主表格，同第 5 波分項查詢容錯慣例）。
+        category_by_item: dict[str, str] = {}
+        best_views_by_item: dict[str, int] = {}
+        breakdown_data, breakdown_error = GA4Service.get_analytics(
+            user=user, property_id=property_id, start_date=start_date, end_date=end_date,
+            metrics=["itemsViewed"], dimensions=["itemName", "itemCategory"], db=db,
+        )
+        if not breakdown_error:
+            for row in (breakdown_data or {}).get("rows", []):
+                item_name = row.get("itemName", "")
+                item_category = row.get("itemCategory") or "(not set)"
+                views = row.get("itemsViewed", 0)
+                if item_name not in best_views_by_item or views > best_views_by_item[item_name]:
+                    best_views_by_item[item_name] = views
+                    category_by_item[item_name] = item_category
+        else:
+            logger.warning("[GA4Insights] items category breakdown failed %s: %s", property_id, breakdown_error)
+
         enriched = []
         for row in rows:
             item_name = row.get("itemName")
             views = row.get("itemsViewed", 0)
             add_to_cart = row.get("itemsAddedToCart", 0)
+            purchased = row.get("itemsPurchased", 0)
+            # 舊件數比（同一使用者重複瀏覽/加購會重複計）保留供回溯，前端不再顯示為主要欄位。
             add_to_cart_rate = (add_to_cart / views) if views else 0.0
+            if used_fallback_conversion_metrics:
+                cart_to_view_rate = add_to_cart_rate
+                purchase_to_view_rate = (purchased / views) if views else 0.0
+            else:
+                cart_to_view_rate = row.get("cartToViewRate", 0.0)
+                purchase_to_view_rate = row.get("purchaseToViewRate", 0.0)
             recent = recent_views.get(item_name, 0)
             prior = prior_views.get(item_name, 0)
             growth_rate = ((recent - prior) / prior) if prior else (1.0 if recent > 0 else 0.0)
             enriched.append({
                 **row,
                 "add_to_cart_rate": add_to_cart_rate,
+                "cart_to_view_rate": cart_to_view_rate,
+                "purchase_to_view_rate": purchase_to_view_rate,
                 "views_growth_rate": growth_rate,
+                "views_recent_7d": recent,
+                "views_prior_7d": prior,
+                "item_category": category_by_item.get(item_name, "(not set)"),
                 "is_potential": False,
             })
 
+        category_counts: dict[str, int] = {}
+        for row in enriched:
+            category_counts[row["item_category"]] = category_counts.get(row["item_category"], 0) + 1
+
+        # 潛力標記維持「全店相對」，用全體中位數（刻意決策，與第 5 波到達頁
+        # 的同分類判定不同：itemCategory 高基數下單分類樣本常 <4，且潛力語意
+        # 本就是跨分類比較「誰在全店裡值得加碼」，不強求跟到達頁一致）。
         if len(enriched) >= 4:
             growth_median = median(r["views_growth_rate"] for r in enriched)
-            cart_rate_median = median(r["add_to_cart_rate"] for r in enriched)
+            cart_rate_median = median(r["cart_to_view_rate"] for r in enriched)
             views_median = median(r["itemsViewed"] for r in enriched)
             for row in enriched:
                 row["is_potential"] = (
                     row["views_growth_rate"] > growth_median
-                    and row["add_to_cart_rate"] > cart_rate_median
+                    and row["cart_to_view_rate"] > cart_rate_median
                     and row["itemsViewed"] < views_median
                 )
 
-        payload = {"start_date": start_date, "end_date": end_date, "days": days, "items": enriched}
+        payload = {
+            "start_date": start_date,
+            "end_date": end_date,
+            "days": days,
+            "items": enriched,
+            "category_counts": category_counts,
+            "used_fallback_conversion_metrics": used_fallback_conversion_metrics,
+            "cart_to_view_rate_definition": ITEM_CART_TO_VIEW_RATE_DEFINITION,
+            "purchase_to_view_rate_definition": ITEM_PURCHASE_TO_VIEW_RATE_DEFINITION,
+        }
         return repository.upsert_snapshot(
             db, property_id=property_id, kind="item", date=end_date, payload=payload, fetched_by=user.id,
         )

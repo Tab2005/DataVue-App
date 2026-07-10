@@ -273,15 +273,18 @@ def test_get_landing_pages_skips_tagging_with_small_sample(mocker, db, sample_us
 
 
 # ─── 商品：潛力商品 ─────────────────────────────────────────────────
+# 第 6 波後主查詢改用官方 cartToViewRate/purchaseToViewRate 且多一次
+# itemName×itemCategory 分項查詢，同樣用 metrics=["itemsViewed"]，須靠
+# dimensions 才能跟近/前 7 天查詢分開；完整覆蓋見 tests/test_ga4_item_analysis.py。
 @pytest.mark.unit
 def test_get_items_flags_potential_products(mocker, db, sample_user):
     from modules.ga4.insights_service import GA4InsightsService
 
     main_rows = [
-        {"itemName": "P1", "itemsViewed": 40, "itemsAddedToCart": 20, "itemsPurchased": 5, "itemRevenue": 500.0},
-        {"itemName": "P2", "itemsViewed": 500, "itemsAddedToCart": 50, "itemsPurchased": 40, "itemRevenue": 4000.0},
-        {"itemName": "P3", "itemsViewed": 200, "itemsAddedToCart": 20, "itemsPurchased": 10, "itemRevenue": 1000.0},
-        {"itemName": "P4", "itemsViewed": 300, "itemsAddedToCart": 15, "itemsPurchased": 5, "itemRevenue": 500.0},
+        {"itemName": "P1", "itemsViewed": 40, "itemsAddedToCart": 20, "itemsPurchased": 5, "itemRevenue": 500.0, "cartToViewRate": 0.5, "purchaseToViewRate": 0.125},
+        {"itemName": "P2", "itemsViewed": 500, "itemsAddedToCart": 50, "itemsPurchased": 40, "itemRevenue": 4000.0, "cartToViewRate": 0.1, "purchaseToViewRate": 0.08},
+        {"itemName": "P3", "itemsViewed": 200, "itemsAddedToCart": 20, "itemsPurchased": 10, "itemRevenue": 1000.0, "cartToViewRate": 0.1, "purchaseToViewRate": 0.05},
+        {"itemName": "P4", "itemsViewed": 300, "itemsAddedToCart": 15, "itemsPurchased": 5, "itemRevenue": 500.0, "cartToViewRate": 0.05, "purchaseToViewRate": 0.017},
     ]
     recent_rows = [
         {"itemName": "P1", "itemsViewed": 40},
@@ -297,6 +300,8 @@ def test_get_items_flags_potential_products(mocker, db, sample_user):
     ]
 
     def fake_get_analytics(*, user, property_id, start_date, end_date, metrics, dimensions, db=None, **_):
+        if dimensions == ["itemName", "itemCategory"]:
+            return {"rows": []}, None
         if metrics == ["itemsViewed"]:
             # 依日期區間分辨 recent vs prior（recent 較晚）
             if start_date >= "2026-07-03":
@@ -314,7 +319,7 @@ def test_get_items_flags_potential_products(mocker, db, sample_user):
     db.commit()
 
     potential = {row["itemName"]: row["is_potential"] for row in snapshot.payload["items"]}
-    # P1：瀏覽成長最高（3.0）、加購率最高（20/40=0.5）、瀏覽量最低（40）→ 三條件皆過中位數 → 潛力商品
+    # P1：瀏覽成長最高（3.0）、瀏覽後加購率最高（0.5）、瀏覽量最低（40）→ 三條件皆過中位數 → 潛力商品
     assert potential["P1"] is True
     assert potential["P2"] is False
 
