@@ -888,15 +888,26 @@ class MetaAndromedaRepository:
             )
             cal_ids = {m.score_event_id for m in matched}
         ad_name_map: dict[str, str] = {}
+        # 成效分析匯入的素材，preview_url 欄位一律是 null（見 _score_to_list_item）——
+        # backend/worker 各自有獨立的 filesystem storage volume，worker 下載/寫入的檔案
+        # backend 讀不到，本地 asset_uri 的縮圖代理端點會 404。ObservedCreative.media_url
+        # 存的是原始 Facebook CDN 網址，直接讓前端從那邊載縮圖，繞過本地 storage 這層
+        # （2026-07-10 事故後新增）。
+        preview_url_map: dict[str, str] = {}
         if cal_ids:
             obs_rows = (
-                db.query(MetaAndromedaCalibrationItem.score_event_id, MetaAndromedaObservedCreative.ad_name)
+                db.query(
+                    MetaAndromedaCalibrationItem.score_event_id,
+                    MetaAndromedaObservedCreative.ad_name,
+                    MetaAndromedaObservedCreative.media_url,
+                )
                 .join(MetaAndromedaObservedCreative, MetaAndromedaCalibrationItem.observed_creative_id == MetaAndromedaObservedCreative.id)
                 .filter(MetaAndromedaCalibrationItem.score_event_id.in_(cal_ids))
                 .all()
             )
             ad_name_map = {r.score_event_id: r.ad_name for r in obs_rows if r.ad_name}
-        # 補上直連 ObservedCreative（request_context.observed_creative_id）的 ad_name
+            preview_url_map = {r.score_event_id: r.media_url for r in obs_rows if r.media_url}
+        # 補上直連 ObservedCreative（request_context.observed_creative_id）的 ad_name/media_url
         direct_linked: dict[str, str] = {}  # score_event_id -> observed_creative_id
         for row in rows:
             if row.id in cal_ids:
@@ -907,20 +918,29 @@ class MetaAndromedaRepository:
                 direct_linked[row.id] = obs_id
         if direct_linked:
             direct_obs = (
-                db.query(MetaAndromedaObservedCreative.id, MetaAndromedaObservedCreative.ad_name)
+                db.query(
+                    MetaAndromedaObservedCreative.id,
+                    MetaAndromedaObservedCreative.ad_name,
+                    MetaAndromedaObservedCreative.media_url,
+                )
                 .filter(MetaAndromedaObservedCreative.id.in_(direct_linked.values()))
                 .all()
             )
             obs_ad_name = {o.id: o.ad_name for o in direct_obs if o.ad_name}
+            obs_media_url = {o.id: o.media_url for o in direct_obs if o.media_url}
             for evt_id, obs_id in direct_linked.items():
                 if evt_id not in ad_name_map and obs_id in obs_ad_name:
                     ad_name_map[evt_id] = obs_ad_name[obs_id]
+                if evt_id not in preview_url_map and obs_id in obs_media_url:
+                    preview_url_map[evt_id] = obs_media_url[obs_id]
         items = []
         for row in rows:
             rc = MetaAndromedaRepository._safe_json_dict(row.request_context)
             item = self._score_to_list_item(row)
             item["has_observation"] = (row.id in cal_ids) or bool(rc.get("observed_creative_id"))
             item["ad_name"] = ad_name_map.get(row.id)
+            if not item.get("preview_url"):
+                item["preview_url"] = preview_url_map.get(row.id)
             items.append(item)
         return {
             "items": items,
@@ -993,6 +1013,11 @@ class MetaAndromedaRepository:
                 }
             else:
                 detail["observation"] = None
+
+        # 成效分析匯入的素材本地縮圖代理讀不到（見上面 list_review_queue 的說明），
+        # 用 ObservedCreative.media_url（原始 Facebook CDN 網址）當備援 preview_url
+        if obs and obs.media_url and not detail.get("preview_url"):
+            detail["preview_url"] = obs.media_url
 
         # 三方對照（人 vs 模型 vs 市場）：把 reviewer 的歷史回饋跟上面的 AI 預測/市場實績
         # 放在同一個 detail 裡，才看得出 reviewer 說的 hook_soft 之類的判斷是否真的準
