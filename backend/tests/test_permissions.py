@@ -172,3 +172,88 @@ def test_require_module_and_permission_allow_super_admin_without_team_context(db
 
     assert module_response.status_code == 200
     assert permission_response.status_code == 200
+
+
+# ─── GA4 insights：個人工作區退回模組存取檢查（2026-07-10 生產環境回報的
+#     「Permission denied: ga4:insights:view」修復驗證，見 modules/ga4/dependencies.py） ──
+@pytest.mark.unit
+def test_ga4_insights_permission_falls_back_to_module_access_in_personal_workspace(db, sample_user):
+    """
+    個人工作區（無 X-Team-ID）呼叫 ga4:insights:* 應退回只檢查模組存取
+    （比照既有 /api/ga4/report 的慣例），而非一律 403——GA4 是 per-user
+    OAuth，本就該讓沒有團隊的個人工作區使用者能用洞察頁。
+    """
+    from modules.ga4.dependencies import require_ga4_insights_view
+
+    module = Module(key="ga4", name="Google Analytics 4", enabled=True)
+    db.add(module)
+    db.flush()
+    db.add(
+        UserModuleAccess(user_id=sample_user.id, team_id=None, module_id=module.id, enabled=True)
+    )
+    db.commit()
+
+    app = FastAPI()
+    app.dependency_overrides[auth_dependencies.get_current_user] = lambda: sample_user
+    app.dependency_overrides[auth_dependencies.get_db] = lambda: db
+
+    @app.get("/test/ga4-insights-view")
+    def check(_: bool = Depends(require_ga4_insights_view)):
+        return {"ok": True}
+
+    with TestClient(app) as client:
+        response = client.get("/test/ga4-insights-view")
+
+    assert response.status_code == 200
+
+
+@pytest.mark.unit
+def test_ga4_insights_permission_denies_personal_workspace_without_ga4_module(db, sample_user):
+    """個人工作區沒開 GA4 模組時仍應正確擋下，不是無條件放行。"""
+    from modules.ga4.dependencies import require_ga4_insights_view
+
+    app = FastAPI()
+    app.dependency_overrides[auth_dependencies.get_current_user] = lambda: sample_user
+    app.dependency_overrides[auth_dependencies.get_db] = lambda: db
+
+    @app.get("/test/ga4-insights-view")
+    def check(_: bool = Depends(require_ga4_insights_view)):
+        return {"ok": True}
+
+    with TestClient(app) as client:
+        response = client.get("/test/ga4-insights-view")
+
+    assert response.status_code == 403
+
+
+@pytest.mark.unit
+def test_ga4_insights_permission_still_uses_team_role_matrix_with_team_header(db, sample_user):
+    """帶 X-Team-ID 時仍沿用團隊角色權限矩陣：team_member 未被授予
+    manage_alerts 時應維持 403，個人工作區的退回邏輯不影響團隊分層。"""
+    from modules.ga4.dependencies import require_ga4_insights_manage_alerts
+
+    team = Team(name="GA4 Team", owner_id=sample_user.id)
+    db.add(team)
+    db.flush()
+
+    role = Role(key="team_member", name="團隊成員", scope="team")
+    module = Module(key="ga4", name="Google Analytics 4", enabled=True)
+    db.add_all([role, module])
+    db.flush()
+    db.add(Permission(module_id=module.id, key="ga4:insights:manage_alerts", name="告警管理", category="admin"))
+    db.flush()
+    db.add(TeamMember(team_id=team.id, user_id=sample_user.id, role=UserRole.MEMBER))
+    db.commit()
+
+    app = FastAPI()
+    app.dependency_overrides[auth_dependencies.get_current_user] = lambda: sample_user
+    app.dependency_overrides[auth_dependencies.get_db] = lambda: db
+
+    @app.get("/test/ga4-insights-manage")
+    def check(_: bool = Depends(require_ga4_insights_manage_alerts)):
+        return {"ok": True}
+
+    with TestClient(app) as client:
+        response = client.get("/test/ga4-insights-manage", headers={"X-Team-ID": team.id})
+
+    assert response.status_code == 403
