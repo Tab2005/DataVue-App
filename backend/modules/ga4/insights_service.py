@@ -767,6 +767,10 @@ class GA4InsightsService:
 
         # 商品主要分類：itemName × itemCategory，同商品多分類時取瀏覽量最高者
         # （查詢失敗只記警告、不中斷主表格，同第 5 波分項查詢容錯慣例）。
+        # `category_breakdown_error` 進 payload：讓前端能分辨「查詢真的失敗」
+        # 跟「GA4 本來就沒有 item_category 資料（網站未回傳）」，否則兩種情況
+        # 在畫面上都是一片「未分類」，使用者無從判斷是系統問題還是自家網站
+        # 的 GA4/GTM 電子商務事件沒有設定商品分類。
         category_by_item: dict[str, str] = {}
         best_views_by_item: dict[str, int] = {}
         breakdown_data, breakdown_error = GA4Service.get_analytics(
@@ -838,6 +842,7 @@ class GA4InsightsService:
             "items": enriched,
             "category_counts": category_counts,
             "used_fallback_conversion_metrics": used_fallback_conversion_metrics,
+            "category_breakdown_error": breakdown_error,
             "cart_to_view_rate_definition": ITEM_CART_TO_VIEW_RATE_DEFINITION,
             "purchase_to_view_rate_definition": ITEM_PURCHASE_TO_VIEW_RATE_DEFINITION,
         }

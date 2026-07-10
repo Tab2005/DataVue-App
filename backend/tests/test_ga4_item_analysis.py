@@ -164,6 +164,36 @@ def test_get_items_defaults_to_not_set_when_category_breakdown_fails(mocker, db,
 
     assert snapshot.payload["items"][0]["item_category"] == "(not set)"
     assert snapshot.payload["category_counts"] == {"(not set)": 1}
+    # category_breakdown_error 讓前端能分辨「查詢真的失敗」跟「GA4 本來就
+    # 沒有 item_category 資料」，兩者在畫面上都會顯示「未分類」但成因不同。
+    assert snapshot.payload["category_breakdown_error"] == "quota exceeded"
+
+
+@pytest.mark.unit
+def test_get_items_category_breakdown_error_is_none_on_success(mocker, db, sample_user):
+    from modules.ga4.insights_service import GA4InsightsService
+
+    main_rows = [{
+        "itemName": "P1", "itemsViewed": 100, "itemsAddedToCart": 20, "itemsPurchased": 5,
+        "itemRevenue": 500.0, "cartToViewRate": 0.2, "purchaseToViewRate": 0.05,
+    }]
+
+    def fake_get_analytics(*, user, property_id, start_date, end_date, metrics, dimensions, db=None, **_):
+        if dimensions == ["itemName", "itemCategory"]:
+            return {"rows": [{"itemName": "P1", "itemCategory": "(not set)", "itemsViewed": 100}]}, None
+        if metrics == ["itemsViewed"] and dimensions == ["itemName"]:
+            return {"rows": []}, None
+        return {"rows": main_rows}, None
+
+    mocker.patch("modules.ga4.insights_service.GA4Service.get_analytics", side_effect=fake_get_analytics)
+
+    snapshot = GA4InsightsService.get_items(db, user=sample_user, property_id="123456", days=7)
+    db.commit()
+
+    # 查詢成功但 GA4 本身回報 "(not set)"（網站沒送 item_category）：
+    # 這是合法結果，category_breakdown_error 應為 None，跟查詢失敗區分開來。
+    assert snapshot.payload["category_breakdown_error"] is None
+    assert snapshot.payload["items"][0]["item_category"] == "(not set)"
 
 
 # ─── 潛力標記：全店中位數，不隨分類切分 ─────────────────────────────

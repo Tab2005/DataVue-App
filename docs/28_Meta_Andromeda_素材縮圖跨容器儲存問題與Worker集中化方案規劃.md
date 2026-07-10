@@ -111,28 +111,206 @@ meta-andromeda-worker（worker，SERVICE_ROLE=worker）
 
 寫跟讀必須同時搬去同一個 process，理由已在 1.4 說明。
 
-### 3.2 具體要動的兩塊
+### 3.2 推薦收斂方向（本文件建議採用）
+
+方案 D 雖然有兩條可行路徑，但**推薦明確收斂成「backend 保持唯一對外入口，worker 成為唯一檔案持有者，web 只做內部轉發」**，不建議把手動上傳也做成 DB queue。
+
+理由：
+
+- `Score Lab` 手動上傳是互動式流程；前端目前預期 `POST /assets:upload` 立即回傳 `asset_uri`，接著才能直接送出評分
+- 若改成 DB queue，上傳就會從同步流程變成「accepted -> 輪詢等待 asset 建立完成 -> 才能送評分」，不只動到 backend，前端流程也要重寫
+- 觀測匯入本來就是背景工作，適合 queue；手動上傳不是背景工作，硬套 queue 只會提高不必要的複雜度
+- 因此在方案 D 下，**寫入面與讀取面都走 backend -> worker 內部 HTTP 轉發**，是影響面最小、最符合現有互動模型的做法
+
+### 3.3 具體要動的兩塊
 
 **(a) 寫入面：手動上傳也要落到 worker 的硬碟**
 
-`POST /assets:upload` 目前是 backend 收到 HTTP 請求、在同一個 process 內直接寫檔。要讓檔案落在 worker，backend 收到上傳請求後不能自己寫，需要把檔案內容轉發給 worker——可以仿照現有「成效分析匯入」已經在用的 DB-backed queue 模式（docs/25 §1.3 提到的既有基礎設施），或直接開一個 worker 內部專用的寫入端點，由 backend 用 Zeabur 內部網路呼叫。
+`POST /assets:upload` 目前是 backend 收到 HTTP 請求、在同一個 process 內直接寫檔。方案 D 下，backend 仍保留這條對外 API，但職責改成：
+
+1. 收檔、做基本 request 驗證與權限檢查
+2. 把檔案內容轉發給 worker 內部端點
+3. 由 worker 實際呼叫 `MetaAndromedaService.upload_asset()` / `storage_adapter.store_asset()` 寫入自己的 Volume
+4. worker 回傳既有 `AssetUploadResponse` payload，backend 原樣回給前端
+
+這樣 `Score Lab` 前端完全不用改互動模型，仍然是同步拿到 `asset_uri` 後立刻可送評分。
 
 **(b) 讀取面：縮圖/下載端點要能拿到 worker 硬碟上的檔案**
 
-`worker_main.py` 目前刻意不掛業務路由（docs/24 的設計原則）。要滿足讀取需求，兩個做法擇一：
+`worker_main.py` 目前刻意不掛業務路由（docs/24 的設計原則）。要滿足讀取需求，理論上有兩種做法：
 
 1. 在 worker 上新增一個**範圍很小的內部專用讀檔端點**（例如 `GET /internal/assets/raw?key=...`），backend 的 `/assets/preview`、`/assets/download` 改成：本地找不到檔案時，透過 Zeabur 內部網路（`*.zeabur.internal`，跟現在 DB/Redis 連線用的機制一樣）轉發請求給 worker，取回內容再回傳給瀏覽器。
 2. 或者乾脆全部檔案讀寫都固定由 worker 處理，backend 的兩個端點永遠內部轉發給 worker，不再自己碰本地硬碟。
 
-做法 1 影響面較小（backend 仍是唯一對外服務，worker 新增的端點只服務內部流量），是比較保守、建議優先評估的做法。
+若目標是**徹底移除「backend 本地硬碟是否有檔」這個心智負擔**，則方案 D 應進一步採用做法 2 的精神：
 
-### 3.3 影響範圍與風險
+- backend 的 `/assets/preview` 對外路由保留
+- 但在 `filesystem` backend 下，實際檔案內容一律由 worker 端點提供
+- backend 不再自己直讀本地 `META_ANDROMEDA_STORAGE_ROOT`
+
+換句話說，對外介面還是 backend；真正持有檔案的一律只有 worker。
+
+### 3.4 內部 API 合約草案
+
+為避免後續實作時又回頭討論路由長相，先把建議合約固定下來。
+
+**(a) Worker 內部寫入端點**
+
+- `POST /internal/meta-andromeda/assets`
+- 用途：供 backend 轉發手動上傳檔案，由 worker 實際寫檔與建立 asset DB record
+- request：
+  - `multipart/form-data`
+  - 欄位：
+    - `asset_type`
+    - `source_filename`
+    - `file`
+    - `uploaded_by`（可選；backend 解析完當前使用者後往內傳）
+    - `content_type`（可選；若 multipart 本身已有檔案 MIME，可不另傳）
+- response：
+  - 與現行 `AssetUploadResponse` 一致，避免 backend 還要做 payload 轉換
+
+**(b) Worker 內部讀檔端點**
+
+- `GET /internal/meta-andromeda/assets/raw?uri=...`
+- 用途：供 backend 讀取 worker Volume 上的原始素材內容，再回傳給瀏覽器
+- request：
+  - query string 至少帶 `uri`
+  - 不建議直接接受任意絕對路徑；以 `asset_uri` 或 `storage_key` 為查找主鍵較安全
+- response：
+  - 成功：直接回原始檔案 stream
+  - header 至少包含：
+    - `Content-Type`
+    - `Content-Length`（若可得）
+    - `X-Meta-Andromeda-Storage-Key`（可選，利於 debug）
+  - 失敗：
+    - `404`：asset record 不存在或 worker 本地實體檔案不存在
+    - `403`：path traversal / 非法 key
+    - `401`：內部認證失敗
+
+**(c) Backend 對外端點維持不變**
+
+- `POST /api/meta-andromeda/assets:upload`
+- `GET /api/meta-andromeda/assets/preview?uri=...`
+
+前端與外部呼叫端不需要因方案 D 改任何 API。
+
+### 3.5 驗證與安全模型
+
+worker 新增內部端點不代表可以放棄驗證；只是驗證邊界從「公開使用者」變成「內網 caller（backend）」。
+
+建議：
+
+- **只接受 Zeabur 內網 URL 呼叫**：例如 `http://meta-andromeda-worker.zeabur.internal:<port>`
+- backend 呼叫 worker 時，附帶固定的 internal auth header
+- 認證機制直接復用現有 Meta Andromeda external worker callback 那套概念，避免平行長出第二套安全模型：
+  - 優先用 shared secret 簽章
+  - 次選固定 bearer token
+- worker 端點收到請求後，先驗簽 / 驗 token，再做任何讀寫動作
+- 讀檔端點一律禁止 caller 直接指定絕對檔案路徑；必須先查 DB asset record，再把 `storage_key` 拼回 worker 本地 storage root，並做 `resolve()` + `relative_to()` 檢查
+
+這樣可最大限度重用現有設定概念與程式碼，避免把「內部素材代理」再做成另一套難維護的安全分支。
+
+### 3.6 設定項規劃
+
+方案 D 不需要新增基礎設施，但需要補幾個環境變數來描述 worker 內網位址與驗證資訊。
+
+建議新增：
+
+- `META_ANDROMEDA_INTERNAL_WORKER_BASE_URL`
+  - 例如 `http://meta-andromeda-worker.zeabur.internal`
+  - backend 用來呼叫 worker 內部素材 API
+- `META_ANDROMEDA_INTERNAL_WORKER_TIMEOUT_SECONDS`
+  - backend 轉發 worker 時的 timeout
+- `META_ANDROMEDA_INTERNAL_WORKER_SHARED_SECRET`
+  - 若採 HMAC 驗證
+- `META_ANDROMEDA_INTERNAL_WORKER_TOKEN`
+  - 若採固定 token 驗證
+
+命名上刻意沿用現有 `EXTERNAL_WORKER_*` / `EXTERNAL_QUEUE_*` 風格，避免未來看設定時一眼分不出用途。
+
+### 3.7 程式分工藍圖
+
+建議不要把全部邏輯直接塞進現有 router；實作時至少分成下面幾塊：
+
+**(a) backend 端**
+
+- 保留現有對外路由：
+  - `/assets:upload`
+  - `/assets/preview`
+- 新增一個「worker 內部素材 gateway」小模組，專責：
+  - 發送 upload 轉發請求
+  - 發送 raw file 讀取請求
+  - 產生 internal auth header
+  - 把 worker 失敗轉成適合對外 API 的錯誤
+
+**(b) worker 端**
+
+- 在 `worker_main.py` 額外掛一個極小的 internal router
+- 這個 router 只處理：
+  - 素材寫入
+  - 素材讀取
+- 不承接 review queue、score、release、monitoring 等任何對外業務 API
+
+**(c) 共用邏輯**
+
+- `MetaAndromedaService.upload_asset()` 仍作為唯一的寫入業務實作
+- 讀檔時若目前 router 內有 MIME 推斷 / `FileResponse` 組裝邏輯，應抽到共用 helper，避免 backend / worker 各寫一份不一致版本
+
+### 3.8 建議 rollout 順序
+
+方案 D 會碰到目前穩定的手動上傳路徑，因此不應一次全改；建議分階段推進。
+
+| Phase | 內容 | 目的 |
+|---|---|---|
+| D1 | 先補 worker internal read endpoint，backend preview 改成可轉發 | 先驗證 web -> worker 內網讀檔穩定 |
+| D2 | 再補 worker internal upload endpoint，backend upload 改成同步轉發 | 切掉 web 本地寫檔 |
+| D3 | 清掉 backend 直接讀 `META_ANDROMEDA_STORAGE_ROOT` 的 filesystem 分支 | 讓 worker 成為唯一檔案持有者 |
+| D4 | 補文件、監控、部署檢查 | 防止日後配置 drift |
+
+若要更保守，D1 可以先做成 feature flag，確認 Zeabur 內網轉發穩定後再切到 D2。
+
+### 3.9 測試計畫
+
+這個方案最怕「功能看起來沒壞，但其實只在單機開發模式能跑」，因此測試要覆蓋角色分流與內部轉發。
+
+至少需要：
+
+- backend router 測試
+  - `/assets:upload` 會正確把 multipart 轉發給 worker
+  - `/assets/preview` 會正確代理 worker stream
+  - worker 回 `404/401/500` 時，backend 對外行為符合預期
+- worker internal router 測試
+  - 未帶 token / 簽章時拒絕
+  - 非法 `uri` / 非法 `storage_key` 時拒絕
+  - 合法素材可正確回傳 MIME 與檔案內容
+- integration 測試
+  - 手動上傳 -> 送分 -> review queue 可預覽
+  - 成效分析匯入 -> review queue 可預覽
+  - `SERVICE_ROLE=web` 與 `SERVICE_ROLE=worker` 分工下都不會意外回退到 web 本地寫檔
+
+### 3.10 影響範圍與風險
 
 - 會動到目前穩定運作的手動上傳路徑（Score Lab 上傳），需要完整迴歸測試
 - worker 新增業務端點，跟 docs/24「worker 不掛業務路由」的原始設計原則有出入，需要明確記錄例外理由（僅限內部流量、範圍極小）
 - 兩個 process 之間多一次網路呼叫，縮圖載入延遲會略增（本地檔案系統讀取 vs. 內部網路 + 檔案系統讀取）
+- backend 若只做「本地找不到才 fallback worker」，會留下雙路徑行為，後續排查困難；**方案 D 應避免半套切換**
+- 內部 worker URL / token 若配置漂移，會直接讓手動上傳與縮圖同時失效，因此部署檢查與 health 訊息要一併補上
 
-### 3.4 觸發條件（比照 docs/25 §四的風格，先不做，除非）
+### 3.11 非推薦分支（記錄為何不採用）
+
+避免之後重複回頭討論，先把幾條不推薦路徑寫死：
+
+- **不把手動上傳改成 DB queue 主流程**：
+  - 會破壞 `Score Lab` 目前同步拿 `asset_uri` 的互動模型
+  - 需要前端額外輪詢或狀態機，複雜度高於收益
+- **不採 backend 本地先讀、找不到再轉發的長期架構**：
+  - 這只適合作為短期過渡，不適合作為方案 D 最終形態
+  - 最終形態應明確只有 worker 碰 filesystem
+- **不把 worker 擴成第二個對外 API 面**：
+  - worker 的素材端點只服務內部流量
+  - 對外公開入口仍應維持 backend 單一邊界
+
+### 3.12 觸發條件（比照 docs/25 §四的風格，先不做，除非）
 
 | # | 觸發條件 |
 |---|---|

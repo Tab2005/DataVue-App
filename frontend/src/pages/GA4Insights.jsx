@@ -243,6 +243,18 @@ const LANDING_MATCH_TYPE_OPTIONS = [
 
 const DASHBOARD_METRICS = ['sessions', 'conversions', 'purchaseRevenue'];
 
+// 商品分析表格可排序欄位（依使用者要求新增，2026-07-10）；預設方向：
+// 數字欄位高到低（desc）比較常用，文字欄位 A→Z（asc）。
+const ITEMS_SORT_COLUMNS = {
+    itemName: { type: 'string', defaultDir: 'asc' },
+    item_category: { type: 'string', defaultDir: 'asc' },
+    itemsViewed: { type: 'number', defaultDir: 'desc' },
+    cart_to_view_rate: { type: 'number', defaultDir: 'desc' },
+    purchase_to_view_rate: { type: 'number', defaultDir: 'desc' },
+    views_growth_rate: { type: 'number', defaultDir: 'desc' },
+    itemRevenue: { type: 'number', defaultDir: 'desc' },
+};
+
 // ── AI 白話解讀共用卡（同週報 / 貢獻分析頁的模式，docs/22 任務 2.4） ──
 const AIInsightNote = ({ language, snapshot, kind, buildPayload, contextLabel }) => {
     const t = (en, zh) => tr(language, en, zh);
@@ -547,6 +559,8 @@ const GA4Insights = () => {
     const [itemsError, setItemsError] = useState('');
     const [itemsCategoryFilter, setItemsCategoryFilter] = useState('all');
     const [itemsSearchQuery, setItemsSearchQuery] = useState('');
+    const [itemsSortKey, setItemsSortKey] = useState(null);
+    const [itemsSortDirection, setItemsSortDirection] = useState('desc');
 
     // 第 3 波：KPI 目標追蹤
     const [kpiTargets, setKpiTargets] = useState(null);
@@ -702,6 +716,15 @@ const GA4Insights = () => {
             setItemsError(err.message || t('Failed to load item insights.', '載入商品分析失敗。'));
         } finally {
             setItemsLoading(false);
+        }
+    };
+
+    const handleItemsSort = (key) => {
+        if (itemsSortKey === key) {
+            setItemsSortDirection((prev) => (prev === 'asc' ? 'desc' : 'asc'));
+        } else {
+            setItemsSortKey(key);
+            setItemsSortDirection(ITEMS_SORT_COLUMNS[key].defaultDir);
         }
     };
 
@@ -899,6 +922,38 @@ const GA4Insights = () => {
             ))}
         </div>
     );
+
+    // 商品分析表格的可排序表頭（點擊切換欄位/方向）。
+    const renderItemsSortHeader = (key, label, tooltip) => {
+        const isActive = itemsSortKey === key;
+        const arrow = isActive ? (itemsSortDirection === 'asc' ? ' ▲' : ' ▼') : '';
+        return (
+            <th
+                style={{ padding: '6px', cursor: 'pointer', userSelect: 'none', color: isActive ? 'var(--text-primary)' : 'var(--text-secondary)' }}
+                title={tooltip}
+                onClick={() => handleItemsSort(key)}
+            >
+                {label}{tooltip ? ' ⓘ' : ''}{arrow}
+            </th>
+        );
+    };
+
+    const sortedItemsRows = (rows) => {
+        if (!itemsSortKey) {
+            // 預設排序：潛力商品優先（既有行為）
+            return [...rows].sort((a, b) => (b.is_potential ? 1 : 0) - (a.is_potential ? 1 : 0));
+        }
+        const meta = ITEMS_SORT_COLUMNS[itemsSortKey];
+        const dir = itemsSortDirection === 'asc' ? 1 : -1;
+        return [...rows].sort((a, b) => {
+            const av = a[itemsSortKey];
+            const bv = b[itemsSortKey];
+            if (meta.type === 'string') {
+                return dir * String(av || '').localeCompare(String(bv || ''));
+            }
+            return dir * ((av ?? 0) - (bv ?? 0));
+        });
+    };
 
     return (
         <div style={{ padding: isMobile ? '16px' : '24px', display: 'grid', gap: '16px' }}>
@@ -1380,6 +1435,14 @@ const GA4Insights = () => {
                                 )}
                             </div>
                         )}
+                        {itemsSnapshot?.payload?.category_breakdown_error && (
+                            <div style={{ color: '#fbbf24', fontSize: '0.78rem', marginBottom: '10px' }}>
+                                {t(
+                                    'Could not fetch item category data from GA4 (temporary), so every item shows "Uncategorized" below.',
+                                    '暫時無法從 GA4 取得商品分類資料，以下商品因此都顯示「未分類」（非您網站真的沒有分類）。'
+                                )}
+                            </div>
+                        )}
                         {itemsLoading && !itemsSnapshot ? (
                             emptyState(t('Loading items…', '載入商品資料中…'))
                         ) : itemsSnapshot?.payload?.items?.length ? (
@@ -1409,31 +1472,22 @@ const GA4Insights = () => {
                                     <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.85rem' }}>
                                         <thead>
                                             <tr style={{ color: 'var(--text-secondary)', textAlign: 'left' }}>
-                                                <th style={{ padding: '6px' }}>{t('Item', '商品')}</th>
-                                                <th style={{ padding: '6px' }}>{t('Category', '分類')}</th>
-                                                <th style={{ padding: '6px' }}>{t('Views', '瀏覽')}</th>
-                                                <th
-                                                    style={{ padding: '6px', cursor: 'help' }}
-                                                    title={itemsSnapshot.payload.cart_to_view_rate_definition || ''}
-                                                >
-                                                    {t('Add-to-cart rate', '瀏覽後加購率')} ⓘ
-                                                </th>
-                                                <th
-                                                    style={{ padding: '6px', cursor: 'help' }}
-                                                    title={itemsSnapshot.payload.purchase_to_view_rate_definition || ''}
-                                                >
-                                                    {t('Purchase rate', '瀏覽後購買率')} ⓘ
-                                                </th>
-                                                <th style={{ padding: '6px' }}>{t('View growth', '瀏覽成長')}</th>
-                                                <th style={{ padding: '6px' }}>{t('Revenue', '營收')}</th>
+                                                {renderItemsSortHeader('itemName', t('Item', '商品'))}
+                                                {renderItemsSortHeader('item_category', t('Category', '分類'))}
+                                                {renderItemsSortHeader('itemsViewed', t('Views', '瀏覽'))}
+                                                {renderItemsSortHeader('cart_to_view_rate', t('Add-to-cart rate', '瀏覽後加購率'), itemsSnapshot.payload.cart_to_view_rate_definition || '')}
+                                                {renderItemsSortHeader('purchase_to_view_rate', t('Purchase rate', '瀏覽後購買率'), itemsSnapshot.payload.purchase_to_view_rate_definition || '')}
+                                                {renderItemsSortHeader('views_growth_rate', t('View growth', '瀏覽成長'))}
+                                                {renderItemsSortHeader('itemRevenue', t('Revenue', '營收'))}
                                                 <th style={{ padding: '6px' }}>{t('Flag', '標記')}</th>
                                             </tr>
                                         </thead>
                                         <tbody>
-                                            {itemsSnapshot.payload.items
-                                                .filter((row) => itemsCategoryFilter === 'all' || row.item_category === itemsCategoryFilter)
-                                                .filter((row) => !itemsSearchQuery.trim() || row.itemName?.toLowerCase().includes(itemsSearchQuery.trim().toLowerCase()))
-                                                .sort((a, b) => (b.is_potential ? 1 : 0) - (a.is_potential ? 1 : 0))
+                                            {sortedItemsRows(
+                                                itemsSnapshot.payload.items
+                                                    .filter((row) => itemsCategoryFilter === 'all' || row.item_category === itemsCategoryFilter)
+                                                    .filter((row) => !itemsSearchQuery.trim() || row.itemName?.toLowerCase().includes(itemsSearchQuery.trim().toLowerCase()))
+                                            )
                                                 .map((row) => {
                                                     const isNewEntry = row.views_prior_7d === 0 && row.views_recent_7d > 0;
                                                     return (
