@@ -62,4 +62,12 @@ export const ga4InsightsService = {
     upsertLandingPageRule: async (payload) => apiClient.put('/api/ga4/insights/landing-page-rules', payload),
 
     deleteLandingPageRule: async (ruleId) => apiClient.delete(`/api/ga4/insights/landing-page-rules/${ruleId}`),
+
+    // ─── 第 7 波：商品分類補充規則（追加） ───────────────────────────
+    listItemCategoryRules: async (propertyId) =>
+        apiClient.get(`/api/ga4/insights/item-category-rules?property_id=${encodeURIComponent(propertyId)}`),
+
+    upsertItemCategoryRule: async (payload) => apiClient.put('/api/ga4/insights/item-category-rules', payload),
+
+    deleteItemCategoryRule: async (ruleId) => apiClient.delete(`/api/ga4/insights/item-category-rules/${ruleId}`),
 };

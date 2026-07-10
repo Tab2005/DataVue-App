@@ -315,6 +315,22 @@ class Settings:
     def META_ANDROMEDA_EXTERNAL_WORKER_SHARED_SECRET(self) -> Optional[str]:
         return os.getenv("META_ANDROMEDA_EXTERNAL_WORKER_SHARED_SECRET")
 
+    @property
+    def META_ANDROMEDA_INTERNAL_WORKER_BASE_URL(self) -> Optional[str]:
+        return os.getenv("META_ANDROMEDA_INTERNAL_WORKER_BASE_URL")
+
+    @property
+    def META_ANDROMEDA_INTERNAL_WORKER_TIMEOUT_SECONDS(self) -> float:
+        return max(1.0, float(os.getenv("META_ANDROMEDA_INTERNAL_WORKER_TIMEOUT_SECONDS", "10")))
+
+    @property
+    def META_ANDROMEDA_INTERNAL_WORKER_SHARED_SECRET(self) -> Optional[str]:
+        return os.getenv("META_ANDROMEDA_INTERNAL_WORKER_SHARED_SECRET")
+
+    @property
+    def META_ANDROMEDA_INTERNAL_WORKER_TOKEN(self) -> Optional[str]:
+        return os.getenv("META_ANDROMEDA_INTERNAL_WORKER_TOKEN")
+
     # ── Contribution（MMM 貢獻分析）殭屍 snapshot 回收（docs/27 任務 2.2）──
     # apscheduler 為 in-memory date-trigger：server 在 job 執行前重啟、或
     # scheduler/local fallback 皆不可用（503 路徑）都會留下永久卡在

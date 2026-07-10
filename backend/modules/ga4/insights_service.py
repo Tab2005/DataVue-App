@@ -139,6 +139,34 @@ def classify_landing_page(path: str, rules: list[dict]) -> str:
     return "other"
 
 
+def classify_item_category(item_name: str, ga4_category: str | None, rules: list[dict]) -> tuple[str, str]:
+    """
+    純函數：決定商品的最終分類與其來源（第 7 波，追加）。
+
+    優先順序（與到達頁的「自訂規則搭配內建關鍵詞退回」設計不同，這裡是
+    「GA4 權威、自訂規則補充」）：
+    1. GA4 的 `itemCategory` 有值（非 `(not set)`/空字串）→ 直接採用，來源 "ga4"。
+       GA4 是商店既有分類的權威資料，永遠優先，避免兩套資料互搶同一商品的分類權。
+    2. GA4 沒有值時，依自訂規則（`priority` 升冪、`itemName` 比對、大小寫
+       不敏感）找第一個比對成功的規則，來源 "custom_rule"。
+    3. 都沒有 → `(not set)`，來源 "unset"。
+    """
+    if ga4_category and ga4_category != "(not set)":
+        return ga4_category, "ga4"
+
+    name_lower = (item_name or "").lower()
+    for rule in sorted(rules, key=lambda r: r["priority"]):
+        pattern = (rule["pattern"] or "").lower()
+        if not pattern:
+            continue
+        if rule["match_type"] == "prefix" and name_lower.startswith(pattern):
+            return rule["category"], "custom_rule"
+        if rule["match_type"] == "contains" and pattern in name_lower:
+            return rule["category"], "custom_rule"
+
+    return "(not set)", "unset"
+
+
 class GA4InsightsService:
     @staticmethod
     def list_rules(db, *, user_id: str, property_id: str | None = None):
@@ -788,6 +816,14 @@ class GA4InsightsService:
         else:
             logger.warning("[GA4Insights] items category breakdown failed %s: %s", property_id, breakdown_error)
 
+        # 第 7 波：GA4 的 itemCategory 是權威來源，只在 GA4 回報 "(not set)"
+        # 時才用自訂規則補分類（見 classify_item_category 的優先順序說明）。
+        item_category_rule_rows = repository.list_item_category_rules(db, property_id=property_id)
+        item_category_rules = [
+            {"category": r.category, "match_type": r.match_type, "pattern": r.pattern, "priority": r.priority}
+            for r in item_category_rule_rows
+        ]
+
         enriched = []
         for row in rows:
             item_name = row.get("itemName")
@@ -805,6 +841,9 @@ class GA4InsightsService:
             recent = recent_views.get(item_name, 0)
             prior = prior_views.get(item_name, 0)
             growth_rate = ((recent - prior) / prior) if prior else (1.0 if recent > 0 else 0.0)
+            item_category, item_category_source = classify_item_category(
+                item_name, category_by_item.get(item_name), item_category_rules
+            )
             enriched.append({
                 **row,
                 "add_to_cart_rate": add_to_cart_rate,
@@ -813,7 +852,8 @@ class GA4InsightsService:
                 "views_growth_rate": growth_rate,
                 "views_recent_7d": recent,
                 "views_prior_7d": prior,
-                "item_category": category_by_item.get(item_name, "(not set)"),
+                "item_category": item_category,
+                "item_category_source": item_category_source,
                 "is_potential": False,
             })
 
@@ -849,6 +889,42 @@ class GA4InsightsService:
         return repository.upsert_snapshot(
             db, property_id=property_id, kind="item", date=end_date, payload=payload, fetched_by=user.id,
         )
+
+    # ─── 第 7 波：商品分類補充規則 CRUD ────────────────────────────────
+    @staticmethod
+    def list_item_category_rules(db, *, property_id: str):
+        return repository.list_item_category_rules(db, property_id=property_id)
+
+    @staticmethod
+    def upsert_item_category_rule(
+        db, *, rule_id: str | None, user_id: str, property_id: str,
+        category: str, match_type: str, pattern: str, priority: int,
+    ):
+        if rule_id:
+            row = repository.get_item_category_rule(db, rule_id)
+            if not row:
+                return None
+            row.property_id = property_id
+            row.category = category
+            row.match_type = match_type
+            row.pattern = pattern
+            row.priority = priority
+            row.updated_at = datetime.utcnow()
+            db.add(row)
+            return row
+        return repository.create_item_category_rule(
+            db,
+            property_id=property_id,
+            category=category,
+            match_type=match_type,
+            pattern=pattern,
+            priority=priority,
+            created_by=user_id,
+        )
+
+    @staticmethod
+    def delete_item_category_rule(db, *, rule_id: str) -> bool:
+        return repository.delete_item_category_rule(db, rule_id)
 
     # ─── 第 2 波任務 2.4：AI 白話解讀持久化 ───────────────────────────
     @staticmethod

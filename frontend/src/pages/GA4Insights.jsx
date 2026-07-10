@@ -241,6 +241,13 @@ const LANDING_MATCH_TYPE_OPTIONS = [
     { value: 'contains', en: 'Contains', zh: '包含' },
 ];
 
+// 第 7 波：商品分類來源標示（GA4 權威 vs 自訂規則補充 vs 未分類）
+const ITEM_CATEGORY_SOURCE_LABELS = {
+    ga4: { en: 'from GA4', zh: '來自 GA4' },
+    custom_rule: { en: 'from custom rule', zh: '來自自訂規則' },
+    unset: { en: 'unset', zh: '未設定' },
+};
+
 const DASHBOARD_METRICS = ['sessions', 'conversions', 'purchaseRevenue'];
 
 // 商品分析表格可排序欄位（依使用者要求新增，2026-07-10）；預設方向：
@@ -497,16 +504,18 @@ const GA4Insights = () => {
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState('');
 
-    // 到達頁分類規則的寫入操作依 ga4:insights:manage_alerts 權限顯示（第 5 波
-    // 3 點）。個人工作區沒有團隊角色，PermissionService.check_permission 對
-    // 細項權限一律回 false（見 modules/ga4/dependencies.py 的個人工作區修復
-    // 說明）；後端 PUT/DELETE 端點在個人工作區改退回模組存取即可通過，前端
-    // 若直接用 usePermission 判斷會在個人工作區把本來能用的功能誤藏起來，
-    // 所以這裡比照後端同一套複合邏輯：有選團隊才看細項權限，沒有就看模組存取。
+    // 分類規則（到達頁 / 商品）的寫入操作依 ga4:insights:manage_alerts 權限
+    // 顯示（第 5 波 3 點）。個人工作區沒有團隊角色，PermissionService.
+    // check_permission 對細項權限一律回 false（見 modules/ga4/dependencies.py
+    // 的個人工作區修復說明）；後端 PUT/DELETE 端點在個人工作區改退回模組
+    // 存取即可通過，前端若直接用 usePermission 判斷會在個人工作區把本來能
+    // 用的功能誤藏起來，所以這裡比照後端同一套複合邏輯：有選團隊才看細項
+    // 權限，沒有就看模組存取。兩個規則管理區塊（到達頁、商品）共用同一個
+    // 權限鍵，故共用同一個判斷結果。
     const selectedTeamId = useSelectedTeamId();
     const { hasAccess: ga4ModuleAccess } = useModuleAccess('ga4');
     const { hasPermission: ga4ManageAlertsPermission } = usePermission('ga4:insights:manage_alerts');
-    const canManageLandingPageRules = selectedTeamId ? ga4ManageAlertsPermission : ga4ModuleAccess;
+    const canManageGa4InsightsRules = selectedTeamId ? ga4ManageAlertsPermission : ga4ModuleAccess;
 
     // 第 1 波：告警規則 / 事件歷史
     const [rules, setRules] = useState([]);
@@ -561,6 +570,14 @@ const GA4Insights = () => {
     const [itemsSearchQuery, setItemsSearchQuery] = useState('');
     const [itemsSortKey, setItemsSortKey] = useState(null);
     const [itemsSortDirection, setItemsSortDirection] = useState('desc');
+
+    // 第 7 波：商品分類補充規則（GA4 itemCategory 缺值時的補充來源）
+    const [itemCategoryRules, setItemCategoryRules] = useState(null);
+    const [itemCategoryRulesOpen, setItemCategoryRulesOpen] = useState(false);
+    const [itemCategoryRulesLoading, setItemCategoryRulesLoading] = useState(false);
+    const [itemCategoryRulesError, setItemCategoryRulesError] = useState('');
+    const [itemCategoryRuleSaving, setItemCategoryRuleSaving] = useState(false);
+    const [itemCategoryRuleForm, setItemCategoryRuleForm] = useState({ category: '', match_type: 'prefix', pattern: '', priority: 0 });
 
     // 第 3 波：KPI 目標追蹤
     const [kpiTargets, setKpiTargets] = useState(null);
@@ -719,6 +736,54 @@ const GA4Insights = () => {
         }
     };
 
+    const loadItemCategoryRules = async (pid) => {
+        if (!pid) return;
+        setItemCategoryRulesLoading(true);
+        setItemCategoryRulesError('');
+        try {
+            const res = await ga4InsightsService.listItemCategoryRules(pid);
+            setItemCategoryRules(res.rules || []);
+        } catch (err) {
+            setItemCategoryRulesError(err.message || t('Failed to load item category rules.', '載入商品分類規則失敗。'));
+        } finally {
+            setItemCategoryRulesLoading(false);
+        }
+    };
+
+    const handleCreateItemCategoryRule = async (event) => {
+        event.preventDefault();
+        if (!propertyId || !itemCategoryRuleForm.category.trim() || !itemCategoryRuleForm.pattern.trim()) return;
+        setItemCategoryRuleSaving(true);
+        setItemCategoryRulesError('');
+        try {
+            await ga4InsightsService.upsertItemCategoryRule({
+                property_id: propertyId,
+                category: itemCategoryRuleForm.category.trim(),
+                match_type: itemCategoryRuleForm.match_type,
+                pattern: itemCategoryRuleForm.pattern.trim(),
+                priority: Number(itemCategoryRuleForm.priority) || 0,
+            });
+            setItemCategoryRuleForm((prev) => ({ ...prev, category: '', pattern: '' }));
+            await loadItemCategoryRules(propertyId);
+            await loadItems(propertyId, itemsDays);
+        } catch (err) {
+            setItemCategoryRulesError(err.message || t('Failed to save rule.', '儲存規則失敗。'));
+        } finally {
+            setItemCategoryRuleSaving(false);
+        }
+    };
+
+    const handleDeleteItemCategoryRule = async (ruleId) => {
+        if (!window.confirm(t('Delete this category rule?', '要刪除此分類規則嗎？'))) return;
+        try {
+            await ga4InsightsService.deleteItemCategoryRule(ruleId);
+            await loadItemCategoryRules(propertyId);
+            await loadItems(propertyId, itemsDays);
+        } catch (err) {
+            setItemCategoryRulesError(err.message || t('Failed to delete rule.', '刪除規則失敗。'));
+        }
+    };
+
     const handleItemsSort = (key) => {
         if (itemsSortKey === key) {
             setItemsSortDirection((prev) => (prev === 'asc' ? 'desc' : 'asc'));
@@ -813,6 +878,7 @@ const GA4Insights = () => {
         if (activeTab === 'landing' && !landingSnapshot) loadLandingPages(propertyId, landingDays);
         if (activeTab === 'landing' && !landingRules) loadLandingPageRules(propertyId);
         if (activeTab === 'items' && !itemsSnapshot) loadItems(propertyId, itemsDays);
+        if (activeTab === 'items' && !itemCategoryRules) loadItemCategoryRules(propertyId);
         if (activeTab === 'kpi' && !kpiTargets) loadKpiTargets(propertyId);
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [activeTab, propertyId]);
@@ -830,6 +896,7 @@ const GA4Insights = () => {
         setItemsSnapshot(null);
         setItemsCategoryFilter('all');
         setItemsSearchQuery('');
+        setItemCategoryRules(null);
         setKpiTargets(null);
         setRefreshNotice('');
         await load(next);
@@ -1341,7 +1408,7 @@ const GA4Insights = () => {
                                                     <code style={{ color: 'var(--text-primary)', fontSize: '0.82rem' }}>{rule.pattern}</code>
                                                     <span style={{ color: 'var(--text-tertiary)', fontSize: '0.76rem' }}>{t('priority', '優先序')} {rule.priority}</span>
                                                 </div>
-                                                {canManageLandingPageRules && (
+                                                {canManageGa4InsightsRules && (
                                                     <button type="button" style={{ ...secondaryButtonStyle, padding: '4px 10px', fontSize: '0.78rem' }} onClick={() => handleDeleteLandingPageRule(rule.id)}>
                                                         {t('Delete', '刪除')}
                                                     </button>
@@ -1351,7 +1418,7 @@ const GA4Insights = () => {
                                     </div>
                                 )}
 
-                                {canManageLandingPageRules ? (
+                                {canManageGa4InsightsRules ? (
                                     <form onSubmit={handleCreateLandingPageRule} style={{ display: 'grid', gap: '10px', gridTemplateColumns: isMobile ? '1fr' : 'repeat(5, minmax(0, 1fr))' }}>
                                         <select value={landingRuleForm.category} onChange={(event) => setLandingRuleForm((prev) => ({ ...prev, category: event.target.value }))} style={inputStyle}>
                                             {LANDING_CATEGORY_ORDER.map((cat) => (
@@ -1493,8 +1560,12 @@ const GA4Insights = () => {
                                                     return (
                                                         <tr key={row.itemName} style={{ borderTop: '1px solid var(--glass-border)' }}>
                                                             <td style={{ padding: '6px', color: 'var(--text-primary)' }}>{row.itemName}</td>
-                                                            <td style={{ padding: '6px', color: 'var(--text-secondary)' }}>
+                                                            <td
+                                                                style={{ padding: '6px', color: 'var(--text-secondary)', cursor: 'help' }}
+                                                                title={tr(language, ITEM_CATEGORY_SOURCE_LABELS[row.item_category_source]?.en, ITEM_CATEGORY_SOURCE_LABELS[row.item_category_source]?.zh)}
+                                                            >
                                                                 {row.item_category === '(not set)' ? t('Uncategorized', '未分類') : row.item_category}
+                                                                {row.item_category_source === 'custom_rule' && ' ✎'}
                                                             </td>
                                                             <td style={{ padding: '6px', color: 'var(--text-secondary)' }}>{fmtNumber(row.itemsViewed)}</td>
                                                             <td style={{ padding: '6px', color: 'var(--text-secondary)' }}>{fmtPct(row.cart_to_view_rate)}</td>
@@ -1525,6 +1596,94 @@ const GA4Insights = () => {
                             </>
                         ) : (
                             emptyState(t('No item data.', '暫無商品資料。'))
+                        )}
+                    </section>
+
+                    <section style={baseCardStyle}>
+                        <button
+                            type="button"
+                            onClick={() => setItemCategoryRulesOpen((prev) => !prev)}
+                            style={{ ...secondaryButtonStyle, width: '100%', textAlign: 'left', display: 'flex', justifyContent: 'space-between' }}
+                        >
+                            <span>{t('Category rules (fills gaps when GA4 has no category)', '分類規則（補充 GA4 沒有分類的商品）')}</span>
+                            <span>{itemCategoryRulesOpen ? '▲' : '▼'}</span>
+                        </button>
+                        {itemCategoryRulesOpen && (
+                            <div style={{ marginTop: '14px', display: 'grid', gap: '14px' }}>
+                                <div style={{ color: 'var(--text-tertiary)', fontSize: '0.78rem' }}>
+                                    {t(
+                                        'GA4\'s own item category always wins when present. These rules only fill in a category for items GA4 reports as uncategorized.',
+                                        'GA4 本身回報的商品分類永遠優先；這裡的規則只補充 GA4 顯示「未分類」的商品。'
+                                    )}
+                                </div>
+                                {itemCategoryRulesError && <div style={{ color: '#fca5a5', fontSize: '0.85rem' }}>{itemCategoryRulesError}</div>}
+                                {itemCategoryRulesLoading && !itemCategoryRules ? (
+                                    emptyState(t('Loading rules…', '載入規則中…'))
+                                ) : itemCategoryRules && itemCategoryRules.length === 0 ? (
+                                    <div style={{ color: 'var(--text-tertiary)', fontSize: '0.82rem' }}>
+                                        {t('No category rules yet.', '目前沒有分類規則。')}
+                                    </div>
+                                ) : (
+                                    <div style={{ display: 'grid', gap: '8px' }}>
+                                        {(itemCategoryRules || []).map((rule) => (
+                                            <div key={rule.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', border: '1px solid var(--glass-border)', borderRadius: '10px', padding: '10px 12px', gap: '8px', flexWrap: 'wrap' }}>
+                                                <div style={{ display: 'flex', gap: '10px', alignItems: 'center', flexWrap: 'wrap' }}>
+                                                    <span style={badgeStyle(rule.category)}>{rule.category}</span>
+                                                    <span style={{ color: 'var(--text-secondary)', fontSize: '0.82rem' }}>
+                                                        {tr(language, LANDING_MATCH_TYPE_OPTIONS.find((m) => m.value === rule.match_type)?.en, LANDING_MATCH_TYPE_OPTIONS.find((m) => m.value === rule.match_type)?.zh)}
+                                                    </span>
+                                                    <code style={{ color: 'var(--text-primary)', fontSize: '0.82rem' }}>{rule.pattern}</code>
+                                                    <span style={{ color: 'var(--text-tertiary)', fontSize: '0.76rem' }}>{t('priority', '優先序')} {rule.priority}</span>
+                                                </div>
+                                                {canManageGa4InsightsRules && (
+                                                    <button type="button" style={{ ...secondaryButtonStyle, padding: '4px 10px', fontSize: '0.78rem' }} onClick={() => handleDeleteItemCategoryRule(rule.id)}>
+                                                        {t('Delete', '刪除')}
+                                                    </button>
+                                                )}
+                                            </div>
+                                        ))}
+                                    </div>
+                                )}
+
+                                {canManageGa4InsightsRules ? (
+                                    <form onSubmit={handleCreateItemCategoryRule} style={{ display: 'grid', gap: '10px', gridTemplateColumns: isMobile ? '1fr' : 'repeat(5, minmax(0, 1fr))' }}>
+                                        <input
+                                            type="text"
+                                            value={itemCategoryRuleForm.category}
+                                            onChange={(event) => setItemCategoryRuleForm((prev) => ({ ...prev, category: event.target.value }))}
+                                            placeholder={t('Category name (e.g. Pest Control)', '分類名稱（例：驅蟲用品）')}
+                                            style={inputStyle}
+                                        />
+                                        <select value={itemCategoryRuleForm.match_type} onChange={(event) => setItemCategoryRuleForm((prev) => ({ ...prev, match_type: event.target.value }))} style={inputStyle}>
+                                            {LANDING_MATCH_TYPE_OPTIONS.map((option) => (
+                                                <option key={option.value} value={option.value}>{t(option.en, option.zh)}</option>
+                                            ))}
+                                        </select>
+                                        <input
+                                            type="text"
+                                            value={itemCategoryRuleForm.pattern}
+                                            onChange={(event) => setItemCategoryRuleForm((prev) => ({ ...prev, pattern: event.target.value }))}
+                                            placeholder={t('Pattern (matches item name)', '比對字串（比對商品名稱）')}
+                                            style={inputStyle}
+                                        />
+                                        <input
+                                            type="number"
+                                            min="0"
+                                            value={itemCategoryRuleForm.priority}
+                                            onChange={(event) => setItemCategoryRuleForm((prev) => ({ ...prev, priority: event.target.value }))}
+                                            placeholder={t('Priority', '優先序')}
+                                            style={inputStyle}
+                                        />
+                                        <button type="submit" style={buttonStyle} disabled={itemCategoryRuleSaving || !itemCategoryRuleForm.category.trim() || !itemCategoryRuleForm.pattern.trim()}>
+                                            {itemCategoryRuleSaving ? t('Saving…', '儲存中…') : t('Add rule', '新增規則')}
+                                        </button>
+                                    </form>
+                                ) : (
+                                    <div style={{ color: 'var(--text-tertiary)', fontSize: '0.78rem' }}>
+                                        {t('You do not have permission to manage category rules.', '您沒有管理分類規則的權限。')}
+                                    </div>
+                                )}
+                            </div>
                         )}
                     </section>
 

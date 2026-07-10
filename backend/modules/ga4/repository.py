@@ -10,6 +10,7 @@ from database.models.ga4_insights import (
     GA4AnomalyEvent,
     GA4AnomalyRule,
     GA4InsightsSnapshot,
+    GA4ItemCategoryRule,
     GA4KpiTarget,
     GA4LandingPageRule,
 )
@@ -206,6 +207,31 @@ class GA4InsightsRepository:
 
     def delete_landing_page_rule(self, db, rule_id: str) -> bool:
         row = self.get_landing_page_rule(db, rule_id)
+        if not row:
+            return False
+        db.delete(row)
+        return True
+
+    # ─── 第 7 波：商品分類補充規則 ──────────────────────────────────────
+    def create_item_category_rule(self, db, **payload):
+        row = GA4ItemCategoryRule(**payload)
+        db.add(row)
+        db.flush()
+        return row
+
+    def list_item_category_rules(self, db, *, property_id: str):
+        return (
+            db.query(GA4ItemCategoryRule)
+            .filter(GA4ItemCategoryRule.property_id == property_id)
+            .order_by(GA4ItemCategoryRule.priority.asc())
+            .all()
+        )
+
+    def get_item_category_rule(self, db, rule_id: str):
+        return db.query(GA4ItemCategoryRule).filter(GA4ItemCategoryRule.id == rule_id).first()
+
+    def delete_item_category_rule(self, db, rule_id: str) -> bool:
+        row = self.get_item_category_rule(db, rule_id)
         if not row:
             return False
         db.delete(row)

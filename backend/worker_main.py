@@ -38,6 +38,7 @@ from fastapi import FastAPI
 from fastapi.responses import JSONResponse
 
 from core.config import settings
+from modules.meta_andromeda.internal_router import router as meta_andromeda_internal_router
 
 if settings.SERVICE_ROLE != "worker":
     logger.warning(
@@ -118,6 +119,8 @@ app = FastAPI(
     openapi_url=None,
 )
 
+app.include_router(meta_andromeda_internal_router)
+
 
 @app.get("/healthz")
 async def healthz():
@@ -136,6 +139,14 @@ async def healthz():
         "uptime_seconds": int(time.time() - START_TIME),
         "scheduler": scheduler_status,
         "database": "ok" if db_ok else "error",
+        "internal_asset_worker": {
+            "auth_configured": bool(
+                settings.META_ANDROMEDA_INTERNAL_WORKER_SHARED_SECRET
+                or settings.META_ANDROMEDA_INTERNAL_WORKER_TOKEN
+            ),
+            "storage_backend": settings.META_ANDROMEDA_STORAGE_BACKEND,
+            "storage_root": settings.META_ANDROMEDA_STORAGE_ROOT,
+        },
     }
 
     try:

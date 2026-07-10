@@ -90,6 +90,26 @@ class GA4LandingPageRule(Base):
     creator = relationship("User")
 
 
+class GA4ItemCategoryRule(Base):
+    """商品分類補充規則（docs/22 第 7 波）：只在 GA4 的 itemCategory 為
+    「(not set)」時當補充分類來源，依 `itemName` 比對，priority 小者先比。
+    分類為自由文字（不像到達頁固定 4 類枚舉），比照商店既有分類命名。"""
+
+    __tablename__ = "ga4_item_category_rules"
+
+    id = Column(String, primary_key=True, default=lambda: f"gicr_{uuid.uuid4().hex[:12]}")
+    property_id = Column(String(50), nullable=False, index=True)
+    category = Column(String(50), nullable=False)
+    match_type = Column(String(10), nullable=False)  # prefix | contains（不開放 regex，避免 ReDoS）
+    pattern = Column(String(200), nullable=False)
+    priority = Column(Integer, nullable=False, default=0)
+    created_by = Column(String, ForeignKey("users.id"), nullable=False)
+    created_at = Column(DateTime, nullable=False, server_default=text("CURRENT_TIMESTAMP"))
+    updated_at = Column(DateTime, nullable=False, server_default=text("CURRENT_TIMESTAMP"))
+
+    creator = relationship("User")
+
+
 class GA4AnomalyEvent(Base):
     __tablename__ = "ga4_anomaly_events"
 

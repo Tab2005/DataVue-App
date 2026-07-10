@@ -86,6 +86,20 @@ class LandingPageRulePayload(BaseModel):
     priority: int = Field(0, ge=0)
 
 
+# 第 7 波：商品分類補充規則。分類是自由文字（比照商店既有分類命名，不像
+# 到達頁固定 4 類），只有 match_type 用 Literal 驗證。
+ItemCategoryMatchType = Literal["prefix", "contains"]
+
+
+class ItemCategoryRulePayload(BaseModel):
+    id: str | None = None
+    property_id: str = Field(..., min_length=1)
+    category: str = Field(..., min_length=1, max_length=50)
+    match_type: ItemCategoryMatchType
+    pattern: str = Field(..., min_length=1, max_length=200)
+    priority: int = Field(0, ge=0)
+
+
 # ─── 第 2 波：當日儀表板／Realtime／渠道／到達頁／商品（docs/22 3.5 節） ───
 @router.get("/dashboard")
 def get_dashboard(
@@ -246,6 +260,59 @@ def get_items(
     db.commit()
     db.refresh(snapshot)
     return serialize_snapshot(snapshot)
+
+
+# ─── 第 7 波：商品分類補充規則（docs/22 5 節，追加） ────────────────
+@router.get("/item-category-rules")
+def list_item_category_rules(
+    property_id: str = Query(...),
+    user=Depends(get_current_user),
+    _module: bool = Depends(require_ga4_module),
+    _perm: bool = Depends(require_ga4_insights_view),
+    db=Depends(get_db),
+):
+    rows = GA4InsightsService.list_item_category_rules(db, property_id=property_id)
+    return {"rules": [serialize_item_category_rule(row) for row in rows]}
+
+
+@router.put("/item-category-rules")
+def upsert_item_category_rule(
+    payload: ItemCategoryRulePayload,
+    user=Depends(get_current_user),
+    _module: bool = Depends(require_ga4_module),
+    _perm: bool = Depends(require_ga4_insights_manage_alerts),
+    db=Depends(get_db),
+):
+    row = GA4InsightsService.upsert_item_category_rule(
+        db,
+        rule_id=payload.id,
+        user_id=user.id,
+        property_id=payload.property_id,
+        category=payload.category,
+        match_type=payload.match_type,
+        pattern=payload.pattern,
+        priority=payload.priority,
+    )
+    if not row:
+        raise HTTPException(status_code=404, detail="Item category rule not found")
+    db.commit()
+    db.refresh(row)
+    return serialize_item_category_rule(row)
+
+
+@router.delete("/item-category-rules/{rule_id}")
+def delete_item_category_rule(
+    rule_id: str,
+    user=Depends(get_current_user),
+    _module: bool = Depends(require_ga4_module),
+    _perm: bool = Depends(require_ga4_insights_manage_alerts),
+    db=Depends(get_db),
+):
+    deleted = GA4InsightsService.delete_item_category_rule(db, rule_id=rule_id)
+    if not deleted:
+        raise HTTPException(status_code=404, detail="Item category rule not found")
+    db.commit()
+    return {"status": "deleted", "rule_id": rule_id}
 
 
 # ─── 第 2 波任務 2.4：AI 白話解讀持久化 ─────────────────────────────
@@ -431,6 +498,20 @@ def serialize_kpi_target(row):
 
 
 def serialize_landing_page_rule(row):
+    return {
+        "id": row.id,
+        "property_id": row.property_id,
+        "category": row.category,
+        "match_type": row.match_type,
+        "pattern": row.pattern,
+        "priority": row.priority,
+        "created_by": row.created_by,
+        "created_at": row.created_at,
+        "updated_at": row.updated_at,
+    }
+
+
+def serialize_item_category_rule(row):
     return {
         "id": row.id,
         "property_id": row.property_id,

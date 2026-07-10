@@ -5,6 +5,7 @@ Meta Andromeda Module - Service
 import asyncio
 import hashlib
 import hmac
+import json
 from datetime import UTC, datetime, timedelta
 from mimetypes import guess_extension
 from pathlib import Path
@@ -205,19 +206,52 @@ class MetaAndromedaService:
 
         storage_backend = settings.META_ANDROMEDA_STORAGE_BACKEND
         storage_check: dict | str
+        internal_worker_auth_configured = bool(
+            settings.META_ANDROMEDA_INTERNAL_WORKER_SHARED_SECRET
+            or settings.META_ANDROMEDA_INTERNAL_WORKER_TOKEN
+        )
+
         if storage_backend == "filesystem":
-            storage_root = Path(settings.META_ANDROMEDA_STORAGE_ROOT)
-            probe_dir = storage_root if storage_root.exists() else storage_root.parent
-            writable = probe_dir.exists() and probe_dir.is_dir()
-            storage_check = {
-                "backend": "filesystem",
-                "root": str(storage_root),
-                "probe_dir": str(probe_dir),
-                "writable_probe_present": writable,
-            }
-            if not writable:
-                status = "degraded" if status == "healthy" else status
-                notes.append("filesystem storage root is not present yet; upload path has not been validated on this host.")
+            if settings.SERVICE_ROLE == "web":
+                storage_check = {
+                    "backend": "filesystem",
+                    "mode": "worker_remote",
+                    "local_root_required": False,
+                    "internal_worker_base_url": settings.META_ANDROMEDA_INTERNAL_WORKER_BASE_URL,
+                }
+                checks["internal_asset_worker"] = {
+                    "required": True,
+                    "base_url": settings.META_ANDROMEDA_INTERNAL_WORKER_BASE_URL,
+                    "auth_configured": internal_worker_auth_configured,
+                    "service_role": settings.SERVICE_ROLE,
+                }
+                if not settings.META_ANDROMEDA_INTERNAL_WORKER_BASE_URL or not internal_worker_auth_configured:
+                    status = "degraded" if status == "healthy" else status
+                    notes.append("filesystem storage on web role requires internal worker base URL and auth to be configured.")
+            else:
+                storage_root = Path(settings.META_ANDROMEDA_STORAGE_ROOT)
+                probe_dir = storage_root if storage_root.exists() else storage_root.parent
+                writable = probe_dir.exists() and probe_dir.is_dir()
+                storage_check = {
+                    "backend": "filesystem",
+                    "root": str(storage_root),
+                    "probe_dir": str(probe_dir),
+                    "writable_probe_present": writable,
+                    "local_root_required": True,
+                    "mode": "local_holder" if settings.SERVICE_ROLE == "all" else "worker_holder",
+                }
+                checks["internal_asset_worker"] = {
+                    "required": settings.SERVICE_ROLE == "worker",
+                    "base_url": settings.META_ANDROMEDA_INTERNAL_WORKER_BASE_URL,
+                    "auth_configured": internal_worker_auth_configured,
+                    "service_role": settings.SERVICE_ROLE,
+                }
+                if not writable:
+                    status = "degraded" if status == "healthy" else status
+                    notes.append("filesystem storage root is not present yet; upload path has not been validated on this host.")
+                if settings.SERVICE_ROLE == "worker" and not internal_worker_auth_configured:
+                    status = "degraded" if status == "healthy" else status
+                    notes.append("worker role serving filesystem assets requires internal worker auth to be configured.")
         elif storage_backend == "s3_compatible":
             missing = [
                 key
@@ -1016,6 +1050,52 @@ class MetaAndromedaService:
         if not secret:
             return None
         return hmac.new(secret.encode("utf-8"), raw_body, hashlib.sha256).hexdigest()
+
+    @staticmethod
+    def _build_internal_worker_signature(raw_body: bytes) -> str | None:
+        secret = settings.META_ANDROMEDA_INTERNAL_WORKER_SHARED_SECRET
+        if not secret:
+            return None
+        return hmac.new(secret.encode("utf-8"), raw_body, hashlib.sha256).hexdigest()
+
+    @staticmethod
+    def build_internal_worker_upload_auth_payload(
+        *,
+        asset_type: str,
+        source_filename: str,
+        uploaded_by: str | None,
+        content_type: str | None,
+        file_bytes: bytes,
+    ) -> bytes:
+        payload = {
+            "asset_type": asset_type,
+            "source_filename": source_filename,
+            "uploaded_by": uploaded_by or "",
+            "content_type": content_type or "",
+            "file_sha256": hashlib.sha256(file_bytes).hexdigest(),
+        }
+        return json.dumps(payload, separators=(",", ":"), sort_keys=True).encode("utf-8")
+
+    @staticmethod
+    def verify_internal_worker_request(
+        raw_body: bytes,
+        signature: str | None = None,
+        worker_token: str | None = None,
+    ) -> None:
+        expected_signature = MetaAndromedaService._build_internal_worker_signature(raw_body)
+        expected_token = settings.META_ANDROMEDA_INTERNAL_WORKER_TOKEN
+
+        if expected_signature:
+            if not signature or not hmac.compare_digest(signature, expected_signature):
+                raise PermissionError("invalid_internal_worker_signature")
+            return
+
+        if expected_token:
+            if not worker_token or not hmac.compare_digest(worker_token, expected_token):
+                raise PermissionError("invalid_internal_worker_token")
+            return
+
+        raise PermissionError("internal_worker_auth_not_configured")
 
     @staticmethod
     def verify_external_worker_callback(

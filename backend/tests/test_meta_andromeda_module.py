@@ -8,13 +8,19 @@ import hmac
 import json
 import os
 import time
+
+import httpx
 from unittest.mock import Mock
 
 import pytest
+from fastapi import FastAPI
+from fastapi.testclient import TestClient
 
 import modules.meta_andromeda.service as meta_andromeda_service_module
 import modules.meta_andromeda.queue_host as meta_andromeda_queue_host_module
 import modules.meta_andromeda.storage as meta_andromeda_storage_module
+import modules.meta_andromeda.router as meta_andromeda_router_module
+import modules.meta_andromeda.internal_asset_gateway as meta_andromeda_internal_gateway_module
 import core.scheduler as scheduler_module
 from modules.auth import dependencies as auth_dependencies
 import redis_cache as redis_cache_module
@@ -23,12 +29,16 @@ from modules.meta_andromeda.repository import repository
 from modules.meta_andromeda.runtime import MetaAndromedaRuntimeAdapter, runtime_adapter
 from modules.meta_andromeda.service import MetaAndromedaService
 from main import app
+from database import get_db
 from modules.meta_andromeda.dependencies import (
     get_current_meta_andromeda_user,
     require_fb_ads_analytics_view,
     require_fb_ads_module,
     require_meta_andromeda_module,
 )
+
+
+from modules.meta_andromeda.internal_router import router as meta_andromeda_internal_router
 
 
 @pytest.fixture
@@ -169,6 +179,36 @@ def _clear_meta_andromeda_operational_data(db) -> None:
     db.commit()
 
 
+def _install_internal_worker_httpx_proxy(monkeypatch, db):
+    worker_test_app = FastAPI()
+    worker_test_app.include_router(meta_andromeda_internal_router)
+
+    def override_get_db():
+        yield db
+
+    worker_test_app.dependency_overrides[get_db] = override_get_db
+    transport = httpx.ASGITransport(app=worker_test_app)
+
+    class FakeAsyncClient:
+        def __init__(self, *args, **kwargs):
+            self._client = httpx.AsyncClient(transport=transport, base_url="http://worker.test")
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, exc_type, exc, tb):
+            await self._client.aclose()
+
+        async def get(self, url, params=None, headers=None):
+            return await self._client.get("/internal/meta-andromeda/assets/raw", params=params, headers=headers)
+
+        async def post(self, url, data=None, files=None, headers=None):
+            return await self._client.post("/internal/meta-andromeda/assets", data=data, files=files, headers=headers)
+
+    monkeypatch.setattr(meta_andromeda_internal_gateway_module.httpx, "AsyncClient", FakeAsyncClient)
+
+
+
 @pytest.mark.unit
 def test_meta_andromeda_ping_returns_payload(meta_andromeda_access):
     response = meta_andromeda_access.get("/api/meta-andromeda/ping")
@@ -180,19 +220,38 @@ def test_meta_andromeda_ping_returns_payload(meta_andromeda_access):
 
 
 @pytest.mark.unit
-def test_meta_andromeda_upload_persists_file_to_storage_root(meta_andromeda_access, tmp_path):
-    os.environ["META_ANDROMEDA_STORAGE_ROOT"] = str(tmp_path)
-    try:
-        response = meta_andromeda_access.post(
-            "/api/meta-andromeda/assets:upload",
-            data={
-                "asset_type": "image",
-                "source_filename": "creative-test.png",
-            },
-            files={"file": ("creative-test.png", b"fake-image-bytes", "image/png")},
-        )
-    finally:
-        os.environ.pop("META_ANDROMEDA_STORAGE_ROOT", None)
+def test_meta_andromeda_runtime_health_reports_missing_internal_asset_worker_config_on_web_filesystem(meta_andromeda_access, monkeypatch):
+    monkeypatch.setenv("SERVICE_ROLE", "web")
+    monkeypatch.setenv("META_ANDROMEDA_STORAGE_BACKEND", "filesystem")
+    monkeypatch.delenv("META_ANDROMEDA_INTERNAL_WORKER_BASE_URL", raising=False)
+    monkeypatch.delenv("META_ANDROMEDA_INTERNAL_WORKER_SHARED_SECRET", raising=False)
+    monkeypatch.delenv("META_ANDROMEDA_INTERNAL_WORKER_TOKEN", raising=False)
+
+    response = meta_andromeda_access.get("/api/meta-andromeda/runtime-health")
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["status"] in {"degraded", "unhealthy"}
+    assert payload["checks"]["storage"]["mode"] == "worker_remote"
+    assert payload["checks"]["internal_asset_worker"]["required"] is True
+    assert payload["checks"]["internal_asset_worker"]["auth_configured"] is False
+
+
+@pytest.mark.unit
+def test_meta_andromeda_upload_persists_file_to_storage_root(meta_andromeda_access, db, tmp_path, monkeypatch):
+    monkeypatch.setenv("META_ANDROMEDA_STORAGE_ROOT", str(tmp_path))
+    monkeypatch.setenv("META_ANDROMEDA_INTERNAL_WORKER_BASE_URL", "http://meta-andromeda-worker.zeabur.internal")
+    monkeypatch.setenv("META_ANDROMEDA_INTERNAL_WORKER_TOKEN", "worker-token")
+    _install_internal_worker_httpx_proxy(monkeypatch, db)
+
+    response = meta_andromeda_access.post(
+        "/api/meta-andromeda/assets:upload",
+        data={
+            "asset_type": "image",
+            "source_filename": "creative-test.png",
+        },
+        files={"file": ("creative-test.png", b"fake-image-bytes", "image/png")},
+    )
 
     assert response.status_code == 201
     payload = response.json()
@@ -204,13 +263,16 @@ def test_meta_andromeda_upload_persists_file_to_storage_root(meta_andromeda_acce
 
 
 @pytest.mark.unit
-def test_meta_andromeda_upload_supports_s3_compatible_storage(meta_andromeda_access, monkeypatch):
+def test_meta_andromeda_upload_supports_s3_compatible_storage(meta_andromeda_access, db, monkeypatch):
     monkeypatch.setenv("META_ANDROMEDA_STORAGE_BACKEND", "s3_compatible")
     monkeypatch.setenv("META_ANDROMEDA_STORAGE_S3_BUCKET", "meta-andromeda-assets")
     monkeypatch.setenv("META_ANDROMEDA_STORAGE_S3_REGION", "ap-northeast-1")
     monkeypatch.setenv("META_ANDROMEDA_STORAGE_S3_ENDPOINT_URL", "https://minio.example.com")
     monkeypatch.setenv("META_ANDROMEDA_STORAGE_KEY_PREFIX", "shared/meta-andromeda")
     monkeypatch.setenv("META_ANDROMEDA_STORAGE_PUBLIC_BASE_URL", "https://cdn.example.com/meta-andromeda")
+    monkeypatch.setenv("META_ANDROMEDA_INTERNAL_WORKER_BASE_URL", "http://meta-andromeda-worker.zeabur.internal")
+    monkeypatch.setenv("META_ANDROMEDA_INTERNAL_WORKER_TOKEN", "worker-token")
+    _install_internal_worker_httpx_proxy(monkeypatch, db)
 
     captured = {}
 
@@ -245,8 +307,120 @@ def test_meta_andromeda_upload_supports_s3_compatible_storage(meta_andromeda_acc
     assert captured["bytes"] == b"object-image-bytes"
     assert captured["extra_args"]["ContentType"] == "image/png"
 
+
 @pytest.mark.unit
-def test_meta_andromeda_upload_rejects_empty_file(meta_andromeda_access):
+def test_meta_andromeda_preview_proxies_filesystem_asset_from_internal_worker(meta_andromeda_access, db, tmp_path, monkeypatch):
+    monkeypatch.setenv("META_ANDROMEDA_STORAGE_ROOT", str(tmp_path))
+    monkeypatch.setenv("META_ANDROMEDA_INTERNAL_WORKER_BASE_URL", "http://meta-andromeda-worker.zeabur.internal")
+    monkeypatch.setenv("META_ANDROMEDA_INTERNAL_WORKER_TOKEN", "worker-token")
+    _install_internal_worker_httpx_proxy(monkeypatch, db)
+
+    upload_response = meta_andromeda_access.post(
+        "/api/meta-andromeda/assets:upload",
+        data={"asset_type": "image", "source_filename": "preview-proxy.png"},
+        files={"file": ("preview-proxy.png", b"proxy-image-bytes", "image/png")},
+    )
+    assert upload_response.status_code == 201
+    payload = upload_response.json()
+
+    response = meta_andromeda_access.get("/api/meta-andromeda/assets/preview", params={"uri": payload["asset_uri"]})
+
+    assert response.status_code == 200
+    assert response.content == b"proxy-image-bytes"
+    assert response.headers["content-type"].startswith("image/png")
+    assert response.headers["x-meta-andromeda-storage-key"] == payload["storage_key"]
+
+
+@pytest.mark.unit
+def test_meta_andromeda_preview_returns_404_when_internal_worker_returns_404(meta_andromeda_access, db, tmp_path, monkeypatch):
+    monkeypatch.setenv("META_ANDROMEDA_STORAGE_ROOT", str(tmp_path))
+    monkeypatch.setenv("META_ANDROMEDA_INTERNAL_WORKER_BASE_URL", "http://meta-andromeda-worker.zeabur.internal")
+    monkeypatch.setenv("META_ANDROMEDA_INTERNAL_WORKER_TOKEN", "worker-token")
+    _install_internal_worker_httpx_proxy(monkeypatch, db)
+
+    upload_response = meta_andromeda_access.post(
+        "/api/meta-andromeda/assets:upload",
+        data={"asset_type": "image", "source_filename": "preview-local-fallback.png"},
+        files={"file": ("preview-local-fallback.png", b"local-fallback-bytes", "image/png")},
+    )
+    assert upload_response.status_code == 201
+    payload = upload_response.json()
+
+    async def fake_proxy(uri: str):
+        raise meta_andromeda_internal_gateway_module.MetaAndromedaInternalWorkerGatewayError(
+            status_code=404,
+            detail="Asset not found for URI",
+        )
+
+    monkeypatch.setattr(meta_andromeda_router_module, "proxy_asset_preview_response", fake_proxy)
+
+    response = meta_andromeda_access.get("/api/meta-andromeda/assets/preview", params={"uri": payload["asset_uri"]})
+
+    assert response.status_code == 404
+    assert response.json()["detail"] == "Asset not found for URI"
+
+
+@pytest.mark.unit
+def test_meta_andromeda_internal_asset_route_rejects_missing_auth(db, tmp_path, monkeypatch):
+    monkeypatch.setenv("META_ANDROMEDA_STORAGE_ROOT", str(tmp_path))
+    monkeypatch.setenv("META_ANDROMEDA_INTERNAL_WORKER_TOKEN", "worker-token")
+
+    asset_record = meta_andromeda_storage_module.storage_adapter.store_asset(
+        file_bytes=b"internal-image-bytes",
+        asset_type="image",
+        source_filename="internal-preview.png",
+        uploaded_by=None,
+        content_type="image/png",
+    )
+    created = repository.create_uploaded_asset(db, asset_record)
+
+    test_app = FastAPI()
+    test_app.include_router(meta_andromeda_internal_router)
+
+    def override_get_db():
+        yield db
+
+    test_app.dependency_overrides[get_db] = override_get_db
+
+    with TestClient(test_app) as client:
+        response = client.get("/internal/meta-andromeda/assets/raw", params={"uri": created["asset_uri"]})
+
+    assert response.status_code == 401
+    assert response.json()["detail"] == "invalid_internal_worker_token"
+
+
+@pytest.mark.unit
+def test_meta_andromeda_internal_upload_route_rejects_missing_auth(db, monkeypatch):
+    monkeypatch.setenv("META_ANDROMEDA_INTERNAL_WORKER_TOKEN", "worker-token")
+
+    test_app = FastAPI()
+    test_app.include_router(meta_andromeda_internal_router)
+
+    def override_get_db():
+        yield db
+
+    test_app.dependency_overrides[get_db] = override_get_db
+
+    with TestClient(test_app) as client:
+        response = client.post(
+            "/internal/meta-andromeda/assets",
+            data={
+                "asset_type": "image",
+                "source_filename": "blocked.png",
+            },
+            files={"file": ("blocked.png", b"blocked", "image/png")},
+        )
+
+    assert response.status_code == 401
+    assert response.json()["detail"] == "invalid_internal_worker_token"
+
+
+@pytest.mark.unit
+def test_meta_andromeda_upload_rejects_empty_file(meta_andromeda_access, db, monkeypatch):
+    monkeypatch.setenv("META_ANDROMEDA_INTERNAL_WORKER_BASE_URL", "http://meta-andromeda-worker.zeabur.internal")
+    monkeypatch.setenv("META_ANDROMEDA_INTERNAL_WORKER_TOKEN", "worker-token")
+    _install_internal_worker_httpx_proxy(monkeypatch, db)
+
     response = meta_andromeda_access.post(
         "/api/meta-andromeda/assets:upload",
         data={

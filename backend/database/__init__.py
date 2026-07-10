@@ -59,6 +59,7 @@ from database.models.ga4_insights import (
     GA4AnomalyEvent,
     GA4KpiTarget,
     GA4LandingPageRule,
+    GA4ItemCategoryRule,
 )
 
 logger = logging.getLogger(__name__)
@@ -91,6 +92,7 @@ __all__ = [
     "GA4AnomalyEvent",
     "GA4KpiTarget",
     "GA4LandingPageRule",
+    "GA4ItemCategoryRule",
     "init_db",
 ]
 
@@ -135,6 +137,7 @@ def init_db():
             "ga4_anomaly_events",
             "ga4_kpi_targets",
             "ga4_landing_page_rules",
+            "ga4_item_category_rules",
         ]
         missing = [t for t in required_tables if t not in existing_tables]
 

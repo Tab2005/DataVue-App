@@ -24,9 +24,10 @@
 適用於不需要額外付費購買 S3 雲端儲存的場景。本方案將廣告圖片/影片快照與 SQLite 資料庫一同存放在 Zeabur 的持久化磁碟中。
 
 #### 1. 建立 Volume
-1. 進入 Zeabur 控制台的 **後端服務 (Backend Service)**。
+1. 若採 **`SERVICE_ROLE=worker` + `SERVICE_ROLE=web` 拆分部署**，請進入 Zeabur 控制台的 **Meta Andromeda Worker 服務**（不是 Web API 服務）。
 2. 前往 **「儲存 (Volumes)」** 分頁，點擊 **「新增儲存區 (Add Volume)」**。
 3. 將掛載路徑 (Mount Path) 設定為：`/app/backend/storage`。
+4. **只有在 `SERVICE_ROLE=all` 的單機/未拆分模式下，這顆 Volume 才需要掛在同一個 API 服務上。** 若已拆成 web + worker，Meta Andromeda 素材檔案的唯一持有者應是 worker，不應再要求 web service 也掛同一顆素材 Volume。
 
 #### 2. 設定環境變數
 切換到 **「變數 (Variables)」** 分頁，配置以下持久化變數：
@@ -97,6 +98,10 @@ META_ANDROMEDA_STORAGE_PUBLIC_BASE_URL=https://assets.sitetegy.com/meta-andromed
 | :--- | :--- | :--- |
 | `META_ANDROMEDA_STORAGE_BACKEND` | 素材儲存後端，可選 `filesystem` 或 `s3_compatible` | `filesystem` |
 | `META_ANDROMEDA_STORAGE_ROOT` | 本地素材落檔根目錄，必須指向持久化磁碟掛載路徑 | `/app/backend/storage/meta_andromeda` |
+| `META_ANDROMEDA_INTERNAL_WORKER_BASE_URL` | Web 服務呼叫 worker 內部素材 API 的 Zeabur 內網位址；**`SERVICE_ROLE=web` 且 `filesystem` 時必填** | `http://meta-andromeda-worker.zeabur.internal` |
+| `META_ANDROMEDA_INTERNAL_WORKER_TIMEOUT_SECONDS` | Web 服務轉發素材讀寫到 worker 的 timeout | `10` |
+| `META_ANDROMEDA_INTERNAL_WORKER_SHARED_SECRET` | 內部素材 API 的 HMAC 驗證 secret；與 token 二選一，建議優先使用 | `replace-me` |
+| `META_ANDROMEDA_INTERNAL_WORKER_TOKEN` | 內部素材 API 的固定 token；與 shared secret 二選一 | `replace-me` |
 | `META_ANDROMEDA_SCORING_PROVIDER` | 評分模組運行者。**生產環境必須設為 `openrouter`**，否則強制走啟發式備用，AI 評分永遠不執行。`auto` 模式需同時設定 `META_ANDROMEDA_SCORING_MODEL` 才會走 AI。本地開發可設 `heuristic` 避免消耗 API 額度。 | `openrouter` |
 | `META_ANDROMEDA_SCORING_MODEL` | 評分使用的 OpenRouter 模型 ID | `nvidia/nemotron-3-nano-omni-30b-a3b-reasoning:free` |
 | `META_ANDROMEDA_SCORING_ALLOW_FALLBACK` | AI 呼叫失敗時是否自動降級為啟發式備用 | `true` |
@@ -124,7 +129,7 @@ META_ANDROMEDA_STORAGE_PUBLIC_BASE_URL=https://assets.sitetegy.com/meta-andromed
 
 1. 新增一個服務，Root Directory 同樣是 `backend`，與 API 服務共用同一個 repo/image。
 2. **Start Command** 改為 `python worker_main.py`。
-3. 不需要掛載 Volume（Meta Andromeda 素材若走 S3 方案，Worker 跟 Web 都是無狀態的；若走 filesystem 方案，Worker 也需要跟 Web 掛同一個 Volume，因為評分時要讀 Web 上傳的素材檔案）。
+3. 若 Meta Andromeda 素材走 `filesystem` 方案，**這個 Worker 服務必須掛載素材 Volume**；若走 `s3_compatible` 方案則不需要。方案 D 完成後，素材上傳與預覽都經由 worker 內部代理，worker 是唯一需要碰實體素材檔案的服務。
 4. Port 設定與健康檢查路徑改為 `/healthz`（不是 `/health`——這支程式沒有掛業務 router，僅有這一個端點）。
 
 #### 2.4.2 環境變數對照表
@@ -132,6 +137,8 @@ META_ANDROMEDA_STORAGE_PUBLIC_BASE_URL=https://assets.sitetegy.com/meta-andromed
 | 變數名稱 | Web (API) 服務 | Meta Andromeda Worker 服務 | 說明 |
 | :--- | :--- | :--- | :--- |
 | `SERVICE_ROLE` | `web` | `worker` | 未設定時預設 `all`（單機開發行為，不拆分） |
+| `META_ANDROMEDA_INTERNAL_WORKER_BASE_URL` | **必填**（若 Web 採 `filesystem`） | 可不填 | Web 用來呼叫 Worker 的 `/internal/meta-andromeda/assets*`；建議填 Zeabur 內網 URL |
+| `META_ANDROMEDA_INTERNAL_WORKER_SHARED_SECRET` 或 `META_ANDROMEDA_INTERNAL_WORKER_TOKEN` | **必填其一** | **必填其一** | Web/Worker 兩邊必須一致，否則素材 upload / preview 會全部失敗 |
 | `META_ANDROMEDA_QUEUE_HOST` | `redis_stream` | `redis_stream` | 兩邊都要設定；Web 端 `get_active_host()` 在 `SERVICE_ROLE=web` 下即使沒設也會自動收斂成 `redis_stream`/`database_queue`，但明確設定可避免混淆 |
 | `ENABLE_REPORT_SCHEDULER` | 依 2.1 節既有規劃 | **必須為 `true`**（見上方 IMPORTANT 提示） | 全域排程器總開關，不是週報專屬開關 |
 | `REDIS_URL` | 必填 | 必填 | Zeabur 可直接加 Redis 服務並注入內網連線字串；兩邊必須連到同一個 Redis |
@@ -143,6 +150,11 @@ META_ANDROMEDA_STORAGE_PUBLIC_BASE_URL=https://assets.sitetegy.com/meta-andromed
 2. 在 Web 服務批次匯入素材，觀察 Web 服務的 CPU/記憶體用量應無評分負載痕跡（評分工作應只出現在 Worker 服務的資源圖表上）。
 3. 批次匯入期間持續呼叫 Web 的 `/api/permissions/me/module/meta_andromeda`，回應時間應維持正常（不應卡住）。
 4. 手動重啟或暫停 Worker 服務，確認 Web 服務仍可正常接受匯入/評分請求（事件會堆積在 Redis stream 或 DB，Worker 恢復後自動繼續消化，不會遺失）。
+5. 呼叫 Web 服務的 `/api/meta-andromeda/runtime-health`，確認：
+   - `checks.storage.mode == "worker_remote"`（`SERVICE_ROLE=web` + `filesystem`）
+   - `checks.internal_asset_worker.base_url` 已填入 Zeabur 內網 URL
+   - `checks.internal_asset_worker.auth_configured == true`
+6. 呼叫 Worker 服務的 `/healthz`，確認 `internal_asset_worker.auth_configured == true`；若為 `filesystem`，`storage_root` 應指向實際掛載路徑。
 
 #### 2.4.4 降級路徑
 
@@ -182,6 +194,7 @@ alembic upgrade head
 > **拆分 Meta Andromeda Worker（2.4 節）後，評分事件一直卡在 `queued`？**
 > 1. 確認 Worker 服務的 `SERVICE_ROLE=worker` 且 `ENABLE_REPORT_SCHEDULER=true`（兩者缺一都會導致 Meta Andromeda 排程完全沒註冊）。
 > 2. 呼叫 Worker 服務的 `/healthz`，確認 `scheduler.running: true` 且 `redis: "ok"`。
+2.5. 若素材上傳或縮圖同時失敗，優先檢查 Web 的 `/api/meta-andromeda/runtime-health`：`checks.internal_asset_worker.base_url` 是否存在、`auth_configured` 是否為 `true`。
 > 3. 確認 Web 與 Worker 兩邊的 `REDIS_URL` 指向同一個 Redis 實例，且 `META_ANDROMEDA_QUEUE_HOST=redis_stream` 兩邊一致。
 > 4. Redis 若暫時不可用，事件會落在 `database_queue` 模式（DB 裡 `status="queued"`），等 Worker 恢復連線後由 `sweep_meta_andromeda_queue`（預設每 5 秒掃一次）自動補派工，不需要手動介入。
 

@@ -61,6 +61,12 @@ from .schemas import (
     RuntimeHealthResponse,
     ScoreSubmitRequest,
 )
+from .asset_delivery import build_asset_response
+from .internal_asset_gateway import (
+    MetaAndromedaInternalWorkerGatewayError,
+    proxy_asset_preview_response,
+    proxy_asset_upload_response,
+)
 from .service import MetaAndromedaService, MetaAndromedaValidationError
 
 router = APIRouter()
@@ -532,65 +538,21 @@ async def preview_asset(
             detail=f"Asset not found for URI: {uri}",
         )
 
-    from fastapi.responses import FileResponse, StreamingResponse
-
     if asset.storage_backend == "filesystem":
-        from pathlib import Path
-        from core.config import settings
-        storage_root = Path(settings.META_ANDROMEDA_STORAGE_ROOT)
-        safe_path = (storage_root / asset.storage_key).resolve()
+        if settings.SERVICE_ROLE == "all":
+            return build_asset_response(asset)
         try:
-            safe_path.relative_to(storage_root.resolve())
-        except ValueError:
-            raise HTTPException(
-                status_code=status.HTTP_403_FORBIDDEN,
-                detail="Access denied: Path traversal detected.",
-            )
+            return await proxy_asset_preview_response(uri)
+        except MetaAndromedaInternalWorkerGatewayError as exc:
+            raise HTTPException(status_code=exc.status_code, detail=exc.detail) from exc
 
-        if not safe_path.exists() or not safe_path.is_file():
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND,
-                detail="Asset file does not exist on filesystem.",
-            )
+    if asset.storage_backend == "s3_compatible":
+        return build_asset_response(asset)
 
-        media_type = "image/png"
-        if asset.asset_type == "video":
-            media_type = "video/mp4"
-        elif asset.source_filename.lower().endswith((".jpg", ".jpeg")):
-            media_type = "image/jpeg"
-        elif asset.source_filename.lower().endswith(".gif"):
-            media_type = "image/gif"
-        elif asset.source_filename.lower().endswith(".webp"):
-            media_type = "image/webp"
-
-        return FileResponse(path=safe_path, media_type=media_type, filename=asset.source_filename)
-
-    elif asset.storage_backend == "s3_compatible":
-        from core.config import settings
-        from .storage import storage_adapter
-        try:
-            client = storage_adapter._build_s3_client()
-            bucket = settings.META_ANDROMEDA_STORAGE_S3_BUCKET
-            
-            response = client.get_object(Bucket=bucket, Key=asset.storage_key)
-            body = response['Body']
-            media_type = response.get('ContentType', 'application/octet-stream')
-            
-            def iterfile():
-                yield from body
-                
-            return StreamingResponse(iterfile(), media_type=media_type)
-        except Exception as exc:
-            raise HTTPException(
-                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                detail=f"S3 storage retrieval failed: {str(exc)}",
-            ) from exc
-
-    else:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail=f"Unsupported storage backend: {asset.storage_backend}",
-        )
+    raise HTTPException(
+        status_code=status.HTTP_400_BAD_REQUEST,
+        detail=f"Unsupported storage backend: {asset.storage_backend}",
+    )
 
 
 @router.post("/assets:upload", response_model=AssetUploadResponse, status_code=status.HTTP_201_CREATED)
@@ -604,11 +566,19 @@ async def upload_asset(
 ):
     file_bytes = await file.read()
     try:
-        return MetaAndromedaService.upload_asset(
-            db,
-            file_bytes=file_bytes,
+        if settings.SERVICE_ROLE == "all":
+            return MetaAndromedaService.upload_asset(
+                db,
+                file_bytes=file_bytes,
+                asset_type=asset_type,
+                source_filename=source_filename,
+                uploaded_by=getattr(user, "id", None),
+                content_type=file.content_type,
+            )
+        return await proxy_asset_upload_response(
             asset_type=asset_type,
             source_filename=source_filename,
+            file_bytes=file_bytes,
             uploaded_by=getattr(user, "id", None),
             content_type=file.content_type,
         )
