@@ -211,6 +211,7 @@ from routers import facebook, debug, ga4, auth, reports, line
 from routers.metrics import router as metrics_router
 from modules.meta_andromeda import router as meta_andromeda_router
 from modules.contribution import router as contribution_router
+from modules.ga4.insights_router import router as ga4_insights_router
 
 # Authentication & Users
 app.include_router(auth.router)
@@ -225,6 +226,7 @@ app.include_router(invites.router, prefix="/api", tags=["invites"])
 app.include_router(facebook.router)
 app.include_router(gsc.router)
 app.include_router(ga4.router)
+app.include_router(ga4_insights_router, prefix="/api/ga4/insights", tags=["ga4_insights"])
 
 # AI & Features
 app.include_router(ai.router, prefix="/api/ai", tags=["ai"])
@@ -418,3 +420,5 @@ if __name__ == "__main__":
     import uvicorn
     logger.info("🚀 Manually starting Uvicorn server...")
     uvicorn.run("main:app", host="0.0.0.0", port=8000, reload=False)
+
+

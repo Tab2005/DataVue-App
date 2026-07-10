@@ -9,7 +9,7 @@ const Sidebar = ({ user, language, isCollapsed, setIsCollapsed, isMobile, select
 
     const [isSettingsOpen, setIsSettingsOpen] = useState(false);
     // Track expanded submenus by label key
-    const [expandedMenus, setExpandedMenus] = useState({ 'Meta Andromeda': false });
+    const [expandedMenus, setExpandedMenus] = useState({ 'Meta Andromeda': false, 'Traffic Analytics': false });
     const location = useLocation();
     const { modules: accessibleModules } = useUserModules(selectedTeamId || null);
 
@@ -33,7 +33,15 @@ const Sidebar = ({ user, language, isCollapsed, setIsCollapsed, isMobile, select
         { icon: <FiBarChart2 size={20} />, label: t('Analytics', '成效分析'), path: '/analytics', requiredModule: 'fb_ads' },
         { icon: <FiActivity size={20} />, label: t('Metrics Manager', '指標管理'), path: '/metrics', requiredModule: 'fb_ads' },
         { icon: <FiSearch size={20} />, label: t('Search Console', '搜尋管理'), path: '/gsc', requiredModule: 'gsc' },
-        { icon: <FiTrendingUp size={20} />, label: t('Traffic Analytics', '流量分析'), path: '/ga4', requiredModule: 'ga4' },
+        {
+            icon: <FiTrendingUp size={20} />,
+            label: t('Traffic Analytics', '流量分析'),
+            requiredModule: 'ga4',
+            children: [
+                { label: t('GA4 Report', 'GA4 報表'), path: '/ga4' },
+                { label: t('Conversion Insights', '轉換洞察'), path: '/ga4-insights' },
+            ],
+        },
         { icon: <FiPieChart size={20} />, label: t('Contribution Analysis', '貢獻分析'), path: '/contribution', requiredModule: 'contribution' },
         {
             icon: <FiActivity size={20} />,
@@ -77,6 +85,9 @@ const Sidebar = ({ user, language, isCollapsed, setIsCollapsed, isMobile, select
     useEffect(() => {
         if (location.pathname.startsWith('/meta-andromeda')) {
             setExpandedMenus(prev => ({ ...prev, 'Meta Andromeda': true }));
+        }
+        if (location.pathname.startsWith('/ga4')) {
+            setExpandedMenus(prev => ({ ...prev, 'Traffic Analytics': true }));
         }
     }, [location.pathname]);
 
@@ -499,3 +510,6 @@ const Sidebar = ({ user, language, isCollapsed, setIsCollapsed, isMobile, select
 };
 
 export default Sidebar;
+
+
+

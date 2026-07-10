@@ -16,7 +16,6 @@
 import os
 import logging
 
-# ── 引擎 & Session ────────────────────────────────────────────────────────
 from database.engine import (
     engine,
     SessionLocal,
@@ -24,11 +23,7 @@ from database.engine import (
     check_db_connection,
     DATABASE_URL,
 )
-
-# ── 聲明基底 ──────────────────────────────────────────────────────────────
 from database.base import Base
-
-# ── 模型 ─────────────────────────────────────────────────────────────────
 from database.models.user import User, UserRole, UserStatus
 from database.models.team import Team, TeamMember, TeamInvite
 from database.models.view import SavedView, PageTitle
@@ -58,15 +53,17 @@ from database.models.contribution import (
     ContributionCampaignGroup,
     ContributionSnapshot,
 )
+from database.models.ga4_insights import (
+    GA4InsightsSnapshot,
+    GA4AnomalyRule,
+    GA4AnomalyEvent,
+)
 
 logger = logging.getLogger(__name__)
 
 __all__ = [
-    # 引擎 & Session
     "engine", "SessionLocal", "get_db", "check_db_connection", "DATABASE_URL",
-    # Base
     "Base",
-    # 模型
     "User", "UserRole", "UserStatus",
     "Team", "TeamMember", "TeamInvite",
     "SavedView", "PageTitle",
@@ -87,7 +84,9 @@ __all__ = [
     "ContributionDailyMetric",
     "ContributionCampaignGroup",
     "ContributionSnapshot",
-    # 初始化函式
+    "GA4InsightsSnapshot",
+    "GA4AnomalyRule",
+    "GA4AnomalyEvent",
     "init_db",
 ]
 
@@ -99,18 +98,17 @@ def init_db():
     生產環境依賴 Alembic 遷移管理，但加入緊急降級機制（Fail-safe）。
     """
     DEBUG_MODE = os.getenv("DEBUG_MODE", "false").lower() == "true"
-    
+
     if DEBUG_MODE:
         logger.info("Dev Mode detected: Running Base.metadata.create_all().")
         Base.metadata.create_all(bind=engine)
         return
 
-    # 生產環境：先檢查核心新表是否存在 (e.g. weekly_reports)
     try:
-        from sqlalchemy import inspect, text
+        from sqlalchemy import inspect
         inspector = inspect(engine)
         existing_tables = inspector.get_table_names()
-        
+
         required_tables = [
             "user_integrations",
             "weekly_reports",
@@ -128,9 +126,12 @@ def init_db():
             "contribution_daily_metrics",
             "contribution_campaign_groups",
             "contribution_snapshots",
+            "ga4_insights_snapshots",
+            "ga4_anomaly_rules",
+            "ga4_anomaly_events",
         ]
         missing = [t for t in required_tables if t not in existing_tables]
-        
+
         if missing:
             if engine.dialect.name == "sqlite":
                 logger.warning(f"Production safety check: Tables {missing} are missing! Running emergency create_all on SQLite...")
@@ -144,11 +145,6 @@ def init_db():
                 )
         else:
             logger.info("Production Mode: Verified all required tables exist.")
-
-        # 注意：users.line_user_id 與 report_schedules.is_notify_line 過去在此
-        # 有執行期 ALTER TABLE 補丁；已改由 Alembic migration
-        # 20260701_consolidate_legacy_schema_patches 管理，此處不再重複補丁。
-
     except Exception as e:
         logger.error(f"Fail-safe table check failed: {e}. Falling back to normal flow.")
 

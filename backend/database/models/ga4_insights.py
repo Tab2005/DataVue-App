@@ -1,0 +1,66 @@
+"""GA4 insights module ORM models (docs/22 wave 1)."""
+
+import uuid
+
+from sqlalchemy import Boolean, Column, DateTime, Float, ForeignKey, Integer, JSON, String, Text, UniqueConstraint, text
+from sqlalchemy.orm import relationship
+
+from database.base import Base
+
+
+class GA4InsightsSnapshot(Base):
+    __tablename__ = "ga4_insights_snapshots"
+    __table_args__ = (
+        UniqueConstraint("property_id", "kind", "date", name="uq_ga4_insights_snapshots_property_kind_date"),
+    )
+
+    id = Column(String, primary_key=True, default=lambda: f"gis_{uuid.uuid4().hex[:12]}")
+    property_id = Column(String(50), nullable=False, index=True)
+    kind = Column(String(30), nullable=False)
+    date = Column(String(10), nullable=False)
+    payload = Column(JSON, nullable=False, default=dict)
+    ai_summary = Column(Text, nullable=True)
+    ai_summary_generated_at = Column(DateTime, nullable=True)
+    fetched_by = Column(String, ForeignKey("users.id"), nullable=True)
+    fetched_at = Column(DateTime, nullable=False, server_default=text("CURRENT_TIMESTAMP"))
+
+    fetcher = relationship("User")
+
+
+class GA4AnomalyRule(Base):
+    __tablename__ = "ga4_anomaly_rules"
+
+    id = Column(String, primary_key=True, default=lambda: f"gar_{uuid.uuid4().hex[:12]}")
+    property_id = Column(String(50), nullable=False, index=True)
+    metric_key = Column(String(50), nullable=False)
+    sensitivity = Column(String(10), nullable=False, default="medium")
+    check_frequency = Column(String(20), nullable=False, default="hourly")
+    is_enabled = Column(Boolean, nullable=False, default=True)
+    notify_line = Column(Boolean, nullable=False, default=True)
+    notify_email = Column(Boolean, nullable=False, default=False)
+    cooldown_hours = Column(Integer, nullable=False, default=6)
+    created_by = Column(String, ForeignKey("users.id"), nullable=False)
+    created_at = Column(DateTime, nullable=False, server_default=text("CURRENT_TIMESTAMP"))
+    updated_at = Column(DateTime, nullable=False, server_default=text("CURRENT_TIMESTAMP"))
+
+    creator = relationship("User")
+
+
+class GA4AnomalyEvent(Base):
+    __tablename__ = "ga4_anomaly_events"
+
+    id = Column(String, primary_key=True, default=lambda: f"gae_{uuid.uuid4().hex[:12]}")
+    rule_id = Column(String, ForeignKey("ga4_anomaly_rules.id"), nullable=False, index=True)
+    severity = Column(String(10), nullable=False)
+    direction = Column(String(10), nullable=False)
+    observed_value = Column(Float, nullable=False)
+    expected_low = Column(Float, nullable=False)
+    expected_high = Column(Float, nullable=False)
+    message = Column(Text, nullable=False)
+    notified_channels = Column(JSON, nullable=False, default=dict)
+    acknowledged_by = Column(String, ForeignKey("users.id"), nullable=True)
+    acknowledged_at = Column(DateTime, nullable=True)
+    created_at = Column(DateTime, nullable=False, server_default=text("CURRENT_TIMESTAMP"))
+
+    rule = relationship("GA4AnomalyRule")
+    acknowledger = relationship("User", foreign_keys=[acknowledged_by])

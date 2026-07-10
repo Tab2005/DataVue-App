@@ -189,11 +189,14 @@ class MetaAndromedaModelRegistry:
             entry = entries.get(_HARDCODED_DEFAULT_VERSION) or _HARDCODED_ENTRIES[_HARDCODED_DEFAULT_VERSION]
 
         provider_override = settings.META_ANDROMEDA_SCORING_PROVIDER
-        # 這個 env var 預設就非空（見 core/config.py 的預設值），等於「一律生效」的 ops escape
-        # hatch——但那是為了讓「互動評分」不受 DB 影響、可用 env 快速鎖定模型；回測要用的正是
-        # 「跟互動評分不同的模型」，若這裡不排除 purpose="backtest"，這個 hatch 會直接蓋掉
-        # backtest_reference entry 解析出的 provider_model，讓「回測專用模型」設定形同虛設。
-        model_override = settings.META_ANDROMEDA_SCORING_MODEL if purpose != "backtest" else None
+        # 跟上面 MODEL_VERSION 的判斷方式一致：改讀 os.getenv 本身（無 default），跟
+        # core.config.settings.META_ANDROMEDA_SCORING_MODEL 的隱含預設值區分開，只有
+        # 「明確設定」才觸發 ops escape hatch 蓋過 DB current_production 的 provider_model；
+        # 否則版本總覽核准新候選後，只要沒人手動同步 config.py 的預設值，實際評分就會
+        # 一直卡在舊模型（2026-07-10 事故：backend/worker 殘留舊 env var，畫面顯示已核准
+        # 新模型但實際評分仍打舊模型）。回測要用的正是「跟互動評分不同的模型」，這裡繼續
+        # 排除 purpose="backtest"，避免蓋掉 backtest_reference entry 解析出的 provider_model。
+        model_override = os.getenv("META_ANDROMEDA_SCORING_MODEL") if purpose != "backtest" else None
 
         if provider_override == "heuristic":
             return MetaAndromedaModelEntry(

@@ -22,6 +22,7 @@ const UserManagement = lazy(() => import('./pages/UserManagement'));
 const MetricsManager = lazy(() => import('./pages/MetricsManager'));
 const SearchConsole = lazy(() => import('./pages/SearchConsole'));
 const GA4Analytics = lazy(() => import('./pages/GA4Analytics'));
+const GA4Insights = lazy(() => import('./pages/GA4Insights'));
 const Reports = lazy(() => import('./pages/Reports'));
 const ReportViewer = lazy(() => import('./pages/ReportViewer'));
 const SharedReport = lazy(() => import('./pages/SharedReport'));
@@ -107,7 +108,13 @@ function AppInner() {
                     </ErrorBoundary>
                   </ProtectedModule>
                 } />
-                <Route path="/meta-andromeda" element={
+                <Route path="/ga4-insights" element={
+                  <ProtectedModule module="ga4">
+                    <ErrorBoundary>
+                      <GA4Insights />
+                    </ErrorBoundary>
+                  </ProtectedModule>
+                } />`r`n                <Route path="/meta-andromeda" element={
                   <ProtectedModule module="meta_andromeda">
                     <ErrorBoundary>
                       <MetaAndromeda />
@@ -199,3 +206,7 @@ function App() {
 }
 
 export default App;
+
+
+
+

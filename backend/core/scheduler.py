@@ -35,6 +35,8 @@ META_ANDROMEDA_REDIS_STREAM_RECLAIM_JOB_ID = "ma_redis_stream_reclaim"
 META_ANDROMEDA_WEEKLY_CLOSED_LOOP_JOB_ID = "ma_weekly_closed_loop"
 CONTRIBUTION_ANALYSIS_JOB_PREFIX = "ca_analysis"
 CONTRIBUTION_STALE_SWEEP_JOB_ID = "ca_stale_sweeper"
+GA4_INSIGHTS_INTRADAY_JOB_ID = "ga4_insights_intraday"
+GA4_INSIGHTS_DAILY_JOB_ID = "ga4_insights_daily"
 
 
 def is_scheduler_enabled() -> bool:
@@ -663,6 +665,69 @@ def add_contribution_stale_sweep_job():
     return job
 
 
+async def run_ga4_insights_intraday_job() -> None:
+    from modules.ga4.insights_service import GA4InsightsService
+    from modules.ga4.repository import repository as ga4_repository
+
+    db = SessionLocal()
+    try:
+        rules = ga4_repository.list_enabled_rules(db, frequency="hourly")
+        for rule in rules:
+            try:
+                await GA4InsightsService.evaluate_rule(db, rule, now_local=_now_local_naive())
+                db.commit()
+            except Exception:
+                db.rollback()
+                logger.exception("⏰ [GA4Insights] intraday rule failed: %s", rule.id)
+    finally:
+        db.close()
+
+
+def add_ga4_insights_intraday_job():
+    job = scheduler.add_job(
+        run_ga4_insights_intraday_job,
+        trigger=CronTrigger(minute=10, timezone=SCHEDULER_TIMEZONE),
+        id=GA4_INSIGHTS_INTRADAY_JOB_ID,
+        replace_existing=True,
+        misfire_grace_time=DEFAULT_MISFIRE_GRACE_TIME,
+        coalesce=True,
+        max_instances=1,
+    )
+    logger.info("⏰ [GA4Insights] Intraday anomaly job registered.")
+    return job
+
+
+async def run_ga4_insights_daily_job() -> None:
+    from modules.ga4.insights_service import GA4InsightsService
+    from modules.ga4.repository import repository as ga4_repository
+
+    db = SessionLocal()
+    try:
+        rules = ga4_repository.list_enabled_rules(db, frequency="daily")
+        for rule in rules:
+            try:
+                await GA4InsightsService.evaluate_rule(db, rule, now_local=_now_local_naive())
+                db.commit()
+            except Exception:
+                db.rollback()
+                logger.exception("⏰ [GA4Insights] daily rule failed: %s", rule.id)
+    finally:
+        db.close()
+
+
+def add_ga4_insights_daily_job():
+    job = scheduler.add_job(
+        run_ga4_insights_daily_job,
+        trigger=CronTrigger(hour=9, minute=0, timezone=SCHEDULER_TIMEZONE),
+        id=GA4_INSIGHTS_DAILY_JOB_ID,
+        replace_existing=True,
+        misfire_grace_time=DEFAULT_MISFIRE_GRACE_TIME,
+        coalesce=True,
+        max_instances=1,
+    )
+    logger.info("⏰ [GA4Insights] Daily anomaly job registered.")
+    return job
+
 async def run_meta_andromeda_calibration_pipeline(dataset_id: str, base_profile_name: str) -> None:
     """Run the prompt calibration pipeline for a completed calibration dataset."""
     from modules.meta_andromeda.calibration_pipeline import generate_calibrated_profile
@@ -944,6 +1009,8 @@ async def start_scheduler() -> dict:
             # snapshot 回收排程（docs/27 任務 2.2）。開機當下先掃一次（不等
             # 第一個 interval 到），立即回收上次崩潰/重啟留下的殭屍 snapshot。
             add_contribution_stale_sweep_job()
+            add_ga4_insights_intraday_job()
+            add_ga4_insights_daily_job()
             await sweep_contribution_stale_snapshots()
 
         if run_report_jobs:
@@ -1004,3 +1071,9 @@ def stop_scheduler(wait: bool = False) -> None:
     if scheduler.running:
         scheduler.shutdown(wait=wait)
         logger.info("⏰ [Scheduler] Scheduler stopped (wait=%s)", wait)
+
+
+
+
+
+

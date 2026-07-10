@@ -27,6 +27,8 @@ PERMISSIONS = {
     "ga4": [
         {"key": "ga4:property:connect", "name": "連接屬性", "category": "admin"},
         {"key": "ga4:analytics:view", "name": "數據查看", "category": "feature"},
+        {"key": "ga4:insights:view", "name": "洞察查看", "category": "feature"},
+        {"key": "ga4:insights:manage_alerts", "name": "告警管理", "category": "admin"},
     ],
     "meta_andromeda": [],
     # 貢獻分析模組（docs/21）：採 module-only access，不分細項權限
@@ -49,17 +51,19 @@ ROLE_PERMISSIONS = {
         "fb_ads:view:create", "fb_ads:view:edit", "fb_ads:ai:use",
         "gsc:site:connect", "gsc:analytics:view", "gsc:keyword:view",
         "gsc:page:view", "gsc:trend:view",
-        "ga4:property:connect", "ga4:analytics:view",
+        "ga4:property:connect", "ga4:analytics:view", "ga4:insights:view", "ga4:insights:manage_alerts",
     ],
     "team_member": [
         "fb_ads:analytics:view", "fb_ads:report:generate",
         "fb_ads:view:create", "fb_ads:view:edit", "fb_ads:ai:use",
         "gsc:analytics:view", "gsc:keyword:view", "gsc:page:view", "gsc:trend:view",
-        "ga4:analytics:view",
+        "ga4:analytics:view", "ga4:insights:view",
     ],
     "team_viewer": [
         "fb_ads:analytics:view", "fb_ads:report:generate",
         "gsc:analytics:view", "gsc:keyword:view", "gsc:page:view", "gsc:trend:view",
-        "ga4:analytics:view",
+        "ga4:analytics:view", "ga4:insights:view",
     ],
 }
+
+

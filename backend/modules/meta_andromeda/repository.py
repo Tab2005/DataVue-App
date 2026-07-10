@@ -2784,7 +2784,10 @@ class MetaAndromedaRepository:
             "db_production_provider_model": db_production.provider_model if db_production else None,
             "is_overridden": is_overridden,
             "scoring_provider_setting": settings.META_ANDROMEDA_SCORING_PROVIDER,
-            "scoring_model_setting": settings.META_ANDROMEDA_SCORING_MODEL,
+            # 顯示 os.getenv 的原始值（無 default），跟 model_registry.get_entry() 判斷
+            # 「是否明確覆寫」用的是同一個值——否則沒設 env var 時這裡會顯示 config.py 的
+            # 隱含預設值，讓人誤以為那是造成 is_overridden 的原因。
+            "scoring_model_setting": os.getenv("META_ANDROMEDA_SCORING_MODEL", ""),
             "scoring_model_version_env_set": bool(os.getenv("META_ANDROMEDA_SCORING_MODEL_VERSION")),
         }
 

@@ -31,6 +31,11 @@ from database.models.contribution import (
     ContributionCampaignGroup,
     ContributionSnapshot,
 )
+from database.models.ga4_insights import (
+    GA4InsightsSnapshot,
+    GA4AnomalyRule,
+    GA4AnomalyEvent,
+)
 
 __all__ = [
     "User", "UserRole", "UserStatus",
@@ -54,4 +59,7 @@ __all__ = [
     "ContributionDailyMetric",
     "ContributionCampaignGroup",
     "ContributionSnapshot",
+    "GA4InsightsSnapshot",
+    "GA4AnomalyRule",
+    "GA4AnomalyEvent",
 ]
