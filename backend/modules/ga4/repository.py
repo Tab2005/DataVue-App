@@ -6,7 +6,13 @@ from datetime import datetime, timedelta
 
 from sqlalchemy import desc
 
-from database.models.ga4_insights import GA4AnomalyEvent, GA4AnomalyRule, GA4InsightsSnapshot, GA4KpiTarget
+from database.models.ga4_insights import (
+    GA4AnomalyEvent,
+    GA4AnomalyRule,
+    GA4InsightsSnapshot,
+    GA4KpiTarget,
+    GA4LandingPageRule,
+)
 
 
 class GA4InsightsRepository:
@@ -175,6 +181,31 @@ class GA4InsightsRepository:
 
     def delete_kpi_target(self, db, target_id: str) -> bool:
         row = self.get_kpi_target(db, target_id)
+        if not row:
+            return False
+        db.delete(row)
+        return True
+
+    # ─── 第 5 波：到達頁分類規則 ────────────────────────────────────────
+    def create_landing_page_rule(self, db, **payload):
+        row = GA4LandingPageRule(**payload)
+        db.add(row)
+        db.flush()
+        return row
+
+    def list_landing_page_rules(self, db, *, property_id: str):
+        return (
+            db.query(GA4LandingPageRule)
+            .filter(GA4LandingPageRule.property_id == property_id)
+            .order_by(GA4LandingPageRule.priority.asc())
+            .all()
+        )
+
+    def get_landing_page_rule(self, db, rule_id: str):
+        return db.query(GA4LandingPageRule).filter(GA4LandingPageRule.id == rule_id).first()
+
+    def delete_landing_page_rule(self, db, rule_id: str) -> bool:
+        row = self.get_landing_page_rule(db, rule_id)
         if not row:
             return False
         db.delete(row)

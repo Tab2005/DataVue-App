@@ -171,18 +171,22 @@ class GA4AnalyticsService:
                     # Add metric values
                     for i, metric in enumerate(metrics):
                         value = row.metric_values[i].value
+                        # GA4 支援「單一事件口徑」的動態指標，如 keyEvents:purchase、
+                        # sessionKeyEventRate:purchase（docs/22 第 5 波）；型別判斷要看
+                        # 冒號前的基礎指標名，冒號後的事件名不影響型別。
+                        base_metric = metric.split(":", 1)[0]
                         # Convert string values to appropriate types
-                        if metric in [
+                        if base_metric in [
                             "activeUsers", "totalUsers", "newUsers", "sessions", "screenPageViews",
                             "engagedSessions", "addToCarts", "ecommercePurchases", "itemsViewed",
                             "itemsAddedToCart", "itemsPurchased", "totalPurchasers", "checkouts",
-                            "firstTimePurchasers", "conversions", "eventCount"
+                            "firstTimePurchasers", "conversions", "eventCount", "keyEvents"
                         ]:
                             row_data[metric] = int(value)
-                        elif metric in [
+                        elif base_metric in [
                             "averageSessionDuration", "bounceRate", "engagementRate",
                             "purchaseRevenue", "itemRevenue", "totalRevenue",
-                            "sessionConversionRate", "userConversionRate",
+                            "sessionConversionRate", "userConversionRate", "sessionKeyEventRate",
                             "averageEngagementTime", "screenPageViewsPerSession", "sessionsPerUser"
                         ]:
                             row_data[metric] = float(value)

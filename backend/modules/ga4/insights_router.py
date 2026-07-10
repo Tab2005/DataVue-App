@@ -70,6 +70,22 @@ class KpiTargetPayload(BaseModel):
 ChannelDimension = Literal["default_channel_group", "source_medium", "source", "medium", "campaign"]
 
 
+# 第 5 波：到達頁分類規則（enum 用 Literal，非法值 422，同第 4 波前例）。
+LandingPageCategory = Literal["product", "article", "functional", "other"]
+LandingPageMatchType = Literal["prefix", "contains"]
+
+
+class LandingPageRulePayload(BaseModel):
+    # PUT 走「有 id 就更新、沒有就新增」的 upsert 語意（同 KPI 目標頁籤的
+    # 表單模式，但規則沒有天然的複合唯一鍵可比對，改用 id 判斷）。
+    id: str | None = None
+    property_id: str = Field(..., min_length=1)
+    category: LandingPageCategory
+    match_type: LandingPageMatchType
+    pattern: str = Field(..., min_length=1, max_length=200)
+    priority: int = Field(0, ge=0)
+
+
 # ─── 第 2 波：當日儀表板／Realtime／渠道／到達頁／商品（docs/22 3.5 節） ───
 @router.get("/dashboard")
 def get_dashboard(
@@ -144,18 +160,74 @@ def get_channels(
 def get_landing_pages(
     property_id: str = Query(...),
     days: int = Query(7, ge=1, le=90),
+    key_event: str | None = Query(None, pattern=r"^[A-Za-z0-9_]{1,40}$"),
     user=Depends(get_current_user),
     _module: bool = Depends(require_ga4_module),
     _perm: bool = Depends(require_ga4_insights_view),
     db=Depends(get_db),
 ):
     try:
-        snapshot = GA4InsightsService.get_landing_pages(db, user=user, property_id=property_id, days=days)
-    except RuntimeError as exc:
+        snapshot = GA4InsightsService.get_landing_pages(
+            db, user=user, property_id=property_id, days=days, key_event=key_event
+        )
+    except (RuntimeError, ValueError) as exc:
         raise HTTPException(status_code=400, detail=str(exc))
     db.commit()
     db.refresh(snapshot)
     return serialize_snapshot(snapshot)
+
+
+# ─── 第 5 波：到達頁分類規則（docs/22 5 節，追加） ──────────────────
+@router.get("/landing-page-rules")
+def list_landing_page_rules(
+    property_id: str = Query(...),
+    user=Depends(get_current_user),
+    _module: bool = Depends(require_ga4_module),
+    _perm: bool = Depends(require_ga4_insights_view),
+    db=Depends(get_db),
+):
+    rows = GA4InsightsService.list_landing_page_rules(db, property_id=property_id)
+    return {"rules": [serialize_landing_page_rule(row) for row in rows]}
+
+
+@router.put("/landing-page-rules")
+def upsert_landing_page_rule(
+    payload: LandingPageRulePayload,
+    user=Depends(get_current_user),
+    _module: bool = Depends(require_ga4_module),
+    _perm: bool = Depends(require_ga4_insights_manage_alerts),
+    db=Depends(get_db),
+):
+    row = GA4InsightsService.upsert_landing_page_rule(
+        db,
+        rule_id=payload.id,
+        user_id=user.id,
+        property_id=payload.property_id,
+        category=payload.category,
+        match_type=payload.match_type,
+        pattern=payload.pattern,
+        priority=payload.priority,
+    )
+    if not row:
+        raise HTTPException(status_code=404, detail="Landing page rule not found")
+    db.commit()
+    db.refresh(row)
+    return serialize_landing_page_rule(row)
+
+
+@router.delete("/landing-page-rules/{rule_id}")
+def delete_landing_page_rule(
+    rule_id: str,
+    user=Depends(get_current_user),
+    _module: bool = Depends(require_ga4_module),
+    _perm: bool = Depends(require_ga4_insights_manage_alerts),
+    db=Depends(get_db),
+):
+    deleted = GA4InsightsService.delete_landing_page_rule(db, rule_id=rule_id)
+    if not deleted:
+        raise HTTPException(status_code=404, detail="Landing page rule not found")
+    db.commit()
+    return {"status": "deleted", "rule_id": rule_id}
 
 
 @router.get("/items")
@@ -352,6 +424,20 @@ def serialize_kpi_target(row):
         "period_type": row.period_type,
         "period_key": row.period_key,
         "target_value": row.target_value,
+        "created_by": row.created_by,
+        "created_at": row.created_at,
+        "updated_at": row.updated_at,
+    }
+
+
+def serialize_landing_page_rule(row):
+    return {
+        "id": row.id,
+        "property_id": row.property_id,
+        "category": row.category,
+        "match_type": row.match_type,
+        "pattern": row.pattern,
+        "priority": row.priority,
         "created_by": row.created_by,
         "created_at": row.created_at,
         "updated_at": row.updated_at,

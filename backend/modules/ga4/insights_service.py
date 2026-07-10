@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import os
+import re
 import smtplib
 from datetime import date, datetime, timedelta
 from email.message import EmailMessage
@@ -60,6 +61,30 @@ KPI_PERIOD_TYPES = {"month", "quarter"}
 # 避免時間進度剛好卡在整數邊界時，一點點雜訊就在 on_track/ahead 之間來回跳動。
 KPI_PACING_BUFFER = 0.05
 
+# 第 5 波：到達頁分類篩選（docs/22 5 節，追加）
+LANDING_PAGE_CATEGORIES = ("product", "article", "functional", "other")
+# 內建預設關鍵詞啟發式：只在該 property 完全沒有自訂規則時當退回值，
+# 冷啟動堪用，UI 明示「可自訂規則覆蓋」。
+LANDING_PAGE_DEFAULT_KEYWORDS = {
+    "product": ("/product", "/products", "/item", "/shop", "/p/"),
+    "article": ("/blog", "/article", "/news", "/post"),
+    "functional": (
+        "/cart", "/checkout", "/login", "/register", "/search",
+        "/account", "/member", "/contact", "/about",
+    ),
+}
+# 2026-07-10 與使用者確認的轉換率口徑修正：「轉換率」欄改用 GA4 官方
+# sessionKeyEventRate（至少觸發一次關鍵事件的工作階段占比，去重、≤100%），
+# 「轉換次數」欄是 keyEvents 次數（同一工作階段多次觸發會重複計，可能超過工作階段數）。
+LANDING_PAGE_SESSION_KEY_EVENT_RATE_DEFINITION = (
+    "至少觸發一次關鍵事件的工作階段占比（GA4 工作階段關鍵事件發生率）"
+)
+LANDING_PAGE_KEY_EVENTS_COUNT_DEFINITION = (
+    "關鍵事件總次數；同一工作階段多次觸發會重複計，可能超過工作階段數"
+)
+# key_event 白名單格式（GA4 事件名規則），防任意指標注入。
+LANDING_PAGE_KEY_EVENT_PATTERN = re.compile(r"^[A-Za-z0-9_]{1,40}$")
+
 
 def _percentile(sorted_values: list[float], fraction: float) -> float:
     """線性插值百分位數（同 numpy 預設方法），輸入須已排序。"""
@@ -72,6 +97,35 @@ def _percentile(sorted_values: list[float], fraction: float) -> float:
     upper = min(lower + 1, len(sorted_values) - 1)
     weight = idx - lower
     return sorted_values[lower] + (sorted_values[upper] - sorted_values[lower]) * weight
+
+
+def classify_landing_page(path: str, rules: list[dict]) -> str:
+    """
+    純函數：把 `landingPage` 路徑分類成 product/article/functional/other。
+
+    - 有自訂規則（`rules` 非空）時**只**用自訂規則：依 `priority` 升冪找第一個
+      比對成功的規則，比對不到任何規則就直接歸 `other`（不退回內建關鍵詞，
+      避免自訂規則與內建預設疊加造成分類邏輯難以預期）。
+    - 沒有任何自訂規則時，用內建關鍵詞啟發式（冷啟動堪用值）。
+    - 比對一律大小寫不敏感。
+    """
+    path_lower = (path or "").lower()
+
+    if rules:
+        for rule in sorted(rules, key=lambda r: r["priority"]):
+            pattern = (rule["pattern"] or "").lower()
+            if not pattern:
+                continue
+            if rule["match_type"] == "prefix" and path_lower.startswith(pattern):
+                return rule["category"]
+            if rule["match_type"] == "contains" and pattern in path_lower:
+                return rule["category"]
+        return "other"
+
+    for category, keywords in LANDING_PAGE_DEFAULT_KEYWORDS.items():
+        if any(keyword in path_lower for keyword in keywords):
+            return category
+    return "other"
 
 
 class GA4InsightsService:
@@ -516,39 +570,149 @@ class GA4InsightsService:
             db, property_id=property_id, kind=kind, date=end_date, payload=payload, fetched_by=user.id,
         )
 
-    # ─── 第 2 波：到達頁分析（3.4 節） ─────────────────────────────────
+    # ─── 第 2/5 波：到達頁分析（3.4 節；第 5 波加分類篩選＋關鍵事件口徑） ──
     @staticmethod
-    def get_landing_pages(db, *, user: User, property_id: str, days: int = 7):
+    def get_landing_pages(db, *, user: User, property_id: str, days: int = 7, key_event: str | None = None):
+        if key_event and not LANDING_PAGE_KEY_EVENT_PATTERN.match(key_event):
+            raise ValueError(f"Invalid key_event: {key_event}")
+
         start_date, end_date = GA4InsightsService._trailing_period(days)
+
+        # 2026-07-10 與使用者確認：主查詢的「轉換次數」「轉換率」改用 GA4
+        # 官方 keyEvents / sessionKeyEventRate；帶 key_event 時改用該事件的
+        # 動態指標（GA4 Data API 支援 "keyEvents:{event}" 這種冒號後綴語法）。
+        key_events_metric = f"keyEvents:{key_event}" if key_event else "keyEvents"
+        key_event_rate_metric = f"sessionKeyEventRate:{key_event}" if key_event else "sessionKeyEventRate"
+
         data, error = GA4Service.get_analytics(
             user=user, property_id=property_id, start_date=start_date, end_date=end_date,
-            metrics=["sessions", "engagementRate", "conversions", "bounceRate"],
+            metrics=["sessions", "engagementRate", "bounceRate", key_events_metric, key_event_rate_metric],
             dimensions=["landingPage"], db=db,
         )
         if error:
             raise RuntimeError(error)
         rows = (data or {}).get("rows", [])
 
+        # 關鍵事件分項統計：pivot landingPage × eventName，供前端下拉與明細
+        # （查詢失敗不影響主表格，只是分項/下拉暫缺，同模組既有的容錯慣例）。
+        key_events_breakdown: dict[str, dict[str, int]] = {}
+        available_key_events: set[str] = set()
+        breakdown_data, breakdown_error = GA4Service.get_analytics(
+            user=user, property_id=property_id, start_date=start_date, end_date=end_date,
+            metrics=["keyEvents"], dimensions=["landingPage", "eventName"], db=db,
+        )
+        if not breakdown_error:
+            for row in (breakdown_data or {}).get("rows", []):
+                page = row.get("landingPage", "")
+                event_name = row.get("eventName", "")
+                count = row.get("keyEvents", 0)
+                if not event_name or not count:
+                    continue
+                key_events_breakdown.setdefault(page, {})[event_name] = count
+                available_key_events.add(event_name)
+        else:
+            logger.warning("[GA4Insights] landing page key-events breakdown failed %s: %s", property_id, breakdown_error)
+
+        rule_rows = repository.list_landing_page_rules(db, property_id=property_id)
+        rules = [
+            {"category": r.category, "match_type": r.match_type, "pattern": r.pattern, "priority": r.priority}
+            for r in rule_rows
+        ]
+
         enriched = []
         for row in rows:
+            landing_page = row.get("landingPage", "")
             sessions = row.get("sessions", 0)
-            conversions = row.get("conversions", 0)
-            conversion_rate = (conversions / sessions) if sessions else 0.0
-            enriched.append({**row, "conversion_rate": conversion_rate, "is_high_traffic_low_conversion": False})
+            key_events_count = row.get(key_events_metric, 0)
+            session_key_event_rate = row.get(key_event_rate_metric, 0.0)
+            category = classify_landing_page(landing_page, rules)
+            enriched.append({
+                "landingPage": landing_page,
+                "sessions": sessions,
+                "engagementRate": row.get("engagementRate", 0.0),
+                "bounceRate": row.get("bounceRate", 0.0),
+                "conversions": key_events_count,
+                # 舊「次數比」口徑保留供回溯相容；前端不再以此欄顯示「轉換率」，
+                # 主顯示改用下面的 session_key_event_rate（去重占比，見 5 節）。
+                "conversion_rate": (key_events_count / sessions) if sessions else 0.0,
+                "session_key_event_rate": session_key_event_rate,
+                "category": category,
+                "key_events_breakdown": key_events_breakdown.get(landing_page, {}),
+                "is_high_traffic_low_conversion": False,
+            })
 
-        # 「高流量低轉換」需要足夠樣本數才能算四分位，樣本太少（<4）標記全部維持 False
-        if len(enriched) >= 4:
-            session_p75 = _percentile(sorted(r["sessions"] for r in enriched), 0.75)
-            conv_rate_p25 = _percentile(sorted(r["conversion_rate"] for r in enriched), 0.25)
-            for row in enriched:
-                row["is_high_traffic_low_conversion"] = (
-                    row["sessions"] >= session_p75 and row["conversion_rate"] <= conv_rate_p25
-                )
+        # 「高流量低轉換」改在同分類內計算（第 5 波刻意的語意變更），且改依
+        # session_key_event_rate（去重占比）判定，不再用次數比。文章頁天生
+        # 低轉換是常態，混排會讓商品頁的問題頁被稀釋而漏標、文章頁整批被誤
+        # 標。四分位需要足夠樣本數，同既有規則：該分類樣本 <4 不標記。
+        by_category: dict[str, list[dict]] = {}
+        for row in enriched:
+            by_category.setdefault(row["category"], []).append(row)
+        for category_rows in by_category.values():
+            if len(category_rows) >= 4:
+                session_p75 = _percentile(sorted(r["sessions"] for r in category_rows), 0.75)
+                rate_p25 = _percentile(sorted(r["session_key_event_rate"] for r in category_rows), 0.25)
+                for row in category_rows:
+                    row["is_high_traffic_low_conversion"] = (
+                        row["sessions"] >= session_p75 and row["session_key_event_rate"] <= rate_p25
+                    )
 
-        payload = {"start_date": start_date, "end_date": end_date, "days": days, "landing_pages": enriched}
+        category_counts = {category: len(category_rows) for category, category_rows in by_category.items()}
+
+        # snapshot kind：全部事件維持 "landing_page"；指定事件加後綴各自獨立
+        # 存放、AI 解讀互不覆寫（同第 4 波渠道維度切換前例）。
+        kind = "landing_page" if not key_event else f"landing_page:{key_event}"
+
+        payload = {
+            "start_date": start_date,
+            "end_date": end_date,
+            "days": days,
+            "key_event": key_event,
+            "landing_pages": enriched,
+            "category_counts": category_counts,
+            "available_key_events": sorted(available_key_events),
+            "session_key_event_rate_definition": LANDING_PAGE_SESSION_KEY_EVENT_RATE_DEFINITION,
+            "key_events_count_definition": LANDING_PAGE_KEY_EVENTS_COUNT_DEFINITION,
+        }
         return repository.upsert_snapshot(
-            db, property_id=property_id, kind="landing_page", date=end_date, payload=payload, fetched_by=user.id,
+            db, property_id=property_id, kind=kind, date=end_date, payload=payload, fetched_by=user.id,
         )
+
+    # ─── 第 5 波：到達頁分類規則 CRUD ──────────────────────────────────
+    @staticmethod
+    def list_landing_page_rules(db, *, property_id: str):
+        return repository.list_landing_page_rules(db, property_id=property_id)
+
+    @staticmethod
+    def upsert_landing_page_rule(
+        db, *, rule_id: str | None, user_id: str, property_id: str,
+        category: str, match_type: str, pattern: str, priority: int,
+    ):
+        if rule_id:
+            row = repository.get_landing_page_rule(db, rule_id)
+            if not row:
+                return None
+            row.property_id = property_id
+            row.category = category
+            row.match_type = match_type
+            row.pattern = pattern
+            row.priority = priority
+            row.updated_at = datetime.utcnow()
+            db.add(row)
+            return row
+        return repository.create_landing_page_rule(
+            db,
+            property_id=property_id,
+            category=category,
+            match_type=match_type,
+            pattern=pattern,
+            priority=priority,
+            created_by=user_id,
+        )
+
+    @staticmethod
+    def delete_landing_page_rule(db, *, rule_id: str) -> bool:
+        return repository.delete_landing_page_rule(db, rule_id)
 
     # ─── 第 2 波：商品分析（3.4 節） ───────────────────────────────────
     @staticmethod

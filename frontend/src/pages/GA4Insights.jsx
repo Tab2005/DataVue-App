@@ -21,6 +21,7 @@ import { ga4Service } from '../services/ga4Service';
 import { ga4InsightsService } from '../services/ga4InsightsService';
 import { aiService } from '../services/aiService';
 import { lineService } from '../services/lineService';
+import { useModuleAccess, usePermission, useSelectedTeamId } from '../hooks/usePermission';
 
 // ── Chart token layer（沿用 ContributionAnalysis.jsx 已驗證通過 dataviz
 //    六項檢查的同一組categorical色票，維持全站視覺一致；docs/22 第 2 波） ──
@@ -143,6 +144,9 @@ const badgeStyle = (kind) => {
         ahead: { bg: 'rgba(25, 158, 112, 0.16)', fg: '#86efac', border: 'rgba(25, 158, 112, 0.35)' },
         on_track: { bg: 'rgba(57, 135, 229, 0.16)', fg: '#93c5fd', border: 'rgba(57, 135, 229, 0.35)' },
         behind: { bg: 'rgba(248, 113, 113, 0.16)', fg: '#fca5a5', border: 'rgba(248, 113, 113, 0.35)' },
+        product: { bg: 'rgba(57, 135, 229, 0.16)', fg: '#93c5fd', border: 'rgba(57, 135, 229, 0.35)' },
+        article: { bg: 'rgba(201, 133, 0, 0.18)', fg: '#fbbf24', border: 'rgba(201, 133, 0, 0.4)' },
+        functional: { bg: 'rgba(25, 158, 112, 0.16)', fg: '#86efac', border: 'rgba(25, 158, 112, 0.35)' },
     }[kind] || { bg: 'rgba(107, 114, 128, 0.1)', fg: '#9ca3af', border: 'rgba(107, 114, 128, 0.25)' };
     return {
         display: 'inline-block',
@@ -222,6 +226,19 @@ const currentQuarterKey = () => {
     const now = new Date();
     return `${now.getFullYear()}-Q${Math.floor(now.getMonth() / 3) + 1}`;
 };
+
+// 第 5 波：到達頁分類（4 類固定枚舉，對映後端 LANDING_PAGE_CATEGORIES）
+const LANDING_CATEGORY_ORDER = ['product', 'article', 'functional', 'other'];
+const LANDING_CATEGORY_LABELS = {
+    product: { en: 'Product', zh: '商品' },
+    article: { en: 'Article', zh: '文章' },
+    functional: { en: 'Functional', zh: '功能' },
+    other: { en: 'Other', zh: '其他' },
+};
+const LANDING_MATCH_TYPE_OPTIONS = [
+    { value: 'prefix', en: 'Prefix', zh: '前綴' },
+    { value: 'contains', en: 'Contains', zh: '包含' },
+];
 
 const DASHBOARD_METRICS = ['sessions', 'conversions', 'purchaseRevenue'];
 
@@ -467,6 +484,17 @@ const GA4Insights = () => {
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState('');
 
+    // 到達頁分類規則的寫入操作依 ga4:insights:manage_alerts 權限顯示（第 5 波
+    // 3 點）。個人工作區沒有團隊角色，PermissionService.check_permission 對
+    // 細項權限一律回 false（見 modules/ga4/dependencies.py 的個人工作區修復
+    // 說明）；後端 PUT/DELETE 端點在個人工作區改退回模組存取即可通過，前端
+    // 若直接用 usePermission 判斷會在個人工作區把本來能用的功能誤藏起來，
+    // 所以這裡比照後端同一套複合邏輯：有選團隊才看細項權限，沒有就看模組存取。
+    const selectedTeamId = useSelectedTeamId();
+    const { hasAccess: ga4ModuleAccess } = useModuleAccess('ga4');
+    const { hasPermission: ga4ManageAlertsPermission } = usePermission('ga4:insights:manage_alerts');
+    const canManageLandingPageRules = selectedTeamId ? ga4ManageAlertsPermission : ga4ModuleAccess;
+
     // 第 1 波：告警規則 / 事件歷史
     const [rules, setRules] = useState([]);
     const [events, setEvents] = useState([]);
@@ -497,11 +525,19 @@ const GA4Insights = () => {
     const [channelsLoading, setChannelsLoading] = useState(false);
     const [channelsError, setChannelsError] = useState('');
 
-    // 第 2 波：到達頁
+    // 第 2/5 波：到達頁
     const [landingDays, setLandingDays] = useState(7);
     const [landingSnapshot, setLandingSnapshot] = useState(null);
     const [landingLoading, setLandingLoading] = useState(false);
     const [landingError, setLandingError] = useState('');
+    const [landingCategoryFilter, setLandingCategoryFilter] = useState('all');
+    const [landingKeyEvent, setLandingKeyEvent] = useState('');
+    const [landingRules, setLandingRules] = useState(null);
+    const [landingRulesOpen, setLandingRulesOpen] = useState(false);
+    const [landingRulesLoading, setLandingRulesLoading] = useState(false);
+    const [landingRulesError, setLandingRulesError] = useState('');
+    const [landingRuleSaving, setLandingRuleSaving] = useState(false);
+    const [landingRuleForm, setLandingRuleForm] = useState({ category: 'product', match_type: 'prefix', pattern: '', priority: 0 });
 
     // 第 2 波：商品
     const [itemsDays, setItemsDays] = useState(7);
@@ -592,16 +628,64 @@ const GA4Insights = () => {
         }
     };
 
-    const loadLandingPages = async (pid, days) => {
+    const loadLandingPages = async (pid, days, keyEvent = landingKeyEvent) => {
         if (!pid) return;
         setLandingLoading(true);
         setLandingError('');
         try {
-            setLandingSnapshot(await ga4InsightsService.getLandingPages(pid, days));
+            setLandingSnapshot(await ga4InsightsService.getLandingPages(pid, days, keyEvent || null));
         } catch (err) {
             setLandingError(err.message || t('Failed to load landing pages.', '載入到達頁分析失敗。'));
         } finally {
             setLandingLoading(false);
+        }
+    };
+
+    const loadLandingPageRules = async (pid) => {
+        if (!pid) return;
+        setLandingRulesLoading(true);
+        setLandingRulesError('');
+        try {
+            const res = await ga4InsightsService.listLandingPageRules(pid);
+            setLandingRules(res.rules || []);
+        } catch (err) {
+            setLandingRulesError(err.message || t('Failed to load landing page rules.', '載入到達頁分類規則失敗。'));
+        } finally {
+            setLandingRulesLoading(false);
+        }
+    };
+
+    const handleCreateLandingPageRule = async (event) => {
+        event.preventDefault();
+        if (!propertyId || !landingRuleForm.pattern.trim()) return;
+        setLandingRuleSaving(true);
+        setLandingRulesError('');
+        try {
+            await ga4InsightsService.upsertLandingPageRule({
+                property_id: propertyId,
+                category: landingRuleForm.category,
+                match_type: landingRuleForm.match_type,
+                pattern: landingRuleForm.pattern.trim(),
+                priority: Number(landingRuleForm.priority) || 0,
+            });
+            setLandingRuleForm((prev) => ({ ...prev, pattern: '' }));
+            await loadLandingPageRules(propertyId);
+            await loadLandingPages(propertyId, landingDays);
+        } catch (err) {
+            setLandingRulesError(err.message || t('Failed to save rule.', '儲存規則失敗。'));
+        } finally {
+            setLandingRuleSaving(false);
+        }
+    };
+
+    const handleDeleteLandingPageRule = async (ruleId) => {
+        if (!window.confirm(t('Delete this classification rule?', '要刪除此分類規則嗎？'))) return;
+        try {
+            await ga4InsightsService.deleteLandingPageRule(ruleId);
+            await loadLandingPageRules(propertyId);
+            await loadLandingPages(propertyId, landingDays);
+        } catch (err) {
+            setLandingRulesError(err.message || t('Failed to delete rule.', '刪除規則失敗。'));
         }
     };
 
@@ -701,6 +785,7 @@ const GA4Insights = () => {
         if (activeTab === 'overview' && !dashboard) loadDashboard(propertyId);
         if (activeTab === 'channels' && !channelsSnapshot) loadChannels(propertyId, channelsDays);
         if (activeTab === 'landing' && !landingSnapshot) loadLandingPages(propertyId, landingDays);
+        if (activeTab === 'landing' && !landingRules) loadLandingPageRules(propertyId);
         if (activeTab === 'items' && !itemsSnapshot) loadItems(propertyId, itemsDays);
         if (activeTab === 'kpi' && !kpiTargets) loadKpiTargets(propertyId);
         // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -713,6 +798,9 @@ const GA4Insights = () => {
         setRealtime(null);
         setChannelsSnapshot(null);
         setLandingSnapshot(null);
+        setLandingRules(null);
+        setLandingCategoryFilter('all');
+        setLandingKeyEvent('');
         setItemsSnapshot(null);
         setKpiTargets(null);
         setRefreshNotice('');
@@ -1064,40 +1152,182 @@ const GA4Insights = () => {
                         {landingLoading && !landingSnapshot ? (
                             emptyState(t('Loading landing pages…', '載入到達頁資料中…'))
                         ) : landingSnapshot?.payload?.landing_pages?.length ? (
-                            <div style={{ overflowX: 'auto' }}>
-                                <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.85rem' }}>
-                                    <thead>
-                                        <tr style={{ color: 'var(--text-secondary)', textAlign: 'left' }}>
-                                            <th style={{ padding: '6px' }}>{t('Page', '頁面')}</th>
-                                            <th style={{ padding: '6px' }}>{t('Sessions', '工作階段')}</th>
-                                            <th style={{ padding: '6px' }}>{t('Conversion rate', '轉換率')}</th>
-                                            <th style={{ padding: '6px' }}>{t('Bounce rate', '跳出率')}</th>
-                                            <th style={{ padding: '6px' }}>{t('Flag', '標記')}</th>
-                                        </tr>
-                                    </thead>
-                                    <tbody>
-                                        {[...landingSnapshot.payload.landing_pages]
-                                            .sort((a, b) => (b.sessions || 0) - (a.sessions || 0))
-                                            .map((row) => (
-                                                <tr key={row.landingPage} style={{ borderTop: '1px solid var(--glass-border)' }}>
-                                                    <td style={{ padding: '6px', color: 'var(--text-primary)', maxWidth: '280px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={row.landingPage}>
-                                                        {row.landingPage}
-                                                    </td>
-                                                    <td style={{ padding: '6px', color: 'var(--text-secondary)' }}>{fmtNumber(row.sessions)}</td>
-                                                    <td style={{ padding: '6px', color: 'var(--text-secondary)' }}>{fmtPct(row.conversion_rate)}</td>
-                                                    <td style={{ padding: '6px', color: 'var(--text-secondary)' }}>{fmtPct(row.bounceRate)}</td>
-                                                    <td style={{ padding: '6px' }}>
-                                                        {row.is_high_traffic_low_conversion && (
-                                                            <span style={badgeStyle('flagged')}>{t('High traffic, low conversion', '高流量低轉換')}</span>
-                                                        )}
-                                                    </td>
-                                                </tr>
-                                            ))}
-                                    </tbody>
-                                </table>
-                            </div>
+                            <>
+                                <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', marginBottom: '10px', alignItems: 'center' }}>
+                                    {['all', ...LANDING_CATEGORY_ORDER].map((cat) => {
+                                        const count = cat === 'all'
+                                            ? landingSnapshot.payload.landing_pages.length
+                                            : (landingSnapshot.payload.category_counts?.[cat] || 0);
+                                        const label = cat === 'all'
+                                            ? t('All', '全部')
+                                            : tr(language, LANDING_CATEGORY_LABELS[cat].en, LANDING_CATEGORY_LABELS[cat].zh);
+                                        return (
+                                            <button
+                                                key={cat}
+                                                type="button"
+                                                style={dayButtonStyle(landingCategoryFilter === cat)}
+                                                onClick={() => setLandingCategoryFilter(cat)}
+                                            >
+                                                {label} ({count})
+                                            </button>
+                                        );
+                                    })}
+                                </div>
+                                <div style={{ display: 'flex', gap: '8px', alignItems: 'center', marginBottom: '12px', flexWrap: 'wrap' }}>
+                                    <select
+                                        value={landingKeyEvent}
+                                        onChange={(event) => {
+                                            const next = event.target.value;
+                                            setLandingKeyEvent(next);
+                                            loadLandingPages(propertyId, landingDays, next);
+                                        }}
+                                        style={{ ...inputStyle, width: 'auto', padding: '8px 10px' }}
+                                    >
+                                        <option value="">{t('All key events', '全部關鍵事件')}</option>
+                                        {(landingSnapshot.payload.available_key_events || []).map((event) => (
+                                            <option key={event} value={event}>{event}</option>
+                                        ))}
+                                    </select>
+                                    <span style={{ color: 'var(--text-tertiary)', fontSize: '0.76rem' }} title={t('Only events marked as "key events" in GA4 are counted.', '僅統計已在 GA4 標為關鍵事件的事件。')}>
+                                        ⓘ {t('Only events marked as key events in GA4', '僅統計已在 GA4 標為關鍵事件的事件')}
+                                    </span>
+                                </div>
+                                <div style={{ overflowX: 'auto' }}>
+                                    <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.85rem' }}>
+                                        <thead>
+                                            <tr style={{ color: 'var(--text-secondary)', textAlign: 'left' }}>
+                                                <th style={{ padding: '6px' }}>{t('Page', '頁面')}</th>
+                                                <th style={{ padding: '6px' }}>{t('Category', '分類')}</th>
+                                                <th style={{ padding: '6px' }}>{t('Sessions', '工作階段')}</th>
+                                                <th
+                                                    style={{ padding: '6px', cursor: 'help' }}
+                                                    title={landingSnapshot.payload.key_events_count_definition || ''}
+                                                >
+                                                    {t('Key events', '轉換次數')} ⓘ
+                                                </th>
+                                                <th
+                                                    style={{ padding: '6px', cursor: 'help' }}
+                                                    title={landingSnapshot.payload.session_key_event_rate_definition || ''}
+                                                >
+                                                    {t('Conversion rate', '轉換率')} ⓘ
+                                                </th>
+                                                <th style={{ padding: '6px' }}>{t('Bounce rate', '跳出率')}</th>
+                                                <th style={{ padding: '6px' }}>{t('Flag', '標記')}</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody>
+                                            {landingSnapshot.payload.landing_pages
+                                                .filter((row) => landingCategoryFilter === 'all' || row.category === landingCategoryFilter)
+                                                .sort((a, b) => (b.sessions || 0) - (a.sessions || 0))
+                                                .map((row) => (
+                                                    <tr key={row.landingPage} style={{ borderTop: '1px solid var(--glass-border)' }}>
+                                                        <td style={{ padding: '6px', color: 'var(--text-primary)', maxWidth: '260px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={row.landingPage}>
+                                                            {row.landingPage}
+                                                        </td>
+                                                        <td style={{ padding: '6px' }}>
+                                                            <span style={badgeStyle(row.category)}>
+                                                                {tr(language, LANDING_CATEGORY_LABELS[row.category]?.en, LANDING_CATEGORY_LABELS[row.category]?.zh) || row.category}
+                                                            </span>
+                                                        </td>
+                                                        <td style={{ padding: '6px', color: 'var(--text-secondary)' }}>{fmtNumber(row.sessions)}</td>
+                                                        <td style={{ padding: '6px', color: 'var(--text-secondary)' }}>{fmtNumber(row.conversions)}</td>
+                                                        <td style={{ padding: '6px', color: 'var(--text-secondary)' }}>{fmtPct(row.session_key_event_rate)}</td>
+                                                        <td style={{ padding: '6px', color: 'var(--text-secondary)' }}>{fmtPct(row.bounceRate)}</td>
+                                                        <td style={{ padding: '6px' }}>
+                                                            {row.is_high_traffic_low_conversion && (
+                                                                <span style={badgeStyle('flagged')}>{t('High traffic, low conversion', '高流量低轉換')}</span>
+                                                            )}
+                                                        </td>
+                                                    </tr>
+                                                ))}
+                                        </tbody>
+                                    </table>
+                                </div>
+                            </>
                         ) : (
                             emptyState(t('No landing page data.', '暫無到達頁資料。'))
+                        )}
+                    </section>
+
+                    <section style={baseCardStyle}>
+                        <button
+                            type="button"
+                            onClick={() => setLandingRulesOpen((prev) => !prev)}
+                            style={{ ...secondaryButtonStyle, width: '100%', textAlign: 'left', display: 'flex', justifyContent: 'space-between' }}
+                        >
+                            <span>{t('Classification rules', '分類規則')}</span>
+                            <span>{landingRulesOpen ? '▲' : '▼'}</span>
+                        </button>
+                        {landingRulesOpen && (
+                            <div style={{ marginTop: '14px', display: 'grid', gap: '14px' }}>
+                                {landingRulesError && <div style={{ color: '#fca5a5', fontSize: '0.85rem' }}>{landingRulesError}</div>}
+                                {landingRulesLoading && !landingRules ? (
+                                    emptyState(t('Loading rules…', '載入規則中…'))
+                                ) : landingRules && landingRules.length === 0 ? (
+                                    <div style={{ color: 'var(--text-tertiary)', fontSize: '0.82rem' }}>
+                                        {t('No custom rules yet — using built-in default keyword rules.', '目前使用內建預設規則。')}
+                                    </div>
+                                ) : (
+                                    <div style={{ display: 'grid', gap: '8px' }}>
+                                        {(landingRules || []).map((rule) => (
+                                            <div key={rule.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', border: '1px solid var(--glass-border)', borderRadius: '10px', padding: '10px 12px', gap: '8px', flexWrap: 'wrap' }}>
+                                                <div style={{ display: 'flex', gap: '10px', alignItems: 'center', flexWrap: 'wrap' }}>
+                                                    <span style={badgeStyle(rule.category)}>
+                                                        {tr(language, LANDING_CATEGORY_LABELS[rule.category]?.en, LANDING_CATEGORY_LABELS[rule.category]?.zh)}
+                                                    </span>
+                                                    <span style={{ color: 'var(--text-secondary)', fontSize: '0.82rem' }}>
+                                                        {tr(language, LANDING_MATCH_TYPE_OPTIONS.find((m) => m.value === rule.match_type)?.en, LANDING_MATCH_TYPE_OPTIONS.find((m) => m.value === rule.match_type)?.zh)}
+                                                    </span>
+                                                    <code style={{ color: 'var(--text-primary)', fontSize: '0.82rem' }}>{rule.pattern}</code>
+                                                    <span style={{ color: 'var(--text-tertiary)', fontSize: '0.76rem' }}>{t('priority', '優先序')} {rule.priority}</span>
+                                                </div>
+                                                {canManageLandingPageRules && (
+                                                    <button type="button" style={{ ...secondaryButtonStyle, padding: '4px 10px', fontSize: '0.78rem' }} onClick={() => handleDeleteLandingPageRule(rule.id)}>
+                                                        {t('Delete', '刪除')}
+                                                    </button>
+                                                )}
+                                            </div>
+                                        ))}
+                                    </div>
+                                )}
+
+                                {canManageLandingPageRules ? (
+                                    <form onSubmit={handleCreateLandingPageRule} style={{ display: 'grid', gap: '10px', gridTemplateColumns: isMobile ? '1fr' : 'repeat(5, minmax(0, 1fr))' }}>
+                                        <select value={landingRuleForm.category} onChange={(event) => setLandingRuleForm((prev) => ({ ...prev, category: event.target.value }))} style={inputStyle}>
+                                            {LANDING_CATEGORY_ORDER.map((cat) => (
+                                                <option key={cat} value={cat}>{tr(language, LANDING_CATEGORY_LABELS[cat].en, LANDING_CATEGORY_LABELS[cat].zh)}</option>
+                                            ))}
+                                        </select>
+                                        <select value={landingRuleForm.match_type} onChange={(event) => setLandingRuleForm((prev) => ({ ...prev, match_type: event.target.value }))} style={inputStyle}>
+                                            {LANDING_MATCH_TYPE_OPTIONS.map((option) => (
+                                                <option key={option.value} value={option.value}>{t(option.en, option.zh)}</option>
+                                            ))}
+                                        </select>
+                                        <input
+                                            type="text"
+                                            value={landingRuleForm.pattern}
+                                            onChange={(event) => setLandingRuleForm((prev) => ({ ...prev, pattern: event.target.value }))}
+                                            placeholder={t('Pattern (e.g. /product)', '比對字串（例：/product）')}
+                                            style={inputStyle}
+                                        />
+                                        <input
+                                            type="number"
+                                            min="0"
+                                            value={landingRuleForm.priority}
+                                            onChange={(event) => setLandingRuleForm((prev) => ({ ...prev, priority: event.target.value }))}
+                                            placeholder={t('Priority', '優先序')}
+                                            style={inputStyle}
+                                        />
+                                        <button type="submit" style={buttonStyle} disabled={landingRuleSaving || !landingRuleForm.pattern.trim()}>
+                                            {landingRuleSaving ? t('Saving…', '儲存中…') : t('Add rule', '新增規則')}
+                                        </button>
+                                    </form>
+                                ) : (
+                                    <div style={{ color: 'var(--text-tertiary)', fontSize: '0.78rem' }}>
+                                        {t('You do not have permission to manage classification rules.', '您沒有管理分類規則的權限。')}
+                                    </div>
+                                )}
+                            </div>
                         )}
                     </section>
 
@@ -1106,10 +1336,14 @@ const GA4Insights = () => {
                         snapshot={landingSnapshot}
                         kind="landing_page"
                         contextLabel={t(
-                            `Property ${propertyId}; period ${landingSnapshot?.payload?.start_date || ''} ~ ${landingSnapshot?.payload?.end_date || ''}`,
-                            `屬性 ${propertyId}；期間 ${landingSnapshot?.payload?.start_date || ''} ~ ${landingSnapshot?.payload?.end_date || ''}`
+                            `Property ${propertyId}; key event ${landingSnapshot?.payload?.key_event || 'all'}; period ${landingSnapshot?.payload?.start_date || ''} ~ ${landingSnapshot?.payload?.end_date || ''}`,
+                            `屬性 ${propertyId}；關鍵事件 ${landingSnapshot?.payload?.key_event || '全部'}；期間 ${landingSnapshot?.payload?.start_date || ''} ~ ${landingSnapshot?.payload?.end_date || ''}`
                         )}
-                        buildPayload={() => ({ landing_pages: landingSnapshot?.payload?.landing_pages || [] })}
+                        buildPayload={() => ({
+                            key_event: landingSnapshot?.payload?.key_event || null,
+                            landing_pages: landingSnapshot?.payload?.landing_pages || [],
+                            category_counts: landingSnapshot?.payload?.category_counts || {},
+                        })}
                     />
                 </>
             )}

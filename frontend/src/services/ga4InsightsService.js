@@ -34,8 +34,11 @@ export const ga4InsightsService = {
             `/api/ga4/insights/channels?property_id=${encodeURIComponent(propertyId)}&days=${days}&dimension=${encodeURIComponent(dimension)}`
         ),
 
-    getLandingPages: async (propertyId, days = 7) =>
-        apiClient.get(`/api/ga4/insights/landing-pages?property_id=${encodeURIComponent(propertyId)}&days=${days}`),
+    getLandingPages: async (propertyId, days = 7, keyEvent = null) =>
+        apiClient.get(
+            `/api/ga4/insights/landing-pages?property_id=${encodeURIComponent(propertyId)}&days=${days}`
+            + (keyEvent ? `&key_event=${encodeURIComponent(keyEvent)}` : '')
+        ),
 
     getItems: async (propertyId, days = 7) =>
         apiClient.get(`/api/ga4/insights/items?property_id=${encodeURIComponent(propertyId)}&days=${days}`),
@@ -51,4 +54,12 @@ export const ga4InsightsService = {
     upsertKpiTarget: async (payload) => apiClient.put('/api/ga4/insights/kpi-targets', payload),
 
     deleteKpiTarget: async (targetId) => apiClient.delete(`/api/ga4/insights/kpi-targets/${targetId}`),
+
+    // ─── 第 5 波：到達頁分類規則（追加） ─────────────────────────────
+    listLandingPageRules: async (propertyId) =>
+        apiClient.get(`/api/ga4/insights/landing-page-rules?property_id=${encodeURIComponent(propertyId)}`),
+
+    upsertLandingPageRule: async (payload) => apiClient.put('/api/ga4/insights/landing-page-rules', payload),
+
+    deleteLandingPageRule: async (ruleId) => apiClient.delete(`/api/ga4/insights/landing-page-rules/${ruleId}`),
 };

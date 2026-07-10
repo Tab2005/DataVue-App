@@ -36,6 +36,7 @@ from database.models.ga4_insights import (
     GA4AnomalyRule,
     GA4AnomalyEvent,
     GA4KpiTarget,
+    GA4LandingPageRule,
 )
 
 __all__ = [
@@ -64,4 +65,5 @@ __all__ = [
     "GA4AnomalyRule",
     "GA4AnomalyEvent",
     "GA4KpiTarget",
+    "GA4LandingPageRule",
 ]

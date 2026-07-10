@@ -16,7 +16,9 @@ class GA4InsightsSnapshot(Base):
 
     id = Column(String, primary_key=True, default=lambda: f"gis_{uuid.uuid4().hex[:12]}")
     property_id = Column(String(50), nullable=False, index=True)
-    kind = Column(String(30), nullable=False)
+    # String(80)：第 5 波「landing_page:{key_event}」kind 後綴可能是長事件名，
+    # String(30) 裝不下，2026-07-10 migration 放寬（無損 ALTER）。
+    kind = Column(String(80), nullable=False)
     date = Column(String(10), nullable=False)
     payload = Column(JSON, nullable=False, default=dict)
     ai_summary = Column(Text, nullable=True)
@@ -63,6 +65,24 @@ class GA4KpiTarget(Base):
     period_type = Column(String(10), nullable=False)  # "month" | "quarter"
     period_key = Column(String(10), nullable=False)  # "2026-07" | "2026-Q3"
     target_value = Column(Float, nullable=False)
+    created_by = Column(String, ForeignKey("users.id"), nullable=False)
+    created_at = Column(DateTime, nullable=False, server_default=text("CURRENT_TIMESTAMP"))
+    updated_at = Column(DateTime, nullable=False, server_default=text("CURRENT_TIMESTAMP"))
+
+    creator = relationship("User")
+
+
+class GA4LandingPageRule(Base):
+    """到達頁分類規則（docs/22 第 5 波）：依 `landingPage` 路徑比對，priority 小者先比。"""
+
+    __tablename__ = "ga4_landing_page_rules"
+
+    id = Column(String, primary_key=True, default=lambda: f"glr_{uuid.uuid4().hex[:12]}")
+    property_id = Column(String(50), nullable=False, index=True)
+    category = Column(String(20), nullable=False)  # product | article | functional | other
+    match_type = Column(String(10), nullable=False)  # prefix | contains（不開放 regex，避免 ReDoS）
+    pattern = Column(String(200), nullable=False)
+    priority = Column(Integer, nullable=False, default=0)
     created_by = Column(String, ForeignKey("users.id"), nullable=False)
     created_at = Column(DateTime, nullable=False, server_default=text("CURRENT_TIMESTAMP"))
     updated_at = Column(DateTime, nullable=False, server_default=text("CURRENT_TIMESTAMP"))
