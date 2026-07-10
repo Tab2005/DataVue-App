@@ -63,10 +63,10 @@ export const fetchEffectiveScoringStatus = async () => {
 
 // 換模型前先查：這個 model id 在 OpenRouter 是否真的存在、支不支援評分需要的圖片
 // 輸入、實際 context/輸出上限多大（2026-07-10 事故後新增，見 docs）。
+// apiClient 是自包的 fetch wrapper，不支援 `{ params }`（會被完全忽略、query string
+// 不會被組進網址），要自己組進 path。
 export const validateCandidateModel = async (modelId) => {
-    return apiClient.get('/api/meta-andromeda/monitoring/model-registry/validate-candidate', {
-        params: { model_id: modelId },
-    });
+    return apiClient.get(`/api/meta-andromeda/monitoring/model-registry/validate-candidate?model_id=${encodeURIComponent(modelId)}`);
 };
 
 export default {
