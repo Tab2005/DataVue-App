@@ -8,12 +8,14 @@ import os
 import smtplib
 from datetime import datetime, timedelta
 from email.message import EmailMessage
+from statistics import median
 
 from database import User
 from ga4_service import GA4Service
 from services.line_service import send_line_push_message
 
-from .anomaly import evaluate_anomaly
+from .anomaly import build_expected_range, evaluate_anomaly
+from .client import GA4Client
 from .repository import repository
 
 logger = logging.getLogger(__name__)
@@ -29,6 +31,29 @@ SUPPORTED_METRICS = {
     "sessions": "sessions",
     "purchase_revenue": "purchaseRevenue",
 }
+
+# 第 2 波：當日儀表板／渠道／到達頁／商品（docs/22 3.2-3.4 節）
+DASHBOARD_KIND = "intraday_dashboard"
+DASHBOARD_METRICS = ["sessions", "conversions", "purchaseRevenue"]
+DASHBOARD_REFRESH_COOLDOWN_MINUTES = 10
+# 沿用第 1 波 evaluate_rule 已用的 "intraday_hourly" kind 是單指標的告警記帳快照，
+# 與本節多指標＋渠道拆解的儀表板快照 schema 不同，故另立 DASHBOARD_KIND 避免
+# upsert_snapshot 的 (property_id, kind, date) 唯一鍵互相覆寫。
+REALTIME_WINDOW_MINUTES = 30
+CHANNEL_METRIC = "conversions"
+
+
+def _percentile(sorted_values: list[float], fraction: float) -> float:
+    """線性插值百分位數（同 numpy 預設方法），輸入須已排序。"""
+    if not sorted_values:
+        return 0.0
+    if len(sorted_values) == 1:
+        return sorted_values[0]
+    idx = fraction * (len(sorted_values) - 1)
+    lower = int(idx)
+    upper = min(lower + 1, len(sorted_values) - 1)
+    weight = idx - lower
+    return sorted_values[lower] + (sorted_values[upper] - sorted_values[lower]) * weight
 
 
 class GA4InsightsService:
@@ -246,3 +271,301 @@ class GA4InsightsService:
             notified_channels=notified_channels,
         )
         return {"status": "alerted", "severity": result["severity"], "direction": result["direction"]}
+
+    # ─── 第 2 波：當日儀表板（3.2 節） ──────────────────────────────
+    @staticmethod
+    def _fetch_intraday_dashboard_payload(*, user: User, property_id: str, db, now_local: datetime | None = None) -> dict:
+        now_local = now_local or datetime.utcnow() + timedelta(hours=8)
+        today = now_local.date().isoformat()
+        current_hour = now_local.hour
+
+        data, error = GA4Service.get_analytics(
+            user=user,
+            property_id=property_id,
+            start_date=today,
+            end_date=today,
+            metrics=DASHBOARD_METRICS,
+            dimensions=["hour", "sessionDefaultChannelGroup"],
+            db=db,
+        )
+        if error:
+            raise RuntimeError(error)
+        rows = (data or {}).get("rows", [])
+
+        hourly_totals: dict[int, dict[str, float]] = {}
+        cumulative_totals = {metric: 0.0 for metric in DASHBOARD_METRICS}
+        for row in rows:
+            hour_value = int(row.get("hour", 0))
+            bucket = hourly_totals.setdefault(hour_value, {metric: 0.0 for metric in DASHBOARD_METRICS})
+            for metric in DASHBOARD_METRICS:
+                value = float(row.get(metric, 0) or 0)
+                bucket[metric] += value
+                if hour_value <= current_hour:
+                    cumulative_totals[metric] += value
+
+        hourly_totals_list = [
+            {"hour": f"{hour:02d}", **values} for hour, values in sorted(hourly_totals.items())
+        ]
+
+        baseline: dict[str, dict | None] = {}
+        is_anomaly: dict[str, bool] = {}
+        for metric in DASHBOARD_METRICS:
+            samples: list[float] = []
+            for sample_date in GA4InsightsService._historical_dates(now_local):
+                try:
+                    sample_total, _ = GA4InsightsService._fetch_metric_total(
+                        user=user,
+                        property_id=property_id,
+                        date_value=sample_date,
+                        api_metric=metric,
+                        db=db,
+                        by_hour=True,
+                        current_hour=current_hour,
+                    )
+                except Exception:
+                    logger.warning("[GA4Insights] dashboard baseline sample failed %s %s", property_id, sample_date)
+                    continue
+                samples.append(sample_total)
+            expected = build_expected_range(samples, "medium")
+            baseline[metric] = expected
+            observed = cumulative_totals[metric]
+            is_anomaly[metric] = bool(expected and (observed < expected["low"] or observed > expected["high"]))
+
+        return {
+            "date": today,
+            "current_hour": current_hour,
+            "channel_breakdown": rows,
+            "hourly_totals": hourly_totals_list,
+            "cumulative_totals": cumulative_totals,
+            "baseline": baseline,
+            "is_anomaly": is_anomaly,
+        }
+
+    @staticmethod
+    def _refresh_dashboard_snapshot(db, *, user: User, property_id: str):
+        payload = GA4InsightsService._fetch_intraday_dashboard_payload(user=user, property_id=property_id, db=db)
+        return repository.upsert_snapshot(
+            db,
+            property_id=property_id,
+            kind=DASHBOARD_KIND,
+            date=payload["date"],
+            payload=payload,
+            fetched_by=user.id,
+        )
+
+    @staticmethod
+    def get_dashboard(db, *, user: User, property_id: str):
+        """讀快取；首次造訪（job 尚未跑過）時同步抓一次做 bootstrap（3.2 節）。"""
+        today = (datetime.utcnow() + timedelta(hours=8)).date().isoformat()
+        snapshot = repository.get_latest_snapshot(db, property_id=property_id, kind=DASHBOARD_KIND, date=today)
+        if not snapshot:
+            snapshot = GA4InsightsService._refresh_dashboard_snapshot(db, user=user, property_id=property_id)
+        return snapshot
+
+    @staticmethod
+    def refresh_dashboard(db, *, user: User, property_id: str):
+        """手動刷新，每 property 10 分鐘一次的 rate limit（3.2 節）。"""
+        today = (datetime.utcnow() + timedelta(hours=8)).date().isoformat()
+        existing = repository.get_latest_snapshot(db, property_id=property_id, kind=DASHBOARD_KIND, date=today)
+        if existing:
+            elapsed = datetime.utcnow() - existing.fetched_at
+            if elapsed < timedelta(minutes=DASHBOARD_REFRESH_COOLDOWN_MINUTES):
+                return existing, False
+        snapshot = GA4InsightsService._refresh_dashboard_snapshot(db, user=user, property_id=property_id)
+        return snapshot, True
+
+    # ─── 第 2 波：Realtime 心跳（3.2 節，即打即查、不進快取） ──────────
+    @staticmethod
+    def get_realtime(*, user: User, property_id: str, db) -> dict:
+        creds = GA4Client.get_credentials(user, db)
+        if not creds:
+            raise RuntimeError("No GA4 credentials found")
+
+        total_response = GA4Client.run_realtime_report(creds, property_id, [], ["activeUsers", "eventCount"])
+        total_active_users = 0
+        total_events = 0
+        if total_response.rows:
+            total_active_users = int(total_response.rows[0].metric_values[0].value or 0)
+            total_events = int(total_response.rows[0].metric_values[1].value or 0)
+
+        breakdown_response = GA4Client.run_realtime_report(
+            creds, property_id, ["unifiedScreenName"], ["activeUsers"], limit=10
+        )
+        by_screen = [
+            {
+                "screen_name": row.dimension_values[0].value or "(not set)",
+                "active_users": int(row.metric_values[0].value or 0),
+            }
+            for row in breakdown_response.rows
+        ]
+
+        return {
+            "window_minutes": REALTIME_WINDOW_MINUTES,
+            "active_users": total_active_users,
+            "event_count": total_events,
+            "by_screen": by_screen,
+        }
+
+    # ─── 共用：daily snapshot 的期間計算（昨日往前 N 天，避免當日資料未完整） ──
+    @staticmethod
+    def _trailing_period(days: int, *, now_local: datetime | None = None) -> tuple[str, str]:
+        now_local = now_local or datetime.utcnow() + timedelta(hours=8)
+        end_date = now_local.date() - timedelta(days=1)
+        start_date = end_date - timedelta(days=max(days, 1) - 1)
+        return start_date.isoformat(), end_date.isoformat()
+
+    # ─── 第 2 波：渠道主攻/助攻對照（3.3 節） ──────────────────────────
+    @staticmethod
+    def get_channels(db, *, user: User, property_id: str, days: int = 7):
+        start_date, end_date = GA4InsightsService._trailing_period(days)
+
+        session_data, error = GA4Service.get_analytics(
+            user=user, property_id=property_id, start_date=start_date, end_date=end_date,
+            metrics=[CHANNEL_METRIC], dimensions=["sessionDefaultChannelGroup"], db=db,
+        )
+        if error:
+            raise RuntimeError(error)
+        first_user_data, error = GA4Service.get_analytics(
+            user=user, property_id=property_id, start_date=start_date, end_date=end_date,
+            metrics=[CHANNEL_METRIC], dimensions=["firstUserDefaultChannelGroup"], db=db,
+        )
+        if error:
+            raise RuntimeError(error)
+
+        session_by_channel = {
+            row["sessionDefaultChannelGroup"]: row.get(CHANNEL_METRIC, 0)
+            for row in (session_data or {}).get("rows", [])
+        }
+        first_user_by_channel = {
+            row["firstUserDefaultChannelGroup"]: row.get(CHANNEL_METRIC, 0)
+            for row in (first_user_data or {}).get("rows", [])
+        }
+
+        channels = sorted(set(session_by_channel) | set(first_user_by_channel))
+        rows = []
+        for channel in channels:
+            closing = session_by_channel.get(channel, 0)
+            assisting = first_user_by_channel.get(channel, 0)
+            if closing > 0:
+                ratio = assisting / closing
+                if ratio > 1.3:
+                    tag = "assist"
+                elif ratio < 0.7:
+                    tag = "close"
+                else:
+                    tag = "balanced"
+            else:
+                ratio = None
+                tag = "insufficient_data"
+            rows.append({
+                "channel": channel,
+                "closing_conversions": closing,
+                "assisting_conversions": assisting,
+                "ratio": ratio,
+                "tag": tag,
+            })
+
+        payload = {"start_date": start_date, "end_date": end_date, "days": days, "channels": rows}
+        return repository.upsert_snapshot(
+            db, property_id=property_id, kind="daily_channel", date=end_date, payload=payload, fetched_by=user.id,
+        )
+
+    # ─── 第 2 波：到達頁分析（3.4 節） ─────────────────────────────────
+    @staticmethod
+    def get_landing_pages(db, *, user: User, property_id: str, days: int = 7):
+        start_date, end_date = GA4InsightsService._trailing_period(days)
+        data, error = GA4Service.get_analytics(
+            user=user, property_id=property_id, start_date=start_date, end_date=end_date,
+            metrics=["sessions", "engagementRate", "conversions", "bounceRate"],
+            dimensions=["landingPage"], db=db,
+        )
+        if error:
+            raise RuntimeError(error)
+        rows = (data or {}).get("rows", [])
+
+        enriched = []
+        for row in rows:
+            sessions = row.get("sessions", 0)
+            conversions = row.get("conversions", 0)
+            conversion_rate = (conversions / sessions) if sessions else 0.0
+            enriched.append({**row, "conversion_rate": conversion_rate, "is_high_traffic_low_conversion": False})
+
+        # 「高流量低轉換」需要足夠樣本數才能算四分位，樣本太少（<4）標記全部維持 False
+        if len(enriched) >= 4:
+            session_p75 = _percentile(sorted(r["sessions"] for r in enriched), 0.75)
+            conv_rate_p25 = _percentile(sorted(r["conversion_rate"] for r in enriched), 0.25)
+            for row in enriched:
+                row["is_high_traffic_low_conversion"] = (
+                    row["sessions"] >= session_p75 and row["conversion_rate"] <= conv_rate_p25
+                )
+
+        payload = {"start_date": start_date, "end_date": end_date, "days": days, "landing_pages": enriched}
+        return repository.upsert_snapshot(
+            db, property_id=property_id, kind="landing_page", date=end_date, payload=payload, fetched_by=user.id,
+        )
+
+    # ─── 第 2 波：商品分析（3.4 節） ───────────────────────────────────
+    @staticmethod
+    def get_items(db, *, user: User, property_id: str, days: int = 7):
+        start_date, end_date = GA4InsightsService._trailing_period(days)
+        data, error = GA4Service.get_analytics(
+            user=user, property_id=property_id, start_date=start_date, end_date=end_date,
+            metrics=["itemsViewed", "itemsAddedToCart", "itemsPurchased", "itemRevenue"],
+            dimensions=["itemName"], db=db,
+        )
+        if error:
+            raise RuntimeError(error)
+        rows = (data or {}).get("rows", [])
+
+        # 瀏覽成長比較固定用「近 7 天 vs 前 7 天」（3.4 節），與 days 參數（表格期間）無關
+        recent_start, recent_end = GA4InsightsService._trailing_period(7)
+        prior_end = (datetime.strptime(recent_start, "%Y-%m-%d") - timedelta(days=1)).strftime("%Y-%m-%d")
+        prior_start = (datetime.strptime(recent_start, "%Y-%m-%d") - timedelta(days=7)).strftime("%Y-%m-%d")
+
+        recent_data, _ = GA4Service.get_analytics(
+            user=user, property_id=property_id, start_date=recent_start, end_date=recent_end,
+            metrics=["itemsViewed"], dimensions=["itemName"], db=db,
+        )
+        prior_data, _ = GA4Service.get_analytics(
+            user=user, property_id=property_id, start_date=prior_start, end_date=prior_end,
+            metrics=["itemsViewed"], dimensions=["itemName"], db=db,
+        )
+        recent_views = {row["itemName"]: row.get("itemsViewed", 0) for row in (recent_data or {}).get("rows", [])}
+        prior_views = {row["itemName"]: row.get("itemsViewed", 0) for row in (prior_data or {}).get("rows", [])}
+
+        enriched = []
+        for row in rows:
+            item_name = row.get("itemName")
+            views = row.get("itemsViewed", 0)
+            add_to_cart = row.get("itemsAddedToCart", 0)
+            add_to_cart_rate = (add_to_cart / views) if views else 0.0
+            recent = recent_views.get(item_name, 0)
+            prior = prior_views.get(item_name, 0)
+            growth_rate = ((recent - prior) / prior) if prior else (1.0 if recent > 0 else 0.0)
+            enriched.append({
+                **row,
+                "add_to_cart_rate": add_to_cart_rate,
+                "views_growth_rate": growth_rate,
+                "is_potential": False,
+            })
+
+        if len(enriched) >= 4:
+            growth_median = median(r["views_growth_rate"] for r in enriched)
+            cart_rate_median = median(r["add_to_cart_rate"] for r in enriched)
+            views_median = median(r["itemsViewed"] for r in enriched)
+            for row in enriched:
+                row["is_potential"] = (
+                    row["views_growth_rate"] > growth_median
+                    and row["add_to_cart_rate"] > cart_rate_median
+                    and row["itemsViewed"] < views_median
+                )
+
+        payload = {"start_date": start_date, "end_date": end_date, "days": days, "items": enriched}
+        return repository.upsert_snapshot(
+            db, property_id=property_id, kind="item", date=end_date, payload=payload, fetched_by=user.id,
+        )
+
+    # ─── 第 2 波任務 2.4：AI 白話解讀持久化 ───────────────────────────
+    @staticmethod
+    def save_ai_summary(db, *, snapshot_id: str, ai_summary: str):
+        return repository.update_ai_summary(db, snapshot_id=snapshot_id, ai_summary=ai_summary)

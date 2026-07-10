@@ -18,4 +18,27 @@ export const ga4InsightsService = {
     },
 
     acknowledgeEvent: async (eventId) => apiClient.patch(`/api/ga4/insights/anomaly-events/${eventId}/ack`, { acknowledged: true }),
+
+    // ─── 第 2 波：當日儀表板 / Realtime / 渠道 / 到達頁 / 商品 ──────────
+    getDashboard: async (propertyId) =>
+        apiClient.get(`/api/ga4/insights/dashboard?property_id=${encodeURIComponent(propertyId)}`),
+
+    refreshDashboard: async (propertyId) =>
+        apiClient.post('/api/ga4/insights/dashboard/refresh', { property_id: propertyId }),
+
+    getRealtime: async (propertyId) =>
+        apiClient.get(`/api/ga4/insights/realtime?property_id=${encodeURIComponent(propertyId)}`),
+
+    getChannels: async (propertyId, days = 7) =>
+        apiClient.get(`/api/ga4/insights/channels?property_id=${encodeURIComponent(propertyId)}&days=${days}`),
+
+    getLandingPages: async (propertyId, days = 7) =>
+        apiClient.get(`/api/ga4/insights/landing-pages?property_id=${encodeURIComponent(propertyId)}&days=${days}`),
+
+    getItems: async (propertyId, days = 7) =>
+        apiClient.get(`/api/ga4/insights/items?property_id=${encodeURIComponent(propertyId)}&days=${days}`),
+
+    // ─── 第 2 波任務 2.4：AI 白話解讀持久化 ─────────────────────────
+    saveAiSummary: async (snapshotId, aiSummary) =>
+        apiClient.put(`/api/ga4/insights/snapshots/${snapshotId}/ai-summary`, { ai_summary: aiSummary }),
 };

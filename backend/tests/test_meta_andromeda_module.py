@@ -1646,6 +1646,85 @@ def test_effective_scoring_status_flags_override_from_env_model(meta_andromeda_a
 
 
 @pytest.mark.unit
+def test_validate_candidate_model_reports_ok_for_valid_model(meta_andromeda_access, monkeypatch):
+    """換模型前先查：真的存在、支援圖片輸入、context/輸出上限都夠的模型應該回 ok=True。"""
+    from modules.meta_andromeda import model_catalog
+
+    monkeypatch.setattr(model_catalog, "_fetch_catalog", lambda force_refresh=False: {
+        "nvidia/nemotron-3-nano-omni-30b-a3b-reasoning:free": {
+            "id": "nvidia/nemotron-3-nano-omni-30b-a3b-reasoning:free",
+            "name": "NVIDIA: Nemotron 3 Nano Omni (free)",
+            "context_length": 256000,
+            "architecture": {"input_modalities": ["text", "image", "video"], "output_modalities": ["text"]},
+            "top_provider": {"context_length": 256000, "max_completion_tokens": 65536},
+            "pricing": {"prompt": "0", "completion": "0"},
+        },
+    })
+
+    response = meta_andromeda_access.get(
+        "/api/meta-andromeda/monitoring/model-registry/validate-candidate",
+        params={"model_id": "nvidia/nemotron-3-nano-omni-30b-a3b-reasoning:free"},
+    )
+    assert response.status_code == 200
+    body = response.json()
+    assert body["exists"] is True
+    assert body["ok"] is True
+    assert body["issues"] == []
+    assert body["supports_image_input"] is True
+    assert body["context_length"] == 256000
+    assert body["max_completion_tokens"] == 65536
+    assert body["is_free"] is True
+
+
+@pytest.mark.unit
+def test_validate_candidate_model_reports_not_found(meta_andromeda_access, monkeypatch):
+    """查無此模型 ID（打錯字/已下架/根本不是真的模型）應該明確回報，而不是讓 ops
+    直到跑評分才發現（2026-07-10 事故：`llama-nemotron-embed-vl-1b-v2:free` 就是這種）。"""
+    from modules.meta_andromeda import model_catalog
+
+    monkeypatch.setattr(model_catalog, "_fetch_catalog", lambda force_refresh=False: {})
+
+    response = meta_andromeda_access.get(
+        "/api/meta-andromeda/monitoring/model-registry/validate-candidate",
+        params={"model_id": "nvidia/llama-nemotron-embed-vl-1b-v2:free"},
+    )
+    assert response.status_code == 200
+    body = response.json()
+    assert body["exists"] is False
+    assert body["ok"] is False
+    assert body["issues"]
+
+
+@pytest.mark.unit
+def test_validate_candidate_model_flags_missing_image_support_and_narrow_context(meta_andromeda_access, monkeypatch):
+    """存在但不支援圖片輸入、或端點 context/輸出上限太小的模型，應該被標記出來
+    （不是直接判定不存在，而是明確列出「能不能用」的具體理由）。"""
+    from modules.meta_andromeda import model_catalog
+
+    monkeypatch.setattr(model_catalog, "_fetch_catalog", lambda force_refresh=False: {
+        "some-org/text-only-narrow:free": {
+            "id": "some-org/text-only-narrow:free",
+            "name": "Text Only Narrow",
+            "context_length": 10240,
+            "architecture": {"input_modalities": ["text"], "output_modalities": ["text"]},
+            "top_provider": {"context_length": 10240, "max_completion_tokens": 4096},
+            "pricing": {"prompt": "0", "completion": "0"},
+        },
+    })
+
+    response = meta_andromeda_access.get(
+        "/api/meta-andromeda/monitoring/model-registry/validate-candidate",
+        params={"model_id": "some-org/text-only-narrow:free"},
+    )
+    assert response.status_code == 200
+    body = response.json()
+    assert body["exists"] is True
+    assert body["ok"] is False
+    assert body["supports_image_input"] is False
+    assert len(body["issues"]) == 3  # 不支援圖片 + context 太窄 + 輸出上限太小
+
+
+@pytest.mark.unit
 def test_meta_andromeda_observation_import_accepts_supported_window_contract(meta_andromeda_access, monkeypatch):
     from modules.meta_andromeda.schemas import ObservedCreativeCandidate
 

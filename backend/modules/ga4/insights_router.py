@@ -33,6 +33,135 @@ class EventAckPayload(BaseModel):
     acknowledged: bool = True
 
 
+class PropertyIdPayload(BaseModel):
+    property_id: str = Field(..., min_length=1)
+
+
+class AiSummaryPayload(BaseModel):
+    ai_summary: str = Field(..., min_length=1)
+
+
+# ─── 第 2 波：當日儀表板／Realtime／渠道／到達頁／商品（docs/22 3.5 節） ───
+@router.get("/dashboard")
+def get_dashboard(
+    property_id: str = Query(...),
+    user=Depends(get_current_user),
+    _module: bool = Depends(require_ga4_module),
+    _perm: bool = Depends(require_ga4_insights_view),
+    db=Depends(get_db),
+):
+    try:
+        snapshot = GA4InsightsService.get_dashboard(db, user=user, property_id=property_id)
+    except RuntimeError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+    db.commit()
+    db.refresh(snapshot)
+    return serialize_snapshot(snapshot)
+
+
+@router.post("/dashboard/refresh")
+def refresh_dashboard(
+    payload: PropertyIdPayload,
+    user=Depends(get_current_user),
+    _module: bool = Depends(require_ga4_module),
+    _perm: bool = Depends(require_ga4_insights_view),
+    db=Depends(get_db),
+):
+    try:
+        snapshot, refreshed = GA4InsightsService.refresh_dashboard(db, user=user, property_id=payload.property_id)
+    except RuntimeError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+    db.commit()
+    db.refresh(snapshot)
+    return {**serialize_snapshot(snapshot), "refreshed": refreshed}
+
+
+@router.get("/realtime")
+def get_realtime(
+    property_id: str = Query(...),
+    user=Depends(get_current_user),
+    _module: bool = Depends(require_ga4_module),
+    _perm: bool = Depends(require_ga4_insights_view),
+    db=Depends(get_db),
+):
+    try:
+        return GA4InsightsService.get_realtime(user=user, property_id=property_id, db=db)
+    except RuntimeError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+
+
+@router.get("/channels")
+def get_channels(
+    property_id: str = Query(...),
+    days: int = Query(7, ge=1, le=90),
+    user=Depends(get_current_user),
+    _module: bool = Depends(require_ga4_module),
+    _perm: bool = Depends(require_ga4_insights_view),
+    db=Depends(get_db),
+):
+    try:
+        snapshot = GA4InsightsService.get_channels(db, user=user, property_id=property_id, days=days)
+    except RuntimeError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+    db.commit()
+    db.refresh(snapshot)
+    return serialize_snapshot(snapshot)
+
+
+@router.get("/landing-pages")
+def get_landing_pages(
+    property_id: str = Query(...),
+    days: int = Query(7, ge=1, le=90),
+    user=Depends(get_current_user),
+    _module: bool = Depends(require_ga4_module),
+    _perm: bool = Depends(require_ga4_insights_view),
+    db=Depends(get_db),
+):
+    try:
+        snapshot = GA4InsightsService.get_landing_pages(db, user=user, property_id=property_id, days=days)
+    except RuntimeError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+    db.commit()
+    db.refresh(snapshot)
+    return serialize_snapshot(snapshot)
+
+
+@router.get("/items")
+def get_items(
+    property_id: str = Query(...),
+    days: int = Query(7, ge=1, le=90),
+    user=Depends(get_current_user),
+    _module: bool = Depends(require_ga4_module),
+    _perm: bool = Depends(require_ga4_insights_view),
+    db=Depends(get_db),
+):
+    try:
+        snapshot = GA4InsightsService.get_items(db, user=user, property_id=property_id, days=days)
+    except RuntimeError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+    db.commit()
+    db.refresh(snapshot)
+    return serialize_snapshot(snapshot)
+
+
+# ─── 第 2 波任務 2.4：AI 白話解讀持久化 ─────────────────────────────
+@router.put("/snapshots/{snapshot_id}/ai-summary")
+def save_ai_summary(
+    snapshot_id: str,
+    payload: AiSummaryPayload,
+    user=Depends(get_current_user),
+    _module: bool = Depends(require_ga4_module),
+    _perm: bool = Depends(require_ga4_insights_view),
+    db=Depends(get_db),
+):
+    row = GA4InsightsService.save_ai_summary(db, snapshot_id=snapshot_id, ai_summary=payload.ai_summary)
+    if not row:
+        raise HTTPException(status_code=404, detail="Snapshot not found")
+    db.commit()
+    db.refresh(row)
+    return serialize_snapshot(row)
+
+
 @router.get("/anomaly-rules")
 def list_anomaly_rules(
     property_id: str | None = Query(None),
@@ -131,6 +260,19 @@ def acknowledge_event(
     db.commit()
     db.refresh(row)
     return serialize_event(row)
+
+
+def serialize_snapshot(row):
+    return {
+        "snapshot_id": row.id,
+        "property_id": row.property_id,
+        "kind": row.kind,
+        "date": row.date,
+        "payload": row.payload,
+        "ai_summary": row.ai_summary,
+        "ai_summary_generated_at": row.ai_summary_generated_at,
+        "fetched_at": row.fetched_at,
+    }
 
 
 def serialize_rule(row):

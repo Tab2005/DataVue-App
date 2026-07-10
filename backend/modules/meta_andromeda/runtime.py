@@ -116,6 +116,38 @@ _SCORE_RESPONSE_JSON_SCHEMA = {
     },
 }
 
+# 評分請求的預設輸出上限。部分（尤其 free 版）模型在 OpenRouter 上實際 serving 端點的
+# context 上限，跟型號名稱給人的印象差很多（例如曾誤設的 `llama-nemotron-embed-vl-1b-v2:
+# free`，端點回報上限只有 10240 tokens）——直接調高這個預設值只會讓「prompt + max_tokens
+# 超過端點真實上限」更容易發生，不解決問題；真正需要的是下面 `_shrink_max_tokens_for_
+# context_error()` 這種按實際錯誤動態退讓的機制。
+_DEFAULT_SCORE_MAX_TOKENS = 8192
+_MIN_SCORE_MAX_TOKENS = 512
+_CONTEXT_ERROR_SAFETY_MARGIN = 256
+
+# OpenRouter 400 錯誤的標準格式："This endpoint's maximum context length is 10240 tokens.
+# However, you requested about 10500 tokens (10000 of text input, 500 in the output)."
+_CONTEXT_LENGTH_ERROR_RE = re.compile(
+    r"maximum context length is (\d+) tokens.*?\((\d+) of text input",
+    re.IGNORECASE | re.DOTALL,
+)
+
+
+def _shrink_max_tokens_for_context_error(exc: Exception, current_max_tokens: int) -> int | None:
+    """解析 OpenRouter 的 context-length-exceeded 錯誤訊息，算出一個塞得下該端點真實上限
+    的 max_tokens 讓呼叫端重試——用實際錯誤回饋動態退讓，而不是要求 ops 為每個候選模型
+    手動猜一個夠小的固定值。訊息格式不符預期（provider 換了措辭）或算出來的值沒有比目前
+    小，回傳 None，讓呼叫端照原本的邏輯直接放棄重試。"""
+    match = _CONTEXT_LENGTH_ERROR_RE.search(str(exc))
+    if not match:
+        return None
+    context_limit, input_tokens = int(match.group(1)), int(match.group(2))
+    safe_max_tokens = context_limit - input_tokens - _CONTEXT_ERROR_SAFETY_MARGIN
+    if safe_max_tokens < _MIN_SCORE_MAX_TOKENS or safe_max_tokens >= current_max_tokens:
+        return None
+    return safe_max_tokens
+
+
 _DEFAULT_OBJECTIVE_PROFILES: dict[str, dict] = {
     "lead": {
         "user_prompt_template": (
@@ -951,6 +983,7 @@ class OpenRouterScoringProvider(BaseScoringProvider):
         raw = None
         max_retries = 3
         backoff = 2.0
+        max_tokens = _DEFAULT_SCORE_MAX_TOKENS
         for attempt in range(max_retries):
             try:
                 raw = await asyncio.to_thread(
@@ -959,7 +992,7 @@ class OpenRouterScoringProvider(BaseScoringProvider):
                     registry_entry.provider_model,
                     system_prompt,
                     0.2,
-                    8192,
+                    max_tokens,
                     settings.META_ANDROMEDA_SCORE_TIMEOUT_SECONDS,
                     user_content,
                 )
@@ -982,6 +1015,8 @@ class OpenRouterScoringProvider(BaseScoringProvider):
                 elif "429" in str(e) or "resource_exhausted" in str(e).lower() or "exhausted" in str(e).lower() or "rate_limit" in str(e).lower():
                     is_rate_limit = True
 
+                shrunk_max_tokens = _shrink_max_tokens_for_context_error(e, max_tokens)
+
                 if is_rate_limit and attempt < max_retries - 1:
                     sleep_time = backoff * (2 ** attempt)
                     logger.warning(
@@ -991,6 +1026,13 @@ class OpenRouterScoringProvider(BaseScoringProvider):
                         max_retries
                     )
                     await asyncio.sleep(sleep_time)
+                elif shrunk_max_tokens is not None and attempt < max_retries - 1:
+                    max_tokens = shrunk_max_tokens
+                    logger.warning(
+                        "[MetaAndromeda] OpenRouter context length exceeded for model %s, retrying with "
+                        "max_tokens=%d (Attempt %d/%d)",
+                        registry_entry.provider_model, max_tokens, attempt + 1, max_retries,
+                    )
                 else:
                     raise
         return _extract_json_payload(raw)

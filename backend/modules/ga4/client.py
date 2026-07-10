@@ -16,7 +16,7 @@ from google.oauth2.credentials import Credentials
 from google.auth.transport.requests import Request as GoogleAuthRequest
 from google.analytics.admin import AnalyticsAdminServiceClient
 from google.analytics.data import BetaAnalyticsDataClient
-from google.analytics.data_v1beta.types import Metric
+from google.analytics.data_v1beta.types import Dimension, Metric, RunRealtimeReportRequest
 from sqlalchemy.orm import Session
 
 from database import User
@@ -286,3 +286,26 @@ class GA4Client:
             Metric(name=m, expression=GA4Client.VIRTUAL_METRICS[m]) if m in GA4Client.VIRTUAL_METRICS else Metric(name=m)
             for m in metric_keys
         ]
+
+    @staticmethod
+    def run_realtime_report(
+        credentials: Credentials,
+        property_id: str,
+        dimensions: List[str],
+        metrics: List[str],
+        limit: Optional[int] = None,
+    ):
+        """
+        呼叫 GA4 Data API 的 RunRealtimeReport（近 30 分鐘活躍窗口，docs/22 第 2 波 3.2 節）。
+        與 RunReport 不同：不帶日期區間、維度/指標集受限（無電商 item、無 landingPage）。
+        回傳原始 API response，型別轉換交給 service 層（同 RunReport 的 client/service 分工）。
+        """
+        data_client = GA4Client.build_data_client(credentials)
+        request = RunRealtimeReportRequest(
+            property=f"properties/{property_id}",
+            dimensions=[Dimension(name=dim) for dim in dimensions],
+            metrics=GA4Client.build_metrics(metrics),
+        )
+        if limit:
+            request.limit = limit
+        return data_client.run_realtime_report(request)

@@ -2,6 +2,8 @@
 Meta Andromeda Module - Router
 """
 
+import asyncio
+
 from fastapi import APIRouter, BackgroundTasks, Depends, File, Form, Header, HTTPException, Query, Request, UploadFile, status
 
 from core.scheduler import get_meta_andromeda_score_job_id
@@ -33,6 +35,7 @@ from .schemas import (
     FeedbackSubmitRequest,
     MaintenanceCleanupRequest,
     MaintenanceCleanupResponse,
+    ModelCandidateValidationResponse,
     MonitoringTimelineResponse,
     AiReadyResponse,
     ScoreEventBatchDeleteRequest,
@@ -286,6 +289,21 @@ async def get_effective_scoring_status(
     比對畫面上的模型名稱與部署環境變數。"""
     from .repository import repository as _repo
     return _repo.get_effective_scoring_status(db)
+
+
+@router.get("/monitoring/model-registry/validate-candidate", response_model=ModelCandidateValidationResponse)
+async def validate_candidate_model(
+    model_id: str = Query(..., min_length=1),
+    _user=Depends(get_current_meta_andromeda_user),
+    _access: bool = Depends(require_meta_andromeda_module),
+):
+    """換模型（不管是要改版本總覽的候選，還是要設 META_ANDROMEDA_SCORING_MODEL
+    env var 覆寫）前先查：這個 model id 在 OpenRouter 是否真的存在、支不支援評分
+    需要的圖片輸入、實際 context/輸出上限多大（2026-07-10 事故後新增，見 docs）。
+    純查詢外部公開 API，不寫資料庫、不需要 operate 權限。"""
+    from .model_catalog import validate_candidate_model as _validate
+
+    return await asyncio.to_thread(_validate, model_id)
 
 
 @router.put("/monitoring/model-registry/backtest-model", response_model=ModelRegistryEntryResponse)

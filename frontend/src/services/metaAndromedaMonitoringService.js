@@ -61,6 +61,14 @@ export const fetchEffectiveScoringStatus = async () => {
     return apiClient.get('/api/meta-andromeda/monitoring/model-registry/effective');
 };
 
+// 換模型前先查：這個 model id 在 OpenRouter 是否真的存在、支不支援評分需要的圖片
+// 輸入、實際 context/輸出上限多大（2026-07-10 事故後新增，見 docs）。
+export const validateCandidateModel = async (modelId) => {
+    return apiClient.get('/api/meta-andromeda/monitoring/model-registry/validate-candidate', {
+        params: { model_id: modelId },
+    });
+};
+
 export default {
     fetchMetaAndromedaMonitoringSummary,
     fetchMetaAndromedaMonitoringTimeline,
@@ -75,4 +83,5 @@ export default {
     fetchModelRegistry,
     updateBacktestModel,
     fetchEffectiveScoringStatus,
+    validateCandidateModel,
 };

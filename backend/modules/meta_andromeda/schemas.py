@@ -558,6 +558,21 @@ class BacktestModelUpdateRequest(BaseModel):
     provider_model: str
 
 
+class ModelCandidateValidationResponse(BaseModel):
+    """換模型前先查：這個候選 model id 是否真的存在於 OpenRouter、支不支援評分
+    需要的圖片輸入、實際 serving 端點的 context/輸出上限多大（見 model_catalog.py）。"""
+
+    model_id: str
+    exists: bool | None = None
+    ok: bool
+    issues: list[str] = []
+    name: str | None = None
+    supports_image_input: bool | None = None
+    context_length: int | None = None
+    max_completion_tokens: int | None = None
+    is_free: bool | None = None
+
+
 class EffectiveScoringStatusResponse(BaseModel):
     """實際生效的互動評分設定 vs. 資料庫 registry 標記的 production 列，供監控
     頁面標示兩者是否一致（env override 完全不寫資料庫，只在記憶體即時生效）。"""

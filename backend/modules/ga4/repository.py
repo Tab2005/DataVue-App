@@ -49,6 +49,18 @@ class GA4InsightsRepository:
             query = query.filter(GA4InsightsSnapshot.date == date)
         return query.order_by(desc(GA4InsightsSnapshot.fetched_at)).first()
 
+    def get_snapshot_by_id(self, db, snapshot_id: str):
+        return db.query(GA4InsightsSnapshot).filter(GA4InsightsSnapshot.id == snapshot_id).first()
+
+    def update_ai_summary(self, db, *, snapshot_id: str, ai_summary: str):
+        row = self.get_snapshot_by_id(db, snapshot_id)
+        if not row:
+            return None
+        row.ai_summary = ai_summary
+        row.ai_summary_generated_at = datetime.utcnow()
+        db.add(row)
+        return row
+
     def create_rule(self, db, **payload):
         row = GA4AnomalyRule(**payload)
         db.add(row)

@@ -16,6 +16,7 @@ import {
     fetchModelRegistry,
     updateBacktestModel,
     fetchEffectiveScoringStatus,
+    validateCandidateModel,
 } from '../services/metaAndromedaMonitoringService';
 
 const MetaAndromedaMonitoring = () => {
@@ -55,6 +56,9 @@ const MetaAndromedaMonitoring = () => {
     const [backtestModelInput, setBacktestModelInput] = useState('');
     const [savingBacktestModel, setSavingBacktestModel] = useState(false);
     const [effectiveStatus, setEffectiveStatus] = useState(null);
+    const [candidateModelInput, setCandidateModelInput] = useState('');
+    const [validatingCandidate, setValidatingCandidate] = useState(false);
+    const [candidateValidation, setCandidateValidation] = useState(null);
     const { hasAccess, loading: loadingModuleAccess } = useModuleAccess('meta_andromeda', selectedTeamId);
 
     const t = (en, zh) => (language === 'en' ? en : zh);
@@ -400,6 +404,25 @@ const MetaAndromedaMonitoring = () => {
         } catch (err) {
             // 非阻斷性資訊：讀取失敗不影響頁面其餘功能，安靜失敗即可
             setEffectiveStatus(null);
+        }
+    };
+
+    const handleValidateCandidateModel = async () => {
+        if (!candidateModelInput.trim()) return;
+        setValidatingCandidate(true);
+        setCandidateValidation(null);
+        try {
+            const data = await validateCandidateModel(candidateModelInput.trim());
+            setCandidateValidation(data);
+        } catch (err) {
+            setCandidateValidation({
+                model_id: candidateModelInput.trim(),
+                exists: null,
+                ok: false,
+                issues: [err.message || t('Failed to validate model', '查詢模型失敗')],
+            });
+        } finally {
+            setValidatingCandidate(false);
         }
     };
 
@@ -1515,6 +1538,85 @@ const MetaAndromedaMonitoring = () => {
                                         </div>
                                     );
                                 })()}
+                            </div>
+
+                            <div style={{
+                                marginTop: '12px',
+                                padding: '12px 14px',
+                                borderRadius: '10px',
+                                background: 'rgba(255,255,255,0.03)',
+                                border: '1px solid var(--glass-border)',
+                            }}>
+                                <div style={{ fontSize: '0.8rem', color: 'var(--text-secondary)', marginBottom: '8px' }}>
+                                    {t(
+                                        'Validate a candidate model before setting it (Release Overview candidate, or META_ANDROMEDA_SCORING_MODEL env override) — checks whether it actually exists on OpenRouter, supports image input, and what its real context/output limits are.',
+                                        '換模型前先驗證（不管是要設版本總覽的候選，還是要設 META_ANDROMEDA_SCORING_MODEL 環境變數覆寫）——查這個模型是否真的存在於 OpenRouter、支不支援圖片輸入、實際 context/輸出上限多大。'
+                                    )}
+                                </div>
+                                <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+                                    <input
+                                        type="text"
+                                        value={candidateModelInput}
+                                        onChange={(e) => setCandidateModelInput(e.target.value)}
+                                        placeholder="e.g. nvidia/nemotron-3-nano-omni-30b-a3b-reasoning:free"
+                                        style={{
+                                            flex: '1 1 260px',
+                                            padding: '8px 10px',
+                                            borderRadius: '8px',
+                                            border: '1px solid var(--glass-border)',
+                                            background: 'rgba(255,255,255,0.04)',
+                                            color: 'var(--text-primary)',
+                                            fontSize: '0.85rem',
+                                        }}
+                                    />
+                                    <button
+                                        type="button"
+                                        onClick={handleValidateCandidateModel}
+                                        disabled={validatingCandidate || !candidateModelInput.trim()}
+                                        style={{
+                                            padding: '8px 16px',
+                                            borderRadius: '8px',
+                                            border: 'none',
+                                            background: validatingCandidate ? 'rgba(96,165,250,0.3)' : '#60a5fa',
+                                            color: 'white',
+                                            fontWeight: 600,
+                                            fontSize: '0.85rem',
+                                            cursor: validatingCandidate ? 'wait' : 'pointer',
+                                        }}
+                                    >
+                                        {validatingCandidate ? t('Checking...', '查詢中...') : t('Check', '查詢')}
+                                    </button>
+                                </div>
+                                {candidateValidation && (
+                                    <div style={{
+                                        marginTop: '10px',
+                                        padding: '10px 12px',
+                                        borderRadius: '8px',
+                                        background: candidateValidation.ok ? 'rgba(16, 185, 129, 0.08)' : 'rgba(239, 68, 68, 0.08)',
+                                        border: candidateValidation.ok ? '1px solid rgba(16,185,129,0.3)' : '1px solid rgba(239,68,68,0.3)',
+                                        fontSize: '0.8rem',
+                                    }}>
+                                        <div style={{ fontWeight: 700, color: candidateValidation.ok ? '#34d399' : '#f87171', marginBottom: '4px' }}>
+                                            {candidateValidation.exists === false
+                                                ? t('✗ Model not found on OpenRouter', '✗ 這個模型 ID 在 OpenRouter 查無資料')
+                                                : candidateValidation.ok
+                                                    ? t('✓ Looks safe to use', '✓ 可以安全使用')
+                                                    : t('⚠ Found, but has issues', '⚠ 查得到，但有問題')}
+                                        </div>
+                                        {candidateValidation.exists !== false && (
+                                            <div style={{ color: 'var(--text-secondary)', marginBottom: candidateValidation.issues?.length ? '6px' : 0 }}>
+                                                {candidateValidation.name && <span>{candidateValidation.name} · </span>}
+                                                {t('context', '上下文')}: {candidateValidation.context_length ?? '--'} tokens ·{' '}
+                                                {t('max output', '輸出上限')}: {candidateValidation.max_completion_tokens ?? '--'} tokens ·{' '}
+                                                {t('image input', '圖片輸入')}: {candidateValidation.supports_image_input ? t('yes', '支援') : t('no', '不支援')}
+                                                {candidateValidation.is_free && <span> · {t('free', '免費')}</span>}
+                                            </div>
+                                        )}
+                                        {(candidateValidation.issues || []).map((issue, idx) => (
+                                            <div key={idx} style={{ color: '#fbbf24', marginTop: '2px' }}>• {issue}</div>
+                                        ))}
+                                    </div>
+                                )}
                             </div>
                         </section>
 
