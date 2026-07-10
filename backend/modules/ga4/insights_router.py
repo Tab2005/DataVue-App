@@ -2,8 +2,10 @@
 
 from __future__ import annotations
 
+import re
+
 from fastapi import APIRouter, Depends, HTTPException, Query, status
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
 from database import get_db
 
@@ -39,6 +41,28 @@ class PropertyIdPayload(BaseModel):
 
 class AiSummaryPayload(BaseModel):
     ai_summary: str = Field(..., min_length=1)
+
+
+_MONTH_KEY_RE = re.compile(r"^\d{4}-(0[1-9]|1[0-2])$")
+_QUARTER_KEY_RE = re.compile(r"^\d{4}-Q[1-4]$")
+
+
+class KpiTargetPayload(BaseModel):
+    property_id: str = Field(..., min_length=1)
+    metric_key: str = Field(..., min_length=1)
+    period_type: str = Field(..., pattern="^(month|quarter)$")
+    period_key: str = Field(..., min_length=1)
+    target_value: float = Field(..., gt=0)
+
+    @field_validator("period_key")
+    @classmethod
+    def _validate_period_key(cls, value: str, info):
+        period_type = info.data.get("period_type")
+        if period_type == "month" and not _MONTH_KEY_RE.match(value):
+            raise ValueError("period_key must look like YYYY-MM when period_type is 'month'")
+        if period_type == "quarter" and not _QUARTER_KEY_RE.match(value):
+            raise ValueError("period_key must look like YYYY-Qn when period_type is 'quarter'")
+        return value
 
 
 # ─── 第 2 波：當日儀表板／Realtime／渠道／到達頁／商品（docs/22 3.5 節） ───
@@ -162,6 +186,56 @@ def save_ai_summary(
     return serialize_snapshot(row)
 
 
+# ─── 第 3 波：KPI 目標追蹤（選配，docs/22 5 節） ───────────────────────
+@router.get("/kpi-targets")
+def list_kpi_targets(
+    property_id: str = Query(...),
+    user=Depends(get_current_user),
+    _module: bool = Depends(require_ga4_module),
+    _perm: bool = Depends(require_ga4_insights_view),
+    db=Depends(get_db),
+):
+    targets = GA4InsightsService.get_kpi_targets_with_pacing(db, user=user, property_id=property_id)
+    return {"targets": targets}
+
+
+@router.put("/kpi-targets")
+def upsert_kpi_target(
+    payload: KpiTargetPayload,
+    user=Depends(get_current_user),
+    _module: bool = Depends(require_ga4_module),
+    _perm: bool = Depends(require_ga4_insights_manage_alerts),
+    db=Depends(get_db),
+):
+    row = GA4InsightsService.upsert_kpi_target(
+        db,
+        user_id=user.id,
+        property_id=payload.property_id,
+        metric_key=payload.metric_key,
+        period_type=payload.period_type,
+        period_key=payload.period_key,
+        target_value=payload.target_value,
+    )
+    db.commit()
+    db.refresh(row)
+    return serialize_kpi_target(row)
+
+
+@router.delete("/kpi-targets/{target_id}")
+def delete_kpi_target(
+    target_id: str,
+    user=Depends(get_current_user),
+    _module: bool = Depends(require_ga4_module),
+    _perm: bool = Depends(require_ga4_insights_manage_alerts),
+    db=Depends(get_db),
+):
+    deleted = GA4InsightsService.delete_kpi_target(db, target_id=target_id)
+    if not deleted:
+        raise HTTPException(status_code=404, detail="KPI target not found")
+    db.commit()
+    return {"status": "deleted", "target_id": target_id}
+
+
 @router.get("/anomaly-rules")
 def list_anomaly_rules(
     property_id: str | None = Query(None),
@@ -260,6 +334,20 @@ def acknowledge_event(
     db.commit()
     db.refresh(row)
     return serialize_event(row)
+
+
+def serialize_kpi_target(row):
+    return {
+        "id": row.id,
+        "property_id": row.property_id,
+        "metric_key": row.metric_key,
+        "period_type": row.period_type,
+        "period_key": row.period_key,
+        "target_value": row.target_value,
+        "created_by": row.created_by,
+        "created_at": row.created_at,
+        "updated_at": row.updated_at,
+    }
 
 
 def serialize_snapshot(row):

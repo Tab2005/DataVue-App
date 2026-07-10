@@ -46,6 +46,30 @@ class GA4AnomalyRule(Base):
     creator = relationship("User")
 
 
+class GA4KpiTarget(Base):
+    """KPI 目標（docs/22 第 3 波）：property × 指標 × 月/季目標值。"""
+
+    __tablename__ = "ga4_kpi_targets"
+    __table_args__ = (
+        UniqueConstraint(
+            "property_id", "metric_key", "period_type", "period_key",
+            name="uq_ga4_kpi_targets_property_metric_period",
+        ),
+    )
+
+    id = Column(String, primary_key=True, default=lambda: f"gkt_{uuid.uuid4().hex[:12]}")
+    property_id = Column(String(50), nullable=False, index=True)
+    metric_key = Column(String(50), nullable=False)
+    period_type = Column(String(10), nullable=False)  # "month" | "quarter"
+    period_key = Column(String(10), nullable=False)  # "2026-07" | "2026-Q3"
+    target_value = Column(Float, nullable=False)
+    created_by = Column(String, ForeignKey("users.id"), nullable=False)
+    created_at = Column(DateTime, nullable=False, server_default=text("CURRENT_TIMESTAMP"))
+    updated_at = Column(DateTime, nullable=False, server_default=text("CURRENT_TIMESTAMP"))
+
+    creator = relationship("User")
+
+
 class GA4AnomalyEvent(Base):
     __tablename__ = "ga4_anomaly_events"
 

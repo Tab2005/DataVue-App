@@ -140,6 +140,9 @@ const badgeStyle = (kind) => {
         insufficient_data: { bg: 'rgba(107, 114, 128, 0.1)', fg: '#9ca3af', border: 'rgba(107, 114, 128, 0.25)' },
         flagged: { bg: 'rgba(248, 113, 113, 0.16)', fg: '#fca5a5', border: 'rgba(248, 113, 113, 0.35)' },
         potential: { bg: 'rgba(201, 133, 0, 0.18)', fg: '#fbbf24', border: 'rgba(201, 133, 0, 0.4)' },
+        ahead: { bg: 'rgba(25, 158, 112, 0.16)', fg: '#86efac', border: 'rgba(25, 158, 112, 0.35)' },
+        on_track: { bg: 'rgba(57, 135, 229, 0.16)', fg: '#93c5fd', border: 'rgba(57, 135, 229, 0.35)' },
+        behind: { bg: 'rgba(248, 113, 113, 0.16)', fg: '#fca5a5', border: 'rgba(248, 113, 113, 0.35)' },
     }[kind] || { bg: 'rgba(107, 114, 128, 0.1)', fg: '#9ca3af', border: 'rgba(107, 114, 128, 0.25)' };
     return {
         display: 'inline-block',
@@ -180,6 +183,30 @@ const METRIC_LABELS = {
     sessions: { en: 'Sessions', zh: '工作階段' },
     conversions: { en: 'Conversions', zh: '轉換' },
     purchaseRevenue: { en: 'Revenue', zh: '營收' },
+};
+
+const KPI_STATUS_LABELS = {
+    ahead: { en: 'Ahead of pace', zh: '超前進度' },
+    on_track: { en: 'On track', zh: '符合進度' },
+    behind: { en: 'Behind pace', zh: '落後進度' },
+    no_target: { en: 'No target set', zh: '未設定目標' },
+    data_unavailable: { en: 'Data unavailable', zh: '資料暫缺' },
+};
+
+const KPI_METRIC_OPTIONS = [
+    { value: 'conversions', en: 'Conversions', zh: '轉換' },
+    { value: 'sessions', en: 'Sessions', zh: '工作階段' },
+    { value: 'purchase_revenue', en: 'Revenue', zh: '營收' },
+];
+
+const currentMonthKey = () => {
+    const now = new Date();
+    return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
+};
+
+const currentQuarterKey = () => {
+    const now = new Date();
+    return `${now.getFullYear()}-Q${Math.floor(now.getMonth() / 3) + 1}`;
 };
 
 const DASHBOARD_METRICS = ['sessions', 'conversions', 'purchaseRevenue'];
@@ -342,6 +369,80 @@ const IntradayMetricCard = ({ language, metricKey, hourlyTotals, baseline, cumul
     );
 };
 
+// ── KPI 目標：達成率 vs 時間進度的 pacing 卡（docs/22 第 3 波） ──
+const KpiPacingCard = ({ language, target, onDelete }) => {
+    const t = (en, zh) => tr(language, en, zh);
+    const metricLabel = METRIC_LABELS[target.metric_key]
+        ? tr(language, METRIC_LABELS[target.metric_key].en, METRIC_LABELS[target.metric_key].zh)
+        : KPI_METRIC_OPTIONS.find((m) => m.value === target.metric_key)
+            ? tr(language, KPI_METRIC_OPTIONS.find((m) => m.value === target.metric_key).en, KPI_METRIC_OPTIONS.find((m) => m.value === target.metric_key).zh)
+            : target.metric_key;
+    const statusLabel = KPI_STATUS_LABELS[target.status]
+        ? tr(language, KPI_STATUS_LABELS[target.status].en, KPI_STATUS_LABELS[target.status].zh)
+        : target.status;
+    const timeProgressPct = Math.min(100, Math.max(0, (target.time_progress || 0) * 100));
+    const achievementPct = target.achievement_rate != null ? Math.min(140, Math.max(0, target.achievement_rate * 100)) : 0;
+
+    return (
+        <div style={baseCardStyle}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '8px', marginBottom: '8px' }}>
+                <div>
+                    <div style={{ fontWeight: 700, color: 'var(--text-primary)' }}>{metricLabel}</div>
+                    <div style={{ color: 'var(--text-tertiary)', fontSize: '0.78rem' }}>
+                        {target.period_type === 'month' ? t('Month', '月') : t('Quarter', '季')} · {target.period_key}
+                    </div>
+                </div>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                    <span style={badgeStyle(target.status)}>{statusLabel}</span>
+                    <button type="button" onClick={() => onDelete(target.id)} style={{ ...secondaryButtonStyle, padding: '4px 10px', fontSize: '0.78rem' }}>
+                        {t('Delete', '刪除')}
+                    </button>
+                </div>
+            </div>
+
+            <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.85rem', color: 'var(--text-secondary)', marginBottom: '4px' }}>
+                <span>{t('Actual', '目前累計')}: <strong style={{ color: 'var(--text-primary)' }}>{fmtNumber(target.actual_value)}</strong></span>
+                <span>{t('Target', '目標')}: <strong style={{ color: 'var(--text-primary)' }}>{fmtNumber(target.target_value)}</strong></span>
+            </div>
+
+            <div style={{ position: 'relative', height: '10px', borderRadius: '999px', background: 'rgba(107, 114, 128, 0.2)', marginBottom: '6px', overflow: 'hidden' }}>
+                <div
+                    style={{
+                        position: 'absolute',
+                        left: 0,
+                        top: 0,
+                        bottom: 0,
+                        width: `${Math.min(100, achievementPct)}%`,
+                        background: target.status === 'behind' ? '#f87171' : target.status === 'ahead' ? '#34d399' : 'var(--accent-primary, #3987e5)',
+                        borderRadius: '999px',
+                    }}
+                />
+                <div
+                    title={t('Time elapsed', '時間進度')}
+                    style={{
+                        position: 'absolute',
+                        left: `${timeProgressPct}%`,
+                        top: '-2px',
+                        bottom: '-2px',
+                        width: '2px',
+                        background: 'var(--text-primary)',
+                        opacity: 0.6,
+                    }}
+                />
+            </div>
+            <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.74rem', color: 'var(--text-tertiary)' }}>
+                <span>{t('Achievement', '達成率')} {fmtPct(target.achievement_rate)}</span>
+                <span>{t('Time elapsed', '時間進度')} {fmtPct(target.time_progress)}</span>
+            </div>
+            {target.projected_final_value != null && (
+                <div style={{ marginTop: '8px', fontSize: '0.78rem', color: 'var(--text-secondary)' }}>
+                    {t('At this pace, projected to reach', '照這個速度，預估期末達到')} <strong style={{ color: 'var(--text-primary)' }}>{fmtNumber(target.projected_final_value)}</strong>
+                </div>
+            )}
+        </div>
+    );
+};
+
 const GA4Insights = () => {
     const { language, isMobile } = useOutletContext();
     const t = (en, zh) => tr(language, en, zh);
@@ -392,6 +493,18 @@ const GA4Insights = () => {
     const [itemsSnapshot, setItemsSnapshot] = useState(null);
     const [itemsLoading, setItemsLoading] = useState(false);
     const [itemsError, setItemsError] = useState('');
+
+    // 第 3 波：KPI 目標追蹤
+    const [kpiTargets, setKpiTargets] = useState(null);
+    const [kpiLoading, setKpiLoading] = useState(false);
+    const [kpiError, setKpiError] = useState('');
+    const [kpiSaving, setKpiSaving] = useState(false);
+    const [kpiForm, setKpiForm] = useState({
+        metric_key: 'conversions',
+        period_type: 'month',
+        period_key: currentMonthKey(),
+        target_value: '',
+    });
 
     const load = async (nextPropertyId) => {
         setLoading(true);
@@ -490,6 +603,52 @@ const GA4Insights = () => {
         }
     };
 
+    const loadKpiTargets = async (pid) => {
+        if (!pid) return;
+        setKpiLoading(true);
+        setKpiError('');
+        try {
+            const res = await ga4InsightsService.listKpiTargets(pid);
+            setKpiTargets(res.targets || []);
+        } catch (err) {
+            setKpiError(err.message || t('Failed to load KPI targets.', '載入 KPI 目標失敗。'));
+        } finally {
+            setKpiLoading(false);
+        }
+    };
+
+    const handleCreateKpiTarget = async (event) => {
+        event.preventDefault();
+        if (!propertyId || !kpiForm.target_value) return;
+        setKpiSaving(true);
+        setKpiError('');
+        try {
+            await ga4InsightsService.upsertKpiTarget({
+                property_id: propertyId,
+                metric_key: kpiForm.metric_key,
+                period_type: kpiForm.period_type,
+                period_key: kpiForm.period_key,
+                target_value: Number(kpiForm.target_value),
+            });
+            setKpiForm((prev) => ({ ...prev, target_value: '' }));
+            await loadKpiTargets(propertyId);
+        } catch (err) {
+            setKpiError(err.message || t('Failed to save KPI target.', '儲存 KPI 目標失敗。'));
+        } finally {
+            setKpiSaving(false);
+        }
+    };
+
+    const handleDeleteKpiTarget = async (targetId) => {
+        if (!window.confirm(t('Delete this KPI target?', '要刪除此 KPI 目標嗎？'))) return;
+        try {
+            await ga4InsightsService.deleteKpiTarget(targetId);
+            await loadKpiTargets(propertyId);
+        } catch (err) {
+            setKpiError(err.message || t('Failed to delete KPI target.', '刪除 KPI 目標失敗。'));
+        }
+    };
+
     useEffect(() => {
         let cancelled = false;
         const bootstrap = async () => {
@@ -528,6 +687,7 @@ const GA4Insights = () => {
         if (activeTab === 'channels' && !channelsSnapshot) loadChannels(propertyId, channelsDays);
         if (activeTab === 'landing' && !landingSnapshot) loadLandingPages(propertyId, landingDays);
         if (activeTab === 'items' && !itemsSnapshot) loadItems(propertyId, itemsDays);
+        if (activeTab === 'kpi' && !kpiTargets) loadKpiTargets(propertyId);
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [activeTab, propertyId]);
 
@@ -539,6 +699,7 @@ const GA4Insights = () => {
         setChannelsSnapshot(null);
         setLandingSnapshot(null);
         setItemsSnapshot(null);
+        setKpiTargets(null);
         setRefreshNotice('');
         await load(next);
     };
@@ -617,6 +778,7 @@ const GA4Insights = () => {
         { key: 'channels', en: 'Channels', zh: '渠道對照' },
         { key: 'landing', en: 'Landing Pages', zh: '到達頁' },
         { key: 'items', en: 'Items', zh: '商品' },
+        { key: 'kpi', en: 'KPI', zh: 'KPI 目標' },
         { key: 'alerts', en: 'Alerts', zh: '告警設定' },
     ];
 
@@ -975,6 +1137,81 @@ const GA4Insights = () => {
                         )}
                         buildPayload={() => ({ items: itemsSnapshot?.payload?.items || [] })}
                     />
+                </>
+            )}
+
+            {propertyId && activeTab === 'kpi' && (
+                <>
+                    <section style={{ ...baseCardStyle, display: 'grid', gap: '14px' }}>
+                        <div>
+                            <div style={{ color: 'var(--text-primary)', fontWeight: 700 }}>{t('Set a KPI target', '設定 KPI 目標')}</div>
+                            <div style={{ color: 'var(--text-secondary)', fontSize: '0.8rem' }}>
+                                {t('Target values per metric, per month or quarter.', '依指標、按月或按季設定目標值。')}
+                            </div>
+                        </div>
+                        <form onSubmit={handleCreateKpiTarget} style={{ display: 'grid', gap: '12px', gridTemplateColumns: isMobile ? '1fr' : 'repeat(4, minmax(0, 1fr))' }}>
+                            <select
+                                value={kpiForm.metric_key}
+                                onChange={(event) => setKpiForm((prev) => ({ ...prev, metric_key: event.target.value }))}
+                                style={inputStyle}
+                            >
+                                {KPI_METRIC_OPTIONS.map((option) => (
+                                    <option key={option.value} value={option.value}>{t(option.en, option.zh)}</option>
+                                ))}
+                            </select>
+                            <select
+                                value={kpiForm.period_type}
+                                onChange={(event) => {
+                                    const nextType = event.target.value;
+                                    setKpiForm((prev) => ({
+                                        ...prev,
+                                        period_type: nextType,
+                                        period_key: nextType === 'month' ? currentMonthKey() : currentQuarterKey(),
+                                    }));
+                                }}
+                                style={inputStyle}
+                            >
+                                <option value="month">{t('Monthly', '按月')}</option>
+                                <option value="quarter">{t('Quarterly', '按季')}</option>
+                            </select>
+                            <input
+                                type="text"
+                                value={kpiForm.period_key}
+                                onChange={(event) => setKpiForm((prev) => ({ ...prev, period_key: event.target.value }))}
+                                placeholder={kpiForm.period_type === 'month' ? 'YYYY-MM' : 'YYYY-Qn'}
+                                style={inputStyle}
+                            />
+                            <input
+                                type="number"
+                                min="0"
+                                step="any"
+                                value={kpiForm.target_value}
+                                onChange={(event) => setKpiForm((prev) => ({ ...prev, target_value: event.target.value }))}
+                                placeholder={t('Target value', '目標值')}
+                                style={inputStyle}
+                            />
+                            <div style={{ gridColumn: isMobile ? 'auto' : 'span 4' }}>
+                                <button type="submit" style={buttonStyle} disabled={kpiSaving || !kpiForm.target_value}>
+                                    {kpiSaving ? t('Saving…', '儲存中…') : t('Save target', '儲存目標')}
+                                </button>
+                            </div>
+                        </form>
+                    </section>
+
+                    <section>
+                        {kpiError && <div style={{ color: '#fca5a5', fontSize: '0.85rem', marginBottom: '10px' }}>{kpiError}</div>}
+                        {kpiLoading && !kpiTargets ? (
+                            <div style={baseCardStyle}>{emptyState(t('Loading KPI targets…', '載入 KPI 目標中…'))}</div>
+                        ) : kpiTargets && kpiTargets.length > 0 ? (
+                            <div style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : 'repeat(auto-fill, minmax(280px, 1fr))', gap: '14px' }}>
+                                {kpiTargets.map((target) => (
+                                    <KpiPacingCard key={target.id} language={language} target={target} onDelete={handleDeleteKpiTarget} />
+                                ))}
+                            </div>
+                        ) : (
+                            <div style={baseCardStyle}>{emptyState(t('No KPI targets yet. Set one above.', '尚無 KPI 目標，請在上方設定。'))}</div>
+                        )}
+                    </section>
                 </>
             )}
 

@@ -6,7 +6,7 @@ from datetime import datetime, timedelta
 
 from sqlalchemy import desc
 
-from database.models.ga4_insights import GA4AnomalyEvent, GA4AnomalyRule, GA4InsightsSnapshot
+from database.models.ga4_insights import GA4AnomalyEvent, GA4AnomalyRule, GA4InsightsSnapshot, GA4KpiTarget
 
 
 class GA4InsightsRepository:
@@ -128,6 +128,57 @@ class GA4InsightsRepository:
         row.acknowledged_at = datetime.utcnow()
         db.add(row)
         return row
+
+    # ─── 第 3 波：KPI 目標（property × 指標 × 月/季） ──────────────────
+    def upsert_kpi_target(
+        self, db, *, property_id: str, metric_key: str, period_type: str,
+        period_key: str, target_value: float, created_by: str,
+    ):
+        row = (
+            db.query(GA4KpiTarget)
+            .filter(
+                GA4KpiTarget.property_id == property_id,
+                GA4KpiTarget.metric_key == metric_key,
+                GA4KpiTarget.period_type == period_type,
+                GA4KpiTarget.period_key == period_key,
+            )
+            .first()
+        )
+        if row:
+            row.target_value = target_value
+            row.updated_at = datetime.utcnow()
+            db.add(row)
+            return row
+
+        row = GA4KpiTarget(
+            property_id=property_id,
+            metric_key=metric_key,
+            period_type=period_type,
+            period_key=period_key,
+            target_value=target_value,
+            created_by=created_by,
+        )
+        db.add(row)
+        db.flush()
+        return row
+
+    def list_kpi_targets(self, db, *, property_id: str):
+        return (
+            db.query(GA4KpiTarget)
+            .filter(GA4KpiTarget.property_id == property_id)
+            .order_by(desc(GA4KpiTarget.period_key))
+            .all()
+        )
+
+    def get_kpi_target(self, db, target_id: str):
+        return db.query(GA4KpiTarget).filter(GA4KpiTarget.id == target_id).first()
+
+    def delete_kpi_target(self, db, target_id: str) -> bool:
+        row = self.get_kpi_target(db, target_id)
+        if not row:
+            return False
+        db.delete(row)
+        return True
 
     def get_recent_event_for_rule(self, db, *, rule_id: str, cooldown_hours: int):
         threshold = datetime.utcnow() - timedelta(hours=max(cooldown_hours, 0))

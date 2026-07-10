@@ -41,4 +41,12 @@ export const ga4InsightsService = {
     // ─── 第 2 波任務 2.4：AI 白話解讀持久化 ─────────────────────────
     saveAiSummary: async (snapshotId, aiSummary) =>
         apiClient.put(`/api/ga4/insights/snapshots/${snapshotId}/ai-summary`, { ai_summary: aiSummary }),
+
+    // ─── 第 3 波：KPI 目標追蹤（選配） ───────────────────────────────
+    listKpiTargets: async (propertyId) =>
+        apiClient.get(`/api/ga4/insights/kpi-targets?property_id=${encodeURIComponent(propertyId)}`),
+
+    upsertKpiTarget: async (payload) => apiClient.put('/api/ga4/insights/kpi-targets', payload),
+
+    deleteKpiTarget: async (targetId) => apiClient.delete(`/api/ga4/insights/kpi-targets/${targetId}`),
 };
