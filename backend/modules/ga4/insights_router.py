@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import re
+from typing import Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from pydantic import BaseModel, Field, field_validator
@@ -65,6 +66,10 @@ class KpiTargetPayload(BaseModel):
         return value
 
 
+# 第 4 波：渠道對照維度切換白名單（非白名單值 FastAPI/pydantic 自動回 422）。
+ChannelDimension = Literal["default_channel_group", "source_medium", "source", "medium", "campaign"]
+
+
 # ─── 第 2 波：當日儀表板／Realtime／渠道／到達頁／商品（docs/22 3.5 節） ───
 @router.get("/dashboard")
 def get_dashboard(
@@ -118,13 +123,16 @@ def get_realtime(
 def get_channels(
     property_id: str = Query(...),
     days: int = Query(7, ge=1, le=90),
+    dimension: ChannelDimension = Query("default_channel_group"),
     user=Depends(get_current_user),
     _module: bool = Depends(require_ga4_module),
     _perm: bool = Depends(require_ga4_insights_view),
     db=Depends(get_db),
 ):
     try:
-        snapshot = GA4InsightsService.get_channels(db, user=user, property_id=property_id, days=days)
+        snapshot = GA4InsightsService.get_channels(
+            db, user=user, property_id=property_id, days=days, dimension=dimension
+        )
     except RuntimeError as exc:
         raise HTTPException(status_code=400, detail=str(exc))
     db.commit()

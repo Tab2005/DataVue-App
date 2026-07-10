@@ -179,6 +179,20 @@ const CHANNEL_TAG_LABELS = {
     insufficient_data: { en: 'Insufficient data', zh: '資料不足' },
 };
 
+// 第 4 波：渠道對照維度切換（5 選項，對映後端 CHANNEL_DIMENSION_MAP 白名單）
+const CHANNEL_DIMENSION_OPTIONS = [
+    { value: 'default_channel_group', en: 'Session default channel group', zh: '工作階段主要管道群組' },
+    { value: 'source_medium', en: 'Session source / medium', zh: '工作階段來源/媒介' },
+    { value: 'source', en: 'Session source', zh: '工作階段來源' },
+    { value: 'medium', en: 'Session medium', zh: '工作階段媒介' },
+    { value: 'campaign', en: 'Session campaign', zh: '工作階段廣告活動' },
+];
+
+const channelDimensionLabel = (dimension, language) => {
+    const option = CHANNEL_DIMENSION_OPTIONS.find((o) => o.value === dimension) || CHANNEL_DIMENSION_OPTIONS[0];
+    return tr(language, option.en, option.zh);
+};
+
 const METRIC_LABELS = {
     sessions: { en: 'Sessions', zh: '工作階段' },
     conversions: { en: 'Conversions', zh: '轉換' },
@@ -476,8 +490,9 @@ const GA4Insights = () => {
     const [dashboardError, setDashboardError] = useState('');
     const [refreshNotice, setRefreshNotice] = useState('');
 
-    // 第 2 波：渠道對照
+    // 第 2/4 波：渠道對照
     const [channelsDays, setChannelsDays] = useState(7);
+    const [channelsDimension, setChannelsDimension] = useState('default_channel_group');
     const [channelsSnapshot, setChannelsSnapshot] = useState(null);
     const [channelsLoading, setChannelsLoading] = useState(false);
     const [channelsError, setChannelsError] = useState('');
@@ -564,12 +579,12 @@ const GA4Insights = () => {
         }
     };
 
-    const loadChannels = async (pid, days) => {
+    const loadChannels = async (pid, days, dimension = channelsDimension) => {
         if (!pid) return;
         setChannelsLoading(true);
         setChannelsError('');
         try {
-            setChannelsSnapshot(await ga4InsightsService.getChannels(pid, days));
+            setChannelsSnapshot(await ga4InsightsService.getChannels(pid, days, dimension));
         } catch (err) {
             setChannelsError(err.message || t('Failed to load channel comparison.', '載入渠道對照失敗。'));
         } finally {
@@ -948,9 +963,32 @@ const GA4Insights = () => {
                                     )}
                                 </div>
                             </div>
-                            <DaySelector value={channelsDays} onChange={(d) => { setChannelsDays(d); loadChannels(propertyId, d); }} />
+                            <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap', alignItems: 'center' }}>
+                                <select
+                                    value={channelsDimension}
+                                    onChange={(event) => {
+                                        const nextDimension = event.target.value;
+                                        setChannelsDimension(nextDimension);
+                                        loadChannels(propertyId, channelsDays, nextDimension);
+                                    }}
+                                    style={{ ...inputStyle, width: 'auto', padding: '8px 10px' }}
+                                >
+                                    {CHANNEL_DIMENSION_OPTIONS.map((option) => (
+                                        <option key={option.value} value={option.value}>{t(option.en, option.zh)}</option>
+                                    ))}
+                                </select>
+                                <DaySelector value={channelsDays} onChange={(d) => { setChannelsDays(d); loadChannels(propertyId, d, channelsDimension); }} />
+                            </div>
                         </div>
                         {channelsError && <div style={{ color: '#fca5a5', fontSize: '0.85rem', marginBottom: '10px' }}>{channelsError}</div>}
+                        {channelsSnapshot?.payload?.truncated && (
+                            <div style={{ color: '#fbbf24', fontSize: '0.78rem', marginBottom: '10px' }}>
+                                {t(
+                                    `Showing top 20 of ${channelsSnapshot.payload.total_row_count} (ranked by assisting + closing conversions).`,
+                                    `顯示前 20 名（依開發+收單轉換數排序），共 ${channelsSnapshot.payload.total_row_count} 個項目。`
+                                )}
+                            </div>
+                        )}
                         {channelsLoading && !channelsSnapshot ? (
                             emptyState(t('Loading channels…', '載入渠道資料中…'))
                         ) : channelsSnapshot?.payload?.channels?.length ? (
@@ -972,7 +1010,7 @@ const GA4Insights = () => {
                                     <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.85rem' }}>
                                         <thead>
                                             <tr style={{ color: 'var(--text-secondary)', textAlign: 'left' }}>
-                                                <th style={{ padding: '6px' }}>{t('Channel', '渠道')}</th>
+                                                <th style={{ padding: '6px' }}>{channelDimensionLabel(channelsSnapshot.payload.dimension, language)}</th>
                                                 <th style={{ padding: '6px' }}>{t('Assisting', '開發')}</th>
                                                 <th style={{ padding: '6px' }}>{t('Closing', '收單')}</th>
                                                 <th style={{ padding: '6px' }}>{t('Ratio', '比例')}</th>
@@ -1007,10 +1045,10 @@ const GA4Insights = () => {
                         snapshot={channelsSnapshot}
                         kind="daily_channel"
                         contextLabel={t(
-                            `Property ${propertyId}; period ${channelsSnapshot?.payload?.start_date || ''} ~ ${channelsSnapshot?.payload?.end_date || ''}`,
-                            `屬性 ${propertyId}；期間 ${channelsSnapshot?.payload?.start_date || ''} ~ ${channelsSnapshot?.payload?.end_date || ''}`
+                            `Property ${propertyId}; dimension ${channelDimensionLabel(channelsSnapshot?.payload?.dimension || channelsDimension, 'en')}; period ${channelsSnapshot?.payload?.start_date || ''} ~ ${channelsSnapshot?.payload?.end_date || ''}`,
+                            `屬性 ${propertyId}；維度 ${channelDimensionLabel(channelsSnapshot?.payload?.dimension || channelsDimension, 'zh')}；期間 ${channelsSnapshot?.payload?.start_date || ''} ~ ${channelsSnapshot?.payload?.end_date || ''}`
                         )}
-                        buildPayload={() => ({ channels: channelsSnapshot?.payload?.channels || [] })}
+                        buildPayload={() => ({ dimension: channelsSnapshot?.payload?.dimension, channels: channelsSnapshot?.payload?.channels || [] })}
                     />
                 </>
             )}

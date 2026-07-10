@@ -42,6 +42,18 @@ DASHBOARD_REFRESH_COOLDOWN_MINUTES = 10
 REALTIME_WINDOW_MINUTES = 30
 CHANNEL_METRIC = "conversions"
 
+# 第 4 波：渠道對照維度切換（docs/22 5 節，追加）。白名單把下拉選項對映成
+# 一對 GA4 維度（收單視角、開發視角），杜絕前端直傳任意 GA4 維度名。
+CHANNEL_DIMENSION_MAP = {
+    "default_channel_group": ("sessionDefaultChannelGroup", "firstUserDefaultChannelGroup"),
+    "source_medium": ("sessionSourceMedium", "firstUserSourceMedium"),
+    "source": ("sessionSource", "firstUserSource"),
+    "medium": ("sessionMedium", "firstUserMedium"),
+    "campaign": ("sessionCampaignName", "firstUserCampaignName"),
+}
+CHANNEL_DEFAULT_DIMENSION = "default_channel_group"
+CHANNEL_TOP_N = 20
+
 # 第 3 波：KPI 目標追蹤（docs/22 5 節，選配）
 KPI_PERIOD_TYPES = {"month", "quarter"}
 # 進度領先/落後的緩衝帶：達成率相對「時間進度」超出 ±5 個百分點才判定 ahead/behind，
@@ -420,30 +432,36 @@ class GA4InsightsService:
         start_date = end_date - timedelta(days=max(days, 1) - 1)
         return start_date.isoformat(), end_date.isoformat()
 
-    # ─── 第 2 波：渠道主攻/助攻對照（3.3 節） ──────────────────────────
+    # ─── 第 2/4 波：渠道主攻/助攻對照（3.3 節；第 4 波加維度切換） ─────
     @staticmethod
-    def get_channels(db, *, user: User, property_id: str, days: int = 7):
+    def get_channels(
+        db, *, user: User, property_id: str, days: int = 7,
+        dimension: str = CHANNEL_DEFAULT_DIMENSION,
+    ):
+        if dimension not in CHANNEL_DIMENSION_MAP:
+            raise ValueError(f"Unsupported channel dimension: {dimension}")
+        session_dim, first_user_dim = CHANNEL_DIMENSION_MAP[dimension]
         start_date, end_date = GA4InsightsService._trailing_period(days)
 
         session_data, error = GA4Service.get_analytics(
             user=user, property_id=property_id, start_date=start_date, end_date=end_date,
-            metrics=[CHANNEL_METRIC], dimensions=["sessionDefaultChannelGroup"], db=db,
+            metrics=[CHANNEL_METRIC], dimensions=[session_dim], db=db,
         )
         if error:
             raise RuntimeError(error)
         first_user_data, error = GA4Service.get_analytics(
             user=user, property_id=property_id, start_date=start_date, end_date=end_date,
-            metrics=[CHANNEL_METRIC], dimensions=["firstUserDefaultChannelGroup"], db=db,
+            metrics=[CHANNEL_METRIC], dimensions=[first_user_dim], db=db,
         )
         if error:
             raise RuntimeError(error)
 
         session_by_channel = {
-            row["sessionDefaultChannelGroup"]: row.get(CHANNEL_METRIC, 0)
+            row[session_dim]: row.get(CHANNEL_METRIC, 0)
             for row in (session_data or {}).get("rows", [])
         }
         first_user_by_channel = {
-            row["firstUserDefaultChannelGroup"]: row.get(CHANNEL_METRIC, 0)
+            row[first_user_dim]: row.get(CHANNEL_METRIC, 0)
             for row in (first_user_data or {}).get("rows", [])
         }
 
@@ -471,9 +489,31 @@ class GA4InsightsService:
                 "tag": tag,
             })
 
-        payload = {"start_date": start_date, "end_date": end_date, "days": days, "channels": rows}
+        # 高基數保護：來源/媒介/廣告活動的列數可能遠多於管道群組，依（收單＋
+        # 開發）轉換數排序只留前 20 列，payload 註記截斷與原始總列數。
+        total_row_count = len(rows)
+        truncated = total_row_count > CHANNEL_TOP_N
+        if truncated:
+            rows = sorted(
+                rows, key=lambda r: r["closing_conversions"] + r["assisting_conversions"], reverse=True
+            )[:CHANNEL_TOP_N]
+
+        # kind 命名：預設維度沿用既有 "daily_channel"（向後相容既有快照與 AI
+        # 解讀）；其餘維度加後綴各自獨立存放，互不覆寫
+        # （"daily_channel:source_medium" 27 字元 < String(30) 上限）。
+        kind = "daily_channel" if dimension == CHANNEL_DEFAULT_DIMENSION else f"daily_channel:{dimension}"
+
+        payload = {
+            "start_date": start_date,
+            "end_date": end_date,
+            "days": days,
+            "dimension": dimension,
+            "channels": rows,
+            "truncated": truncated,
+            "total_row_count": total_row_count,
+        }
         return repository.upsert_snapshot(
-            db, property_id=property_id, kind="daily_channel", date=end_date, payload=payload, fetched_by=user.id,
+            db, property_id=property_id, kind=kind, date=end_date, payload=payload, fetched_by=user.id,
         )
 
     # ─── 第 2 波：到達頁分析（3.4 節） ─────────────────────────────────
