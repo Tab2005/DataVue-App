@@ -6,6 +6,7 @@ import asyncio
 
 from fastapi import APIRouter, BackgroundTasks, Depends, File, Form, Header, HTTPException, Query, Request, UploadFile, status
 
+from core.config import settings
 from core.scheduler import get_meta_andromeda_score_job_id
 from database import get_db
 from .dependencies import (
