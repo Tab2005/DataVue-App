@@ -425,6 +425,7 @@ class ReleaseOverviewResponse(BaseModel):
 class ReleaseActionRequest(BaseModel):
     model_version: str
     note: str | None = None
+    force: bool = False
 
 
 class ReleaseCandidateCreateRequest(BaseModel):
@@ -444,6 +445,39 @@ class ReleaseCandidateCreateRequest(BaseModel):
     note: str | None = None
 
 
+class BacktestRunCreateRequest(BaseModel):
+    provider_model: str = Field(min_length=1, max_length=200)
+    sample_limit: int | None = Field(default=20, ge=1, le=200)
+    note: str | None = None
+
+
+class BacktestRunResponse(BaseModel):
+    run_id: str
+    provider: str
+    provider_model: str
+    status: str
+    note: str | None = None
+    sample_limit: int | None = None
+    total_count: int
+    processed_count: int
+    success_count: int
+    failed_count: int
+    sample_count: int
+    pairwise_ranking_accuracy: float | None = None
+    mean_band_error: float | None = None
+    error_message: str | None = None
+    result_summary: dict = Field(default_factory=dict)
+    created_at: str | None = None
+    started_at: str | None = None
+    completed_at: str | None = None
+    updated_at: str | None = None
+
+
+class BacktestRunListResponse(BaseModel):
+    runs: list[BacktestRunResponse]
+    total: int
+
+
 class ReleaseActionResponse(BaseModel):
     status: str
     action: str
@@ -451,6 +485,8 @@ class ReleaseActionResponse(BaseModel):
     actor: str
     created_at: str
     note: str | None = None
+    forced: bool = False
+    release_gate: dict = Field(default_factory=dict)
 
 
 class ReleaseMetricsRefreshResponse(BaseModel):
@@ -458,6 +494,33 @@ class ReleaseMetricsRefreshResponse(BaseModel):
     sample_count: int | None = None
     pairwise_ranking_accuracy: float | None = None
     mean_band_error: float | None = None
+
+
+class ReleaseMetricPairItem(BaseModel):
+    observed_creative_id: str
+    score_event_id: str
+    ad_id: str | None = None
+    ad_name: str | None = None
+    asset_uri: str | None = None
+    media_url: str | None = None
+    media_type: str | None = None
+    objective: str | None = None
+    observation_window_kind: str | None = None
+    overall_score: float
+    pred_band: str
+    real_band: str
+    band_gap: int
+    label_metric: str | None = None
+    label_value: float
+    spend: float
+    perf_rank: int
+
+
+class ReleaseMetricPairsResponse(BaseModel):
+    model_version: str
+    sort: str
+    sample_count: int
+    items: list[ReleaseMetricPairItem]
 
 
 class ScoreEventDeleteResponse(BaseModel):

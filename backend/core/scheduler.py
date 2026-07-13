@@ -33,6 +33,8 @@ META_ANDROMEDA_QUEUE_SWEEP_JOB_ID = "ma_queue_sweeper"
 META_ANDROMEDA_REDIS_STREAM_CONSUMER_JOB_ID = "ma_redis_stream_consumer"
 META_ANDROMEDA_REDIS_STREAM_RECLAIM_JOB_ID = "ma_redis_stream_reclaim"
 META_ANDROMEDA_WEEKLY_CLOSED_LOOP_JOB_ID = "ma_weekly_closed_loop"
+META_ANDROMEDA_RELEASE_METRICS_REFRESH_JOB_ID = "ma_release_metrics_refresh"
+META_ANDROMEDA_BACKTEST_JOB_PREFIX = "ma_backtest"
 CONTRIBUTION_ANALYSIS_JOB_PREFIX = "ca_analysis"
 CONTRIBUTION_STALE_SWEEP_JOB_ID = "ca_stale_sweeper"
 GA4_INSIGHTS_INTRADAY_JOB_ID = "ga4_insights_intraday"
@@ -381,6 +383,38 @@ async def process_meta_andromeda_observation_import(
         payload, user_id=user_id, team_id=team_id
     )
 
+
+
+async def process_meta_andromeda_backtest_run(run_id: str) -> None:
+    """Process a queued Meta Andromeda backtest run (docs/32 Wave 2)."""
+    from modules.meta_andromeda.service import MetaAndromedaService
+
+    await MetaAndromedaService.run_backtest_run(run_id)
+
+
+def get_meta_andromeda_backtest_job_id(run_id: str) -> str:
+    return f"{META_ANDROMEDA_BACKTEST_JOB_PREFIX}_{run_id}"
+
+
+def add_meta_andromeda_backtest_run_job(run_id: str, delay_seconds: float = 1):
+    if not is_scheduler_enabled() or not scheduler.running:
+        logger.info("⏰ [MetaAndromeda] Scheduler unavailable. Skipping backtest job registration for %s.", run_id)
+        return None
+    run_at = datetime.now(_LOCAL_TIMEZONE) + timedelta(seconds=delay_seconds)
+    job_id = get_meta_andromeda_backtest_job_id(run_id)
+    job = scheduler.add_job(
+        process_meta_andromeda_backtest_run,
+        trigger="date",
+        run_date=run_at,
+        args=[run_id],
+        id=job_id,
+        replace_existing=True,
+        misfire_grace_time=DEFAULT_MISFIRE_GRACE_TIME,
+        coalesce=True,
+        max_instances=1,
+    )
+    logger.info("⏰ [MetaAndromeda] Backtest run job added: %s", job_id)
+    return job
 
 async def process_contribution_analysis(snapshot_id: str) -> None:
     """Process a queued Contribution MMM analysis snapshot.
@@ -843,6 +877,60 @@ def add_meta_andromeda_redis_stream_reclaim_job():
     return job
 
 
+async def refresh_meta_andromeda_release_metrics() -> None:
+    """Daily refresh for current production release metrics (docs/32 Wave 3)."""
+    from modules.meta_andromeda.service import MetaAndromedaService
+
+    db = SessionLocal()
+    try:
+        overview = MetaAndromedaService.get_release_overview(db)
+        model_version = (overview.get("current_production") or {}).get("model_version")
+        if not model_version:
+            logger.info("⏰ [MetaAndromeda] Release metrics refresh skipped: no current production model.")
+            return
+
+        result = MetaAndromedaService.refresh_release_metrics(db, model_version)
+        status = result.get("status")
+        if status == "computed":
+            logger.info(
+                "⏰ [MetaAndromeda] Release metrics refreshed for %s (sample_count=%s, accuracy=%s, mae=%s).",
+                model_version,
+                result.get("sample_count"),
+                result.get("pairwise_ranking_accuracy"),
+                result.get("mean_band_error"),
+            )
+        elif status == "insufficient_data":
+            logger.info(
+                "⏰ [MetaAndromeda] Release metrics refresh found insufficient data for %s (sample_count=%s).",
+                model_version,
+                result.get("sample_count", 0),
+            )
+        else:
+            logger.info(
+                "⏰ [MetaAndromeda] Release metrics refresh finished for %s (status=%s).",
+                model_version,
+                status,
+            )
+    except Exception as exc:
+        logger.warning("⏰ [MetaAndromeda] Release metrics refresh failed: %s", exc, exc_info=True)
+    finally:
+        db.close()
+
+
+def add_meta_andromeda_release_metrics_refresh_job():
+    """Register daily refresh for current production release metrics (UTC 02:00)."""
+    job = scheduler.add_job(
+        refresh_meta_andromeda_release_metrics,
+        trigger=CronTrigger(hour=2, minute=0, timezone="UTC"),
+        id=META_ANDROMEDA_RELEASE_METRICS_REFRESH_JOB_ID,
+        replace_existing=True,
+        misfire_grace_time=DEFAULT_MISFIRE_GRACE_TIME,
+        coalesce=True,
+        max_instances=1,
+    )
+    logger.info("⏰ [MetaAndromeda] Release metrics refresh job registered (02:00 UTC daily).")
+    return job
+
 async def run_meta_andromeda_weekly_closed_loop() -> None:
     """Per docs/20 P2-6: for every account with observed creatives, weekly
     auto-run drift report -> (if any account unhealthy) calibration dataset
@@ -984,6 +1072,7 @@ async def start_scheduler() -> dict:
     overdue_schedule_ids: list[str] = []
     active_schedules: list[ReportSchedule] = []
     queued_score_events: list = []
+    queued_backtest_runs: list = []
     try:
         if run_report_jobs:
             active_schedules = (
@@ -1004,6 +1093,7 @@ async def start_scheduler() -> dict:
             add_meta_andromeda_redis_stream_consumer_job()
             add_meta_andromeda_redis_stream_reclaim_job()
             add_meta_andromeda_weekly_closed_loop_job()
+            add_meta_andromeda_release_metrics_refresh_job()
             # Contribution（MMM）目前與 Meta Andromeda 共用背景負載角色（docs/25
             # Wave 1 規劃將其移入同一 worker），故沿用同一 role flag 註冊殭屍
             # snapshot 回收排程（docs/27 任務 2.2）。開機當下先掃一次（不等
@@ -1018,7 +1108,7 @@ async def start_scheduler() -> dict:
                 add_report_job(schedule, db=db, persist_next_run=True)
 
         if run_meta_andromeda_jobs:
-            from database.models.meta_andromeda import MetaAndromedaScoreEvent
+            from database.models.meta_andromeda import MetaAndromedaBacktestRun, MetaAndromedaScoreEvent
 
             queued_score_events = (
                 db.query(MetaAndromedaScoreEvent)
@@ -1028,6 +1118,13 @@ async def start_scheduler() -> dict:
             if settings.META_ANDROMEDA_QUEUE_HOST not in {"redis_stream", "external_webhook"}:
                 for score_event in queued_score_events:
                     add_meta_andromeda_score_job(score_event.id)
+            queued_backtest_runs = (
+                db.query(MetaAndromedaBacktestRun)
+                .filter(MetaAndromedaBacktestRun.status.in_(["queued", "running"]))
+                .all()
+            )
+            for run in queued_backtest_runs:
+                add_meta_andromeda_backtest_run_job(run.id)
 
         db.commit()
         if run_report_jobs:
@@ -1039,6 +1136,11 @@ async def start_scheduler() -> dict:
             logger.info(
                 "⏰ [MetaAndromeda] Bootstrapped %s queued score events.",
                 len(queued_score_events),
+            )
+        if queued_backtest_runs:
+            logger.info(
+                "⏰ [MetaAndromeda] Bootstrapped %s queued/running backtest runs.",
+                len(queued_backtest_runs),
             )
     except Exception:
         db.rollback()

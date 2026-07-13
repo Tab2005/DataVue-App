@@ -35,25 +35,28 @@ from modules.meta_andromeda.dependencies import (
     require_fb_ads_analytics_view,
     require_fb_ads_module,
     require_meta_andromeda_module,
+    require_meta_andromeda_operate,
+    require_meta_andromeda_release,
 )
 
-
 from modules.meta_andromeda.internal_router import router as meta_andromeda_internal_router
-
 
 @pytest.fixture
 def meta_andromeda_access(client, db, sample_admin_user):
     repository.ensure_seed_data(db)
     app.dependency_overrides[get_current_meta_andromeda_user] = lambda: sample_admin_user
     app.dependency_overrides[require_meta_andromeda_module] = lambda: True
+    app.dependency_overrides[require_meta_andromeda_operate] = lambda: True
+    app.dependency_overrides[require_meta_andromeda_release] = lambda: True
     app.dependency_overrides[require_fb_ads_module] = lambda: True
     app.dependency_overrides[require_fb_ads_analytics_view] = lambda: True
     yield client
     app.dependency_overrides.pop(get_current_meta_andromeda_user, None)
     app.dependency_overrides.pop(require_meta_andromeda_module, None)
+    app.dependency_overrides.pop(require_meta_andromeda_operate, None)
+    app.dependency_overrides.pop(require_meta_andromeda_release, None)
     app.dependency_overrides.pop(require_fb_ads_module, None)
     app.dependency_overrides.pop(require_fb_ads_analytics_view, None)
-
 
 @pytest.fixture
 def meta_andromeda_permission_client(client, db, sample_user):
@@ -65,7 +68,6 @@ def meta_andromeda_permission_client(client, db, sample_user):
     app.dependency_overrides.pop(get_current_meta_andromeda_user, None)
     app.dependency_overrides.pop(auth_dependencies.get_current_user, None)
     app.dependency_overrides.pop(auth_dependencies.get_db, None)
-
 
 def _setup_meta_andromeda_team_access(
     db,
@@ -97,7 +99,6 @@ def _setup_meta_andromeda_team_access(
     db.commit()
     return team
 
-
 def _ensure_module(db, *, module_key: str, module_name: str) -> Module:
     module = db.query(Module).filter(Module.key == module_key).first()
     if module is None:
@@ -105,7 +106,6 @@ def _ensure_module(db, *, module_key: str, module_name: str) -> Module:
         db.add(module)
         db.flush()
     return module
-
 
 def _grant_team_module_access(db, *, user_id: str, team_id: str, module_key: str, module_name: str) -> None:
     module = _ensure_module(db, module_key=module_key, module_name=module_name)
@@ -123,7 +123,6 @@ def _grant_team_module_access(db, *, user_id: str, team_id: str, module_key: str
                 enabled=True,
             )
         )
-
 
 def _grant_team_role_permission(
     db,
@@ -159,9 +158,9 @@ def _grant_team_role_permission(
     if role_permission is None:
         db.add(RolePermission(role_id=role.id, permission_id=permission.id))
 
-
 def _clear_meta_andromeda_operational_data(db) -> None:
     from database.models.meta_andromeda import (
+        MetaAndromedaBacktestRun,
         MetaAndromedaDeadLetter,
         MetaAndromedaDriftReport,
         MetaAndromedaFeedbackEvent,
@@ -176,6 +175,26 @@ def _clear_meta_andromeda_operational_data(db) -> None:
     db.query(MetaAndromedaDriftReport).delete()
     db.query(MetaAndromedaObservedCreative).delete()
     db.query(MetaAndromedaScoreEvent).delete()
+    db.query(MetaAndromedaBacktestRun).delete()
+    db.commit()
+
+def _mark_release_candidate_metrics(db, model_version: str, *, accuracy: float, metrics_source: str = "computed") -> None:
+    from database.models.meta_andromeda import MetaAndromedaReleaseRecord
+
+    record = (
+        db.query(MetaAndromedaReleaseRecord)
+        .filter(
+            MetaAndromedaReleaseRecord.record_kind == "candidate",
+            MetaAndromedaReleaseRecord.model_version == model_version,
+        )
+        .first()
+    )
+    assert record is not None
+    record.metrics_source = metrics_source
+    record.metrics_sample_count = 10 if metrics_source == "computed" else None
+    record.pairwise_ranking_accuracy = accuracy
+    record.mean_band_error = 0.2
+    db.add(record)
     db.commit()
 
 
@@ -207,7 +226,100 @@ def _install_internal_worker_httpx_proxy(monkeypatch, db):
 
     monkeypatch.setattr(meta_andromeda_internal_gateway_module.httpx, "AsyncClient", FakeAsyncClient)
 
+@pytest.mark.unit
+def test_meta_andromeda_create_backtest_run_queues_isolated_run(meta_andromeda_access, monkeypatch):
+    monkeypatch.setattr(
+        meta_andromeda_router_module,
+        "asyncio",
+        meta_andromeda_router_module.asyncio,
+    )
+    monkeypatch.setattr(
+        "modules.meta_andromeda.model_catalog.validate_candidate_model",
+        lambda model_id: {"model_id": model_id, "ok": True, "exists": True, "issues": []},
+    )
+    queued = []
+    monkeypatch.setattr(scheduler_module, "add_meta_andromeda_backtest_run_job", lambda run_id: queued.append(run_id))
 
+    response = meta_andromeda_access.post(
+        "/api/meta-andromeda/backtest/runs",
+        json={"provider_model": "openrouter/test-model", "sample_limit": 5, "note": "candidate check"},
+    )
+
+    assert response.status_code == 201
+    payload = response.json()
+    assert payload["provider_model"] == "openrouter/test-model"
+    assert payload["status"] == "queued"
+    assert payload["sample_limit"] == 5
+    assert queued == [payload["run_id"]]
+
+
+@pytest.mark.unit
+def test_meta_andromeda_create_backtest_run_rejects_invalid_model(meta_andromeda_access, monkeypatch):
+    monkeypatch.setattr(
+        "modules.meta_andromeda.model_catalog.validate_candidate_model",
+        lambda model_id: {"model_id": model_id, "ok": False, "exists": False, "issues": ["not found"]},
+    )
+
+    response = meta_andromeda_access.post(
+        "/api/meta-andromeda/backtest/runs",
+        json={"provider_model": "missing/model", "sample_limit": 5},
+    )
+
+    assert response.status_code == 422
+    assert response.json()["detail"]["validation"]["ok"] is False
+
+
+@pytest.mark.unit
+def test_meta_andromeda_review_queue_excludes_backtest_scores(db):
+    from database.models.meta_andromeda import MetaAndromedaScoreEvent
+
+    _clear_meta_andromeda_operational_data(db)
+    db.add(
+        MetaAndromedaScoreEvent(
+            id="live_evt",
+            status="completed",
+            asset_uri="asset://live",
+            asset_type="image",
+            request_mode="manual",
+            objective="sales",
+            placement_family="feed",
+            market="TW",
+            overall_score=80,
+            roas_band="high",
+            diagnostic_breakdown={},
+            risk_tags=[],
+            top_positive_drivers=[],
+            top_negative_drivers=[],
+            lineage={"scoring_mode": "ai"},
+            request_context={},
+        )
+    )
+    db.add(
+        MetaAndromedaScoreEvent(
+            id="backtest_evt",
+            status="completed",
+            asset_uri="asset://bt",
+            asset_type="image",
+            request_mode="analytics_backtest",
+            objective="sales",
+            placement_family="feed",
+            market="TW",
+            overall_score=20,
+            roas_band="low",
+            diagnostic_breakdown={},
+            risk_tags=[],
+            top_positive_drivers=[],
+            top_negative_drivers=[],
+            lineage={"scoring_mode": "ai", "scoring_purpose": "backtest", "backtest_run_id": "ma_bt_001"},
+            request_context={"observed_creative_id": "obs_1"},
+        )
+    )
+    db.commit()
+
+    result = repository.list_review_queue(db, limit=25)
+
+    assert result["summary"]["total"] == 1
+    assert [item["score_event_id"] for item in result["items"]] == ["live_evt"]
 
 @pytest.mark.unit
 def test_meta_andromeda_ping_returns_payload(meta_andromeda_access):
@@ -217,7 +329,6 @@ def test_meta_andromeda_ping_returns_payload(meta_andromeda_access):
     payload = response.json()
     assert payload["status"] == "ok"
     assert payload["module"] == "meta_andromeda"
-
 
 @pytest.mark.unit
 def test_meta_andromeda_runtime_health_reports_missing_internal_asset_worker_config_on_web_filesystem(meta_andromeda_access, monkeypatch):
@@ -235,7 +346,6 @@ def test_meta_andromeda_runtime_health_reports_missing_internal_asset_worker_con
     assert payload["checks"]["storage"]["mode"] == "worker_remote"
     assert payload["checks"]["internal_asset_worker"]["required"] is True
     assert payload["checks"]["internal_asset_worker"]["auth_configured"] is False
-
 
 @pytest.mark.unit
 def test_meta_andromeda_upload_persists_file_to_storage_root(meta_andromeda_access, db, tmp_path, monkeypatch):
@@ -260,7 +370,6 @@ def test_meta_andromeda_upload_persists_file_to_storage_root(meta_andromeda_acce
     stored_path = tmp_path / payload["storage_key"]
     assert stored_path.exists()
     assert stored_path.read_bytes() == b"fake-image-bytes"
-
 
 @pytest.mark.unit
 def test_meta_andromeda_upload_supports_s3_compatible_storage(meta_andromeda_access, db, monkeypatch):
@@ -307,7 +416,6 @@ def test_meta_andromeda_upload_supports_s3_compatible_storage(meta_andromeda_acc
     assert captured["bytes"] == b"object-image-bytes"
     assert captured["extra_args"]["ContentType"] == "image/png"
 
-
 @pytest.mark.unit
 def test_meta_andromeda_preview_proxies_filesystem_asset_from_internal_worker(meta_andromeda_access, db, tmp_path, monkeypatch):
     monkeypatch.setenv("META_ANDROMEDA_STORAGE_ROOT", str(tmp_path))
@@ -329,7 +437,6 @@ def test_meta_andromeda_preview_proxies_filesystem_asset_from_internal_worker(me
     assert response.content == b"proxy-image-bytes"
     assert response.headers["content-type"].startswith("image/png")
     assert response.headers["x-meta-andromeda-storage-key"] == payload["storage_key"]
-
 
 @pytest.mark.unit
 def test_meta_andromeda_preview_returns_404_when_internal_worker_returns_404(meta_andromeda_access, db, tmp_path, monkeypatch):
@@ -359,7 +466,6 @@ def test_meta_andromeda_preview_returns_404_when_internal_worker_returns_404(met
     assert response.status_code == 404
     assert response.json()["detail"] == "Asset not found for URI"
 
-
 @pytest.mark.unit
 def test_meta_andromeda_internal_asset_route_rejects_missing_auth(db, tmp_path, monkeypatch):
     monkeypatch.setenv("META_ANDROMEDA_STORAGE_ROOT", str(tmp_path))
@@ -388,7 +494,6 @@ def test_meta_andromeda_internal_asset_route_rejects_missing_auth(db, tmp_path, 
     assert response.status_code == 401
     assert response.json()["detail"] == "invalid_internal_worker_token"
 
-
 @pytest.mark.unit
 def test_meta_andromeda_internal_upload_route_rejects_missing_auth(db, monkeypatch):
     monkeypatch.setenv("META_ANDROMEDA_INTERNAL_WORKER_TOKEN", "worker-token")
@@ -414,7 +519,6 @@ def test_meta_andromeda_internal_upload_route_rejects_missing_auth(db, monkeypat
     assert response.status_code == 401
     assert response.json()["detail"] == "invalid_internal_worker_token"
 
-
 @pytest.mark.unit
 def test_meta_andromeda_upload_rejects_empty_file(meta_andromeda_access, db, monkeypatch):
     monkeypatch.setenv("META_ANDROMEDA_INTERNAL_WORKER_BASE_URL", "http://meta-andromeda-worker.zeabur.internal")
@@ -433,7 +537,6 @@ def test_meta_andromeda_upload_rejects_empty_file(meta_andromeda_access, db, mon
     assert response.status_code == 400
     assert (response.json().get("detail") or response.json().get("error")) == "upload_empty_file"
 
-
 @pytest.mark.unit
 def test_meta_andromeda_upload_rejects_mime_extension_mismatch(meta_andromeda_access):
     response = meta_andromeda_access.post(
@@ -448,7 +551,6 @@ def test_meta_andromeda_upload_rejects_mime_extension_mismatch(meta_andromeda_ac
     assert response.status_code == 415
     assert (response.json().get("detail") or response.json().get("error")) == "upload_mime_not_allowed"
 
-
 @pytest.mark.unit
 def test_meta_andromeda_overview_returns_current_integration_state(meta_andromeda_access):
     response = meta_andromeda_access.get("/api/meta-andromeda/overview")
@@ -459,7 +561,6 @@ def test_meta_andromeda_overview_returns_current_integration_state(meta_andromed
     assert payload["summary"]["integration_status"] == "in_progress"
     assert payload["summary"]["current_slice"] == "queue_host_observability_enabled"
     assert any(item["key"] == "review_queue" for item in payload["capabilities"])
-
 
 @pytest.mark.unit
 def test_meta_andromeda_monitoring_exposes_worker_host_observability(meta_andromeda_access):
@@ -473,7 +574,6 @@ def test_meta_andromeda_monitoring_exposes_worker_host_observability(meta_androm
     assert "dead_letters" in payload["worker_host"]
     assert "latest_drift_reports" in payload
 
-
 @pytest.mark.unit
 def test_meta_andromeda_monitoring_timeline_returns_event_detail(meta_andromeda_access):
     response = meta_andromeda_access.get("/api/meta-andromeda/monitoring/score-events/ma_evt_20260605_002/timeline")
@@ -484,7 +584,6 @@ def test_meta_andromeda_monitoring_timeline_returns_event_detail(meta_andromeda_
     assert "worker_events" in payload
     assert "dead_letters" in payload
     assert payload["feedback"]
-
 
 @pytest.mark.unit
 def test_meta_andromeda_drift_trigger_creates_report_and_alert(meta_andromeda_access, db):
@@ -514,7 +613,6 @@ def test_meta_andromeda_drift_trigger_creates_report_and_alert(meta_andromeda_ac
     monitoring = meta_andromeda_access.get("/api/meta-andromeda/monitoring/summary").json()
     assert any(report["window_kind"] == "last_7d" for report in monitoring["latest_drift_reports"])
 
-
 @pytest.mark.unit
 def test_meta_andromeda_drift_accuracy_and_mae_calculation(meta_andromeda_access, db):
     from database.models.meta_andromeda import MetaAndromedaObservedCreative, MetaAndromedaScoreEvent
@@ -522,6 +620,7 @@ def test_meta_andromeda_drift_accuracy_and_mae_calculation(meta_andromeda_access
     # 清除現有的相關資料，確保測試環境純淨
     db.query(MetaAndromedaObservedCreative).delete()
     db.query(MetaAndromedaScoreEvent).delete()
+    db.query(MetaAndromedaBacktestRun).delete()
     db.commit()
 
     # 1. 建立 5 筆預測與真實績效完全吻合的 healthy 數據
@@ -596,7 +695,6 @@ def test_meta_andromeda_drift_accuracy_and_mae_calculation(meta_andromeda_access
     assert payload2["report_payload"]["accuracy"] == 0.4
     assert payload2["report_payload"]["mae"] == 0.8
 
-
 @pytest.mark.unit
 def test_meta_andromeda_drift_matching_by_checksum(meta_andromeda_access, db):
     from database.models.meta_andromeda import (
@@ -607,6 +705,7 @@ def test_meta_andromeda_drift_matching_by_checksum(meta_andromeda_access, db):
     
     db.query(MetaAndromedaObservedCreative).delete()
     db.query(MetaAndromedaScoreEvent).delete()
+    db.query(MetaAndromedaBacktestRun).delete()
     db.query(MetaAndromedaAsset).delete()
     db.commit()
 
@@ -679,7 +778,6 @@ def test_meta_andromeda_drift_matching_by_checksum(meta_andromeda_access, db):
     assert payload["report_payload"]["total_matched"] == 5
     assert payload["report_payload"]["accuracy"] == 1.0
 
-
 @pytest.mark.unit
 def test_meta_andromeda_monitoring_summary_does_not_reseed_read_path(meta_andromeda_access, db):
     from database.models.meta_andromeda import (
@@ -699,7 +797,6 @@ def test_meta_andromeda_monitoring_summary_does_not_reseed_read_path(meta_androm
     assert db.query(MetaAndromedaScoreEvent).count() == 0
     assert db.query(MetaAndromedaWorkerEvent).count() == 0
     assert db.query(MetaAndromedaDriftReport).count() == 0
-
 
 @pytest.mark.unit
 def test_meta_andromeda_drift_trigger_does_not_persist_mock_scores(meta_andromeda_access, db):
@@ -738,7 +835,6 @@ def test_meta_andromeda_drift_trigger_does_not_persist_mock_scores(meta_andromed
     assert payload["drift_status"] == "insufficient_data"
     assert db.query(MetaAndromedaScoreEvent).count() == 0
 
-
 @pytest.mark.unit
 def test_meta_andromeda_runtime_health_returns_shared_runtime_summary(meta_andromeda_access):
     response = meta_andromeda_access.get("/api/meta-andromeda/runtime/health")
@@ -749,7 +845,6 @@ def test_meta_andromeda_runtime_health_returns_shared_runtime_summary(meta_andro
     assert "checks" in payload
     assert "storage" in payload["checks"]
     assert "model_registry" in payload["checks"]
-
 
 @pytest.mark.unit
 def test_meta_andromeda_score_submit_supports_database_queue_host(meta_andromeda_access, monkeypatch):
@@ -777,7 +872,6 @@ def test_meta_andromeda_score_submit_supports_database_queue_host(meta_andromeda
     assert any(
         event["queue_host"] == "database_queue" for event in monitoring["worker_host"]["recent_events"]
     )
-
 
 @pytest.mark.unit
 def test_meta_andromeda_score_submit_supports_external_webhook_queue_host(meta_andromeda_access, monkeypatch):
@@ -827,7 +921,6 @@ def test_meta_andromeda_score_submit_supports_external_webhook_queue_host(meta_a
     assert matching_events[0]["event_payload"]["worker_hint"] == "queue-worker-a"
     assert captured["kwargs"]["headers"]["X-Meta-Andromeda-Request-Id"]
     assert captured["kwargs"]["headers"]["X-Meta-Andromeda-Signature"]
-
 
 @pytest.mark.unit
 def test_meta_andromeda_external_worker_callback_completes_score(meta_andromeda_access, db, monkeypatch):
@@ -888,7 +981,6 @@ def test_meta_andromeda_external_worker_callback_completes_score(meta_andromeda_
     assert detail["status"] == "completed"
     assert detail["overall_score"] == 88
     assert detail["lineage"]["scoring_mode"] == "external_worker"
-
 
 @pytest.mark.unit
 def test_meta_andromeda_external_worker_callback_retryable_failure_requeues(meta_andromeda_access, db, monkeypatch):
@@ -956,7 +1048,6 @@ def test_meta_andromeda_external_worker_callback_retryable_failure_requeues(meta
         for event in monitoring["worker_host"]["recent_events"]
     )
 
-
 @pytest.mark.unit
 def test_meta_andromeda_score_submit_supports_redis_stream_queue_host(meta_andromeda_access, monkeypatch):
     monkeypatch.setenv("META_ANDROMEDA_QUEUE_HOST", "redis_stream")
@@ -990,7 +1081,6 @@ def test_meta_andromeda_score_submit_supports_redis_stream_queue_host(meta_andro
     assert matching_events
     assert matching_events[0]["event_payload"]["stream_key"] == "meta_andromeda:test_queue"
     assert matching_events[0]["event_payload"]["receipt_id"] == "1749388800000-0"
-
 
 @pytest.mark.unit
 def test_meta_andromeda_redis_stream_consumer_acks_messages(meta_andromeda_access, db, monkeypatch):
@@ -1059,7 +1149,6 @@ def test_meta_andromeda_redis_stream_consumer_acks_messages(meta_andromeda_acces
     assert any(
         event["event_type"] == "redis_stream_consumed" for event in monitoring["worker_host"]["recent_events"]
     )
-
 
 @pytest.mark.unit
 def test_meta_andromeda_redis_stream_reclaim_reschedules_stale_pending_messages(
@@ -1136,7 +1225,6 @@ def test_meta_andromeda_redis_stream_reclaim_reschedules_stale_pending_messages(
     assert matching_events
     assert matching_events[0]["event_payload"]["claim_mode"] == "stale_pending"
 
-
 @pytest.mark.unit
 @pytest.mark.parametrize(
     "role,expected_report_jobs,expected_ma_jobs",
@@ -1154,6 +1242,59 @@ def test_scheduler_role_flags_resolve_correctly(role, expected_report_jobs, expe
     assert run_report_jobs is expected_report_jobs
     assert run_meta_andromeda_jobs is expected_ma_jobs
 
+@pytest.mark.unit
+def test_meta_andromeda_release_metrics_refresh_job_registered_daily(monkeypatch):
+    """docs/32 第3波：worker 排程需每日 UTC 02:00 自動刷新 production release metrics。"""
+    calls = []
+
+    class FakeScheduler:
+        def add_job(self, *args, **kwargs):
+            calls.append({"args": args, "kwargs": kwargs})
+            return {"job_id": kwargs.get("id")}
+
+    monkeypatch.setattr(scheduler_module, "scheduler", FakeScheduler())
+
+    job = scheduler_module.add_meta_andromeda_release_metrics_refresh_job()
+
+    assert job == {"job_id": scheduler_module.META_ANDROMEDA_RELEASE_METRICS_REFRESH_JOB_ID}
+    assert calls
+    kwargs = calls[0]["kwargs"]
+    assert calls[0]["args"][0] is scheduler_module.refresh_meta_andromeda_release_metrics
+    assert kwargs["id"] == scheduler_module.META_ANDROMEDA_RELEASE_METRICS_REFRESH_JOB_ID
+    assert kwargs["replace_existing"] is True
+    assert kwargs["coalesce"] is True
+    assert kwargs["max_instances"] == 1
+    assert "hour='2'" in str(kwargs["trigger"])
+    assert "minute='0'" in str(kwargs["trigger"])
+
+@pytest.mark.unit
+def test_meta_andromeda_release_metrics_refresh_handles_insufficient_data(monkeypatch):
+    """docs/32 第3波：insufficient_data 是正常結果，job 不應丟例外或中斷其他排程。"""
+    calls = []
+
+    class SessionProxy:
+        def close(self):
+            calls.append(("close", None))
+
+    monkeypatch.setattr(scheduler_module, "SessionLocal", lambda: SessionProxy())
+    monkeypatch.setattr(
+        meta_andromeda_service_module.MetaAndromedaService,
+        "get_release_overview",
+        staticmethod(lambda db: {"current_production": {"model_version": "prod_refresh_test"}}),
+    )
+    monkeypatch.setattr(
+        meta_andromeda_service_module.MetaAndromedaService,
+        "refresh_release_metrics",
+        staticmethod(lambda db, model_version: calls.append(("refresh", model_version)) or {
+            "status": "insufficient_data",
+            "sample_count": 2,
+        }),
+    )
+
+    asyncio.run(scheduler_module.refresh_meta_andromeda_release_metrics())
+
+    assert ("refresh", "prod_refresh_test") in calls
+    assert ("close", None) in calls
 
 @pytest.mark.unit
 def test_get_active_host_web_role_never_dispatches_locally(monkeypatch):
@@ -1179,7 +1320,6 @@ def test_get_active_host_web_role_never_dispatches_locally(monkeypatch):
     monkeypatch.setattr(meta_andromeda_queue_host_module, "get_redis_client", lambda: None)
     monkeypatch.setenv("META_ANDROMEDA_QUEUE_HOST", "auto")
     assert meta_andromeda_queue_host_module.queue_host_adapter.get_active_host() == "database_queue"
-
 
 @pytest.mark.unit
 def test_meta_andromeda_observation_import_stream_dispatch_and_consume(monkeypatch):
@@ -1245,7 +1385,6 @@ def test_meta_andromeda_observation_import_stream_dispatch_and_consume(monkeypat
     redis_mock.xack.assert_called_once()
     redis_mock.xdel.assert_called_once()
 
-
 @pytest.mark.unit
 def test_meta_andromeda_import_endpoint_dispatches_to_worker_in_web_role(meta_andromeda_access, monkeypatch):
     """docs/24 Wave 2：web 角色下匯入端點應該經 Redis stream 派工給 worker，
@@ -1287,7 +1426,6 @@ def test_meta_andromeda_import_endpoint_dispatches_to_worker_in_web_role(meta_an
     assert json.loads(xadd_calls[0][1]["payload"])["ad_id"] == "120000000000100"
     assert ran_in_process["called"] is False
 
-
 @pytest.mark.unit
 def test_meta_andromeda_review_queue_supports_filters(meta_andromeda_access):
     response = meta_andromeda_access.get(
@@ -1303,7 +1441,6 @@ def test_meta_andromeda_review_queue_supports_filters(meta_andromeda_access):
     assert all(item["status"] == "completed" for item in payload["items"])
     assert all(item["reviewed"] is False for item in payload["items"])
 
-
 @pytest.mark.unit
 def test_meta_andromeda_review_queue_detail_returns_selected_item(meta_andromeda_access):
     response = meta_andromeda_access.get("/api/meta-andromeda/review-queue/ma_evt_20260605_001")
@@ -1313,7 +1450,6 @@ def test_meta_andromeda_review_queue_detail_returns_selected_item(meta_andromeda
     assert payload["score_event_id"] == "ma_evt_20260605_001"
     assert payload["status"] == "completed"
     assert payload["top_positive_drivers"]
-
 
 @pytest.mark.unit
 def test_meta_andromeda_review_queue_falls_back_to_observed_media_url_for_preview(meta_andromeda_access, db):
@@ -1373,7 +1509,6 @@ def test_meta_andromeda_review_queue_falls_back_to_observed_media_url_for_previe
     assert detail_response.status_code == 200
     assert detail_response.json()["preview_url"] == "https://scontent.xx.fbcdn.net/v/preview_fallback.jpg"
 
-
 @pytest.mark.unit
 def test_meta_andromeda_feedback_timeline_returns_read_only_entries(meta_andromeda_access):
     response = meta_andromeda_access.get("/api/meta-andromeda/scores/ma_evt_20260605_002/feedback")
@@ -1383,7 +1518,6 @@ def test_meta_andromeda_feedback_timeline_returns_read_only_entries(meta_androme
     assert payload["score_event_id"] == "ma_evt_20260605_002"
     assert payload["feedback"]
     assert payload["feedback"][0]["decision"] == "revise"
-
 
 @pytest.mark.unit
 def test_meta_andromeda_feedback_submit_updates_timeline(meta_andromeda_access):
@@ -1406,7 +1540,6 @@ def test_meta_andromeda_feedback_submit_updates_timeline(meta_andromeda_access):
     timeline_payload = timeline.json()
     assert timeline_payload["feedback"]
     assert timeline_payload["feedback"][-1]["decision"] == "approve"
-
 
 @pytest.mark.asyncio
 async def test_meta_andromeda_score_submit_queues_then_completes(meta_andromeda_access, db, monkeypatch):
@@ -1441,7 +1574,6 @@ async def test_meta_andromeda_score_submit_queues_then_completes(meta_andromeda_
     assert detail_payload["lineage"]["registry_model_version"] == "cand_v2026_06_05_a"
     assert detail_payload["lineage"]["registry_source"] == "datavue.meta_andromeda.registry"
     assert detail_payload["attempt_count"] >= 1
-
 
 @pytest.mark.asyncio
 async def test_meta_andromeda_score_retries_then_completes(meta_andromeda_access, db, monkeypatch):
@@ -1502,7 +1634,6 @@ async def test_meta_andromeda_score_retries_then_completes(meta_andromeda_access
         event["event_type"] == "retry_scheduled" for event in monitoring["worker_host"]["recent_events"]
     )
 
-
 @pytest.mark.asyncio
 async def test_meta_andromeda_score_timeout_marks_failed(meta_andromeda_access, db, monkeypatch):
     monkeypatch.setenv("META_ANDROMEDA_SCORE_TIMEOUT_SECONDS", "0.01")
@@ -1551,7 +1682,6 @@ async def test_meta_andromeda_score_timeout_marks_failed(meta_andromeda_access, 
     assert monitoring["worker_host"]["dead_letter_count"] >= 1
     assert monitoring["worker_host"]["dead_letters"]
     assert monitoring["worker_host"]["dead_letters"][0]["failure_stage"] == "runtime"
-
 
 @pytest.mark.asyncio
 async def test_meta_andromeda_asset_prep_does_not_block_event_loop(meta_andromeda_access, db, monkeypatch):
@@ -1603,7 +1733,6 @@ async def test_meta_andromeda_asset_prep_does_not_block_event_loop(meta_andromed
     # 丟進 to_thread 後心跳應該能照常跑滿。
     assert heartbeat_count >= 10
 
-
 @pytest.mark.unit
 def test_meta_andromeda_release_overview_returns_candidates_and_notes(meta_andromeda_access):
     response = meta_andromeda_access.get("/api/meta-andromeda/release/overview")
@@ -1616,9 +1745,132 @@ def test_meta_andromeda_release_overview_returns_candidates_and_notes(meta_andro
     assert payload["history"]
     assert payload["notes"]
 
+def _reset_metric_pair_tables(db):
+    """清空觀測/評分事件表：label 門檻與配對都掃全表，殘留資料會污染排序與 band 判定。"""
+    from database.models.meta_andromeda import MetaAndromedaObservedCreative, MetaAndromedaScoreEvent
+
+    db.query(MetaAndromedaObservedCreative).delete()
+    db.query(MetaAndromedaScoreEvent).delete()
+    db.query(MetaAndromedaBacktestRun).delete()
+    db.commit()
+
+def _seed_metric_pair(db, idx: str, *, model_version: str, overall_score: float, pred_band: str, roas: float, spend: float = 100.0):
+    """建一組可被 _collect_release_metric_pairs 配對的 ObservedCreative + completed ScoreEvent。
+
+    roas 門檻在樣本 < 20 且無 prior policy 時退回固定 3.0/6.0：<3 → low、3-6 → mid、>6 → high。
+    """
+    from database.models.meta_andromeda import MetaAndromedaObservedCreative, MetaAndromedaScoreEvent
+
+    obs = MetaAndromedaObservedCreative(
+        id=f"mp_obs_{idx}",
+        asset_uri=f"storage://meta-andromeda/metric-pairs/{idx}.png",
+        source_platform="facebook_ads",
+        source_account_id="act_mp",
+        ad_id=f"ad_mp_{idx}",
+        ad_name=f"素材 {idx}",
+        objective="CONVERSIONS",
+        placement_family="feed",
+        market="TW",
+        media_type="image",
+        media_url=f"https://scontent.example.com/{idx}.jpg",
+        observation_window_kind="last_7d",
+        observation_window_start="2026-07-01",
+        observation_window_end="2026-07-07",
+        source_fetched_at="2026-07-08T00:00:00Z",
+        performance_snapshot={"roas": roas, "spend": spend},
+    )
+    db.add(obs)
+    evt = MetaAndromedaScoreEvent(
+        id=f"mp_evt_{idx}",
+        status="completed",
+        asset_uri=obs.asset_uri,
+        asset_type="image",
+        request_mode="manual",
+        objective="CONVERSIONS",
+        placement_family="feed",
+        market="TW",
+        overall_score=overall_score,
+        roas_band=pred_band,
+        roas_prediction={"eligible": True},
+        lineage={"registry_model_version": model_version, "scoring_mode": "ai"},
+    )
+    db.add(evt)
 
 @pytest.mark.unit
-def test_meta_andromeda_release_approve_updates_history(meta_andromeda_access):
+def test_meta_andromeda_release_metric_pairs_mismatch_sort(meta_andromeda_access, db):
+    """docs/32 任務 1.1：配對明細端點欄位完整、mismatch 排序讓高分低效浮最上面，
+    且明細筆數與 compute_release_metrics 的 sample_count 一致（共用配對邏輯）。"""
+    mv = "mp_test_model_v1"
+    _reset_metric_pair_tables(db)
+    # A：高分(92) × 實際 low(roas 1.0)、預測 high → band_gap 2（高分低效，應排最前）
+    _seed_metric_pair(db, "a", model_version=mv, overall_score=92, pred_band="high", roas=1.0)
+    # B：低分(40) × 實際 high(roas 8.0)、預測 low → band_gap 2（低分高效）
+    _seed_metric_pair(db, "b", model_version=mv, overall_score=40, pred_band="low", roas=8.0)
+    # C：中分(70) × 實際 mid(roas 4.0)、預測 mid → band_gap 0
+    _seed_metric_pair(db, "c", model_version=mv, overall_score=70, pred_band="mid", roas=4.0)
+    db.commit()
+
+    response = meta_andromeda_access.get(f"/api/meta-andromeda/release/{mv}/metric-pairs")
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["sample_count"] == 3
+    assert payload["sort"] == "mismatch"
+    ids = [item["observed_creative_id"] for item in payload["items"]]
+    assert ids == ["mp_obs_a", "mp_obs_b", "mp_obs_c"]
+
+    top = payload["items"][0]
+    assert top["score_event_id"] == "mp_evt_a"
+    assert top["pred_band"] == "high"
+    assert top["real_band"] == "low"
+    assert top["band_gap"] == 2
+    assert top["overall_score"] == 92
+    assert top["label_value"] == 1.0
+    assert top["spend"] == 100.0
+    assert top["media_url"].startswith("https://")
+    assert top["asset_uri"].startswith("storage://")
+    assert top["observation_window_kind"] == "last_7d"
+
+    # 與聚合指標同一份配對邏輯：sample_count 必須一致
+    metrics = repository.refresh_release_metrics(db, mv)
+    assert metrics["sample_count"] == 3
+
+@pytest.mark.unit
+def test_meta_andromeda_release_metric_pairs_score_vs_perf_sort(meta_andromeda_access, db):
+    """score_vs_perf 排序：依模型總分降冪，perf_rank 標出實際成效名次（1 = 最好）。"""
+    mv = "mp_test_model_v2"
+    _reset_metric_pair_tables(db)
+    _seed_metric_pair(db, "d", model_version=mv, overall_score=92, pred_band="high", roas=1.0)
+    _seed_metric_pair(db, "e", model_version=mv, overall_score=40, pred_band="low", roas=8.0)
+    _seed_metric_pair(db, "f", model_version=mv, overall_score=70, pred_band="mid", roas=4.0)
+    db.commit()
+
+    response = meta_andromeda_access.get(
+        f"/api/meta-andromeda/release/{mv}/metric-pairs?sort=score_vs_perf&limit=2"
+    )
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["sample_count"] == 3
+    assert len(payload["items"]) == 2  # limit 生效，但 sample_count 仍為全量
+    ids = [item["observed_creative_id"] for item in payload["items"]]
+    assert ids == ["mp_obs_d", "mp_obs_f"]  # 92 → 70
+    # 分數最高的 d 實際成效最差（roas 1.0）→ perf_rank 3
+    assert payload["items"][0]["perf_rank"] == 3
+
+@pytest.mark.unit
+def test_meta_andromeda_release_metric_pairs_empty(meta_andromeda_access):
+    """無配對資料時回空陣列與 sample_count 0，不報錯。"""
+    response = meta_andromeda_access.get("/api/meta-andromeda/release/no_such_model/metric-pairs")
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["sample_count"] == 0
+    assert payload["items"] == []
+
+@pytest.mark.unit
+def test_meta_andromeda_release_approve_updates_history(meta_andromeda_access, db):
+    _mark_release_candidate_metrics(db, "cand_v2026_06_05_a", accuracy=0.62)
     response = meta_andromeda_access.post(
         "/api/meta-andromeda/release/approve",
         json={"model_version": "cand_v2026_06_05_a", "note": "Ship it"},
@@ -1634,6 +1886,80 @@ def test_meta_andromeda_release_approve_updates_history(meta_andromeda_access):
     overview_payload = overview.json()
     assert overview_payload["history"][0]["action"] == "approve"
 
+@pytest.mark.unit
+def test_meta_andromeda_release_approve_blocks_uncomputed_candidate(meta_andromeda_access):
+    response = meta_andromeda_access.post(
+        "/api/meta-andromeda/release/approve",
+        json={"model_version": "cand_v2026_06_05_a", "note": "try seed metrics"},
+    )
+
+    assert response.status_code == 422
+    detail = response.json()["detail"]
+    assert detail["code"] == "release_metrics_not_computed"
+    assert detail["details"]["metrics_source"] == "seed"
+
+
+@pytest.mark.unit
+def test_meta_andromeda_release_approve_blocks_low_accuracy_candidate(meta_andromeda_access, db):
+    _mark_release_candidate_metrics(db, "cand_v2026_06_05_a", accuracy=0.54)
+
+    response = meta_andromeda_access.post(
+        "/api/meta-andromeda/release/approve",
+        json={"model_version": "cand_v2026_06_05_a", "note": "accuracy too low"},
+    )
+
+    assert response.status_code == 422
+    detail = response.json()["detail"]
+    assert detail["code"] == "release_accuracy_below_threshold"
+    assert detail["details"]["threshold"] == 0.55
+
+
+@pytest.mark.unit
+def test_meta_andromeda_release_approve_force_requires_note(meta_andromeda_access):
+    response = meta_andromeda_access.post(
+        "/api/meta-andromeda/release/approve",
+        json={"model_version": "cand_v2026_06_05_a", "force": True, "note": ""},
+    )
+
+    assert response.status_code == 422
+    assert response.json()["detail"]["code"] == "force_note_required"
+
+
+@pytest.mark.unit
+def test_meta_andromeda_release_approve_force_bypasses_gate_and_marks_history(meta_andromeda_access):
+    response = meta_andromeda_access.post(
+        "/api/meta-andromeda/release/approve",
+        json={"model_version": "cand_v2026_06_05_a", "force": True, "note": "emergency model switch"},
+    )
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["forced"] is True
+    assert payload["release_gate"]["forced"] is True
+
+    overview = meta_andromeda_access.get("/api/meta-andromeda/release/overview")
+    history = overview.json()["history"][0]
+    assert history["action"] == "approve"
+    assert history["forced"] is True
+    assert history["note"] == "emergency model switch"
+
+
+@pytest.mark.unit
+def test_meta_andromeda_release_rollback_ignores_accuracy_gate(meta_andromeda_access, db):
+    _mark_release_candidate_metrics(db, "cand_v2026_06_05_a", accuracy=0.62)
+    approve = meta_andromeda_access.post(
+        "/api/meta-andromeda/release/approve",
+        json={"model_version": "cand_v2026_06_05_a", "note": "ship qualifying model"},
+    )
+    assert approve.status_code == 200
+
+    rollback = meta_andromeda_access.post(
+        "/api/meta-andromeda/release/rollback",
+        json={"model_version": "cand_v2026_06_05_a", "note": "rollback should always work"},
+    )
+
+    assert rollback.status_code == 200
+    assert rollback.json()["action"] == "rollback"
 
 @pytest.mark.unit
 def test_meta_andromeda_create_release_candidate_appears_in_overview(meta_andromeda_access):
@@ -1662,7 +1988,6 @@ def test_meta_andromeda_create_release_candidate_appears_in_overview(meta_androm
     # 歷史紀錄也應留下一筆稽核事件
     assert overview.json()["history"][0]["action"] == "create_candidate"
     assert overview.json()["history"][0]["model_version"] == "cand_v2026_09_01_manual"
-
 
 @pytest.mark.unit
 def test_meta_andromeda_create_release_candidate_inherits_production_scoring_profile(meta_andromeda_access, db):
@@ -1707,7 +2032,6 @@ def test_meta_andromeda_create_release_candidate_inherits_production_scoring_pro
     assert entry.is_current_production is False
     assert entry.scoring_profile == "creative_scoring_v_test"
 
-
 @pytest.mark.unit
 def test_meta_andromeda_create_release_candidate_rejects_duplicate_model_version(meta_andromeda_access):
     """model_version 已存在於 registry（例如既有的 production/candidate/
@@ -1722,7 +2046,6 @@ def test_meta_andromeda_create_release_candidate_rejects_duplicate_model_version
         },
     )
     assert response.status_code == 409
-
 
 @pytest.mark.unit
 def test_meta_andromeda_created_candidate_can_be_approved_to_production(meta_andromeda_access, db, monkeypatch):
@@ -1770,6 +2093,7 @@ def test_meta_andromeda_created_candidate_can_be_approved_to_production(meta_and
         },
     )
     assert create_resp.status_code == 201
+    _mark_release_candidate_metrics(db, "cand_v2026_09_01_e2e", accuracy=0.64)
 
     approve_resp = meta_andromeda_access.post(
         "/api/meta-andromeda/release/approve",
@@ -1781,7 +2105,6 @@ def test_meta_andromeda_created_candidate_can_be_approved_to_production(meta_and
     entry = model_registry.get_entry()
     assert entry.model_version == "cand_v2026_09_01_e2e"
     assert entry.provider_model == "some-org/e2e-model:free"
-
 
 @pytest.mark.unit
 def test_effective_scoring_status_reports_no_override_when_env_matches_db(meta_andromeda_access, db, monkeypatch):
@@ -1828,7 +2151,6 @@ def test_effective_scoring_status_reports_no_override_when_env_matches_db(meta_a
     assert body["resolved_provider_model"] == "some-org/effective-match:free"
     assert body["db_production_model_version"] == "prod_test_effective_match"
     assert body["db_production_provider_model"] == "some-org/effective-match:free"
-
 
 @pytest.mark.unit
 def test_effective_scoring_status_flags_override_from_env_model(meta_andromeda_access, db, monkeypatch):
@@ -1877,7 +2199,6 @@ def test_effective_scoring_status_flags_override_from_env_model(meta_andromeda_a
     assert body["db_production_provider_model"] == "some-org/original-db-model:free"
     assert body["scoring_model_setting"] == "some-org/env-forced-model:free"
 
-
 @pytest.mark.unit
 def test_validate_candidate_model_reports_ok_for_valid_model(meta_andromeda_access, monkeypatch):
     """換模型前先查：真的存在、支援圖片輸入、context/輸出上限都夠的模型應該回 ok=True。"""
@@ -1908,7 +2229,6 @@ def test_validate_candidate_model_reports_ok_for_valid_model(meta_andromeda_acce
     assert body["max_completion_tokens"] == 65536
     assert body["is_free"] is True
 
-
 @pytest.mark.unit
 def test_validate_candidate_model_reports_not_found(meta_andromeda_access, monkeypatch):
     """查無此模型 ID（打錯字/已下架/根本不是真的模型）應該明確回報，而不是讓 ops
@@ -1926,7 +2246,6 @@ def test_validate_candidate_model_reports_not_found(meta_andromeda_access, monke
     assert body["exists"] is False
     assert body["ok"] is False
     assert body["issues"]
-
 
 @pytest.mark.unit
 def test_validate_candidate_model_flags_missing_image_support_and_narrow_context(meta_andromeda_access, monkeypatch):
@@ -1955,7 +2274,6 @@ def test_validate_candidate_model_flags_missing_image_support_and_narrow_context
     assert body["ok"] is False
     assert body["supports_image_input"] is False
     assert len(body["issues"]) == 3  # 不支援圖片 + context 太窄 + 輸出上限太小
-
 
 @pytest.mark.unit
 def test_meta_andromeda_observation_import_accepts_supported_window_contract(meta_andromeda_access, monkeypatch):
@@ -2027,7 +2345,6 @@ def test_meta_andromeda_observation_import_accepts_supported_window_contract(met
     assert payload["observation_window"]["end"]
     assert payload["observed_creative_id"].startswith("ma_obs_")
 
-
 @pytest.mark.unit
 def test_meta_andromeda_observation_import_rejects_unsupported_window_kind(meta_andromeda_access):
     response = meta_andromeda_access.post(
@@ -2042,7 +2359,6 @@ def test_meta_andromeda_observation_import_rejects_unsupported_window_kind(meta_
     )
 
     assert response.status_code == 422
-
 
 @pytest.mark.unit
 def test_meta_andromeda_facebook_importer_normalizes_ad_row():
@@ -2090,7 +2406,6 @@ def test_meta_andromeda_facebook_importer_normalizes_ad_row():
     assert candidate.observation_window_kind == "last_30d"
     assert candidate.observation_window_start == "2026-05-17"
     assert candidate.observation_window_end == "2026-06-15"
-
 
 @pytest.mark.unit
 def test_meta_andromeda_observation_import_uses_facebook_importer(meta_andromeda_access, monkeypatch):
@@ -2169,7 +2484,6 @@ def test_meta_andromeda_observation_import_uses_facebook_importer(meta_andromeda
     assert payload["performance_snapshot"]["purchases"] == 14
     assert payload["performance_snapshot"]["roas"] == 2.85
     assert payload["observation_window"]["kind"] == "last_30d"
-
 
 @pytest.mark.unit
 def test_meta_andromeda_observation_import_persists_asset_and_observed_record(
@@ -2264,7 +2578,6 @@ def test_meta_andromeda_observation_import_persists_asset_and_observed_record(
     assert observed.performance_snapshot["purchases"] == 14
     assert observed.observation_window_kind == "last_30d"
 
-
 @pytest.mark.unit
 def test_meta_andromeda_observation_import_auto_creates_score_event(
     meta_andromeda_access,
@@ -2353,7 +2666,6 @@ def test_meta_andromeda_observation_import_auto_creates_score_event(
     assert score_event.asset_uri == payload["asset_uri"]
     assert score_event.runtime_job_id.startswith("ma_score_")
 
-
 @pytest.mark.unit
 def test_meta_andromeda_observation_import_denies_without_fb_ads_module_access(
     meta_andromeda_permission_client,
@@ -2437,7 +2749,6 @@ def test_meta_andromeda_observation_import_denies_without_fb_ads_module_access(
     assert response.status_code == 403
     assert "fb_ads" in response.text
 
-
 @pytest.mark.unit
 def test_meta_andromeda_observation_import_denies_without_fb_ads_analytics_permission(
     meta_andromeda_permission_client,
@@ -2519,7 +2830,6 @@ def test_meta_andromeda_observation_import_denies_without_fb_ads_analytics_permi
 
     assert response.status_code == 403
     assert "fb_ads:analytics:view" in response.text
-
 
 @pytest.mark.unit
 def test_meta_andromeda_observation_import_allows_with_fb_ads_module_and_permission(
@@ -2611,7 +2921,6 @@ def test_meta_andromeda_observation_import_allows_with_fb_ads_module_and_permiss
     assert response.status_code == 202
     assert response.json()["source"]["ad_id"] == "120000000000012"
 
-
 @pytest.mark.unit
 def test_meta_andromeda_observation_import_rejects_disallowed_media_host(meta_andromeda_access, monkeypatch):
     from modules.meta_andromeda.schemas import ObservedCreativeCandidate
@@ -2660,7 +2969,6 @@ def test_meta_andromeda_observation_import_rejects_disallowed_media_host(meta_an
     assert response.status_code == 400
     assert (response.json().get("detail") or response.json().get("error")) == "observed_media_url_host_not_allowed"
 
-
 @pytest.mark.unit
 def test_meta_andromeda_team_user_without_module_access_is_denied_read_only_endpoint(
     meta_andromeda_permission_client,
@@ -2680,7 +2988,6 @@ def test_meta_andromeda_team_user_without_module_access_is_denied_read_only_endp
     assert response.status_code == 403
     assert "meta_andromeda" in response.text
 
-
 @pytest.mark.unit
 def test_meta_andromeda_team_viewer_can_read_overview_with_team_module_access(
     meta_andromeda_permission_client,
@@ -2698,7 +3005,6 @@ def test_meta_andromeda_team_viewer_can_read_overview_with_team_module_access(
 
     assert response.status_code == 200
     assert response.json()["module"]["key"] == "meta_andromeda"
-
 
 @pytest.mark.unit
 def test_meta_andromeda_team_member_can_submit_feedback_in_team_workspace(
@@ -2726,7 +3032,6 @@ def test_meta_andromeda_team_member_can_submit_feedback_in_team_workspace(
     assert response.status_code == 201
     assert response.json()["decision"] == "approve"
 
-
 @pytest.mark.unit
 def test_meta_andromeda_team_member_can_trigger_drift_report_and_approve_release(
     meta_andromeda_permission_client,
@@ -2739,6 +3044,8 @@ def test_meta_andromeda_team_member_can_trigger_drift_report_and_approve_release
         membership_role=UserRole.MEMBER,
         role_key="team_member",
     )
+
+    _mark_release_candidate_metrics(db, "cand_v2026_06_05_a", accuracy=0.61)
 
     drift_response = client.post(
         "/api/meta-andromeda/drift:trigger",
@@ -2756,7 +3063,6 @@ def test_meta_andromeda_team_member_can_trigger_drift_report_and_approve_release
     assert release_response.status_code == 200
     assert release_response.json()["action"] == "approve"
 
-
 @pytest.mark.unit
 def test_sync_calibration_dataset_endpoint(meta_andromeda_access, db):
     from database.models.meta_andromeda import (
@@ -2769,6 +3075,7 @@ def test_sync_calibration_dataset_endpoint(meta_andromeda_access, db):
     # 確保資料庫純淨
     db.query(MetaAndromedaObservedCreative).delete()
     db.query(MetaAndromedaScoreEvent).delete()
+    db.query(MetaAndromedaBacktestRun).delete()
     db.commit()
 
     # 建立一個有偏差的配對 (pred: high vs real: low)
@@ -2828,7 +3135,6 @@ def test_sync_calibration_dataset_endpoint(meta_andromeda_access, db):
     assert dataset.label_policy_version == "ma_label_policy_v2"
     assert item.prediction_band == "high"
     assert item.observed_band == "low"
-
 
 @pytest.mark.unit
 def test_meta_andromeda_monitoring_summary_uses_real_latency_metrics(meta_andromeda_access, db):
@@ -2895,7 +3201,6 @@ def test_meta_andromeda_monitoring_summary_uses_real_latency_metrics(meta_androm
     assert payload["jobs"]["score-request"]["queue_depth"]["current"] == 1
     assert payload["jobs"]["score-request"]["queue_depth"]["peak"] >= 2
 
-
 @pytest.mark.unit
 def test_meta_andromeda_heuristic_runtime_uses_lower_score_and_dynamic_confidence():
     from modules.meta_andromeda.runtime import build_heuristic_score_result
@@ -2924,7 +3229,6 @@ def test_meta_andromeda_heuristic_runtime_uses_lower_score_and_dynamic_confidenc
     assert result["roas_prediction"]["confidence"] != 0.61
     assert result["lineage"]["label_policy_version"] == "ma_label_policy_v2"
 
-
 @pytest.mark.unit
 def test_meta_andromeda_scheduler_disabled_skips_score_job_registration(monkeypatch):
     scheduled = []
@@ -2940,7 +3244,6 @@ def test_meta_andromeda_scheduler_disabled_skips_score_job_registration(monkeypa
 
     assert job is None
     assert scheduled == []
-
 
 @pytest.mark.unit
 def test_meta_andromeda_mark_score_processing_claim_is_single_shot(meta_andromeda_access, db):
@@ -2967,7 +3270,6 @@ def test_meta_andromeda_mark_score_processing_claim_is_single_shot(meta_andromed
     assert second_claim is None
     assert latest["status"] == "processing"
     assert latest["attempt_count"] == 1
-
 
 @pytest.mark.unit
 def test_meta_andromeda_external_worker_completed_callback_is_idempotent(meta_andromeda_access, db, monkeypatch):
@@ -3040,7 +3342,6 @@ def test_meta_andromeda_external_worker_completed_callback_is_idempotent(meta_an
         == 1
     )
 
-
 @pytest.mark.unit
 def test_meta_andromeda_external_worker_stale_failed_callback_does_not_override_completed(
     meta_andromeda_access,
@@ -3108,7 +3409,6 @@ def test_meta_andromeda_external_worker_stale_failed_callback_does_not_override_
     assert detail["status"] == "completed"
     assert detail["error_message"] is None
 
-
 @pytest.mark.asyncio
 async def test_meta_andromeda_openrouter_invalid_schema_falls_back_to_heuristic(meta_andromeda_access, db, monkeypatch):
     from services.ai.openrouter_client import OpenRouterClient
@@ -3156,7 +3456,6 @@ async def test_meta_andromeda_openrouter_invalid_schema_falls_back_to_heuristic(
 
     assert result["lineage"]["scoring_mode"] == "heuristic"
     assert "provider_fallback" in result["risk_tags"]
-
 
 @pytest.mark.asyncio
 async def test_meta_andromeda_storage_image_is_encoded_and_sent_as_data_uri(
@@ -3261,7 +3560,6 @@ async def test_meta_andromeda_storage_image_is_encoded_and_sent_as_data_uri(
     assert len(image_parts) == 1
     assert image_parts[0]["image_url"]["url"].startswith("data:image/png;base64,")
 
-
 def test_meta_andromeda_image_auto_compression():
     import io
     from PIL import Image, ImageDraw
@@ -3295,7 +3593,6 @@ def test_meta_andromeda_image_auto_compression():
     width, height = compressed_img.size
     assert max(width, height) <= 1200
 
-
 # =============================================================================
 # docs/23: Non-ROAS objective groups (traffic/awareness/video/engagement) 預測對照補完
 # 驗證目標：
@@ -3308,7 +3605,6 @@ def test_meta_andromeda_image_auto_compression():
 #   5. 端對端：mock provider 為四組各回一個 band → 寫入 DB → 從 detail 讀回來仍是 band；
 #      sync_calibration_dataset 與 create_drift_report 不再把這四組當 skipped_not_band_eligible
 # =============================================================================
-
 
 @pytest.mark.unit
 def test_objective_routing_is_predicted_band_eligible_covers_all_known_groups():
@@ -3342,7 +3638,6 @@ def test_objective_routing_is_predicted_band_eligible_covers_all_known_groups():
     assert is_roas_band_eligible(LEAD) is True
     assert is_roas_band_eligible(APP) is True
 
-
 @pytest.mark.unit
 def test_default_objective_profiles_make_non_roas_groups_band_eligible():
     """docs/23 step 2: _DEFAULT_OBJECTIVE_PROFILES 把 traffic/awareness/video/
@@ -3367,7 +3662,6 @@ def test_default_objective_profiles_make_non_roas_groups_band_eligible():
     lead_profile = _DEFAULT_OBJECTIVE_PROFILES["lead"]
     assert lead_profile["roas_band_eligible"] is True
     assert "LEAD QUALITY BAND" in lead_profile["user_prompt_template"]
-
 
 @pytest.mark.unit
 def test_validate_provider_result_preserves_band_for_non_roas_groups():
@@ -3422,7 +3716,6 @@ def test_validate_provider_result_preserves_band_for_non_roas_groups():
         assert result["prediction_mode"] == "diagnostic_plus_roas"
         assert result["lineage"]["objective_group"] == group
 
-
 @pytest.mark.unit
 def test_score_to_list_item_includes_objective_group():
     """docs/23 step 3: _score_to_list_item 把 objective_group 加進 payload，detail
@@ -3476,7 +3769,6 @@ def test_score_to_list_item_includes_objective_group():
     detail = MetaAndromedaRepository._score_to_detail(_Stub())
     assert detail["objective_group"] == "traffic"
 
-
 @pytest.mark.asyncio
 @pytest.mark.parametrize(
     "objective,expected_group,expected_metric_focus",
@@ -3503,7 +3795,6 @@ async def test_non_roas_objectives_resolve_to_correct_group_and_metric_focus(
 
     assert resolve_objective_group(objective) == expected_group
     assert _DEFAULT_OBJECTIVE_PROFILES[expected_group]["metric_focus"] == expected_metric_focus
-
 
 @pytest.mark.asyncio
 async def test_non_roas_group_end_to_end_ai_band_flows_through_to_detail(
@@ -3578,7 +3869,6 @@ async def test_non_roas_group_end_to_end_ai_band_flows_through_to_detail(
     # 觀測端 labeling 走 NON_ROAS 路由用 CTR/CPC，這層是另一條邏輯，不影響
     assert detail["prediction_mode"] == "diagnostic_plus_roas"
 
-
 @pytest.mark.unit
 def test_non_roas_group_enters_calibration_dataset_when_band_predicted(meta_andromeda_access, db):
     """docs/23 step 5: sync_calibration_dataset 對 traffic 等非 ROAS 群組，只要
@@ -3593,6 +3883,7 @@ def test_non_roas_group_enters_calibration_dataset_when_band_predicted(meta_andr
     # 確保資料庫乾淨
     db.query(MetaAndromedaObservedCreative).delete()
     db.query(MetaAndromedaScoreEvent).delete()
+    db.query(MetaAndromedaBacktestRun).delete()
     db.commit()
 
     obs = MetaAndromedaObservedCreative(
@@ -3655,7 +3946,6 @@ def test_non_roas_group_enters_calibration_dataset_when_band_predicted(meta_andr
     assert item.prediction_band == "high"
     assert item.observed_band in ("high", "mid", "low")  # 動態門檻算出來的 band
 
-
 @pytest.mark.unit
 def test_non_roas_group_enters_drift_report_accuracy_when_band_predicted(meta_andromeda_access, db):
     """docs/23 step 5: create_drift_report 對 traffic 等非 ROAS 群組，只要
@@ -3669,6 +3959,7 @@ def test_non_roas_group_enters_drift_report_accuracy_when_band_predicted(meta_an
 
     db.query(MetaAndromedaObservedCreative).delete()
     db.query(MetaAndromedaScoreEvent).delete()
+    db.query(MetaAndromedaBacktestRun).delete()
     db.commit()
 
     obs = MetaAndromedaObservedCreative(
@@ -3725,7 +4016,6 @@ def test_non_roas_group_enters_drift_report_accuracy_when_band_predicted(meta_an
     assert matched, "expected at least one matched_details entry for awareness"
     assert matched[0].get("band_eligible") is True
     # 之前被排除時，band_eligible 會是 false 且不會出現在 matched_details 裡
-
 
 @pytest.mark.unit
 def test_heuristic_fallback_still_skips_band_for_non_roas_groups():

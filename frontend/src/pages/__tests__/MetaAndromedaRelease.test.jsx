@@ -6,10 +6,12 @@ import { renderWithOutlet } from '../../test/renderWithOutlet';
 import { useModuleAccess } from '../../hooks/usePermission';
 import {
     approveMetaAndromedaRelease,
+    createMetaAndromedaBacktestRun,
     createMetaAndromedaReleaseCandidate,
+    fetchMetaAndromedaBacktestRuns,
     fetchMetaAndromedaReleaseOverview,
 } from '../../services/metaAndromedaReleaseService';
-import { fetchMetaAndromedaMonitoringSummary } from '../../services/metaAndromedaMonitoringService';
+import { fetchMetaAndromedaMonitoringSummary, validateCandidateModel } from '../../services/metaAndromedaMonitoringService';
 
 vi.mock('../../hooks/usePermission', () => ({
     useModuleAccess: vi.fn(),
@@ -21,10 +23,14 @@ vi.mock('../../services/metaAndromedaReleaseService', () => ({
     rejectMetaAndromedaRelease: vi.fn(),
     rollbackMetaAndromedaRelease: vi.fn(),
     createMetaAndromedaReleaseCandidate: vi.fn(),
+    fetchMetaAndromedaReleaseMetricPairs: vi.fn(),
+    fetchMetaAndromedaBacktestRuns: vi.fn(),
+    createMetaAndromedaBacktestRun: vi.fn(),
 }));
 
 vi.mock('../../services/metaAndromedaMonitoringService', () => ({
     fetchMetaAndromedaMonitoringSummary: vi.fn(() => Promise.resolve({ latest_drift_reports: [] })),
+    validateCandidateModel: vi.fn(),
     fetchMetaAndromedaMonitoringTimeline: vi.fn(),
     triggerMetaAndromedaDriftReport: vi.fn(),
     syncMetaAndromedaCalibrationDataset: vi.fn(),
@@ -34,6 +40,7 @@ describe('MetaAndromedaRelease', () => {
     beforeEach(() => {
         vi.clearAllMocks();
         useModuleAccess.mockReturnValue({ hasAccess: true, loading: false, error: null });
+        fetchMetaAndromedaMonitoringSummary.mockResolvedValue({ latest_drift_reports: [] });
         fetchMetaAndromedaReleaseOverview.mockResolvedValue({
             current_production: {
                 model_version: 'prod_v1',
@@ -48,6 +55,7 @@ describe('MetaAndromedaRelease', () => {
                 approved_by: 'owner',
                 pairwise_ranking_accuracy: 0.75,
                 mean_band_error: 0.22,
+                is_demo_data: true,
             },
             candidates: [
                 {
@@ -65,6 +73,20 @@ describe('MetaAndromedaRelease', () => {
             action: 'approve',
             model_version: 'cand_v2',
         });
+        fetchMetaAndromedaBacktestRuns.mockResolvedValue({ runs: [], total: 0 });
+        validateCandidateModel.mockResolvedValue({ ok: true, issues: [], model_id: 'openrouter/test-model' });
+        createMetaAndromedaBacktestRun.mockResolvedValue({
+            run_id: 'ma_bt_001',
+            provider: 'openrouter',
+            provider_model: 'openai/gpt-4.1-mini',
+            status: 'queued',
+            total_count: 0,
+            processed_count: 0,
+            success_count: 0,
+            failed_count: 0,
+            sample_count: 0,
+            result_summary: {},
+        });
         createMetaAndromedaReleaseCandidate.mockResolvedValue({
             model_version: 'cand_v2026_09_01_a',
             release_status: 'candidate',
@@ -79,6 +101,9 @@ describe('MetaAndromedaRelease', () => {
 
     afterEach(() => {
         window.prompt.mockRestore();
+        if (window.confirm?.mockRestore) {
+            window.confirm.mockRestore();
+        }
     });
 
     it('approves a release candidate', async () => {
@@ -90,6 +115,7 @@ describe('MetaAndromedaRelease', () => {
         await waitFor(() => expect(approveMetaAndromedaRelease).toHaveBeenCalledWith({
             model_version: 'cand_v2',
             note: 'Ship it',
+            force: false,
         }));
         expect(fetchMetaAndromedaReleaseOverview).toHaveBeenCalledTimes(2);
     });
@@ -127,6 +153,53 @@ describe('MetaAndromedaRelease', () => {
         expect(screen.getByText(/再行核准新模型/)).toBeInTheDocument();
     });
 
+    it('shows approval gate reason and can force approve with audit note', async () => {
+        fetchMetaAndromedaReleaseOverview.mockResolvedValue({
+            current_production: {
+                model_version: 'prod_v1',
+                release_status: 'production',
+                approved_by: 'owner',
+                pairwise_ranking_accuracy: 0.8,
+                mean_band_error: 0.2,
+            },
+            previous_production: null,
+            candidates: [
+                {
+                    model_version: 'cand_seed',
+                    release_status: 'candidate',
+                    pairwise_ranking_accuracy: 0.0,
+                    mean_band_error: 0.0,
+                    promotion_gate_summary: {},
+                    is_demo_data: true,
+                },
+            ],
+            history: [],
+            notes: [],
+        });
+        approveMetaAndromedaRelease.mockResolvedValue({
+            action: 'approve',
+            model_version: 'cand_seed',
+            forced: true,
+        });
+        vi.spyOn(window, 'confirm').mockReturnValue(true);
+        window.prompt.mockReturnValue('force audit note');
+
+        renderWithOutlet(<MetaAndromedaRelease />);
+
+        await screen.findByText('cand_seed');
+        const forceButton = screen.getByRole('button', { name: /Force Approve|強制核准/ });
+        expect(screen.getByRole('button', { name: /^Approve$|^批准$/ })).toBeDisabled();
+
+        fireEvent.click(forceButton);
+
+        await waitFor(() => expect(approveMetaAndromedaRelease).toHaveBeenCalledWith({
+            model_version: 'cand_seed',
+            note: 'force audit note',
+            force: true,
+        }));
+    });
+
+
     it('creates a new release candidate via the form (freely switchable like the backtest model)', async () => {
         renderWithOutlet(<MetaAndromedaRelease />);
 
@@ -163,6 +236,34 @@ describe('MetaAndromedaRelease', () => {
 
         expect(screen.getByRole('button', { name: 'Create Candidate' })).toBeDisabled();
     });
+
+
+    it('shows demo data badge on release records that still use seed metrics', async () => {
+        renderWithOutlet(<MetaAndromedaRelease />, {
+            outletContext: { language: 'zh', isMobile: false },
+        });
+
+        await screen.findByText('prod_v0');
+        expect(screen.getByText('示範資料')).toBeInTheDocument();
+    });
+
+    it('creates an isolated backtest run from the release page', async () => {
+        renderWithOutlet(<MetaAndromedaRelease />);
+
+        await screen.findByText('cand_v2');
+        fireEvent.change(screen.getByPlaceholderText('openai/gpt-4.1-mini'), {
+            target: { value: 'openrouter/test-model' },
+        });
+        fireEvent.click(screen.getByRole('button', { name: 'Create Backtest Run' }));
+
+        await waitFor(() => expect(createMetaAndromedaBacktestRun).toHaveBeenCalledWith({
+            provider_model: 'openrouter/test-model',
+            sample_limit: 20,
+            note: null,
+        }));
+        expect(fetchMetaAndromedaBacktestRuns).toHaveBeenCalled();
+    });
+
 
     it('blocks the page when module access is denied', () => {
         useModuleAccess.mockReturnValue({ hasAccess: false, loading: false, error: null });

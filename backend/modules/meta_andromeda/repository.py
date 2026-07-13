@@ -19,6 +19,7 @@ from database.models.meta_andromeda import (
     MetaAndromedaDeadLetter,
     MetaAndromedaDriftReport,
     MetaAndromedaFeedbackEvent,
+    MetaAndromedaBacktestRun,
     MetaAndromedaModelRegistryEntry,
     MetaAndromedaObservedCreative,
     MetaAndromedaReleaseEvent,
@@ -40,6 +41,65 @@ from .labeling import (
 logger = logging.getLogger(__name__)
 
 TERMINAL_SCORE_STATUSES = {"completed", "failed"}
+
+RELEASE_FORCE_NOTE_PREFIX = "[FORCED_RELEASE_GATE_BYPASS]"
+DEFAULT_RELEASE_MIN_PAIRWISE_ACCURACY = 0.55
+
+
+class ReleaseGateError(ValueError):
+    def __init__(self, code: str, message: str, status_code: int = 422, details: dict | None = None):
+        super().__init__(message)
+        self.code = code
+        self.message = message
+        self.status_code = status_code
+        self.details = details or {}
+
+
+def _release_min_pairwise_accuracy() -> float:
+    raw = os.getenv("META_ANDROMEDA_RELEASE_MIN_PAIRWISE_ACCURACY")
+    if raw is None or raw == "":
+        return DEFAULT_RELEASE_MIN_PAIRWISE_ACCURACY
+    try:
+        return float(raw)
+    except ValueError:
+        logger.warning(
+            "[MetaAndromeda] Invalid META_ANDROMEDA_RELEASE_MIN_PAIRWISE_ACCURACY=%r; falling back to %.2f",
+            raw,
+            DEFAULT_RELEASE_MIN_PAIRWISE_ACCURACY,
+        )
+        return DEFAULT_RELEASE_MIN_PAIRWISE_ACCURACY
+
+
+def _assert_release_gate(candidate: MetaAndromedaReleaseRecord, *, force: bool, note: str | None) -> dict:
+    threshold = _release_min_pairwise_accuracy()
+    accuracy = candidate.pairwise_ranking_accuracy
+    gate_payload = {
+        "threshold": threshold,
+        "pairwise_ranking_accuracy": accuracy,
+        "metrics_source": candidate.metrics_source,
+        "forced": force,
+    }
+    if force:
+        if not (note or "").strip():
+            raise ReleaseGateError(
+                "force_note_required",
+                "Force approve requires a non-empty note for audit trail.",
+                details=gate_payload,
+            )
+        return gate_payload
+    if candidate.metrics_source != "computed":
+        raise ReleaseGateError(
+            "release_metrics_not_computed",
+            "Release candidate has not been backtested with computed metrics yet. Run refresh/backtest before approval, or force with an audit note.",
+            details=gate_payload,
+        )
+    if accuracy is None or float(accuracy) < threshold:
+        raise ReleaseGateError(
+            "release_accuracy_below_threshold",
+            f"Release candidate pairwise ranking accuracy {accuracy} is below required threshold {threshold}.",
+            details=gate_payload,
+        )
+    return gate_payload
 
 # 小曝光廣告的 ROAS/CTR 噪音極大：spend=1、impressions=50 的廣告與 spend 十萬的廣告
 # 不該同權重納入 accuracy 計算。門檻選擇 impressions（而非 spend）因跨帳戶/幣別可比。
@@ -183,32 +243,34 @@ def _compute_pairwise_ranking_accuracy(scores: list[float], perf: list[float]) -
     return concordant / total if total else 0.0
 
 
-def compute_release_metrics(db, model_version: str) -> dict:
-    """Compute real pairwise ranking accuracy / mean band error for `model_version`
-    from historical drift-matched pairs (ScoreEvent.lineage.registry_model_version),
-    replacing the seed placeholder numbers release records shipped with (docs/19 P0-6).
+def _collect_release_metric_pairs(db, model_version: str) -> list[dict]:
+    """收集 `model_version` 的觀測素材 × AI 評分事件配對明細。
+
+    compute_release_metrics()（聚合指標）與 list_release_metric_pairs()（明細端點，
+    docs/32 任務 1.1）共用這一份配對邏輯，避免兩處篩選條件漂移導致
+    sample_count 與明細筆數對不上。
     """
     observed_list = [
         obs for obs in db.query(MetaAndromedaObservedCreative).all()
         if float((obs.performance_snapshot or {}).get("spend", 0) or 0) > 0
     ]
     if not observed_list:
-        return {"status": "insufficient_data", "sample_count": 0}
+        return []
 
     label_thresholds = compute_label_thresholds(observed_list)
     band_score = {"low": 1, "mid": 2, "high": 3}
-    scores: list[float] = []
-    perf_values: list[float] = []
-    total_error = 0.0
-    matched = 0
+    pairs: list[dict] = []
 
     for obs in observed_list:
         pred = match_observed_to_prediction(db, obs)
         if not pred:
             continue
-        if (pred.lineage or {}).get("registry_model_version") != model_version:
+        pred_lineage = pred.lineage or {}
+        if pred_lineage.get("scoring_purpose") == "backtest":
             continue
-        if (pred.lineage or {}).get("scoring_mode") == "heuristic":
+        if pred_lineage.get("registry_model_version") != model_version:
+            continue
+        if pred_lineage.get("scoring_mode") == "heuristic":
             continue
 
         real_band, label_detail = label_observed_band(obs.objective, obs.performance_snapshot, label_thresholds)
@@ -219,13 +281,41 @@ def compute_release_metrics(db, model_version: str) -> dict:
         if pred_band is None or pred.overall_score is None or label_detail.get("value") is None:
             continue
 
-        matched += 1
-        total_error += abs(band_score.get(pred_band, 1) - band_score.get(real_band, 1))
-        scores.append(float(pred.overall_score))
-        perf_values.append(float(label_detail["value"]))
+        pairs.append({
+            "observed_creative_id": obs.id,
+            "score_event_id": pred.id,
+            "ad_id": obs.ad_id,
+            "ad_name": obs.ad_name,
+            "asset_uri": obs.asset_uri,
+            "media_url": obs.media_url,
+            "media_type": obs.media_type,
+            "objective": obs.objective,
+            "observation_window_kind": obs.observation_window_kind,
+            "overall_score": float(pred.overall_score),
+            "pred_band": pred_band,
+            "real_band": real_band,
+            "band_gap": abs(band_score.get(pred_band, 1) - band_score.get(real_band, 1)),
+            "label_metric": label_detail.get("metric"),
+            "label_value": float(label_detail["value"]),
+            "spend": float((obs.performance_snapshot or {}).get("spend", 0) or 0),
+        })
 
+    return pairs
+
+
+def compute_release_metrics(db, model_version: str) -> dict:
+    """Compute real pairwise ranking accuracy / mean band error for `model_version`
+    from historical drift-matched pairs (ScoreEvent.lineage.registry_model_version),
+    replacing the seed placeholder numbers release records shipped with (docs/19 P0-6).
+    """
+    pairs = _collect_release_metric_pairs(db, model_version)
+    matched = len(pairs)
     if matched < 3:
         return {"status": "insufficient_data", "sample_count": matched}
+
+    scores = [p["overall_score"] for p in pairs]
+    perf_values = [p["label_value"] for p in pairs]
+    total_error = float(sum(p["band_gap"] for p in pairs))
 
     return {
         "status": "computed",
@@ -235,6 +325,101 @@ def compute_release_metrics(db, model_version: str) -> dict:
     }
 
 
+def list_release_metric_pairs(db, model_version: str, *, sort: str = "mismatch", limit: int = 50) -> dict:
+    """回傳 `model_version` 的配對明細（docs/32 任務 1.1），供人工歸因抽樣。
+
+    sort:
+    - "mismatch"（預設）：級距差大→小，同級距差內模型總分高→低，讓「高分低效」浮最上面。
+    - "score_vs_perf"：模型總分高→低，並附實際成效排名 perf_rank（1 = 該批成效最好），
+      方便肉眼檢視分數與成效的反相關。
+    """
+    pairs = _collect_release_metric_pairs(db, model_version)
+    total = len(pairs)
+
+    # perf_rank 依 label_metric 方向性一律以「值大 = 排名前」處理會誤導（CPC/CPL 越低越好），
+    # 但配對明細以 dominant metric 為主的簡化排名已足夠人工抽樣使用；成本型指標另以
+    # label_metric 欄位提示閱讀方向。
+    by_perf = sorted(range(total), key=lambda i: pairs[i]["label_value"], reverse=True)
+    for rank_pos, idx in enumerate(by_perf, start=1):
+        pairs[idx]["perf_rank"] = rank_pos
+
+    if sort == "score_vs_perf":
+        pairs.sort(key=lambda p: p["overall_score"], reverse=True)
+    else:
+        pairs.sort(key=lambda p: (p["band_gap"], p["overall_score"]), reverse=True)
+
+    return {
+        "model_version": model_version,
+        "sort": sort if sort in ("mismatch", "score_vs_perf") else "mismatch",
+        "sample_count": total,
+        "items": pairs[: max(1, limit)] if total else [],
+    }
+
+
+
+def _collect_backtest_metric_pairs(db, backtest_run_id: str) -> list[dict]:
+    score_rows = [
+        row for row in db.query(MetaAndromedaScoreEvent).all()
+        if row.status == "completed"
+        and (row.lineage or {}).get("scoring_purpose") == "backtest"
+        and (row.lineage or {}).get("backtest_run_id") == backtest_run_id
+        and (row.lineage or {}).get("scoring_mode") != "heuristic"
+    ]
+    if not score_rows:
+        return []
+
+    observed_ids = {
+        (row.request_context or {}).get("observed_creative_id")
+        for row in score_rows
+        if (row.request_context or {}).get("observed_creative_id")
+    }
+    observed_by_id = {
+        obs.id: obs for obs in db.query(MetaAndromedaObservedCreative)
+        .filter(MetaAndromedaObservedCreative.id.in_(observed_ids))
+        .all()
+    } if observed_ids else {}
+    observed_list = [observed_by_id[oid] for oid in observed_ids if oid in observed_by_id]
+    if not observed_list:
+        return []
+
+    label_thresholds = compute_label_thresholds(observed_list)
+    band_score = {"low": 1, "mid": 2, "high": 3}
+    pairs: list[dict] = []
+    for score in score_rows:
+        obs_id = (score.request_context or {}).get("observed_creative_id")
+        obs = observed_by_id.get(obs_id)
+        if not obs:
+            continue
+        real_band, label_detail = label_observed_band(obs.objective, obs.performance_snapshot, label_thresholds)
+        pred_band = score.roas_band
+        if pred_band is None or score.overall_score is None or label_detail.get("value") is None:
+            continue
+        pairs.append({
+            "observed_creative_id": obs.id,
+            "score_event_id": score.id,
+            "overall_score": float(score.overall_score),
+            "pred_band": pred_band,
+            "real_band": real_band,
+            "band_gap": abs(band_score.get(pred_band, 1) - band_score.get(real_band, 1)),
+            "label_value": float(label_detail["value"]),
+        })
+    return pairs
+
+
+def compute_backtest_run_metrics(db, backtest_run_id: str) -> dict:
+    pairs = _collect_backtest_metric_pairs(db, backtest_run_id)
+    matched = len(pairs)
+    if matched < 3:
+        return {"status": "insufficient_data", "sample_count": matched}
+    return {
+        "status": "computed",
+        "sample_count": matched,
+        "pairwise_ranking_accuracy": _compute_pairwise_ranking_accuracy(
+            [p["overall_score"] for p in pairs],
+            [p["label_value"] for p in pairs],
+        ),
+        "mean_band_error": float(sum(p["band_gap"] for p in pairs)) / matched,
+    }
 def _average_rank(values: list[float]) -> list[float]:
     """Tie-aware average ranking: tied values share the mean of their tied rank positions."""
     n = len(values)
@@ -783,6 +968,30 @@ class MetaAndromedaRepository:
             "created_at": report.created_at.isoformat() if report.created_at else None,
         }
 
+    @staticmethod
+    def _backtest_run_to_dict(run: MetaAndromedaBacktestRun) -> dict:
+        return {
+            "run_id": run.id,
+            "provider": run.provider,
+            "provider_model": run.provider_model,
+            "status": run.status,
+            "note": run.note,
+            "sample_limit": run.sample_limit,
+            "total_count": run.total_count,
+            "processed_count": run.processed_count,
+            "success_count": run.success_count,
+            "failed_count": run.failed_count,
+            "sample_count": run.sample_count,
+            "pairwise_ranking_accuracy": run.pairwise_ranking_accuracy,
+            "mean_band_error": run.mean_band_error,
+            "error_message": run.error_message,
+            "result_summary": deepcopy(run.result_summary or {}),
+            "created_at": run.created_at.isoformat() if run.created_at else None,
+            "started_at": run.started_at.isoformat() if run.started_at else None,
+            "completed_at": run.completed_at.isoformat() if run.completed_at else None,
+            "updated_at": run.updated_at.isoformat() if run.updated_at else None,
+        }
+
     def delete_score_event(self, db: Session, score_event_id: str) -> dict:
         score = db.query(MetaAndromedaScoreEvent).filter(MetaAndromedaScoreEvent.id == score_event_id).first()
         if score is None:
@@ -874,11 +1083,15 @@ class MetaAndromedaRepository:
                     ad_name_match,
                 )
             )
-        total = query.count()
+        all_rows = [
+            row for row in query.order_by(MetaAndromedaScoreEvent.created_at.desc()).all()
+            if (row.lineage or {}).get("scoring_purpose") != "backtest"
+        ]
+        total = len(all_rows)
         page = max(1, page)
         offset = (page - 1) * limit
         total_pages = max(1, math.ceil(total / limit))
-        rows = query.order_by(MetaAndromedaScoreEvent.created_at.desc()).offset(offset).limit(limit).all()
+        rows = all_rows[offset:offset + limit]
         cal_ids: set[str] = set()
         if rows:
             matched = (
@@ -1041,7 +1254,10 @@ class MetaAndromedaRepository:
         return detail
 
     def get_monitoring_summary(self, db: Session):
-        score_rows = db.query(MetaAndromedaScoreEvent).all()
+        score_rows = [
+            row for row in db.query(MetaAndromedaScoreEvent).all()
+            if (row.lineage or {}).get("scoring_purpose") != "backtest"
+        ]
         total = len(score_rows)
         completed_rows = [row for row in score_rows if row.status == "completed"]
         queued = sum(1 for row in score_rows if row.status == "queued")
@@ -1305,6 +1521,8 @@ class MetaAndromedaRepository:
             # 過濾 heuristic fallback 分數：這是規則加減分而非模型預測，與 AI 分數混算會
             # 稀釋/扭曲 accuracy 與 Spearman ρ。獨立統計占比，作為評分服務健康度指標。
             pred_lineage = pred.lineage or {}
+            if pred_lineage.get("scoring_purpose") == "backtest":
+                continue
             if pred_lineage.get("scoring_mode") == "heuristic":
                 heuristic_fallback_count += 1
                 continue
@@ -1700,12 +1918,17 @@ class MetaAndromedaRepository:
 
     @staticmethod
     def _release_event_to_dict(event: MetaAndromedaReleaseEvent) -> dict:
+        note = event.note or ""
+        forced = note.startswith(RELEASE_FORCE_NOTE_PREFIX)
+        if forced:
+            note = note[len(RELEASE_FORCE_NOTE_PREFIX):].strip()
         return {
             "action": event.action,
             "model_version": event.model_version,
             "actor": event.actor,
             "created_at": event.created_at,
-            "note": event.note or "",
+            "note": note,
+            "forced": forced,
         }
 
     def get_asset_by_uri(self, db: Session, asset_uri: str) -> MetaAndromedaAsset | None:
@@ -2292,7 +2515,7 @@ class MetaAndromedaRepository:
             "is_demo_data": True,
         }
 
-    def perform_release_action(self, db: Session, action: str, model_version: str, actor: str, note: str | None):
+    def perform_release_action(self, db: Session, action: str, model_version: str, actor: str, note: str | None, force: bool = False):
         current = db.query(MetaAndromedaReleaseRecord).filter(MetaAndromedaReleaseRecord.record_kind == "current_production").first()
         previous = db.query(MetaAndromedaReleaseRecord).filter(MetaAndromedaReleaseRecord.record_kind == "previous_production").first()
         candidate = (
@@ -2308,7 +2531,9 @@ class MetaAndromedaRepository:
         if action in {"approve", "reject"} and candidate is None:
             raise KeyError(model_version)
 
+        gate_payload = {"forced": False}
         if action == "approve":
+            gate_payload = _assert_release_gate(candidate, force=force, note=note)
             previous.model_version = current.model_version
             previous.release_status = "superseded"
             previous.approved_by = current.approved_by
@@ -2368,11 +2593,14 @@ class MetaAndromedaRepository:
 
             _switch_model_registry_production(db, current.model_version)
 
+        event_note = note
+        if action == "approve" and gate_payload.get("forced"):
+            event_note = f"{RELEASE_FORCE_NOTE_PREFIX} {note or ''}".strip()
         event = MetaAndromedaReleaseEvent(
             action=action,
             model_version=model_version,
             actor=actor,
-            note=note,
+            note=event_note,
             created_at=created_at,
         )
         db.add(event)
@@ -2384,7 +2612,87 @@ class MetaAndromedaRepository:
             "actor": actor,
             "created_at": created_at,
             "note": note,
+            "forced": bool(gate_payload.get("forced")),
+            "release_gate": gate_payload,
         }
+
+
+    @staticmethod
+    def create_backtest_run(
+        db: Session,
+        *,
+        provider_model: str,
+        sample_limit: int | None = None,
+        note: str | None = None,
+        provider: str = "openrouter",
+    ) -> dict:
+        now = datetime.now(timezone.utc)
+        run = MetaAndromedaBacktestRun(
+            provider=provider,
+            provider_model=provider_model,
+            status="queued",
+            note=note,
+            sample_limit=sample_limit,
+            created_at=now,
+            updated_at=now,
+        )
+        db.add(run)
+        db.commit()
+        db.refresh(run)
+        return MetaAndromedaRepository._backtest_run_to_dict(run)
+
+    @staticmethod
+    def list_backtest_runs(db: Session, limit: int = 20) -> dict:
+        rows = (
+            db.query(MetaAndromedaBacktestRun)
+            .order_by(MetaAndromedaBacktestRun.created_at.desc())
+            .limit(max(1, min(limit, 100)))
+            .all()
+        )
+        return {
+            "runs": [MetaAndromedaRepository._backtest_run_to_dict(row) for row in rows],
+            "total": len(rows),
+        }
+
+    @staticmethod
+    def get_backtest_run(db: Session, run_id: str) -> dict:
+        run = db.query(MetaAndromedaBacktestRun).filter(MetaAndromedaBacktestRun.id == run_id).first()
+        if run is None:
+            raise KeyError(run_id)
+        return MetaAndromedaRepository._backtest_run_to_dict(run)
+
+    @staticmethod
+    def update_backtest_run(db: Session, run_id: str, **updates) -> dict:
+        run = db.query(MetaAndromedaBacktestRun).filter(MetaAndromedaBacktestRun.id == run_id).first()
+        if run is None:
+            raise KeyError(run_id)
+        for key, value in updates.items():
+            if hasattr(run, key):
+                setattr(run, key, value)
+        run.updated_at = datetime.now(timezone.utc)
+        db.add(run)
+        db.commit()
+        db.refresh(run)
+        return MetaAndromedaRepository._backtest_run_to_dict(run)
+
+    @staticmethod
+    def complete_backtest_run_metrics(db: Session, run_id: str) -> dict:
+        run = db.query(MetaAndromedaBacktestRun).filter(MetaAndromedaBacktestRun.id == run_id).first()
+        if run is None:
+            raise KeyError(run_id)
+        metrics = compute_backtest_run_metrics(db, run_id)
+        run.sample_count = int(metrics.get("sample_count") or 0)
+        run.result_summary = deepcopy(metrics)
+        if metrics.get("status") == "computed":
+            run.pairwise_ranking_accuracy = metrics.get("pairwise_ranking_accuracy")
+            run.mean_band_error = metrics.get("mean_band_error")
+        run.status = "completed"
+        run.completed_at = datetime.now(timezone.utc)
+        run.updated_at = run.completed_at
+        db.add(run)
+        db.commit()
+        db.refresh(run)
+        return MetaAndromedaRepository._backtest_run_to_dict(run)
 
     @staticmethod
     def refresh_release_metrics(db: Session, model_version: str) -> dict:
@@ -2406,6 +2714,10 @@ class MetaAndromedaRepository:
             db.add(record)
         db.commit()
         return metrics
+
+    @staticmethod
+    def list_release_metric_pairs(db: Session, model_version: str, *, sort: str = "mismatch", limit: int = 50) -> dict:
+        return list_release_metric_pairs(db, model_version, sort=sort, limit=limit)
 
     def sync_calibration_dataset(
         self,
@@ -2475,8 +2787,12 @@ class MetaAndromedaRepository:
             if not pred:
                 continue
 
+            pred_lineage = pred.lineage or {}
+            if pred_lineage.get("scoring_purpose") == "backtest":
+                continue
+
             # heuristic fallback 分數是規則加減分而非模型判斷，不該被拿來「校準模型」
-            if (pred.lineage or {}).get("scoring_mode") == "heuristic":
+            if pred_lineage.get("scoring_mode") == "heuristic":
                 skipped_heuristic += 1
                 continue
             matched_count += 1

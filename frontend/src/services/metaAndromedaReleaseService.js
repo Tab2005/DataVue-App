@@ -23,10 +23,28 @@ export const createMetaAndromedaReleaseCandidate = async (payload) => {
     return apiClient.post('/api/meta-andromeda/release/candidates', payload);
 };
 
+// 配對明細（docs/32 任務 1.1）：release 指標背後的逐筆「觀測素材 × AI 評分」對照。
+// 注意 apiClient 不支援 axios 式 { params }，query string 必須拼在路徑上。
+export const fetchMetaAndromedaReleaseMetricPairs = async (modelVersion, { sort = 'mismatch', limit = 200 } = {}) => {
+    const qs = `sort=${encodeURIComponent(sort)}&limit=${encodeURIComponent(limit)}`;
+    return apiClient.get(`/api/meta-andromeda/release/${encodeURIComponent(modelVersion)}/metric-pairs?${qs}`);
+};
+
+export const fetchMetaAndromedaBacktestRuns = async ({ limit = 20 } = {}) => {
+    return apiClient.get(`/api/meta-andromeda/backtest/runs?limit=${encodeURIComponent(limit)}`);
+};
+
+export const createMetaAndromedaBacktestRun = async (payload) => {
+    return apiClient.post('/api/meta-andromeda/backtest/runs', payload);
+};
+
 export default {
     fetchMetaAndromedaReleaseOverview,
     approveMetaAndromedaRelease,
     rejectMetaAndromedaRelease,
     rollbackMetaAndromedaRelease,
     createMetaAndromedaReleaseCandidate,
+    fetchMetaAndromedaReleaseMetricPairs,
+    fetchMetaAndromedaBacktestRuns,
+    createMetaAndromedaBacktestRun,
 };

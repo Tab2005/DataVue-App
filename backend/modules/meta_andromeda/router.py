@@ -46,6 +46,9 @@ from .schemas import (
     ScoringProfileListResponse,
     ScoringProfilePromoteResponse,
     BacktestModelUpdateRequest,
+    BacktestRunCreateRequest,
+    BacktestRunListResponse,
+    BacktestRunResponse,
     EffectiveScoringStatusResponse,
     ModelRegistryEntryResponse,
     ModelRegistryListResponse,
@@ -55,6 +58,7 @@ from .schemas import (
     ReleaseActionResponse,
     ReleaseCandidateCreateRequest,
     ReleaseCandidateResponse,
+    ReleaseMetricPairsResponse,
     ReleaseMetricsRefreshResponse,
     ReleaseOverviewResponse,
     ReviewQueueDetailResponse,
@@ -736,6 +740,49 @@ async def analyze_feedback_reason_codes(
     return MetaAndromedaService.analyze_feedback_reason_codes(db)
 
 
+@router.post("/backtest/runs", response_model=BacktestRunResponse, status_code=status.HTTP_201_CREATED)
+async def create_backtest_run(
+    payload: BacktestRunCreateRequest,
+    _user=Depends(get_current_meta_andromeda_user),
+    _access: bool = Depends(require_meta_andromeda_operate),
+    db=Depends(get_db),
+):
+    """Create an isolated model backtest run. Backtest score events are marked
+    with scoring_purpose=backtest and excluded from live review/monitoring/release metrics."""
+    return MetaAndromedaService.create_backtest_run(
+        db,
+        provider_model=payload.provider_model,
+        sample_limit=payload.sample_limit,
+        note=payload.note,
+    )
+
+
+@router.get("/backtest/runs", response_model=BacktestRunListResponse)
+async def list_backtest_runs(
+    _user=Depends(get_current_meta_andromeda_user),
+    _access: bool = Depends(require_meta_andromeda_release),
+    db=Depends(get_db),
+    limit: int = Query(default=20, ge=1, le=100),
+):
+    return MetaAndromedaService.list_backtest_runs(db, limit=limit)
+
+
+@router.get("/backtest/runs/{run_id}", response_model=BacktestRunResponse)
+async def get_backtest_run(
+    run_id: str,
+    _user=Depends(get_current_meta_andromeda_user),
+    _access: bool = Depends(require_meta_andromeda_release),
+    db=Depends(get_db),
+):
+    try:
+        return MetaAndromedaService.get_backtest_run(db, run_id)
+    except KeyError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Backtest run not found: {run_id}",
+        ) from exc
+
+
 @router.post("/release/candidates", response_model=ReleaseCandidateResponse, status_code=status.HTTP_201_CREATED)
 async def create_release_candidate(
     payload: ReleaseCandidateCreateRequest,
@@ -779,12 +826,21 @@ async def approve_release(
             model_version=payload.model_version,
             actor=getattr(user, "email", None) or "datavue_operator",
             note=payload.note,
+            force=payload.force,
         )
     except KeyError as exc:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail=f"Release candidate not found: {payload.model_version}",
         ) from exc
+    except Exception as exc:
+        from .repository import ReleaseGateError
+        if isinstance(exc, ReleaseGateError):
+            raise HTTPException(
+                status_code=exc.status_code,
+                detail={"code": exc.code, "message": exc.message, "details": exc.details},
+            ) from exc
+        raise
 
 
 @router.post("/release/reject", response_model=ReleaseActionResponse)
@@ -839,3 +895,21 @@ async def refresh_release_metrics(
     from drift-matched history and write it onto any release record referencing it,
     clearing its is_demo_data flag once enough data exists."""
     return MetaAndromedaService.refresh_release_metrics(db, model_version)
+
+
+@router.get(
+    "/release/{model_version}/metric-pairs",
+    response_model=ReleaseMetricPairsResponse,
+)
+async def list_release_metric_pairs(
+    model_version: str,
+    sort: str = Query(default="mismatch"),
+    limit: int = Query(default=50, ge=1, le=500),
+    _user=Depends(get_current_meta_andromeda_user),
+    _access: bool = Depends(require_meta_andromeda_release),
+    db=Depends(get_db),
+):
+    """配對明細（docs/32 任務 1.1）：release 指標背後的逐筆「觀測素材 × AI 評分」
+    對照，與 refresh-metrics 的 sample_count 同一份配對邏輯。預設 mismatch 排序
+    讓「高分低效」浮最上面，供人工歸因抽樣。"""
+    return MetaAndromedaService.list_release_metric_pairs(db, model_version, sort=sort, limit=limit)

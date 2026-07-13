@@ -17,7 +17,7 @@ import logging
 from core.config import settings
 from core.scheduler import get_meta_andromeda_score_job_id, scheduler
 from database import SessionLocal, User
-from database.models.meta_andromeda import MetaAndromedaDeadLetter, MetaAndromedaScoreEvent, MetaAndromedaWorkerEvent
+from database.models.meta_andromeda import MetaAndromedaDeadLetter, MetaAndromedaObservedCreative, MetaAndromedaScoreEvent, MetaAndromedaWorkerEvent
 from .schemas import ObservedCreativeCandidate
 from .concurrency import DistributedSemaphore
 from .import_status_store import (
@@ -1643,6 +1643,7 @@ class MetaAndromedaService:
         model_version: str,
         actor: str,
         note: str | None = None,
+        force: bool = False,
     ) -> dict:
         return repository.perform_release_action(
             db,
@@ -1650,6 +1651,7 @@ class MetaAndromedaService:
             model_version=model_version,
             actor=actor,
             note=note,
+            force=force,
         )
 
     @staticmethod
@@ -1673,9 +1675,175 @@ class MetaAndromedaService:
             note=note,
         )
 
+
+    @staticmethod
+    def create_backtest_run(
+        db,
+        *,
+        provider_model: str,
+        sample_limit: int | None = None,
+        note: str | None = None,
+    ) -> dict:
+        from fastapi import HTTPException, status
+        from .model_catalog import validate_candidate_model
+
+        validation = validate_candidate_model(provider_model)
+        if not validation.get("ok"):
+            issues = validation.get("issues") or ["Candidate model failed validation."]
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail={"message": "Candidate model is not usable for backtest.", "validation": validation, "issues": issues},
+            )
+        run = repository.create_backtest_run(
+            db,
+            provider_model=provider_model,
+            sample_limit=sample_limit,
+            note=note,
+        )
+        try:
+            from core.scheduler import add_meta_andromeda_backtest_run_job
+            add_meta_andromeda_backtest_run_job(run["run_id"])
+        except Exception as exc:
+            logger.warning("[MetaAndromeda] Failed to enqueue backtest run %s: %s", run["run_id"], exc)
+        return run
+
+    @staticmethod
+    def list_backtest_runs(db, limit: int = 20) -> dict:
+        return repository.list_backtest_runs(db, limit=limit)
+
+    @staticmethod
+    def get_backtest_run(db, run_id: str) -> dict:
+        return repository.get_backtest_run(db, run_id)
+
+    @staticmethod
+    def _build_backtest_score_payload(observed: MetaAndromedaObservedCreative, run: dict) -> dict:
+        snapshot = observed.performance_snapshot or {}
+        return {
+            "asset_uri": observed.asset_uri,
+            "asset_type": observed.media_type or "image",
+            "asset_id": observed.asset_id,
+            "request_mode": "analytics_backtest",
+            "objective": observed.objective or "unknown",
+            "placement_family": observed.placement_family or "unknown",
+            "market": observed.market or "unknown",
+            "headline": snapshot.get("headline") or snapshot.get("ad_name") or observed.ad_name or "",
+            "primary_text": snapshot.get("primary_text") or snapshot.get("body") or "",
+            "cta": snapshot.get("cta") or snapshot.get("call_to_action") or "",
+            "request_context": {
+                "origin": "backtest",
+                "is_backtest": True,
+                "scoring_purpose": "backtest",
+                "backtest_run_id": run["run_id"],
+                "backtest_provider_model": run["provider_model"],
+                "observed_creative_id": observed.id,
+            },
+        }
+
+    @staticmethod
+    async def run_backtest_run(run_id: str) -> dict:
+        db = SessionLocal()
+        try:
+            run = repository.get_backtest_run(db, run_id)
+            if run["status"] not in ("queued", "running"):
+                return run
+
+            query = (
+                db.query(MetaAndromedaObservedCreative)
+                .filter(MetaAndromedaObservedCreative.asset_uri.isnot(None))
+                .order_by(MetaAndromedaObservedCreative.imported_at.desc())
+            )
+            observed_rows = [
+                row for row in query.all()
+                if (row.media_type or "image") in ("image", "video")
+                and float((row.performance_snapshot or {}).get("spend", 0) or 0) > 0
+            ]
+            if run.get("sample_limit"):
+                observed_rows = observed_rows[: int(run["sample_limit"])]
+
+            now = datetime.now(UTC)
+            repository.update_backtest_run(
+                db,
+                run_id,
+                status="running",
+                total_count=len(observed_rows),
+                started_at=now,
+                error_message=None,
+            )
+            success_count = 0
+            failed_count = 0
+            processed_count = 0
+            sleep_seconds = float(getattr(settings, "META_ANDROMEDA_BACKTEST_INTERVAL_SECONDS", 2) or 2)
+
+            for observed in observed_rows:
+                created = None
+                try:
+                    existing = [
+                        row for row in db.query(MetaAndromedaScoreEvent).all()
+                        if row.status == "completed"
+                        and (row.lineage or {}).get("scoring_purpose") == "backtest"
+                        and (row.lineage or {}).get("backtest_run_id") == run_id
+                        and (row.request_context or {}).get("observed_creative_id") == observed.id
+                    ]
+                    if existing:
+                        success_count += 1
+                        continue
+
+                    payload = MetaAndromedaService._build_backtest_score_payload(observed, run)
+                    score_payload = runtime_adapter.build_score_submission(payload)
+                    score_payload["request_context"] = payload["request_context"]
+                    created = repository.create_score_event(db, score_payload)
+                    repository.mark_score_processing(db, created["score_event_id"])
+                    current = repository.get_review_queue_detail(db, created["score_event_id"])
+                    result_payload = await asyncio.to_thread(runtime_adapter.generate_score_result, current)
+                    lineage = dict(result_payload.get("lineage") or {})
+                    lineage.update({
+                        "scoring_purpose": "backtest",
+                        "backtest_run_id": run_id,
+                        "backtest_provider_model": run["provider_model"],
+                    })
+                    result_payload["lineage"] = lineage
+                    repository.mark_score_completed(db, created["score_event_id"], result_payload)
+                    success_count += 1
+                except Exception as exc:
+                    failed_count += 1
+                    if created:
+                        repository.mark_score_failed(db, created["score_event_id"], str(exc))
+                    logger.warning("[MetaAndromeda] Backtest run %s failed item %s: %s", run_id, getattr(observed, "id", None), exc)
+                finally:
+                    processed_count += 1
+                    repository.update_backtest_run(
+                        db,
+                        run_id,
+                        processed_count=processed_count,
+                        success_count=success_count,
+                        failed_count=failed_count,
+                    )
+                    if sleep_seconds > 0:
+                        await asyncio.sleep(sleep_seconds)
+
+            return repository.complete_backtest_run_metrics(db, run_id)
+        except Exception as exc:
+            try:
+                repository.update_backtest_run(
+                    db,
+                    run_id,
+                    status="failed",
+                    error_message=str(exc),
+                    completed_at=datetime.now(UTC),
+                )
+            except Exception:
+                logger.exception("[MetaAndromeda] Failed to mark backtest run failed: %s", run_id)
+            raise
+        finally:
+            db.close()
+
     @staticmethod
     def refresh_release_metrics(db, model_version: str) -> dict:
         return repository.refresh_release_metrics(db, model_version)
+
+    @staticmethod
+    def list_release_metric_pairs(db, model_version: str, *, sort: str = "mismatch", limit: int = 50) -> dict:
+        return repository.list_release_metric_pairs(db, model_version, sort=sort, limit=limit)
 
     @staticmethod
     def list_scoring_profiles(db) -> dict:

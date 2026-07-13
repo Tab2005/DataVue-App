@@ -114,6 +114,30 @@ class MetaAndromedaFeedbackEvent(Base):
     score_event = relationship("MetaAndromedaScoreEvent", backref="feedback_events")
 
 
+
+class MetaAndromedaBacktestRun(Base):
+    __tablename__ = "meta_andromeda_backtest_runs"
+
+    id = Column(String, primary_key=True, default=lambda: f"ma_bt_{uuid.uuid4().hex[:12]}")
+    provider = Column(String(50), nullable=False, default="openrouter")
+    provider_model = Column(String(200), nullable=False)
+    status = Column(String(50), nullable=False, default="queued", index=True)
+    note = Column(Text, nullable=True)
+    sample_limit = Column(Integer, nullable=True)
+    total_count = Column(Integer, nullable=False, default=0)
+    processed_count = Column(Integer, nullable=False, default=0)
+    success_count = Column(Integer, nullable=False, default=0)
+    failed_count = Column(Integer, nullable=False, default=0)
+    sample_count = Column(Integer, nullable=False, default=0)
+    pairwise_ranking_accuracy = Column(Float, nullable=True)
+    mean_band_error = Column(Float, nullable=True)
+    error_message = Column(Text, nullable=True)
+    result_summary = Column(JSON, nullable=False, default=dict)
+    created_at = Column(DateTime, default=text("CURRENT_TIMESTAMP"))
+    started_at = Column(DateTime, nullable=True)
+    completed_at = Column(DateTime, nullable=True)
+    updated_at = Column(DateTime, default=text("CURRENT_TIMESTAMP"))
+
 class MetaAndromedaReleaseRecord(Base):
     __tablename__ = "meta_andromeda_release_records"
 

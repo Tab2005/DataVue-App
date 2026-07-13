@@ -1421,7 +1421,24 @@ class MetaAndromedaRuntimeAdapter:
     @staticmethod
     async def generate_score_result(score_payload: dict) -> dict:
         """Run registry-backed scoring with optional AI provider fallback."""
-        registry_entry = model_registry.get_entry()
+        request_context = score_payload.get("request_context", {})
+        if not isinstance(request_context, dict):
+            request_context = {}
+        backtest_provider_model = request_context.get("backtest_provider_model")
+        if request_context.get("scoring_purpose") == "backtest" and backtest_provider_model:
+            base_entry = model_registry.get_entry(purpose="backtest")
+            registry_entry = MetaAndromedaModelEntry(
+                model_version=f"backtest:{backtest_provider_model}",
+                provider="openrouter",
+                provider_model=backtest_provider_model,
+                scoring_profile=base_entry.scoring_profile,
+                feature_manifest_id=f"fm_backtest_{uuid4().hex[:8]}",
+                release_channel="backtest_run",
+                source_of_truth="datavue.meta_andromeda.backtest_run",
+            )
+        else:
+            purpose = "backtest" if request_context.get("is_backtest") else "interactive"
+            registry_entry = model_registry.get_entry(purpose=purpose)
         provider_name = registry_entry.provider
 
         # 素材準備（DB 查詢、讀檔、base64、S3 下載、ffmpeg 抽幀）是同步阻塞 I/O，

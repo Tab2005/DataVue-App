@@ -1,7 +1,7 @@
 # 32. Meta Andromeda 評分模型準確率改善實作計劃
 
 - 建立日期:2026-07-13
-- 狀態:待啟動
+- 狀態:第 1、2、3、4 波已完成;第 5 波待第 1 波歸因結論後啟動
 - 依據:docs/30(真實準確率分析與改善建議)
 - 關聯:docs/19、docs/20(release 機制)、docs/22、docs/28(Worker 集中化)
 
@@ -41,6 +41,12 @@ docs/30 揭露:現任 production 版本 cand_v2026_06_05_a 的真實成對排序
 
 **風險/回滾**:純讀取端點,無狀態變更;單獨回滾。
 
+**驗收結果(2026-07-13 完成)**:
+- `compute_release_metrics` 重構為共用 `_collect_release_metric_pairs()`(配對迴圈單一來源)+ 聚合層;新增模組函式 `list_release_metric_pairs()`(mismatch / score_vs_perf 兩種排序、perf_rank 標注、limit 截斷但 sample_count 保持全量)與 repository/service 轉接層。
+- router 新增 `GET /release/{model_version}/metric-pairs`(`require_meta_andromeda_release`,limit 1-500 預設 50);schemas 新增 `ReleaseMetricPairItem` / `ReleaseMetricPairsResponse`。
+- 新增 3 項測試:mismatch 排序(高分低效排最前 + 欄位完整性 + 與 refresh_release_metrics 的 sample_count 一致)、score_vs_perf 排序(分數降冪 + perf_rank + limit 生效)、空資料(sample_count 0 不報錯);測試前清空觀測/事件表避免動態 label 門檻被殘留資料污染。
+- 模組測試 76 passed / 19 failed,失敗與基線完全相同(本機缺 PIL 等既有環境問題)。
+
 ### 任務 1.2 — 前端:版本總覽配對明細區塊 + CSV 匯出
 
 **問題**:歸因抽樣的實際操作者(營運)需要在 UI 上看素材縮圖對照分數與實際成效,不可能人人跑 API。
@@ -55,6 +61,11 @@ docs/30 揭露:現任 production 版本 cand_v2026_06_05_a 的真實成對排序
 **驗收標準**:UI 能看到配對明細與縮圖;CSV 開啟欄位正確;高分低效案例排最前。
 
 **風險/回滾**:純前端新增區塊;單檔回滾。
+
+**驗收結果(2026-07-13 完成)**:
+- 版本總覽在「線上實測對照證據」下新增可折疊「配對明細」區塊:展開時才載入(limit 200),兩個排序切換按鈕(級距差優先/分數對成效)、CSV 匯出(含 UTF-8 BOM 防 Excel 中文亂碼、引號跳脫)、表格含縮圖(優先本地 asset preview、無 asset 退回 media_url)、級距差紅黃綠著色、sticky 表頭 + 區塊內捲動。
+- service 新增 `fetchMetaAndromedaReleaseMetricPairs`,query string 拼在路徑上(既知 apiClient 不支援 `{ params }`)。
+- `npm run build` 通過;vitest 4 failed / 25 passed 與基線完全相同(既有失敗,與本次無關)。
 
 **第 1 波完成後的人工動作(非程式任務)**:營運從明細中抽「高分低效」「低分高效」各 15 筆人工歸因,結論寫回 docs/30 §3(判定假設 1 模型能力 vs 假設 2 rubric 錯位),決定第 5 波方向。
 
@@ -93,6 +104,14 @@ docs/30 揭露:現任 production 版本 cand_v2026_06_05_a 的真實成對排序
 
 **風險/回滾**:純前端;單檔回滾。
 
+**驗收結果(2026-07-13 完成)**:
+- 後端新增 `meta_andromeda_backtest_runs` 資料表與 `POST/GET /api/meta-andromeda/backtest/runs` 端點；建立 run 時會先用 `validate_candidate_model()` 驗證候選模型，不合格回 422。
+- 回測 worker 以 `lineage.scoring_purpose=backtest`、`lineage.backtest_run_id`、`request_context.observed_creative_id` 隔離資料，並在完成時寫回 `pairwise_ranking_accuracy`、`mean_band_error`、`sample_count`。
+- review queue、monitoring summary、drift report、calibration sync、release metrics 已排除 backtest score event，避免污染線上指標。
+- scheduler 支援建立後排程回測 run，server 重啟時會重新掛回 `queued/running` 的 backtest run。
+- 版本總覽新增「回測對照」區塊：可輸入 provider_model/sample_limit/note、先呼叫 validate-candidate、建立 run、刷新列表，並以目前 Production 準確率作為 baseline；run 準確率 >= baseline 且 >= 0.55 標示為優於線上基準。
+- 驗證：`python -m py_compile` 通過；`npm run test -- MetaAndromedaRelease.test.jsx` 7 passed；`npm run build` 通過。後端 pytest 目前被環境依賴阻塞：`cachetools` 無法匯入 `TTLCache`。
+
 ---
 
 ## 三、第 3 波:refresh-metrics 例行化
@@ -111,6 +130,12 @@ docs/30 揭露:現任 production 版本 cand_v2026_06_05_a 的真實成對排序
 **驗收標準**:排程觸發後 DB 指標更新、`updated_at` 變化;前一版卡片有示範資料小標;現任卡片無。
 
 **風險/回滾**:每日一次的輕量 job(331 筆配對計算 < 數秒);移除排程即回滾。
+**驗收結果(2026-07-13 完成)**:
+- `backend/core/scheduler.py` 新增 `refresh_meta_andromeda_release_metrics()` 與每日 UTC 02:00 `ma_release_metrics_refresh` Cron job;`start_scheduler()` 只在 `run_meta_andromeda_jobs=true` 時註冊,因此沿用 `SERVICE_ROLE=worker/all` 的既有分流規則,`web` 不會註冊。
+- job 會查 `MetaAndromedaService.get_release_overview()` 的 `current_production.model_version`,再呼叫 `MetaAndromedaService.refresh_release_metrics()`;`computed` 與 `insufficient_data` 都只記 info,例外記 warning 並吞掉,避免中斷其他 scheduler job。
+- 前端 `ReleaseRecordCard` 針對 per-record `is_demo_data=true` 顯示「示範資料 / Demo Data」小標,修正 previous production seed 指標容易被誤讀為真實計算結果的問題;未新增 DB schema,刷新仍使用既有 `metrics_source`、`metrics_sample_count` 與指標欄位。
+- 新增後端排程單元測試(註冊 UTC 02:00 Cron、`insufficient_data` 正常處理)與前端 Release 測試(示範資料 badge);`python -m py_compile backend/core/scheduler.py backend/tests/test_meta_andromeda_module.py` 通過;`npm run test -- MetaAndromedaRelease.test.jsx` 6 passed;`npm run build` 通過。
+- 後端 pytest 實跑目前被本機環境缺少 `cachetools` 套件阻擋於 conftest 匯入階段,尚未執行到新增測試本體。
 
 ---
 
@@ -130,6 +155,14 @@ docs/30 揭露:現任 production 版本 cand_v2026_06_05_a 的真實成對排序
 **驗收標準**:未回測版本核准被擋;達標版本正常核准;force 可越過且 history 有 forced 標記;rollback 不受影響。
 
 **風險/回滾**:行為變更(核准變嚴),但有 force 逃生門;單波回滾。
+
+**驗收結果(2026-07-13 完成)**:
+- approve 前新增硬門檻：候選版本必須 `metrics_source == "computed"` 且 `pairwise_ranking_accuracy >= META_ANDROMEDA_RELEASE_MIN_PAIRWISE_ACCURACY`，env 未設定時預設 0.55。
+- 未計算真實指標回 422 `release_metrics_not_computed`；準確率未達標回 422 `release_accuracy_below_threshold`；`force=true` 但缺少 note 回 422 `force_note_required`。
+- `force=true` + 必填 note 可越過門檻；release response 回傳 `forced` 與 `release_gate`，history 透過 note 前綴解析出 `forced=true`，不新增 release event schema migration。
+- rollback 不檢查 gate，仍可作為止血動作。
+- 前端候選卡會依 `is_demo_data` 與準確率顯示核准門檻原因；一般 approve 按鈕會 disabled，不達標但非 drift lock 時提供「強制核准」二次確認與必填稽核備註。版本歷史會標示 forced。
+- 驗證：`python -m py_compile` 通過；`npm run test -- MetaAndromedaRelease.test.jsx` 8 passed；`npm run build` 通過。後端 pytest 仍被本機環境 `cachetools` 無法匯入 `TTLCache` 阻塞。
 
 ---
 
