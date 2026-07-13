@@ -463,7 +463,7 @@ const MetaAndromedaRelease = () => {
 
                     <div style={{
                         display: 'grid',
-                        gridTemplateColumns: isMobile ? '1fr' : '1.1fr 0.9fr',
+                        gridTemplateColumns: '1fr',
                         gap: '16px'
                     }}>
                         <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
