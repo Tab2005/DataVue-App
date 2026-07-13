@@ -510,7 +510,10 @@ const MetaAndromedaRelease = () => {
                                                 </div>
                                             </div>
 
-                                            <div style={metricGridStyle}>
+                                            <div style={{
+                                                ...metricGridStyle,
+                                                gridTemplateColumns: isMobile ? '1fr' : 'repeat(3, minmax(0, 1fr))',
+                                            }}>
                                                 <Metric
                                                     label={t('Ranking Correlation (ρ)', '排名相關係數 (ρ)')}
                                                     value={driftReport.report_payload?.spearman_r !== undefined ? driftReport.report_payload.spearman_r.toFixed(3) : '--'}
@@ -905,27 +908,50 @@ const MetaAndromedaRelease = () => {
                                         const releaseGate = getCandidateReleaseGate(candidate);
                                         const approveBlocked = isDrifted || !releaseGate.passed;
                                         return (
-                                            <div key={candidate.model_version} style={detailCardStyle}>
-                                                <div style={{ color: 'var(--text-primary)', fontWeight: 700, marginBottom: '8px' }}>
-                                                    {candidate.model_version}
-                                                </div>
-                                                <div style={{ display: 'grid', gap: '8px', color: 'var(--text-secondary)' }}>
-                                                    <div>{t('Status', '狀態')}: {getTranslation(candidate.release_status)}</div>
-                                                    <div>{t('Pairwise Ranking Accuracy', '成對排序準確率')}: {candidate.pairwise_ranking_accuracy}</div>
-                                                    <div>{t('Mean Band Error', '平均級距誤差')}: {candidate.mean_band_error}</div>
-                                                </div>
-                                                <div style={{ display: 'grid', gap: '6px', marginTop: '12px', fontSize: '0.9rem' }}>
-                                                    {Object.entries(candidate.promotion_gate_summary || {}).map(([key, value]) => (
-                                                        <div key={key} style={gateRowStyle}>
-                                                            <span style={{ color: 'var(--text-secondary)' }}>{getTranslation(key)}</span>
-                                                            <strong style={{ color: value ? '#10b981' : '#ef4444' }}>
-                                                                {value ? t('Passed', '通過') : t('Failed', '未通過')}
-                                                            </strong>
+                                            <div
+                                                key={candidate.model_version}
+                                                style={{
+                                                    ...detailCardStyle,
+                                                    display: 'grid',
+                                                    gridTemplateColumns: isMobile ? '1fr' : 'minmax(0, 1.35fr) minmax(280px, 0.65fr)',
+                                                    gap: '18px',
+                                                    alignItems: 'start',
+                                                }}
+                                            >
+                                                <div style={{ display: 'grid', gap: '12px' }}>
+                                                    <div>
+                                                        <div style={{ color: 'var(--text-primary)', fontWeight: 700, marginBottom: '8px' }}>
+                                                            {candidate.model_version}
                                                         </div>
-                                                    ))}
+                                                        <div style={{ color: 'var(--text-secondary)', fontSize: '0.9rem' }}>
+                                                            {t('Status', '狀態')}: {getTranslation(candidate.release_status)}
+                                                        </div>
+                                                    </div>
+                                                    <div style={{ display: 'grid', gap: '6px', fontSize: '0.9rem' }}>
+                                                        {Object.entries(candidate.promotion_gate_summary || {}).map(([key, value]) => (
+                                                            <div key={key} style={gateRowStyle}>
+                                                                <span style={{ color: 'var(--text-secondary)' }}>{getTranslation(key)}</span>
+                                                                <strong style={{ color: value ? '#10b981' : '#ef4444' }}>
+                                                                    {value ? t('Passed', '通過') : t('Failed', '未通過')}
+                                                                </strong>
+                                                            </div>
+                                                        ))}
+                                                    </div>
                                                 </div>
-                                                <div style={{ display: 'flex', gap: '10px', marginTop: '16px', flexWrap: 'wrap', flexDirection: 'column' }}>
-                                                    <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap' }}>
+
+                                                <div style={{ display: 'grid', gap: '12px', justifyItems: isMobile ? 'stretch' : 'end' }}>
+                                                    <div
+                                                        style={{
+                                                            display: 'grid',
+                                                            gridTemplateColumns: 'repeat(2, minmax(120px, 1fr))',
+                                                            gap: '10px',
+                                                            width: isMobile ? '100%' : 'min(100%, 420px)',
+                                                        }}
+                                                    >
+                                                        <Metric label={t('Pairwise Ranking Accuracy', '成對排序準確率')} value={candidate.pairwise_ranking_accuracy} />
+                                                        <Metric label={t('Mean Band Error', '平均級距誤差')} value={candidate.mean_band_error} />
+                                                    </div>
+                                                    <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap', justifyContent: isMobile ? 'flex-start' : 'flex-end' }}>
                                                         <button
                                                             type="button"
                                                             style={{
@@ -958,40 +984,39 @@ const MetaAndromedaRelease = () => {
                                                             {t('Reject', '退回')}
                                                         </button>
                                                     </div>
-                                                    {!releaseGate.passed && !isDrifted && (
-                                                        <div style={{
-                                                            color: '#f59e0b',
-                                                            fontSize: '0.82rem',
-                                                            lineHeight: 1.5,
-                                                            background: 'rgba(245, 158, 11, 0.08)',
-                                                            padding: '10px',
-                                                            borderRadius: '8px',
-                                                            border: '1px solid rgba(245, 158, 11, 0.2)',
-                                                            marginTop: '8px',
-                                                            alignSelf: 'stretch'
-                                                        }}>
-                                                            {t('Approval gate: ', '核准門檻：')}{releaseGate.reason}
-                                                        </div>
-                                                    )}
-                                                    {isDrifted && (
-                                                        <div style={{
-                                                            color: '#ef4444',
-                                                            fontSize: '0.82rem',
-                                                            lineHeight: 1.5,
-                                                            background: 'rgba(239, 68, 68, 0.08)',
-                                                            padding: '10px',
-                                                            borderRadius: '8px',
-                                                            border: '1px solid rgba(239, 68, 68, 0.2)',
-                                                            marginTop: '8px',
-                                                            alignSelf: 'stretch'
-                                                        }}>
-                                                            ⚠️ {t(
-                                                                `Ranking correlation ρ=${(driftReport?.report_payload?.spearman_r ?? 0).toFixed(3)} is below threshold (0.10). Release is locked. Please run drift check in the Monitoring Console first.`,
-                                                                `排名相關係數 ρ=${(driftReport?.report_payload?.spearman_r ?? 0).toFixed(3)} 低於門檻（0.10），已自動鎖定發佈。請先至監控工作台執行偏差檢查，再行核准新模型。`
-                                                            )}
-                                                        </div>
-                                                    )}
                                                 </div>
+
+                                                {!releaseGate.passed && !isDrifted && (
+                                                    <div style={{
+                                                        gridColumn: '1 / -1',
+                                                        color: '#f59e0b',
+                                                        fontSize: '0.82rem',
+                                                        lineHeight: 1.5,
+                                                        background: 'rgba(245, 158, 11, 0.08)',
+                                                        padding: '10px',
+                                                        borderRadius: '8px',
+                                                        border: '1px solid rgba(245, 158, 11, 0.2)',
+                                                    }}>
+                                                        {t('Approval gate: ', '核准門檻：')}{releaseGate.reason}
+                                                    </div>
+                                                )}
+                                                {isDrifted && (
+                                                    <div style={{
+                                                        gridColumn: '1 / -1',
+                                                        color: '#ef4444',
+                                                        fontSize: '0.82rem',
+                                                        lineHeight: 1.5,
+                                                        background: 'rgba(239, 68, 68, 0.08)',
+                                                        padding: '10px',
+                                                        borderRadius: '8px',
+                                                        border: '1px solid rgba(239, 68, 68, 0.2)',
+                                                    }}>
+                                                        ⚠️ {t(
+                                                            `Ranking correlation ρ=${(driftReport?.report_payload?.spearman_r ?? 0).toFixed(3)} is below threshold (0.10). Release is locked. Please run drift check in the Monitoring Console first.`,
+                                                            `排名相關係數 ρ=${(driftReport?.report_payload?.spearman_r ?? 0).toFixed(3)} 低於門檻（0.10），已自動鎖定發佈。請先至監控工作台執行偏差檢查，再行核准新模型。`
+                                                        )}
+                                                    </div>
+                                                )}
                                             </div>
                                         );
                                     })}
