@@ -2,6 +2,8 @@
 Internal-only Meta Andromeda worker asset routes.
 """
 
+from urllib.parse import quote
+
 from fastapi import APIRouter, Depends, File, Form, Header, HTTPException, Query, UploadFile, status
 
 from database import get_db
@@ -88,5 +90,6 @@ async def get_internal_asset_raw(
         )
 
     response = build_asset_response(asset)
-    response.headers["X-Meta-Andromeda-Storage-Key"] = asset.storage_key
+    # HTTP 標頭僅允許 latin-1，storage_key 可能含中文檔名，需 percent-encode 後才能塞進標頭
+    response.headers["X-Meta-Andromeda-Storage-Key"] = quote(asset.storage_key)
     return response
