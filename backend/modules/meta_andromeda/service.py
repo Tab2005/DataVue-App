@@ -626,11 +626,6 @@ class MetaAndromedaService:
         )
         candidate = ObservedCreativeCandidate.model_validate(candidate)
 
-        # 查詢 User 資料表，將外部 google_id 轉換為內部 User.id (UUID)，防止外鍵約束衝突
-        user_db_id = await asyncio.to_thread(
-            MetaAndromedaService._resolve_observed_uploader_id_sync, db, user_id
-        )
-
         observed_creative_id = MetaAndromedaService.build_observed_creative_id(
             candidate.ad_id,
             candidate.observation_window_kind,
@@ -643,6 +638,13 @@ class MetaAndromedaService:
                     media_url=candidate.media_url,
                     ad_id=candidate.ad_id,
                     media_type=candidate.media_type,
+                )
+                # 查詢 User 資料表，將外部 google_id 轉換為內部 User.id (UUID)，防止外鍵約束衝突。
+                # 必須放在素材下載「之後」：session 第一次查詢就會 checkout 連線並持有到
+                # commit/close，若先查 DB 再下載，整段下載期間（最長 30 秒）都佔住連線池，
+                # 批次匯入時會耗盡 QueuePool（2026-07-13 匯入失敗事故）。
+                user_db_id = await asyncio.to_thread(
+                    MetaAndromedaService._resolve_observed_uploader_id_sync, db, user_id
                 )
                 stored_asset = await asyncio.to_thread(
                     MetaAndromedaService._store_observed_asset_sync, db, snapshot, user_db_id
