@@ -1032,7 +1032,12 @@ const MetaAndromedaRelease = () => {
 
                         <section style={panelStyle}>
                             <h2 style={sectionTitleStyle}>{t('Release History', '版本歷史')}</h2>
-                            <div style={{ display: 'grid', gap: '12px', marginBottom: '16px' }}>
+                            <div style={{
+                                display: 'grid',
+                                gridTemplateColumns: isMobile ? '1fr' : 'repeat(2, minmax(0, 1fr))',
+                                gap: '12px',
+                                marginBottom: '16px',
+                            }}>
                                 {(overview?.history || []).map((item, index) => (
                                     <div key={index} style={detailCardStyle}>
                                         <div style={{ color: 'var(--accent-primary)', fontWeight: 700, marginBottom: '6px' }}>
@@ -1047,7 +1052,11 @@ const MetaAndromedaRelease = () => {
                                     </div>
                                 ))}
                             </div>
-                            <div style={{ display: 'grid', gap: '8px' }}>
+                            <div style={{
+                                display: 'grid',
+                                gridTemplateColumns: isMobile ? '1fr' : 'repeat(2, minmax(0, 1fr))',
+                                gap: '8px 16px',
+                            }}>
                                 {(overview?.notes || []).map((note, index) => (
                                     <div key={index} style={{ color: 'var(--text-secondary)', lineHeight: 1.6 }}>
                                         {getTranslation(note)}
