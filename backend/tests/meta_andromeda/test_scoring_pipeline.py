@@ -481,7 +481,7 @@ async def test_meta_andromeda_score_retries_then_completes(meta_andromeda_access
         def close(self):
             return None
 
-    monkeypatch.setattr(meta_andromeda_service_module, "SessionLocal", lambda: SessionProxy(db))
+    monkeypatch.setattr(meta_andromeda_service_shared_module, "SessionLocal", lambda: SessionProxy(db))
 
     state = {"calls": 0}
     original_generate = runtime_adapter.generate_score_result
@@ -540,7 +540,7 @@ async def test_meta_andromeda_score_timeout_marks_failed(meta_andromeda_access, 
         def close(self):
             return None
 
-    monkeypatch.setattr(meta_andromeda_service_module, "SessionLocal", lambda: SessionProxy(db))
+    monkeypatch.setattr(meta_andromeda_service_shared_module, "SessionLocal", lambda: SessionProxy(db))
 
     original_generate = runtime_adapter.generate_score_result
 

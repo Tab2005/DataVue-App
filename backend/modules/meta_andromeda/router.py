@@ -370,6 +370,7 @@ async def trigger_drift_report(
     )
 
 
+@router.get("/runtime-health", response_model=RuntimeHealthResponse, include_in_schema=False)
 @router.get("/runtime/health", response_model=RuntimeHealthResponse)
 async def runtime_health(
     _user=Depends(get_current_meta_andromeda_user),

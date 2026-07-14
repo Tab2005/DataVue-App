@@ -1,5 +1,6 @@
 """WorkerCallbackServiceMixin for Meta Andromeda service."""
 
+from . import _shared
 from ._shared import *  # noqa: F403
 
 
@@ -301,7 +302,7 @@ class WorkerCallbackServiceMixin:
         processing，可以繼續往下跑評分；not_found_detail 非 None 時代表 score
         event 已不在可處理狀態，呼叫端應直接回傳它並結束（維持原本提前 return 的行為）。
         """
-        db = SessionLocal()
+        db = _shared.SessionLocal()
         try:
             current = repository.mark_score_processing(db, score_event_id)
             if current is None:
@@ -335,7 +336,7 @@ class WorkerCallbackServiceMixin:
         event loop 的執行緒，不能丟進 to_thread。回傳 ("failed", failed) 時已是
         終態，直接回傳給呼叫端即可。
         """
-        db = SessionLocal()
+        db = _shared.SessionLocal()
         try:
             latest = repository.get_review_queue_detail(db, score_event_id)
             if latest["attempt_count"] < settings.META_ANDROMEDA_SCORE_MAX_ATTEMPTS:
@@ -398,7 +399,7 @@ class WorkerCallbackServiceMixin:
     @staticmethod
     def _complete_score_event_sync(score_event_id: str, queue_host: str, result: dict) -> dict:
         """同步版本：DB 標記評分完成 + 寫入 worker event（純 DB I/O，見 docs/24 Wave 1）。"""
-        db = SessionLocal()
+        db = _shared.SessionLocal()
         try:
             completed = repository.mark_score_completed(db, score_event_id, result)
             repository.log_worker_event(
@@ -431,34 +432,34 @@ class WorkerCallbackServiceMixin:
                     runtime_adapter.generate_score_result(current),
                     timeout=settings.META_ANDROMEDA_SCORE_TIMEOUT_SECONDS,
                 )
-            except asyncio.TimeoutError as exc:
-                raise TimeoutError(
-                    f"score runtime timed out after {settings.META_ANDROMEDA_SCORE_TIMEOUT_SECONDS:.2f}s"
-                ) from exc
+            except asyncio.TimeoutError:
+                error_message = f"score runtime timed out after {settings.META_ANDROMEDA_SCORE_TIMEOUT_SECONDS:.2f}s"
             except Exception as exc:
                 error_message = str(exc)
-                kind, payload = await asyncio.to_thread(
-                    MetaAndromedaService._prepare_score_retry_or_failure,
-                    score_event_id,
-                    queue_host,
-                    error_message,
+            else:
+                return await asyncio.to_thread(
+                    MetaAndromedaService._complete_score_event_sync, score_event_id, queue_host, result
                 )
-                if kind == "failed":
-                    return payload
 
-                queued = payload
-                db = SessionLocal()
-                try:
-                    return MetaAndromedaService.enqueue_score_event(
-                        db,
-                        score_event_id=score_event_id,
-                        runtime_job_id=queued["runtime_job_id"],
-                        delay_seconds=settings.META_ANDROMEDA_SCORE_RETRY_DELAY_SECONDS,
-                        event_type="retry_dispatch_requested",
-                    )
-                finally:
-                    db.close()
-
-            return await asyncio.to_thread(
-                MetaAndromedaService._complete_score_event_sync, score_event_id, queue_host, result
+            kind, payload = await asyncio.to_thread(
+                MetaAndromedaService._prepare_score_retry_or_failure,
+                score_event_id,
+                queue_host,
+                error_message,
             )
+            if kind == "failed":
+                return payload
+
+            queued = payload
+            db = _shared.SessionLocal()
+            try:
+                return MetaAndromedaService.enqueue_score_event(
+                    db,
+                    score_event_id=score_event_id,
+                    runtime_job_id=queued["runtime_job_id"],
+                    delay_seconds=settings.META_ANDROMEDA_SCORE_RETRY_DELAY_SECONDS,
+                    event_type="retry_dispatch_requested",
+                )
+            finally:
+                db.close()
+
