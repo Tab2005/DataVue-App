@@ -1,24 +1,21 @@
 import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react';
 import { useOutletContext } from 'react-router-dom';
 import html2canvas from 'html2canvas';
-import { FiChevronUp, FiCpu, FiFileText, FiUsers, FiUser, FiX, FiZap } from 'react-icons/fi';
 import { format, subDays, startOfWeek, endOfWeek, startOfMonth, endOfMonth, subMonths, differenceInDays } from 'date-fns';
-import KPICard from '../components/KPICard';
 import TrendSection from '../components/TrendSection';
 // New modular imports
-import { DATE_PRESETS, COMPARE_PRESETS, VIEW_PRESETS } from '../constants/analyticsConfig';
+import { VIEW_PRESETS } from '../constants/analyticsConfig';
 import ReportModal from '../components/Analytics/ReportModal';
 import AnalyticsDataTable from '../components/Analytics/AnalyticsDataTable';
 import MetaAndromedaImportActions from '../components/Analytics/MetaAndromedaImportActions';
+import AnalyticsFiltersPanel from '../components/Analytics/AnalyticsFiltersPanel';
+import AnalyticsKpiSection from '../components/Analytics/AnalyticsKpiSection';
+import AnalyticsAiPanel from '../components/Analytics/AnalyticsAiPanel';
 // Import Metrics Registry for extended metrics support
 import { useModuleAccess, usePermission } from '../hooks/usePermission';
 import useAnalyticsData from '../hooks/useAnalyticsData';
+import useAnalyticsObservationImport from '../hooks/useAnalyticsObservationImport';
 import { ALL_METRIC_GROUPS, METRIC_GROUPS, resolveObservationWindowKind } from '../components/Analytics/analyticsMetrics';
-import {
-    fetchMetaAndromedaAiReady,
-    fetchMetaAndromedaObservedImportStatus,
-    importMetaAndromedaObservedFacebookAd,
-} from '../services/metaAndromedaWorkflowService';
 
 const Analytics = () => {
     // 1. Get shared context
@@ -575,168 +572,18 @@ const Analytics = () => {
         setSelectedObservationIds(new Set(observationImportableRows.map((row) => row.id)));
     }, [observationImportableRows]);
 
-    const importObservationRow = useCallback(async (row) => {
-        if (!row?.ad_id || !selectedAccountId) {
-            const message = language === 'zh'
-                ? '缺少廣告或帳號資訊，無法匯入。'
-                : 'Missing ad or account information.';
-            setObservationImportState((prev) => ({
-                ...prev,
-                [row?.id || 'unknown']: {
-                    status: 'failed',
-                    observationStatus: 'failed',
-                    scoreStatus: 'blocked_by_observation_failure',
-                    message,
-                },
-            }));
-            return { ok: false };
-        }
-
-        const rowKey = row.id;
-        setObservationImportState((prev) => ({
-            ...prev,
-            [rowKey]: {
-                ...(prev[rowKey] || {}),
-                status: 'loading',
-                observationStatus: 'queued',
-                scoreStatus: 'pending_observation',
-                message: language === 'zh' ? '送出匯入請求中...' : 'Submitting import request...',
-            },
-        }));
-
-        try {
-            const observationWindowKind = resolveObservationWindowKind(datePreset);
-            const payload = {
-                account_id: selectedAccountId,
-                ad_id: row.ad_id,
-                observation_window_kind: observationWindowKind,
-                since: observationWindowKind === 'custom' ? dateRange.since : undefined,
-                until: observationWindowKind === 'custom' ? dateRange.until : undefined,
-                market: 'TW',
-                placement_family: 'all',
-                primary_text: row.primary_text || row.body || null,
-                headline: row.headline || row.title || row.name || null,
-                cta: row.cta || null,
-            };
-
-            const accepted = await importMetaAndromedaObservedFacebookAd(payload);
-            const observedCreativeId = accepted?.observed_creative_id;
-
-            setObservationImportState((prev) => ({
-                ...prev,
-                [rowKey]: {
-                    ...(prev[rowKey] || {}),
-                    status: 'accepted',
-                    observedCreativeId,
-                    observationStatus: accepted?.status === 'accepted' ? 'queued' : (accepted?.status || 'queued'),
-                    scoreStatus: accepted?.score_status || 'pending_observation',
-                    message: language === 'zh' ? '已送出，等待背景匯入。' : 'Accepted, waiting for background import.',
-                },
-            }));
-
-            if (observedCreativeId) {
-                try {
-                    const status = await fetchMetaAndromedaObservedImportStatus(observedCreativeId);
-                    setObservationImportState((prev) => ({
-                        ...prev,
-                        [rowKey]: {
-                            ...(prev[rowKey] || {}),
-                            status: status?.observation_status === 'completed' || status?.observation_status === 'failed'
-                                ? status.observation_status
-                                : 'polling',
-                            observedCreativeId,
-                            observationStatus: status?.observation_status || 'queued',
-                            scoreStatus: status?.score_status || accepted?.score_status || 'pending_observation',
-                            message: status?.observation_message || (language === 'zh' ? '匯入狀態已更新。' : 'Import status updated.'),
-                        },
-                    }));
-                } catch {
-                    setObservationImportState((prev) => ({
-                        ...prev,
-                        [rowKey]: {
-                            ...(prev[rowKey] || {}),
-                            status: 'polling',
-                            observedCreativeId,
-                            message: language === 'zh' ? '已送出，暫時無法讀取最新狀態。' : 'Accepted; latest status is not available yet.',
-                        },
-                    }));
-                }
-            }
-
-            return { ok: true };
-        } catch (err) {
-            setObservationImportState((prev) => ({
-                ...prev,
-                [rowKey]: {
-                    ...(prev[rowKey] || {}),
-                    status: 'failed',
-                    observationStatus: 'failed',
-                    scoreStatus: 'blocked_by_observation_failure',
-                    message: err?.message || (language === 'zh' ? '匯入失敗。' : 'Import failed.'),
-                },
-            }));
-            return { ok: false };
-        }
-    }, [datePreset, dateRange, language, selectedAccountId]);
-
-    const handleObservationImport = useCallback(async (row) => {
-        await importObservationRow(row);
-    }, [importObservationRow]);
-
-    const handleBatchObservationImport = useCallback(async () => {
-        if (!selectedObservationRows.length) {
-            return;
-        }
-
-        // Pre-flight AI readiness check
-        try {
-            const aiStatus = await fetchMetaAndromedaAiReady();
-            if (aiStatus && !aiStatus.ready && aiStatus.warning) {
-                const continueAnyway = window.confirm(
-                    (language === 'zh' ? '⚠️ AI 評分連線異常\n\n' : '⚠️ AI Scoring Unavailable\n\n') +
-                    aiStatus.warning +
-                    (language === 'zh'
-                        ? '\n\n是否仍要繼續批次匯入？（評分將使用啟發式備用模式）'
-                        : '\n\nContinue with batch import anyway? (Scoring will use heuristic fallback)')
-                );
-                if (!continueAnyway) return;
-            }
-        } catch {
-            // AI check failed → proceed silently (don't block import)
-        }
-
-        setObservationBatchSummary({
-            status: 'loading',
-            attemptedCount: selectedObservationRows.length,
-            successCount: 0,
-            failureCount: 0,
-            message: language === 'zh'
-                ? `批次送出中，共 ${selectedObservationRows.length} 筆。`
-                : `Batch submission in progress for ${selectedObservationRows.length} ads.`,
-        });
-
-        let successCount = 0;
-        let failureCount = 0;
-
-        for (const row of selectedObservationRows) {
-            const result = await importObservationRow(row);
-            if (result.ok) {
-                successCount += 1;
-            } else {
-                failureCount += 1;
-            }
-        }
-
-        setObservationBatchSummary({
-            status: failureCount === 0 ? 'success' : 'warning',
-            attemptedCount: selectedObservationRows.length,
-            successCount,
-            failureCount,
-            message: language === 'zh'
-                ? `批次送出完成，成功送出 ${successCount} 筆，失敗 ${failureCount} 筆。`
-                : `Batch submission completed: ${successCount} accepted, ${failureCount} failed.`,
-        });
-    }, [importObservationRow, language, selectedObservationRows]);
+    const {
+        handleBatchObservationImport,
+        handleObservationImport,
+    } = useAnalyticsObservationImport({
+        datePreset,
+        dateRange,
+        language,
+        selectedAccountId,
+        selectedObservationRows,
+        setObservationBatchSummary,
+        setObservationImportState,
+    });
 
     // 7. Calculate Summary for KPI Cards (Dynamic Selection)
     const calculateSummary = (dataSource) => {
@@ -962,662 +809,61 @@ const Analytics = () => {
                 </div>
             </div>
 
-            {/* Split Layout Control Panel (Top) */}
-            <div style={{
-                display: 'grid',
-                gridTemplateColumns: isMobile ? '1fr' : '3fr 1fr',
-                gap: '24px',
-                marginBottom: '24px'
-            }}>
+            <AnalyticsFiltersPanel
+                activeView={activeView}
+                compareDateRange={compareDateRange}
+                comparePreset={comparePreset}
+                datePreset={datePreset}
+                dateRange={dateRange}
+                fetchAnalytics={fetchAnalytics}
+                filterActiveOnly={filterActiveOnly}
+                filterKeyword={filterKeyword}
+                filterMode={filterMode}
+                filterObservationImported={filterObservationImported}
+                handleComparePresetChange={handleComparePresetChange}
+                handlePresetChange={handlePresetChange}
+                handleViewChange={handleViewChange}
+                isCompareMode={isCompareMode}
+                isMobile={isMobile}
+                language={language}
+                level={level}
+                reportData={reportData}
+                savedViews={savedViews}
+                selectedMetrics={selectedMetrics}
+                setActiveView={setActiveView}
+                setCompareDateRange={setCompareDateRange}
+                setDateRange={setDateRange}
+                setFilterActiveOnly={setFilterActiveOnly}
+                setFilterKeyword={setFilterKeyword}
+                setFilterMode={setFilterMode}
+                setFilterObservationImported={setFilterObservationImported}
+                setIsCompareMode={setIsCompareMode}
+                setLevel={setLevel}
+                setSelectedMetrics={setSelectedMetrics}
+                setShowAiPanel={setShowAiPanel}
+                setShowMetricPanel={setShowMetricPanel}
+                setShowReportModal={setShowReportModal}
+                showMetricPanel={showMetricPanel}
+                toggleMetric={toggleMetric}
+                txt={txt}
+            />
 
-                {/* Left Panel: Primary Settings */}
-                <div className="glass-panel" style={{ padding: isMobile ? '16px' : '24px', borderRadius: '16px', display: 'flex', flexDirection: 'column', gap: '20px' }}>
-
-                    <h3 style={{ margin: 0, fontSize: '1rem', color: 'var(--text-secondary)', marginBottom: '8px' }}>{txt.mainSettings}</h3>
-
-                    <div style={{ display: 'flex', flexDirection: isMobile ? 'column' : 'row', gap: '20px', flexWrap: 'wrap' }}>
-                        {/* Level Selector */}
-                        <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', flex: 1, minWidth: isMobile ? '100%' : '180px' }}>
-                            <label style={{ fontSize: '0.85rem', color: 'var(--text-secondary)', fontWeight: 600 }}>{txt.level}</label>
-                            <select
-                                value={level}
-                                onChange={(e) => setLevel(e.target.value)}
-                                style={{
-                                    padding: '10px',
-                                    borderRadius: '8px',
-                                    background: 'rgba(255,255,255,0.05)',
-                                    border: '1px solid var(--glass-border)',
-                                    color: 'var(--text-primary)',
-                                    width: '100%'
-                                }}
-                            >
-                                <option value="campaign" style={{ color: 'black' }}>{txt.levels.campaign}</option>
-                                <option value="adset" style={{ color: 'black' }}>{txt.levels.adset}</option>
-                                <option value="ad" style={{ color: 'black' }}>{txt.levels.ad}</option>
-                                <option value="account" style={{ color: 'black' }}>{txt.levels.account}</option>
-                            </select>
-                        </div>
-
-                        {/* Date Preset Selector */}
-                        <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', flex: 1, minWidth: isMobile ? '100%' : '180px' }}>
-                            <label style={{ fontSize: '0.85rem', color: 'var(--text-secondary)', fontWeight: 600 }}>{txt.dateRange}</label>
-                            <select
-                                value={datePreset}
-                                onChange={handlePresetChange}
-                                style={{
-                                    padding: '10px',
-                                    borderRadius: '8px',
-                                    background: 'rgba(255,255,255,0.05)',
-                                    border: '1px solid var(--glass-border)',
-                                    color: 'var(--text-primary)',
-                                    width: '100%'
-                                }}
-                            >
-                                {DATE_PRESETS.map(p => (
-                                    <option key={p.value} value={p.value} style={{ color: 'black' }}>
-                                        {txt.presets[p.value] || p.label}
-                                    </option>
-                                ))}
-                            </select>
-                        </div>
-                    </div>
-
-                    {/* Custom Date Inputs (Conditional) */}
-                    {datePreset === 'custom' && (
-                        <div style={{ display: 'flex', gap: '16px' }}>
-                            <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', flex: 1 }}>
-                                <label style={{ fontSize: '0.85rem', color: 'var(--text-secondary)', fontWeight: 600 }}>{txt.customStart}</label>
-                                <input type="date" value={dateRange.since} onChange={(e) => setDateRange({ ...dateRange, since: e.target.value })}
-                                    style={{ padding: '10px', borderRadius: '8px', background: 'rgba(255,255,255,0.05)', border: '1px solid var(--glass-border)', color: 'var(--text-primary)', colorScheme: 'dark', width: '100%' }} />
-                            </div>
-                            <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', flex: 1 }}>
-                                <label style={{ fontSize: '0.85rem', color: 'var(--text-secondary)', fontWeight: 600 }}>{txt.customEnd}</label>
-                                <input type="date" value={dateRange.until} onChange={(e) => setDateRange({ ...dateRange, until: e.target.value })}
-                                    style={{ padding: '10px', borderRadius: '8px', background: 'rgba(255,255,255,0.05)', border: '1px solid var(--glass-border)', color: 'var(--text-primary)', colorScheme: 'dark', width: '100%' }} />
-                            </div>
-                        </div>
-                    )}
-
-
-                    {/* Metric Selector Toggle (Now includes ALL groups) */}
-                    <div style={{ borderTop: '1px solid var(--glass-border)', paddingTop: '16px' }}>
-
-                        {/* View Tabs */}
-                        <div style={{ display: 'flex', gap: '8px', marginBottom: '16px', flexWrap: 'wrap' }}>
-                            {Object.entries(VIEW_PRESETS).map(([key, preset]) => (
-                                <button
-                                    key={key}
-                                    onClick={() => handleViewChange(key)}
-                                    style={{
-                                        padding: '6px 12px',
-                                        borderRadius: '20px',
-                                        border: '1px solid var(--glass-border)',
-                                        background: activeView === key ? 'var(--accent-primary)' : 'rgba(255,255,255,0.05)',
-                                        color: 'white',
-                                        fontSize: '0.85rem',
-                                        cursor: 'pointer',
-                                        transition: 'all 0.2s'
-                                    }}
-                                >
-                                    {language === 'zh' ? preset.label_zh : preset.label_en}
-                                </button>
-                            ))}
-
-                            {/* AI Analyst Button - Placed right after Custom tab */}
-                            <button
-                                onClick={() => setShowAiPanel(true)}
-                                style={{
-                                    display: 'flex', alignItems: 'center', gap: '6px',
-                                    padding: '6px 16px', borderRadius: '20px',
-                                    background: 'linear-gradient(135deg, #6366f1, #a855f7)', // Indigo to Purple
-                                    border: 'none', color: 'white',
-                                    fontSize: '0.9rem', fontWeight: 'bold', cursor: 'pointer',
-                                    boxShadow: '0 4px 12px rgba(99, 102, 241, 0.3)',
-                                    transition: 'transform 0.2s',
-                                }}
-                                onMouseEnter={e => e.currentTarget.style.transform = 'translateY(-2px)'}
-                                onMouseLeave={e => e.currentTarget.style.transform = 'translateY(0)'}
-                            >
-                                🤖 {language === 'zh' ? 'AI 廣告分析' : 'AI Analyst'}
-                            </button>
-
-                            {/* Saved Views from MetricsLab */}
-                            {savedViews.length > 0 && (
-                                <>
-                                    <div style={{ width: '1px', height: '24px', background: 'var(--glass-border)', margin: '0 4px' }} />
-                                    {savedViews.map(view => (
-                                        <button
-                                            key={`saved-${view.id}`}
-                                            onClick={() => {
-                                                // Load saved view metrics
-                                                const newSet = new Set();
-                                                view.metrics.forEach(metricKey => {
-                                                    // Map registry keys to composite keys (search in ALL groups including extended)
-                                                    for (const group of ALL_METRIC_GROUPS) {
-                                                        const match = group.metrics.find(m => m.key === metricKey);
-                                                        if (match) {
-                                                            newSet.add(`${group.id}:${metricKey}`);
-                                                            break;
-                                                        }
-                                                    }
-                                                });
-                                                setSelectedMetrics(newSet);
-                                                setActiveView(`saved-${view.id}`);
-                                                setShowMetricPanel(false);
-                                            }}
-                                            style={{
-                                                display: 'flex',
-                                                alignItems: 'center',
-                                                gap: '4px',
-                                                padding: '6px 12px',
-                                                borderRadius: '20px',
-                                                border: view.is_personal ? '1px solid rgba(59, 130, 246, 0.3)' : '1px solid rgba(16, 185, 129, 0.3)',
-                                                background: activeView === `saved-${view.id}`
-                                                    ? (view.is_personal ? 'rgba(59, 130, 246, 0.2)' : 'rgba(16, 185, 129, 0.2)')
-                                                    : (view.is_personal ? 'rgba(59, 130, 246, 0.05)' : 'rgba(16, 185, 129, 0.05)'),
-                                                color: view.is_personal ? '#60a5fa' : '#34d399',
-                                                fontSize: '0.85rem',
-                                                cursor: 'pointer',
-                                                transition: 'all 0.2s'
-                                            }}
-                                            title={view.is_personal ? (language === 'zh' ? '個人視角' : 'Personal View') : (language === 'zh' ? '團隊視角' : 'Team View')}
-                                        >
-                                            {view.is_personal ? <FiUser size={12} /> : <FiUsers size={12} />}
-                                            {view.name}
-                                        </button>
-                                    ))}
-                                </>
-                            )}
-                        </div>
-                    </div>
-
-                    {/* Row 2: Filter Toolbar (Moved here) */}
-                    <div style={{
-                        display: 'flex',
-                        flexDirection: isMobile ? 'column' : 'row',
-                        gap: '16px',
-                        alignItems: isMobile ? 'stretch' : 'center',
-                        marginBottom: '16px',
-                        background: 'rgba(255,255,255,0.03)',
-                        padding: '12px',
-                        borderRadius: '12px',
-                        border: '1px solid var(--glass-border)'
-                    }}>
-                        {/* Keyword Search */}
-                        <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flex: 1 }}>
-                            <span style={{ fontSize: '1.2rem' }}>🔍</span>
-                            <input
-                                type="text"
-                                placeholder={language === 'zh' ? "搜尋關鍵字..." : "Search keyword..."}
-                                value={filterKeyword}
-                                onChange={(e) => setFilterKeyword(e.target.value)}
-                                style={{
-                                    background: 'transparent',
-                                    border: 'none',
-                                    color: 'var(--text-primary)',
-                                    fontSize: '1rem',
-                                    width: '100%',
-                                    outline: 'none'
-                                }}
-                            />
-                        </div>
-
-                        <div style={{ width: '1px', height: '24px', background: 'var(--glass-border)' }}></div>
-
-                        {/* Filter Mode */}
-                        <select
-                            value={filterMode}
-                            onChange={(e) => setFilterMode(e.target.value)}
-                            style={{
-                                background: 'rgba(255,255,255,0.05)',
-                                border: '1px solid var(--glass-border)',
-                                color: 'var(--text-primary)',
-                                fontSize: '0.9rem',
-                                cursor: 'pointer',
-                                outline: 'none',
-                                padding: '6px 10px',
-                                borderRadius: '6px'
-                            }}
-                        >
-                            <option value="include">{language === 'zh' ? '包含 (Include)' : 'Include'}</option>
-                            <option value="exclude">{language === 'zh' ? '排除 (Exclude)' : 'Exclude'}</option>
-                        </select>
-
-                        <div style={{ width: '1px', height: '24px', background: 'var(--glass-border)' }}></div>
-
-                        {/* Active Only Toggle */}
-                        <label style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer' }}>
-                            <span style={{ fontSize: '0.9rem', color: filterActiveOnly ? '#4ade80' : 'var(--text-secondary)', fontWeight: filterActiveOnly ? 600 : 400 }}>
-                                ⚡ {language === 'zh' ? '只看快篩 (Active)' : 'Active Only'}
-                            </span>
-                            <div className="switch" style={{ position: 'relative', display: 'inline-block', width: '36px', height: '20px' }}>
-                                <input type="checkbox" checked={filterActiveOnly} onChange={(e) => setFilterActiveOnly(e.target.checked)} style={{ opacity: 0, width: 0, height: 0 }} />
-                                <span style={{
-                                    position: 'absolute', cursor: 'pointer', top: 0, left: 0, right: 0, bottom: 0,
-                                    backgroundColor: filterActiveOnly ? '#4ade80' : '#4b5563', borderRadius: '20px', transition: '.4s'
-                                }}>
-                                    <span style={{
-                                        position: 'absolute', content: "", height: '14px', width: '14px', left: '3px', bottom: '3px',
-                                        backgroundColor: 'white', transition: '.4s', borderRadius: '50%',
-                                        transform: filterActiveOnly ? 'translateX(16px)' : 'translateX(0)'
-                                    }}></span>
-                                </span>
-                            </div>
-                        </label>
-
-                        {level === 'ad' && (
-                            <>
-                                <div style={{ width: '1px', height: '24px', background: 'var(--glass-border)' }}></div>
-                                <select
-                                    value={filterObservationImported}
-                                    onChange={(e) => setFilterObservationImported(e.target.value)}
-                                    style={{
-                                        background: 'rgba(255,255,255,0.05)',
-                                        border: '1px solid var(--glass-border)',
-                                        color: 'var(--text-primary)',
-                                        fontSize: '0.9rem',
-                                        cursor: 'pointer',
-                                        outline: 'none',
-                                        padding: '6px 10px',
-                                        borderRadius: '6px'
-                                    }}
-                                >
-                                    <option value="all">{language === 'zh' ? '全部匯入狀態' : 'All Import Status'}</option>
-                                    <option value="imported">{language === 'zh' ? '已送出' : 'Imported'}</option>
-                                    <option value="not_imported">{language === 'zh' ? '未送出' : 'Not Imported'}</option>
-                                </select>
-                            </>
-                        )}
-                    </div>
-
-                    {activeView === 'custom' && showMetricPanel && (
-                        <div style={{ marginTop: '16px', animation: 'fadeIn 0.3s' }}>
-                            {ALL_METRIC_GROUPS.map(group => (
-                                <div key={group.id} style={{ marginBottom: '16px' }}>
-                                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '8px' }}>
-                                        <div style={{ fontSize: '0.85rem', color: group.color || 'var(--accent-primary)', fontWeight: 'bold' }}>
-                                            {language === 'zh' ? group.label_zh : group.label_en}
-                                        </div>
-                                        <div style={{ fontSize: '0.75rem', display: 'flex', gap: '8px' }}>
-                                            <span
-                                                onClick={() => {
-                                                    const newSet = new Set(selectedMetrics);
-                                                    // Use composite keys
-                                                    group.metrics.forEach(m => newSet.add(`${group.id}:${m.key}`));
-                                                    setSelectedMetrics(newSet);
-                                                }}
-                                                style={{ color: 'var(--accent-primary)', cursor: 'pointer', textDecoration: 'underline' }}
-                                            >
-                                                {language === 'zh' ? '全選' : 'Select All'}
-                                            </span>
-                                            <span style={{ color: 'var(--text-tertiary)' }}>|</span>
-                                            <span
-                                                onClick={() => {
-                                                    const newSet = new Set(selectedMetrics);
-                                                    group.metrics.forEach(m => newSet.delete(`${group.id}:${m.key}`));
-                                                    setSelectedMetrics(newSet);
-                                                }}
-                                                style={{ color: 'var(--accent-primary)', cursor: 'pointer', textDecoration: 'underline' }}
-                                            >
-                                                {language === 'zh' ? '全消' : 'Deselect All'}
-                                            </span>
-                                        </div>
-                                    </div>
-                                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: '12px' }}>
-                                        {group.metrics.map(metric => (
-                                            <label key={metric.key} style={{ display: 'flex', alignItems: 'center', gap: '6px', cursor: 'pointer', fontSize: '0.9rem', color: 'var(--text-secondary)' }}>
-                                                <input
-                                                    type="checkbox"
-                                                    checked={selectedMetrics.has(`${group.id}:${metric.key}`)}
-                                                    onChange={() => toggleMetric(group.id, metric.key)}
-                                                    style={{ accentColor: 'var(--accent-primary)' }}
-                                                />
-                                                {language === 'zh' ? metric.label_zh : metric.label_en}
-                                            </label>
-                                        ))}
-                                    </div>
-                                </div>
-                            ))}
-
-                            {/* Done / Collapse Button */}
-                            <div style={{ display: 'flex', justifyContent: 'center', marginTop: '16px', paddingTop: '16px', borderTop: '1px solid var(--glass-border)' }}>
-                                <button
-                                    onClick={() => setShowMetricPanel(false)}
-                                    style={{
-                                        padding: '8px 24px',
-                                        borderRadius: '20px',
-                                        background: 'rgba(255,255,255,0.1)',
-                                        border: '1px solid var(--glass-border)',
-                                        color: 'white',
-                                        fontSize: '0.9rem',
-                                        cursor: 'pointer',
-                                        transition: 'all 0.2s',
-                                        display: 'flex', alignItems: 'center', gap: '8px'
-                                    }}
-                                    onMouseEnter={e => e.currentTarget.style.background = 'rgba(255,255,255,0.2)'}
-                                    onMouseLeave={e => e.currentTarget.style.background = 'rgba(255,255,255,0.1)'}
-                                >
-                                    <FiChevronUp /> {language === 'zh' ? '完成並收合' : 'Done & Collapse'}
-                                </button>
-                            </div>
-                        </div>
-                    )}
-                </div>
-
-
-                {/* Right Panel: Actions */}
-                <div className="glass-panel" style={{ padding: '24px', borderRadius: '16px', display: 'flex', flexDirection: 'column', justifyContent: 'space-between' }}>
-                    {/* (Same advanced options) */}
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
-                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                            <h3 style={{ margin: 0, fontSize: '1rem', color: 'var(--text-secondary)' }}>{txt.advanced}</h3>
-                        </div>
-
-                        {/* Comparison Toggle */}
-                        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '10px', background: 'rgba(255,255,255,0.03)', borderRadius: '8px' }}>
-                            <span style={{ fontSize: '0.9rem', fontWeight: 600, color: 'var(--text-primary)' }}>{txt.compareMode}</span>
-                            <label className="switch" style={{ position: 'relative', display: 'inline-block', width: '40px', height: '24px' }}>
-                                <input type="checkbox" checked={isCompareMode} onChange={(e) => setIsCompareMode(e.target.checked)} style={{ opacity: 0, width: 0, height: 0 }} />
-                                <span style={{
-                                    position: 'absolute', cursor: 'pointer', top: 0, left: 0, right: 0, bottom: 0,
-                                    backgroundColor: isCompareMode ? 'var(--accent-primary)' : '#ccc', borderRadius: '24px', transition: '.4s'
-                                }}>
-                                    <span style={{
-                                        position: 'absolute', content: "", height: '16px', width: '16px', left: '4px', bottom: '4px',
-                                        backgroundColor: 'white', transition: '.4s', borderRadius: '50%',
-                                        transform: isCompareMode ? 'translateX(16px)' : 'translateX(0)'
-                                    }}></span>
-                                </span>
-                            </label>
-                        </div>
-
-                        {/* Comparison Date Selector (Visible only if enabled) */}
-                        {isCompareMode && (
-                            <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', transition: 'all 0.3s' }}>
-                                <label style={{ fontSize: '0.85rem', color: 'var(--text-secondary)', fontWeight: 600 }}>{txt.comparePeriod}</label>
-                                <select
-                                    value={comparePreset}
-                                    onChange={handleComparePresetChange}
-                                    style={{
-                                        padding: '10px',
-                                        borderRadius: '8px',
-                                        background: 'rgba(255,255,255,0.05)',
-                                        border: '1px solid var(--glass-border)',
-                                        color: 'var(--text-primary)',
-                                        width: '100%'
-                                    }}
-                                >
-                                    {COMPARE_PRESETS.map(p => (
-                                        <option key={p.value} value={p.value} style={{ color: 'black' }}>
-                                            {txt.comparePresets[p.value] || p.label}
-                                        </option>
-                                    ))}
-                                </select>
-
-                                {/* Custom Compare Date Inputs */}
-                                {comparePreset === 'custom' && (
-                                    <div style={{ display: 'flex', gap: '16px', marginTop: '8px' }}>
-                                        <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', flex: 1 }}>
-                                            <label style={{ fontSize: '0.85rem', color: 'var(--text-secondary)', fontWeight: 600 }}>
-                                                {language === 'zh' ? '比較開始日期' : 'Compare Start'}
-                                            </label>
-                                            <input 
-                                                type="date" 
-                                                value={compareDateRange.since} 
-                                                onChange={(e) => setCompareDateRange({ ...compareDateRange, since: e.target.value })}
-                                                style={{ 
-                                                    padding: '10px', 
-                                                    borderRadius: '8px', 
-                                                    background: 'rgba(255,255,255,0.05)',
-                                                    border: '1px solid var(--glass-border)',
-                                                    color: 'var(--text-primary)',
-                                                    colorScheme: 'dark',
-                                                    width: '100%' 
-                                                }} 
-                                            />
-                                        </div>
-                                        <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', flex: 1 }}>
-                                            <label style={{ fontSize: '0.85rem', color: 'var(--text-secondary)', fontWeight: 600 }}>
-                                                {language === 'zh' ? '比較結束日期' : 'Compare End'}
-                                            </label>
-                                            <input 
-                                                type="date" 
-                                                value={compareDateRange.until} 
-                                                onChange={(e) => setCompareDateRange({ ...compareDateRange, until: e.target.value })}
-                                                style={{ 
-                                                    padding: '10px', 
-                                                    borderRadius: '8px', 
-                                                    background: 'rgba(255,255,255,0.05)',
-                                                    border: '1px solid var(--glass-border)',
-                                                    color: 'var(--text-primary)',
-                                                    colorScheme: 'dark',
-                                                    width: '100%' 
-                                                }} 
-                                            />
-                                        </div>
-                                    </div>
-                                )}
-                            </div>
-                        )}
-                    </div>
-
-                    <button
-                        onClick={() => setShowReportModal(true)}
-                        style={{
-                            marginTop: '20px',
-                            padding: '12px 24px',
-                            background: 'rgba(255,255,255,0.05)',
-                            border: '1px solid var(--glass-border)',
-                            borderRadius: '8px',
-                            color: 'var(--text-primary)',
-                            fontWeight: 600,
-                            cursor: 'pointer',
-                            fontSize: '1rem',
-                            display: 'flex',
-                            justifyContent: 'center',
-                            alignItems: 'center',
-                            gap: '8px',
-                            opacity: reportData && reportData.length > 0 ? 1 : 0.5,
-                            pointerEvents: reportData && reportData.length > 0 ? 'auto' : 'none'
-                        }}
-                    >
-                        <FiFileText /> {language === 'zh' ? '匯出報表' : 'Export Report'}
-                    </button>
-
-                    <button
-                        onClick={fetchAnalytics}
-                        style={{
-                            marginTop: '20px',
-                            padding: '12px 24px',
-                            background: 'var(--accent-primary)',
-                            border: 'none',
-                            borderRadius: '8px',
-                            color: 'white',
-                            fontWeight: 600,
-                            cursor: 'pointer',
-                            fontSize: '1rem',
-                            display: 'flex',
-                            justifyContent: 'center',
-                            alignItems: 'center',
-                            gap: '8px'
-                        }}
-                    >
-                        {txt.updateReport}
-                    </button>
-                </div>
-            </div>
-
-            {/* KPI Section */}
-            <div>
-                {currentSummaryData && (
-                    <div ref={kpiRef} className="glass-panel" style={{ marginBottom: '32px', padding: '24px', borderRadius: '16px', position: 'relative' }}>
-                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '24px', borderBottom: '1px solid var(--glass-border)', paddingBottom: '16px' }}>
-                            <h2 style={{
-                                fontSize: '1.2rem',
-                                color: '#fbbf24',
-                                display: 'flex',
-                                flexDirection: 'row', // Always row, let wrap handle it
-                                flexWrap: 'wrap',
-                                alignItems: 'baseline',
-                                gap: '8px',
-                                margin: 0,
-                                lineHeight: 1.5
-                            }}>
-                                <div style={{ display: 'flex', alignItems: 'center', gap: '8px', whiteSpace: 'nowrap' }}>
-                                    ⭐ {txt.keyMetrics}
-                                </div>
-                                <span style={{
-                                    fontSize: isMobile ? '0.8rem' : '0.9rem',
-                                    color: 'var(--text-secondary)',
-                                    fontWeight: 'normal',
-                                    lineHeight: isMobile ? '1.4' : 'inherit'
-                                }}>
-                                    ({dateRange.since} ~ {dateRange.until}
-                                    {isCompareMode && prevDateRange.since ? ` vs ${prevDateRange.since} ~ ${prevDateRange.until}` : ''})
-                                </span>
-                            </h2>
-
-                            {/* More Options Menu */}
-                            <div style={{ position: 'relative' }} data-html2canvas-ignore="true">
-                                <button
-                                    onClick={() => setShowKpiMenu(!showKpiMenu)}
-                                    style={{
-                                        background: 'transparent',
-                                        border: 'none',
-                                        color: 'var(--text-secondary)',
-                                        fontSize: '1.2rem',
-                                        cursor: 'pointer',
-                                        padding: '4px',
-                                        borderRadius: '50%',
-                                        display: 'flex',
-                                        alignItems: 'center',
-                                        justifyContent: 'center',
-                                        transition: 'background 0.2s'
-                                    }}
-                                    onMouseEnter={(e) => e.target.style.background = 'rgba(255,255,255,0.1)'}
-                                    onMouseLeave={(e) => e.target.style.background = 'transparent'}
-                                >
-                                    ⋮
-                                </button>
-
-                                {showKpiMenu && (
-                                    <div style={{
-                                        position: 'absolute',
-                                        top: '100%',
-                                        right: 0,
-                                        marginTop: '8px',
-                                        background: '#242526',
-                                        border: '1px solid var(--glass-border)',
-                                        borderRadius: '8px',
-                                        padding: '4px',
-                                        zIndex: 100,
-                                        boxShadow: '0 4px 12px rgba(0,0,0,0.5)',
-                                        minWidth: '140px'
-                                    }}>
-                                        <button
-                                            onClick={handleExportImage}
-                                            style={{
-                                                display: 'flex',
-                                                alignItems: 'center',
-                                                gap: '8px',
-                                                width: '100%',
-                                                padding: '8px 12px',
-                                                background: 'transparent',
-                                                border: 'none',
-                                                color: 'var(--text-primary)',
-                                                fontSize: '0.9rem',
-                                                cursor: 'pointer',
-                                                borderRadius: '4px',
-                                                textAlign: 'left'
-                                            }}
-                                            onMouseEnter={(e) => e.target.style.background = 'rgba(255,255,255,0.1)'}
-                                            onMouseLeave={(e) => e.target.style.background = 'transparent'}
-                                        >
-                                            ⬇️ {language === 'zh' ? '匯出圖片' : 'Export Image'}
-                                        </button>
-                                    </div>
-                                )}
-                            </div>
-                        </div>
-
-                        <div style={{ display: 'flex', flexDirection: 'column', gap: '24px' }}>
-                            {ALL_METRIC_GROUPS.map((group, gIdx) => {
-                                // Filter metrics for this group that are currently selected using composite key
-                                const activeGroupMetrics = group.metrics.filter(m => selectedMetrics.has(`${group.id}:${m.key}`));
-
-                                // If no metrics in this group are selected, don't render the group title or container
-                                if (activeGroupMetrics.length === 0) return null;
-
-                                return (
-                                    <div key={gIdx}>
-                                        <h3 style={{ fontSize: '1rem', color: group.color || '#3b82f6', marginBottom: '12px', borderLeft: `3px solid ${group.color || '#3b82f6'}`, paddingLeft: '8px' }}>
-                                            {language === 'zh' ? group.label_zh : group.label_en}
-                                        </h3>
-                                        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(200px, 1fr))', gap: '12px' }}>
-                                            {activeGroupMetrics.map(m => {
-                                                const currentVal = currentSummaryData ? (currentSummaryData[m.key] || 0) : 0;
-                                                const prevVal = prevSummaryData ? (prevSummaryData[m.key] || 0) : null;
-
-                                                // Debug: Log each metric's value
-                                                if (m.key === 'ctr') {
-                                                    console.log('[Analytics Debug] Rendering CTR card:', {
-                                                        key: m.key,
-                                                        currentVal,
-                                                        raw_value: currentSummaryData?.[m.key],
-                                                        summaryData_exists: !!currentSummaryData,
-                                                        format: m.format
-                                                    });
-                                                }
-
-                                                // Diff calculation
-                                                let diff = null;
-                                                let percent = null;
-                                                let isIncrease = false;
-
-                                                if (prevSummaryData) {
-                                                    const d = currentVal - prevVal;
-                                                    isIncrease = d >= 0;
-
-                                                    // Format Difference
-                                                    if (m.format === 'currency') diff = `${d >= 0 ? '+' : ''}$${Math.abs(d).toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}`;
-                                                    else if (m.format === 'percent') diff = `${d >= 0 ? '+' : ''}${d.toFixed(2)}%`;
-                                                    else if (m.format === 'decimal') diff = `${d >= 0 ? '+' : ''}${d.toFixed(2)}`;
-                                                    else diff = `${d >= 0 ? '+' : ''}${Math.abs(d).toLocaleString()}`;
-
-                                                    // Calculate Percent Change
-                                                    if (prevVal !== 0) {
-                                                        const p = (d / prevVal) * 100;
-                                                        percent = `${p >= 0 ? '+' : ''}${p.toFixed(1)}%`;
-                                                    } else if (currentVal !== 0) {
-                                                        percent = '+100%';
-                                                    } else {
-                                                        percent = '0%';
-                                                    }
-                                                }
-
-                                                return (
-                                                    <KPICard
-                                                        key={m.key}
-                                                        title={language === 'zh' ? m.label_zh : m.label_en}
-                                                        value={renderMetricValue(currentVal, m.format)}
-                                                        sub_value={prevSummaryData ? `(${renderMetricValue(prevVal, m.format)})` : ''}
-                                                        diff={diff}
-                                                        percent={percent}
-                                                        is_increase={isIncrease}
-                                                        is_inverse={m.isInverse || false}
-                                                    />
-                                                );
-                                            })}
-                                        </div>
-                                    </div>
-                                );
-                            })}
-                        </div>
-                    </div>
-                )
-                }
-            </div>
-
+            <AnalyticsKpiSection
+                currentSummaryData={currentSummaryData}
+                dateRange={dateRange}
+                handleExportImage={handleExportImage}
+                isCompareMode={isCompareMode}
+                isMobile={isMobile}
+                language={language}
+                kpiRef={kpiRef}
+                prevDateRange={prevDateRange}
+                prevSummaryData={prevSummaryData}
+                renderMetricValue={renderMetricValue}
+                selectedMetrics={selectedMetrics}
+                setShowKpiMenu={setShowKpiMenu}
+                showKpiMenu={showKpiMenu}
+                txt={txt}
+            />
 
             {/* NEW: Trend Section (Collapsible) */}
             <TrendSection
@@ -1672,164 +918,16 @@ const Analytics = () => {
                 getScoreStatusText={getScoreStatusText}
             />
 
-            {/* AI Analyst Slide-over Panel */}
-            <div style={{
-                position: 'fixed',
-                top: 0,
-                right: showAiPanel ? 0 : '-500px', // Slide in/out
-                width: isMobile ? '100%' : '500px',
-                height: '100vh',
-                backgroundColor: 'var(--bg-secondary)',
-                boxShadow: showAiPanel ? '-4px 0 20px rgba(0,0,0,0.5)' : 'none',
-                transition: 'right 0.3s ease',
-                zIndex: 2000,
-                display: 'flex',
-                flexDirection: 'column',
-                borderLeft: '1px solid var(--glass-border)'
-            }}>
-                {/* Header */}
-                <div style={{
-                    padding: '16px',
-                    borderBottom: '1px solid var(--glass-border)',
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'space-between',
-                    background: 'var(--bg-primary)'
-                }}>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: '8px', fontWeight: 'bold', fontSize: '1.1rem' }}>
-                        <FiCpu style={{ color: '#a855f7' }} />
-                        <span style={{ background: 'linear-gradient(to right, #6366f1, #a855f7)', WebkitBackgroundClip: 'text', color: 'transparent' }}>
-                            {language === 'zh' ? 'AI 廣告分析師' : 'AI Ad Analyst'}
-                        </span>
-                    </div>
-                    <button
-                        onClick={() => setShowAiPanel(false)}
-                        style={{ background: 'transparent', border: 'none', color: 'var(--text-secondary)', cursor: 'pointer', fontSize: '1.2rem' }}
-                    >
-                        <FiX />
-                    </button>
-                </div>
-
-                {/* Content */}
-                <div style={{ flex: 1, overflowY: 'auto', padding: '16px' }}>
-
-                    {!isAnalyzing && !analysisResult && !aiError && (
-                        <div style={{ textAlign: 'center', marginTop: '40px', color: 'var(--text-secondary)' }}>
-                            <div style={{ fontSize: '3rem', marginBottom: '16px', opacity: 0.5 }}>🤖</div>
-                            <h3 style={{ color: 'var(--text-primary)', marginBottom: '8px' }}>
-                                {language === 'zh' ? '準備好分析您的數據了嗎？' : 'Ready to analyze your data?'}
-                            </h3>
-                            <p style={{ fontSize: '0.9rem', maxWidth: '80%', margin: '0 auto 24px' }}>
-                                {language === 'zh'
-                                    ? 'AI 將會讀取您當前選取的報表數據（前 20 筆），並提供見解與優化建議。'
-                                    : 'AI will read your current report data (top 20 rows) and provide insights and optimization suggestions.'}
-                            </p>
-                            <button
-                                onClick={handleStartAnalysis}
-                                style={{
-                                    padding: '10px 24px',
-                                    background: 'linear-gradient(135deg, #6366f1, #a855f7)',
-                                    border: 'none',
-                                    borderRadius: '8px',
-                                    color: 'white',
-                                    fontWeight: 'bold',
-                                    cursor: 'pointer',
-                                    display: 'inline-flex', alignItems: 'center', gap: '8px',
-                                    boxShadow: '0 4px 12px rgba(168, 85, 247, 0.4)'
-                                }}
-                            >
-                                <FiZap />
-                                {language === 'zh' ? '開始分析' : 'Start Analysis'}
-                            </button>
-                        </div>
-                    )}
-
-                    {
-                        isAnalyzing && (
-                            <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', marginTop: '60px' }}>
-                                <div className="spinner" style={{
-                                    width: '40px', height: '40px',
-                                    border: '3px solid rgba(168, 85, 247, 0.3)',
-                                    borderTop: '3px solid #a855f7',
-                                    borderRadius: '50%',
-                                    animation: 'spin 1s linear infinite'
-                                }}></div>
-                                <p style={{ marginTop: '16px', color: 'var(--text-secondary)', animation: 'pulse 1.5s infinite' }}>
-                                    {language === 'zh' ? 'AI 正在思考中...' : 'AI is thinking...'}
-                                </p>
-                                {analysisResult && (
-                                    <div style={{ fontSize: '0.8rem', color: 'var(--text-tertiary)', marginTop: '8px' }}>
-                                        {language === 'zh' ? '正在接收分析結果...' : 'Receiving insights...'}
-                                    </div>
-                                )}
-                            </div>
-                        )
-                    }
-
-                    {
-                        aiError && (
-                            <div style={{
-                                padding: '16px',
-                                background: 'rgba(239, 68, 68, 0.1)',
-                                border: '1px solid #ef4444',
-                                borderRadius: '8px',
-                                color: '#ef4444'
-                            }}>
-                                <div style={{ fontWeight: 'bold', marginBottom: '4px' }}>Analysis Failed</div>
-                                <div style={{ fontSize: '0.9rem' }}>{aiError}</div>
-                                <button
-                                    onClick={handleStartAnalysis}
-                                    style={{
-                                        marginTop: '12px',
-                                        padding: '6px 12px',
-                                        background: '#ef4444',
-                                        color: 'white',
-                                        border: 'none',
-                                        borderRadius: '4px',
-                                        cursor: 'pointer',
-                                        fontSize: '0.85rem'
-                                    }}
-                                >
-                                    {language === 'zh' ? '重試' : 'Retry'}
-                                </button>
-                            </div>
-                        )
-                    }
-
-                    {
-                        analysisResult && (
-                            <div className="markdown-content" style={{
-                                lineHeight: '1.6',
-                                fontSize: '0.95rem',
-                                color: 'var(--text-primary)',
-                                whiteSpace: 'pre-wrap'
-                            }}>
-                                {/* Simple render for now, replace with ReactMarkdown later if needed */}
-                                {analysisResult}
-                            </div>
-                        )
-                    }
-
-                    {/* Bottom Padding */}
-                    <div style={{ height: '50px' }}></div>
-                </div>
-            </div>
-
-            {/* Backdrop */}
-            {
-                showAiPanel && (
-                    <div
-                        onClick={() => setShowAiPanel(false)}
-                        style={{
-                            position: 'fixed',
-                            top: 0, left: 0, right: 0, bottom: 0,
-                            background: 'rgba(0,0,0,0.5)',
-                            zIndex: 1999,
-                            backdropFilter: 'blur(2px)'
-                        }}
-                    />
-                )
-            }
+            <AnalyticsAiPanel
+                aiError={aiError}
+                analysisResult={analysisResult}
+                handleStartAnalysis={handleStartAnalysis}
+                isAnalyzing={isAnalyzing}
+                isMobile={isMobile}
+                language={language}
+                setShowAiPanel={setShowAiPanel}
+                showAiPanel={showAiPanel}
+            />
 
             <ReportModal
                 isOpen={showReportModal}
