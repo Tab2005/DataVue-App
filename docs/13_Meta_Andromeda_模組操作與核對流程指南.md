@@ -46,7 +46,7 @@
 | 欄位 | 合法選項 | 對評分的影響 |
 |---|---|---|
 | **評分模式 (Request Mode)** | `auto`（自動）、`diagnostic_plus_roas`（診斷+ROAS）、`diagnostic_only`（僅診斷） | 決定評分引擎輸出內容 |
-| **行銷目標 (Objective)** | `purchase`、`lead`、`traffic`、`engagement`、`awareness`、`reach`、`video_views` | 調整評分嚴格度；`purchase` 對 CTA 清晰度要求最高。**重要**：`traffic` / `engagement` / `awareness` 等目標會切換至 CTR/CPC 指標路由（而非 ROAS） |
+| **行銷目標 (Objective)** | `purchase`、`lead`、`traffic`、`engagement`、`awareness`、`reach`、`video_views` | 調整評分嚴格度；`purchase` 對 CTA 清晰度要求最高。**重要**：`traffic` / `engagement` / `video` 走 CTR/CPC 指標路由，`awareness`（品牌知名度/觸及）走 CPM 指標路由（2026-07-14 起，原為與前三者共用 CTR/CPC），皆不用 ROAS |
 | **版位 (Placement)** | `all`、`feed`、`reels`、`stories`、`search`、`instream` | 調整構圖評分基準（直式 Reels vs 橫式 Feed） |
 | **目標市場 (Market)** | `TW`、`US`、`JP`、`HK`、`SG`、`MY`、`TH`、`ID`、`VN`、`PH` | 目前主要作為 metadata 記錄；未來擴充市場特定評分標準 |
 

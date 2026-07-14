@@ -15,7 +15,7 @@ from datetime import datetime, timezone
 
 from database.models.meta_andromeda import MetaAndromedaAsset, MetaAndromedaScoreEvent
 
-from .objective_routing import LEAD, NON_ROAS_GROUPS, resolve_objective_group
+from .objective_routing import AWARENESS, CTR_CPC_GROUPS, LEAD, NON_ROAS_GROUPS, resolve_objective_group
 
 LABEL_POLICY_VERSION = "ma_label_policy_v2"
 
@@ -34,6 +34,8 @@ _CTR_FALLBACK_LOW = 0.01
 _CTR_FALLBACK_HIGH = 0.02
 _CPC_FALLBACK_LOW = 5.0
 _CPC_FALLBACK_HIGH = 15.0
+_CPM_FALLBACK_LOW = 100.0
+_CPM_FALLBACK_HIGH = 300.0
 
 
 def match_observed_to_prediction(db, obs) -> MetaAndromedaScoreEvent | None:
@@ -165,7 +167,7 @@ def compute_label_thresholds(
         prior_sample_count=prior.roas_sample_count if prior else 0,
     )
 
-    traffic_obs = [obs for obs in observed_list if resolve_objective_group(obs.objective) in NON_ROAS_GROUPS]
+    traffic_obs = [obs for obs in observed_list if resolve_objective_group(obs.objective) in CTR_CPC_GROUPS]
     ctr_values = sorted(
         float(obs.performance_snapshot["ctr"])
         for obs in traffic_obs
@@ -192,6 +194,24 @@ def compute_label_thresholds(
         prior_low=prior.cpc_low if prior else None,
         prior_high=prior.cpc_high if prior else None,
         prior_sample_count=prior.cpc_sample_count if prior else 0,
+    )
+
+    # AWARENESS 廣告優化目標是觸及/曝光效率而非點擊，CPM（每千次曝光成本）比 CTR/CPC 更能反映
+    # 這類廣告的真實表現；performance_snapshot 未存 cpm，故由既有的 spend/impressions 現算
+    awareness_obs = [obs for obs in observed_list if resolve_objective_group(obs.objective) == AWARENESS]
+    cpm_values = sorted(
+        float(obs.performance_snapshot["spend"]) / float(obs.performance_snapshot["impressions"]) * 1000
+        for obs in awareness_obs
+        if obs.performance_snapshot
+        and obs.performance_snapshot.get("impressions")
+        and float(obs.performance_snapshot["impressions"]) > 0
+    )
+    cpm_thresholds, cpm_method, cpm_sample_count = _resolve_dynamic_threshold(
+        cpm_values,
+        reverse=True,
+        prior_low=prior.cpm_low if prior else None,
+        prior_high=prior.cpm_high if prior else None,
+        prior_sample_count=prior.cpm_sample_count if prior else 0,
     )
 
     lead_obs = [obs for obs in observed_list if resolve_objective_group(obs.objective) == LEAD]
@@ -237,9 +257,11 @@ def compute_label_thresholds(
         "roas": {"thresholds": roas_thresholds, "method": roas_method, "sample_count": roas_sample_count},
         "ctr": {"thresholds": ctr_thresholds, "method": ctr_method, "sample_count": ctr_sample_count},
         "cpc": {"thresholds": cpc_thresholds, "method": cpc_method, "sample_count": cpc_sample_count},
+        "cpm": {"thresholds": cpm_thresholds, "method": cpm_method, "sample_count": cpm_sample_count},
         "cvr": {"thresholds": cvr_thresholds, "method": cvr_method, "sample_count": cvr_sample_count},
         "cpl": {"thresholds": cpl_thresholds, "method": cpl_method, "sample_count": cpl_sample_count},
         "traffic_total": len(traffic_obs),
+        "awareness_total": len(awareness_obs),
         "lead_total": len(lead_obs),
         "lead_with_metric_total": lead_with_metric_total,
     }
@@ -289,7 +311,24 @@ def label_observed_band(
 
         return "low", {"metric": "fallback_lead", "value": None}
 
-    if group in NON_ROAS_GROUPS:
+    if group == AWARENESS:
+        spend = snapshot.get("spend")
+        impressions = snapshot.get("impressions")
+        if spend is not None and impressions is not None and float(impressions) > 0:
+            value = float(spend) / float(impressions) * 1000
+            low_t, high_t = (label_thresholds.get("cpm") or {}).get("thresholds") or (
+                _CPM_FALLBACK_HIGH,
+                _CPM_FALLBACK_LOW,
+            )
+            if value <= high_t:
+                return "high", {"metric": "cpm", "value": value}
+            if value <= low_t:
+                return "mid", {"metric": "cpm", "value": value}
+            return "low", {"metric": "cpm", "value": value}
+
+        return "low", {"metric": "fallback_awareness", "value": None}
+
+    if group in CTR_CPC_GROUPS:
         ctr = snapshot.get("ctr")
         if ctr is not None:
             value = float(ctr)
@@ -360,11 +399,13 @@ def persist_label_policy(db, scope_key: str, window_kind: str, thresholds: dict)
     roas = thresholds.get("roas") or {}
     ctr = thresholds.get("ctr") or {}
     cpc = thresholds.get("cpc") or {}
+    cpm = thresholds.get("cpm") or {}
     cvr = thresholds.get("cvr") or {}
     cpl = thresholds.get("cpl") or {}
     roas_t = roas.get("thresholds") or (None, None)
     ctr_t = ctr.get("thresholds") or (None, None)
     cpc_t = cpc.get("thresholds") or (None, None)
+    cpm_t = cpm.get("thresholds") or (None, None)
     cvr_t = cvr.get("thresholds") or (None, None)
     cpl_t = cpl.get("thresholds") or (None, None)
 
@@ -383,6 +424,10 @@ def persist_label_policy(db, scope_key: str, window_kind: str, thresholds: dict)
         cpc_high=cpc_t[1],
         cpc_method=cpc.get("method"),
         cpc_sample_count=cpc.get("sample_count", 0),
+        cpm_low=cpm_t[0],
+        cpm_high=cpm_t[1],
+        cpm_method=cpm.get("method"),
+        cpm_sample_count=cpm.get("sample_count", 0),
         cvr_low=cvr_t[0],
         cvr_high=cvr_t[1],
         cvr_method=cvr.get("method"),

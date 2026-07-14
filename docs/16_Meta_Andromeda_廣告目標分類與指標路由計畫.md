@@ -2,7 +2,7 @@
 
 > **文件編號：** 16
 > **建立日期：** 2026-06-24
-> **狀態：** 部分完成（Phase 1 已實作，Phase 2-3 待實作）
+> **狀態：** 全部完成，但實作已與本文件描述分岔（詳見文末「2026-07-14 後續修正」）。Phase 2-3 最終沒有落在 `repository.py` 的 `_resolve_observed_band`，而是搬到獨立模組 `backend/modules/meta_andromeda/labeling.py`（`label_observed_band` / `compute_label_thresholds`），且 AWARENESS 已從「跟流量/互動共用 CTR/CPC」改為獨立的 CPM 路由。閱讀本文件時請把它當作歷史設計脈絡，實際邏輯以 `labeling.py` 原始碼與文末修正說明為準。
 
 ---
 
@@ -36,7 +36,7 @@ Facebook Insights API 提供 `objective` 欄位，可在查詢時帶入。回傳
 | `OUTCOME_LEADS` | 潛在客戶 | CVR / CPL（已支援） |
 | `OUTCOME_TRAFFIC` | 流量（連結點擊） | CTR / CPC |
 | `OUTCOME_ENGAGEMENT` | 互動（貼文互動、追蹤、按讚） | CTR / CPC |
-| `OUTCOME_AWARENESS` | 品牌知名度/觸及 | CTR / CPC |
+| `OUTCOME_AWARENESS` | 品牌知名度/觸及 | ~~CTR / CPC~~ → **CPM**（2026-07-14 修正，見文末） |
 | `OUTCOME_APP_PROMOTION` | 應用程式推廣 | 安裝數（暫不處理） |
 
 舊帳號可能仍使用舊代碼（`CONVERSIONS`、`LINK_CLICKS`、`POST_ENGAGEMENT`、`REACH` 等），需一併納入判斷。
@@ -46,7 +46,7 @@ Facebook Insights API 提供 `objective` 欄位，可在查詢時帶入。回傳
 - `objective`：**廣告活動層級**的大類目，可在 Insights API 直接取得 → 本計畫採用
 - `optimization_goal`：**廣告組層級**的優化目標（更細），可區分「貼文互動」vs「追蹤按讚」，但需額外查詢 adsets API
 
-對診斷系統來說，`objective` 的精細度已足夠（流量/互動/知名度都走 CTR/CPC 路線，不需再細分）。
+對診斷系統來說，`objective` 的精細度已足夠。（原文此處寫「流量/互動/知名度都走 CTR/CPC 路線，不需再細分」——2026-07-14 起知名度已獨立出 CPM 路線，見文末修正說明。）
 
 ---
 
@@ -202,10 +202,11 @@ CTR ≥ 3.1%  → "high"（前段 33%）
 | 指標 | 方向 | P33/P67 邏輯 | 樣本不足時 Fallback |
 |---|---|---|---|
 | ROAS | 越高越好 | `thresholds = (P33, P67)`，≥ P67 → "high" | 固定 3.0 / 6.0 |
-| CTR | 越高越好 | `thresholds = (P33, P67)`，≥ P67 → "high" | 無（回傳 fallback_traffic） |
-| CPC | 越低越好 | `thresholds = (P67, P33)`，**≤ P33 → "high"**（低成本 = 好） | 無（回傳 fallback_traffic） |
+| CTR | 越高越好 | `thresholds = (P33, P67)`，≥ P67 → "high" | 固定 1% / 2%（2026-07-14 補上，見文末） |
+| CPC | 越低越好 | `thresholds = (P67, P33)`，**≤ P33 → "high"**（低成本 = 好） | 固定 NT$15 / NT$5（2026-07-14 補上，見文末） |
+| CPM（僅 AWARENESS） | 越低越好 | 同 CPC 反向邏輯 | 固定 NT$300 / NT$100（2026-07-14 新增，見文末） |
 
-ROAS 有固定 fallback（3.0/6.0）是因為業界存在粗略的絕對基準；CTR/CPC 沒有通用基準，樣本 < 5 時直接標記為 fallback_traffic，不強行評等。
+ROAS 原本就有固定 fallback（3.0/6.0），是因為業界存在粗略的絕對基準；CTR/CPC 當初設計為「沒有通用基準，樣本不足時直接回傳 fallback_traffic、不強行評等」，但這個設計後來造成了一個嚴重 bug（見文末），現已補上固定保底門檻。
 
 只對流量/互動廣告的資料集計算：
 
@@ -293,4 +294,30 @@ Phase 1 完成（✓）
 
 - **`optimization_goal` 細分**：區分「貼文互動」vs「追蹤按讚」，需額外查詢 adsets API，目前 `objective` 精細度已足夠
 - **APP 廣告（OUTCOME_APP_PROMOTION）**：需用安裝數/安裝成本評估，暫不處理
-- **樣本數不足時的 fallback**：流量廣告 < 5 筆時無法計算 P33/P67，目前設計為回傳 `"low"` + `"fallback_traffic"`，可考慮完全跳過不進入診斷
+- **樣本數不足時的 fallback**：流量廣告 < 5 筆時無法計算 P33/P67，原設計為回傳 `"low"` + `"fallback_traffic"`（此設計已於 2026-07-14 修正，見下）
+
+---
+
+## 2026-07-14 後續修正（本文件原規劃已與現況分岔，補記於此）
+
+Phase 2-3 最終沒有落在本文件描述的 `repository.py` `_resolve_observed_band`，而是重構進獨立模組 `backend/modules/meta_andromeda/labeling.py`：`compute_label_thresholds()` 算動態 P33/P67 門檻、`label_observed_band()` 依 objective 分流判斷。分流邏輯定義在 `backend/modules/meta_andromeda/objective_routing.py`。
+
+實作完成後陸續發現兩個問題，一併記錄：
+
+### 修正1：「樣本不足時回傳 fallback_traffic」這個原始設計本身是 bug 的根源
+
+`review-queue` 明細頁（`repository.py` 的 `get_review_queue_detail()`，服務「成效分析匯入」直連路徑）呼叫 `label_observed_band()` 時漏傳 `label_thresholds` 參數。CTR/CPC 因為本文件當初設計成「沒有固定 fallback」，判斷條件必為 False，導致**所有 TRAFFIC/AWARENESS/ENGAGEMENT/VIDEO 廣告，無論真實 CTR/CPC 多好，一律被判為 LOW**（`metric: "fallback_traffic"`）。
+
+修法：
+1. `get_review_queue_detail()` 改為呼叫 `compute_label_thresholds()` 取得該帳號/時間窗已持久化的動態門檻再傳入。
+2. 幫 CTR/CPC 補上固定保底門檻常數（比照 ROAS 原本就有的做法）：`_CTR_FALLBACK_LOW=0.01` / `_CTR_FALLBACK_HIGH=0.02`、`_CPC_FALLBACK_LOW=5.0` / `_CPC_FALLBACK_HIGH=15.0`（`labeling.py`）。
+
+### 修正2：AWARENESS 從 CTR/CPC 改為 CPM
+
+本文件原規劃把「流量/互動/知名度」三種 objective 全部視為同一組、統一用 CTR/CPC 評估（見上方原始 Phase 2 程式碼）。但知名度（AWARENESS：`brand_awareness`/`reach`/`outcome_awareness`/`page_likes`）的優化目標是觸及/曝光效率，不是點擊，CTR 高低跟這類廣告是否「表現好」沒有必然關係。因此改用 **CPM（每千次曝光成本）** 判斷：
+
+- `objective_routing.py` 新增 `CTR_CPC_GROUPS = {TRAFFIC, ENGAGEMENT, VIDEO}`，把 AWARENESS 從「用 CTR/CPC 判斷」的子集中獨立出來（`NON_ROAS_GROUPS` 維持 `{TRAFFIC, AWARENESS, ENGAGEMENT, VIDEO}` 不變，仍用於「是否該用 ROAS」的二分判斷，語意上跟「該用哪個具體指標」是兩件事）。
+- `labeling.py`：`label_observed_band()` 新增 AWARENESS 專屬分支，用 `performance_snapshot` 既有的 `spend`/`impressions` 現算 `spend/impressions*1000`；`compute_label_thresholds()` 新增 CPM 的動態 P33/P67 計算；`persist_label_policy()` 同步寫入。保底常數 `_CPM_FALLBACK_LOW=100.0` / `_CPM_FALLBACK_HIGH=300.0`。
+- `database/models/meta_andromeda.py` 的 `MetaAndromedaLabelPolicy` 新增 `cpm_low/cpm_high/cpm_method/cpm_sample_count` 四欄，對應 migration `20260714_ma_label_policy_cpm`。
+
+**上面 Phase 2/Phase 3 程式碼區塊（`_is_traffic_objective`、`_resolve_observed_band`）已是歷史草稿，僅保留供對照設計脈絡，不代表現行程式碼。**

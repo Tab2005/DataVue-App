@@ -24,9 +24,14 @@ UNKNOWN = "unknown"
 
 KNOWN_OBJECTIVE_GROUPS = {CONVERSION, LEAD, TRAFFIC, AWARENESS, ENGAGEMENT, VIDEO, APP}
 
-# Groups whose prompt explicitly forbids ROAS prediction and whose observed
-# label should come from CTR/CPC rather than ROAS/CPA.
+# Groups whose prompt explicitly forbids ROAS prediction.
 NON_ROAS_GROUPS = {TRAFFIC, AWARENESS, ENGAGEMENT, VIDEO}
+
+# Subset of NON_ROAS_GROUPS whose observed label comes from CTR/CPC (click
+# efficiency). AWARENESS is deliberately excluded: its objective is reach/
+# impression efficiency, not clicks, so it's labeled from CPM instead
+# (see label_observed_band() in labeling.py).
+CTR_CPC_GROUPS = {TRAFFIC, ENGAGEMENT, VIDEO}
 
 _OBJECTIVE_GROUP_MAP: dict[str, str] = {
     # conversion

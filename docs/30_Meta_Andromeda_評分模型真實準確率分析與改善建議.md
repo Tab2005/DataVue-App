@@ -46,7 +46,7 @@ docs/20 P0-6 交付 release 工作台時,版本總覽上的「成對排序準確
 
 1. **模型能力不足(最可能)**:現用 nemotron-3-nano 為免費 nano 級全模態模型,先前為排除 400 context 錯誤與成本考量而選用。素材成效判斷需要細緻的視覺+行銷語境理解,nano 級模型可能只是「看圖說故事」,給分與實際成效脫鉤。628 筆評分全出自同一模型,無對照組可排除此因素。
 2. **評分 rubric / prompt 與標籤定義錯位**:模型評的是「素材品質」,但 drift 配對比的是「實際 ROAS 級距」。素材美感與投放成效本來就非強相關(受眾、出價、產品價格帶都會影響 ROAS),rubric 若未針對「預測成效」設計,準確率低是結構性的。
-3. **標籤/門檻策略問題**:`label_observed_band` 的門檻由觀測資料動態計算(compute_label_thresholds),355 筆樣本橫跨不同 objective/市場,若分布傾斜,級距切分本身可能不穩定。
+3. **標籤/門檻策略問題**:`label_observed_band` 的門檻由觀測資料動態計算(compute_label_thresholds),355 筆樣本橫跨不同 objective/市場,若分布傾斜,級距切分本身可能不穩定。**（2026-07-14 更正：本節下方「2026-07-14 追記」已找到此假設下的一個具體、已驗證的根因，非僅分布傾斜）**
 4. **觀測窗口不一致**:評分在素材上線初期,觀測成效在 last_7d/last_30d/lifetime 不同窗口,同一素材不同窗口的 ROAS 級距可能不同,配對時引入雜訊。
 5. **負相關(ρ=-0.461)的特別訊號**:若純粹是模型無能,相關係數應趨近 0 而非顯著為負。顯著負相關可能暗示系統性偏差 — 例如模型偏好「精緻、資訊量大」的素材,而實際上粗糙直接的素材在該帳戶跑得更好。這一點值得人工抽樣 20-30 筆高分低效/低分高效案例驗證。
 
@@ -75,3 +75,12 @@ docs/20 P0-6 交付 release 工作台時,版本總覽上的「成對排序準確
 
 - 本次 refresh-metrics 執行紀錄:2026-07-13,`cand_v2026_06_05_a` → status computed、sample_count 331;`prod_v2026_05_28` → insufficient_data(無掛載評分事件)。
 - 版本總覽的示範資料警告橫幅已隨 `is_demo_data=false` 消失;前一版卡片數字(0.74/0.19)仍為 seed 值,因無資料可算,閱讀時注意。
+
+## 7. 2026-07-14 追記:發現一個具體且已驗證的標籤 bug,331 筆計算樣本可能已受污染
+
+用戶在核對「評估紀錄」明細頁時發現 traffic/awareness 廣告的「實際成效」不論真實表現一律顯示 LOW,追查後定位到兩個問題（詳細改動見 `docs/16` 文末「2026-07-14 後續修正」與 `docs/23` §7）：
+
+1. **`get_review_queue_detail()` 漏傳 `label_thresholds`**（僅影響「成效分析匯入」單筆查詢路徑，**不影響**本文件 §2 的 331 筆 pairwise accuracy 計算——`compute_release_metrics()`／`_collect_release_metric_pairs()` 呼叫 `label_observed_band()` 前本來就有正確呼叫 `compute_label_thresholds()`）。
+2. **AWARENESS 誤用 CTR/CPC、應改用 CPM**：這個問題**會**影響本文件 §2 的數字。`_collect_release_metric_pairs()` 對所有 `pred_roas_eligible` 的配對都會算 `real_band`（docs/23 完成後 traffic/awareness/video/engagement 四組的 `roas_band_eligible` 皆為 `True`，非僅 conversion/lead），AWARENESS 廣告在 2026-07-14 之前的 `real_band` 是用不相關的 CTR 算出來的（AWARENESS 廣告優化目標是觸及/曝光，CTR 高低對這類廣告沒有意義），可能是假設 3（標籤/門檻策略問題）與假設 5（負相關訊號）的具體成因之一 —— 如果模型對 AWARENESS 素材的判斷其實還算合理，但觀測端用錯指標比對，就會人為製造出「高分低效」的假象，同時拖低 pairwise_ranking_accuracy、產生負相關。
+
+**影響評估**：331 筆樣本中有多少筆屬於 AWARENESS 組、標籤是否因此改變，目前未重新統計。**在依 §4.1 第 1 項進行人工抽樣歸因（高分低效/低分高效各 15 筆）之前，應先確認抽樣時間點是否早於這次修復**——若抽樣資料混有因指標誤用而錯標的 AWARENESS 案例，人工歸因結果可能會把「觀測標籤用錯指標」誤判為「模型評分能力不足」（假設 1）或「rubric 錯位」（假設 2），進而誤導 §4.2 的路線選擇。修復已於 2026-07-14 完成且落地部署，建議之後重新執行一次 `refresh-metrics` 並比較 pairwise_ranking_accuracy / mean_band_error 是否有變化，確認影響幅度後再進行人工抽樣。

@@ -10,7 +10,7 @@
 根因鏈：
 
 1. `backend/modules/meta_andromeda/runtime.py` 的 `_DEFAULT_OBJECTIVE_PROFILES`，對 `traffic`/`awareness`/`video`/`engagement` 四組的 prompt 明確要求「Set roas_band to null」，且 `"roas_band_eligible": False`（第 160/178、190/209、221/239、251/269 行）。這是**刻意設計**（docs/19 第 121 行記載「正確設計」）——這四類目標本來就不該用 ROAS 邏輯評分，模型只輸出 `overall_score`，不輸出任何 high/mid/low 的可比對預測。
-2. 觀測（實際成效）端反而做得完整：`labeling.py` 的 `compute_label_thresholds`/`label_observed_band` 對這四組會用 CTR/CPC 算動態 P33/P67 門檻，產出真正的 `observed_band`。這部分沒問題，不需要改。
+2. 觀測（實際成效）端反而做得完整：`labeling.py` 的 `compute_label_thresholds`/`label_observed_band` 對這四組會用 CTR/CPC 算動態 P33/P67 門檻，產出真正的 `observed_band`。~~這部分沒問題，不需要改。~~ **（2026-07-14 更正：這個判斷當時是錯的，見文末「後續修正」）**——`get_review_queue_detail()` 呼叫 `label_observed_band()` 時漏傳門檻，且 CTR/CPC 原本沒有固定 fallback，導致這四組廣告在「成效分析匯入」路徑上不論真實表現一律被判 LOW；AWARENESS 後續也發現不該跟其餘三組共用 CTR/CPC，已獨立改用 CPM。
 3. 比對環節（`repository.py:951-990` `get_review_queue_detail`，對應前端 `MetaAndromedaReviewQueue.jsx:571-626` 的「✅ 實際成效對照」卡片）：因為預測端 `roas_band` 恆為 `null`，`prediction_band = None`、`error = None`。詳情頁顯示「預測：--」「實際：high/mid/low」「誤差：--」，看得到實際成效，但沒有對應預測可以比對準確度。
 4. 同樣的 gate 也擋在 `sync_calibration_dataset`（`repository.py:2349-2354`，`if not pred_roas_eligible or pred.roas_band is None: skipped_not_band_eligible += 1; continue`）與 `create_drift_report` 的 accuracy/MAE 計算（`repository.py:1294-1298`）——這四組素材完全不會進入校準集、few-shot 教材、holdout backtest。
 
@@ -64,7 +64,7 @@
 
 ### 4.2 確認不需要修改（現有邏輯已是通用設計）
 
-- `backend/modules/meta_andromeda/labeling.py`：`label_observed_band`/`compute_label_thresholds` 的 CTR/CPC 觀測邏輯不變。
+- `backend/modules/meta_andromeda/labeling.py`：`label_observed_band`/`compute_label_thresholds` 的 CTR/CPC 觀測邏輯不變。**（2026-07-14 更正：這句話已過時，見文末「後續修正」——CTR/CPC 補了固定 fallback，AWARENESS 改走獨立的 CPM 分支，`labeling.py` 內部邏輯已不是本文件當時描述的樣子）**
 - `backend/modules/meta_andromeda/repository.py` 的 `sync_calibration_dataset`（2271 行起）、`create_drift_report`（1272 行起）、`get_review_queue_detail`（935 行起）：判斷式都是通用的 `if pred_band is None: skip`，一旦 `pred.roas_band` 非 null 自動納入，不用改程式碼。
 - `backend/modules/meta_andromeda/calibration_pipeline.py`：`analyze_dataset_bias` 的 few-shot 分組（115-117 行）已經是依 `objective_group` 通用分組，無特殊排除四組的邏輯。
 - 資料庫 schema／migration：`MetaAndromedaScoreEvent.roas_band`、`MetaAndromedaCalibrationItem.prediction_band`/`observed_band` 都已是可用欄位，語意從「純 ROAS」擴展為「該目標類型的可比對評級」與 `lead` 當初的做法一致，不需要新增欄位或改 nullable 設定。
@@ -116,3 +116,12 @@ DB 端的 `meta_andromeda_scoring_profiles.objective_profiles` 過去由 `202606
 - ✅ 既有 conversion / lead 的行為與顯示完全不受影響（純新增邏輯分支，不改動這兩組的 prompt / eligibility）。`lead` profile 仍是 `roas_band_eligible=True` 與原本的「LEAD QUALITY BAND」措辭；`is_roas_band_eligible` 仍回 `True` 給 conversion/lead/app。
 - ✅ 前端不再對 traffic/awareness/video/engagement 素材顯示「Predicted ROAS」字樣（語意錯誤），改顯示對應目標的正確指標名稱。
   - 驗證點：`_score_to_detail["objective_group"]` 對應 `getPredictedBandLabel("traffic", "zh")` → `"預測 CTR 潛力"`，其他三組依此類推。
+
+## 7. 2026-07-14 後續修正
+
+用戶在使用「評估紀錄」明細頁比對 traffic/awareness 素材的「實際成效對照」時，發現不論真實 CTR 高低，「實際」一律顯示 LOW。追查後發現兩個問題，皆已修復（未涉及本文件第 1-6 節描述的預測端 band 邏輯，純觀測端）：
+
+1. **`get_review_queue_detail()`（`repository.py`）呼叫 `label_observed_band()` 漏傳 `label_thresholds`**：「成效分析匯入」直連路徑（`request_context.observed_creative_id`，不經過 `CalibrationItem`）沒有先算動態門檻就呼叫，CTR/CPC 原本設計為「樣本不足時無 fallback、直接回傳 low + fallback_traffic」（見 docs/16），導致這條路徑上的 TRAFFIC/AWARENESS/ENGAGEMENT/VIDEO 廣告一律誤判 LOW。修法：呼叫前先 `compute_label_thresholds()` 取得該帳號/時間窗已持久化門檻；並比照 ROAS 補上 CTR/CPC 固定 fallback 常數。
+2. **AWARENESS 不該跟 TRAFFIC/ENGAGEMENT/VIDEO 共用 CTR/CPC**：AWARENESS 優化目標是觸及/曝光效率而非點擊，改用 CPM（`spend/impressions*1000`）判斷，獨立於 `objective_routing.py` 新增的 `CTR_CPC_GROUPS`（`NON_ROAS_GROUPS` 語意不變）。`MetaAndromedaLabelPolicy` 新增 `cpm_low/cpm_high/cpm_method/cpm_sample_count` 四欄（migration `20260714_ma_label_policy_cpm`）。
+
+詳細改動見 `docs/16_Meta_Andromeda_廣告目標分類與指標路由計畫.md` 文末「2026-07-14 後續修正」章節；這次發現的 bug 也牽動 `docs/30`/`docs/32` 的準確率分析假設，已一併補記。
