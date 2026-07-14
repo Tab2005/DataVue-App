@@ -1,190 +1,24 @@
-import React, { useState, useEffect, useRef, useMemo, useCallback, memo } from 'react';
+import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react';
 import { useOutletContext } from 'react-router-dom';
 import html2canvas from 'html2canvas';
-import { FiHome, FiBarChart2, FiUsers, FiSettings, FiActivity, FiChevronLeft, FiChevronRight, FiShield, FiChevronDown, FiChevronUp, FiPlus, FiDownload, FiFilter, FiX, FiCpu, FiZap, FiRefreshCcw, FiStar, FiUser, FiFileText } from 'react-icons/fi';
-import { format, subDays, startOfWeek, endOfWeek, startOfMonth, endOfMonth, subMonths, subYears, differenceInDays } from 'date-fns';
+import { FiChevronUp, FiCpu, FiFileText, FiUsers, FiUser, FiX, FiZap } from 'react-icons/fi';
+import { format, subDays, startOfWeek, endOfWeek, startOfMonth, endOfMonth, subMonths, differenceInDays } from 'date-fns';
 import KPICard from '../components/KPICard';
 import TrendSection from '../components/TrendSection';
 // New modular imports
 import { DATE_PRESETS, COMPARE_PRESETS, VIEW_PRESETS } from '../constants/analyticsConfig';
-import { AnalyticsKPISection, MetricSelector } from '../components/Analytics';
 import ReportModal from '../components/Analytics/ReportModal';
+import AnalyticsDataTable from '../components/Analytics/AnalyticsDataTable';
+import MetaAndromedaImportActions from '../components/Analytics/MetaAndromedaImportActions';
 // Import Metrics Registry for extended metrics support
-import { METRICS_REGISTRY, METRIC_CATEGORIES } from '../constants/metricsRegistry';
 import { useModuleAccess, usePermission } from '../hooks/usePermission';
+import useAnalyticsData from '../hooks/useAnalyticsData';
+import { ALL_METRIC_GROUPS, METRIC_GROUPS, resolveObservationWindowKind } from '../components/Analytics/analyticsMetrics';
 import {
     fetchMetaAndromedaAiReady,
     fetchMetaAndromedaObservedImportStatus,
     importMetaAndromedaObservedFacebookAd,
 } from '../services/metaAndromedaWorkflowService';
-
-// API constants
-const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:8000';
-
-// METRIC_GROUPS imported from analyticsConfig but kept inline for backward compatibility
-// TODO: Migrate remaining code to use imported METRIC_GROUPS
-// Used for BOTH the Metric Selector (Checkbox) and the KPI Cards/Table Columns
-const METRIC_GROUPS = [
-    {
-        id: 'general',
-        label_zh: '通用指標',
-        label_en: 'General Metrics',
-        color: '#3b82f6', // Blue
-        metrics: [
-            { key: 'spend', label_zh: '花費金額', label_en: 'Spend', format: 'currency', isInverse: true },
-            { key: 'reach', label_zh: '觸及人數', label_en: 'Reach', format: 'number' },
-            { key: 'impressions', label_zh: '曝光次數', label_en: 'Impressions', format: 'number' },
-            { key: 'cpc', label_zh: 'CPC (單次點擊成本)', label_en: 'CPC', format: 'currency', isInverse: true },
-            { key: 'ctr', label_zh: 'CTR (全部點擊率)', label_en: 'CTR (All Clicks)', format: 'percent' },
-            { key: 'cpm', label_zh: 'CPM (千次曝光成本)', label_en: 'CPM', format: 'currency', isInverse: true },
-            { key: 'link_clicks', label_zh: '連結點擊次數', label_en: 'Link Clicks', format: 'number' },
-        ]
-    },
-    {
-        id: 'ecommerce',
-        label_zh: '電商指標',
-        label_en: 'E-commerce Metrics',
-        color: '#8b5cf6', // Violet
-        metrics: [
-            { key: 'roas', label_zh: '購買 ROAS', label_en: 'ROAS', format: 'decimal' },
-            { key: 'purchases', label_zh: '購買次數', label_en: 'Purchases', format: 'number' },
-            { key: 'purchase_value', label_zh: '購買轉換價值', label_en: 'Purchase Value', format: 'currency' },
-            { key: 'cpa', label_zh: 'CPA (單次購買成本)', label_en: 'CPA', format: 'currency', isInverse: true },
-            { key: 'add_to_cart', label_zh: '加到購物車次數', label_en: 'Add to Cart', format: 'number' },
-            { key: 'atc_value', label_zh: '加到購物車的轉換值', label_en: 'ATC Value', format: 'currency' },
-            { key: 'cost_per_atc', label_zh: '加入購物車成本', label_en: 'Cost per ATC', format: 'currency', isInverse: true },
-            { key: 'initiate_checkout', label_zh: '開始結帳次數', label_en: 'Initiate Checkout', format: 'number' },
-            { key: 'add_payment_info', label_zh: '新增付款資訊次數', label_en: 'Add Payment Info', format: 'number' },
-
-        ]
-    },
-    {
-        id: 'funnel',
-        label_zh: '漏斗指標',
-        label_en: 'Funnel Metrics',
-        color: '#f59e0b', // Amber
-        metrics: [
-            { key: 'view_to_cart', label_zh: '查看後購物車加入率', label_en: 'View to Cart Rate', format: 'percent' },
-            { key: 'cvr', label_zh: '購買轉換率', label_en: 'Conversion Rate', format: 'percent' },
-            { key: 'cart_value_realization', label_zh: '購物車價值實現率', label_en: 'Cart Value Realization', format: 'percent' },
-            { key: 'cart_conversion', label_zh: '購物車購買率', label_en: 'Cart Purchase Rate', format: 'percent' },
-            { key: 'cart_dropoff', label_zh: '廣告購物車流失率', label_en: 'Cart Dropoff Rate', format: 'percent', isInverse: true },
-        ]
-    },
-    {
-        id: 'engagement',
-        label_zh: '互動指標',
-        label_en: 'Engagement',
-        color: '#ec4899', // Pink
-        metrics: [
-            { key: 'post_comments', label_zh: '貼文留言', label_en: 'Post Comments', format: 'number' },
-            { key: 'post_saves', label_zh: '貼文儲存', label_en: 'Post Saves', format: 'number' },
-            { key: 'post_shares', label_zh: '貼文分享', label_en: 'Post Shares', format: 'number' },
-            { key: 'post_engagement', label_zh: '貼文互動', label_en: 'Post Engagement', format: 'number' },
-            { key: 'post_reactions', label_zh: '貼文心情', label_en: 'Post Reactions', format: 'number' },
-            { key: 'page_likes', label_zh: '粉絲專頁按讚', label_en: 'Page Likes', format: 'number' },
-        ]
-    },
-    {
-        id: 'quality',
-        label_zh: '品質診斷',
-        label_en: 'Quality Diagnosis',
-        color: '#10b981', // Emerald
-        metrics: [
-            { key: 'quality_ranking', label_zh: '品質排名', label_en: 'Quality Ranking', format: 'string' },
-            { key: 'conversion_rate_ranking', label_zh: '轉換率排名', label_en: 'Conversion Rate Ranking', format: 'string' },
-            { key: 'engagement_rate_ranking', label_zh: '互動率排名', label_en: 'Engagement Rate Ranking', format: 'string' },
-        ]
-    },
-    {
-        id: 'collaborative',
-        label_zh: '協作指標 (CPAS)',
-        label_en: 'Collaborative Ads',
-        color: '#06b6d4', // Cyan
-        metrics: [
-            { key: 'shared_purchases', label_zh: '共享購買次數', label_en: 'Shared Purch.', format: 'number' },
-            { key: 'shared_purchase_value', label_zh: '共享購買值', label_en: 'Shared Value', format: 'currency' },
-            { key: 'shared_roas', label_zh: '共享 ROAS', label_en: 'Shared ROAS', format: 'decimal' },
-            { key: 'shared_add_to_cart', label_zh: '共享加購次數', label_en: 'Shared ATC', format: 'number' },
-            { key: 'shared_atc_value', label_zh: '共享加購值', label_en: 'Shared ATC Val', format: 'currency' },
-            { key: 'shared_view_content', label_zh: '共享瀏覽次數', label_en: 'Shared Views', format: 'number' },
-        ]
-    }
-];
-
-// Unified metric groups: Merge original + registry metrics
-const buildUnifiedMetricGroups = () => {
-    // 1. Deep clone existing hardcoded groups to avoid mutation
-    const groups = JSON.parse(JSON.stringify(METRIC_GROUPS));
-
-    // Mapping from Registry Category to Group ID
-    // Some keys might differ between registry and hardcoded groups (e.g. cpas vs collaborative)
-    const categoryToGroupId = {
-        'general': 'general',
-        'ecommerce': 'ecommerce',
-        'funnel': 'funnel',
-        'engagement': 'engagement',
-        'quality': 'quality',
-        'cpas': 'collaborative',
-    };
-
-    // 2. Iterate through all metrics in registry
-    Object.values(METRICS_REGISTRY).forEach(registryMetric => {
-        // Determine target group ID
-        const targetGroupId = categoryToGroupId[registryMetric.category] || registryMetric.category;
-
-        // Find existing group
-        let group = groups.find(g => g.id === targetGroupId);
-
-        // If group doesn't exist (e.g. video, messaging, app), create it from METRIC_CATEGORIES
-        if (!group) {
-            const catInfo = METRIC_CATEGORIES[registryMetric.category];
-            if (catInfo) {
-                group = {
-                    id: targetGroupId,
-                    label_zh: catInfo.label_zh, // No "(Extended)" or "(擴展)" suffix
-                    label_en: catInfo.label_en,
-                    color: catInfo.color,
-                    metrics: []
-                };
-                groups.push(group);
-            }
-        }
-
-        // Add metric to group if not already present
-        if (group) {
-            // Check if key exists (handle both simple and composite keys if necessary, but registry keys are unique)
-            const exists = group.metrics.some(m => m.key === registryMetric.key);
-
-            if (!exists) {
-                group.metrics.push({
-                    key: registryMetric.key,
-                    label_zh: registryMetric.label_zh,
-                    label_en: registryMetric.label_en,
-                    format: registryMetric.format,
-                    isInverse: registryMetric.isInverse || false
-                });
-            }
-        }
-    });
-
-    return groups;
-};
-
-const ALL_METRIC_GROUPS = buildUnifiedMetricGroups();
-
-const resolveObservationWindowKind = (datePreset) => {
-    if (datePreset === 'last_7d') {
-        return 'last_7d';
-    }
-    if (datePreset === 'last_30d') {
-        return 'last_30d';
-    }
-    if (datePreset === 'custom') {
-        return 'custom';
-    }
-    return 'custom';
-};
 
 const Analytics = () => {
     // 1. Get shared context
@@ -318,8 +152,6 @@ const Analytics = () => {
         since: format(subDays(new Date(), 7), 'yyyy-MM-dd'),
         until: format(subDays(new Date(), 1), 'yyyy-MM-dd')
     });
-    const [prevDateRange, setPrevDateRange] = useState({ since: '', until: '' });
-
     // Comparison State
     const [isCompareMode, setIsCompareMode] = useState(false);
     const [comparePreset, setComparePreset] = useState('previous_period');
@@ -333,32 +165,6 @@ const Analytics = () => {
 
     // View State
     const [activeView, setActiveView] = useState('summary');
-
-    // Saved Views from Database (via API)
-    const [savedViews, setSavedViews] = useState([]);
-
-    // Load saved views from API
-    useEffect(() => {
-        const fetchSavedViews = async () => {
-            if (!user?.id) return;
-            try {
-                const params = new URLSearchParams({ user_id: user.id });
-                if (selectedTeamId) params.append('team_id', selectedTeamId);
-
-                const token = localStorage.getItem('google_token');
-                const res = await fetch(`${API_BASE}/api/saved-views?${params}`, {
-                    headers: { 'Authorization': `Bearer ${token}` }
-                });
-                if (res.ok) {
-                    const data = await res.json();
-                    setSavedViews(data);
-                }
-            } catch (e) {
-                console.error('Failed to fetch saved views:', e);
-            }
-        };
-        fetchSavedViews();
-    }, [user?.id, selectedTeamId]);
 
     // 1. Filter State
 
@@ -514,8 +320,26 @@ const Analytics = () => {
         }
     };
 
-    // 3. Data State
-    const [reportData, setReportData] = useState(null);
+    const {
+        savedViews,
+        reportData,
+        prevReportData,
+        prevDateRange,
+        loading,
+        error,
+        fetchAnalytics,
+    } = useAnalyticsData({
+        selectedAccountId,
+        selectedTeamId,
+        user,
+        selectedMetrics,
+        dateRange,
+        level,
+        isCompareMode,
+        comparePreset,
+        compareDateRange,
+    });
+
     // AI Analyst State
     const [showAiPanel, setShowAiPanel] = useState(false);
     const [isAnalyzing, setIsAnalyzing] = useState(false);
@@ -586,256 +410,6 @@ const Analytics = () => {
         }
     };
 
-    const [prevReportData, setPrevReportData] = useState(null);
-    const [loading, setLoading] = useState(false);
-    const [error, setError] = useState(null);
-    const observationWindowKind = resolveObservationWindowKind(datePreset);
-
-    const importObservationRow = useCallback(async (row) => {
-        if (!selectedAccountId || !row?.ad_id) {
-            const message = language === 'zh' ? '缺少廣告識別資料，無法匯入。' : 'Missing ad identifier. Import unavailable.';
-            setObservationImportState((prev) => ({
-                ...prev,
-                [row.id]: {
-                    status: 'error',
-                    message,
-                },
-            }));
-            return { ok: false, message };
-        }
-
-        setObservationImportState((prev) => ({
-            ...prev,
-            [row.id]: {
-                status: 'loading',
-                observationStatus: 'queued',
-                scoreStatus: 'pending_observation',
-                message: language === 'zh' ? '已送出，等待背景處理。' : 'Submitted. Waiting for background processing.',
-            },
-        }));
-
-        try {
-            const response = await importMetaAndromedaObservedFacebookAd({
-                account_id: selectedAccountId,
-                ad_id: row.ad_id,
-                observation_window_kind: observationWindowKind,
-                since: dateRange.since,
-                until: dateRange.until,
-                market: 'TW',
-                placement_family: 'feed',
-            });
-
-            setObservationImportState((prev) => ({
-                ...prev,
-                [row.id]: {
-                    status: 'accepted',
-                    observationStatus: 'queued',
-                    scoreStatus: response.score_status,
-                    message: language === 'zh'
-                        ? `已送出背景匯入: ${response.observed_creative_id}`
-                        : `Background import accepted: ${response.observed_creative_id}`,
-                    observedCreativeId: response.observed_creative_id,
-                    scoreEventId: response.score_event_id,
-                },
-            }));
-            return {
-                ok: true,
-                observedCreativeId: response.observed_creative_id,
-                scoreEventId: response.score_event_id,
-                scoreStatus: response.score_status,
-            };
-        } catch (err) {
-            const message = err?.message || (language === 'zh' ? '匯入失敗' : 'Import failed');
-            setObservationImportState((prev) => ({
-                ...prev,
-                [row.id]: {
-                    status: 'error',
-                    message,
-                },
-            }));
-            return { ok: false, message };
-        }
-    }, [dateRange.since, dateRange.until, language, observationWindowKind, selectedAccountId]);
-
-    useEffect(() => {
-        const pendingEntries = Object.entries(observationImportState).filter(([, state]) => {
-            return state?.observedCreativeId && !['success', 'error'].includes(state?.status);
-        });
-        if (!pendingEntries.length) {
-            return undefined;
-        }
-
-        const intervalId = window.setInterval(async () => {
-            for (const [rowId, state] of pendingEntries) {
-                try {
-                    const latest = await fetchMetaAndromedaObservedImportStatus(state.observedCreativeId);
-                    const observationDone = latest.observation_status === 'completed';
-                    const scoreDone = ['completed', 'failed', 'skipped_no_asset'].includes(latest.score_status);
-                    const hasTerminalFailure = latest.observation_status === 'failed';
-                    const isTerminal = hasTerminalFailure || (observationDone && scoreDone);
-
-                    setObservationImportState((prev) => ({
-                        ...prev,
-                        [rowId]: {
-                            ...prev[rowId],
-                            status: isTerminal ? (hasTerminalFailure ? 'error' : 'success') : 'polling',
-                            observationStatus: latest.observation_status,
-                            scoreStatus: latest.score_status,
-                            observedCreativeId: latest.observed_creative_id,
-                            scoreEventId: latest.score_event_id,
-                            runtimeJobId: latest.runtime_job_id,
-                            message: latest.observation_message
-                                ? `${getObservationStatusText(latest.observation_status)} / ${getScoreStatusText(latest.score_status)}`
-                                : prev[rowId]?.message,
-                        },
-                    }));
-                } catch (err) {
-                    setObservationImportState((prev) => ({
-                        ...prev,
-                        [rowId]: {
-                            ...prev[rowId],
-                            message: err?.message || prev[rowId]?.message,
-                        },
-                    }));
-                }
-            }
-        }, 4000);
-
-        return () => window.clearInterval(intervalId);
-    }, [getObservationStatusText, getScoreStatusText, observationImportState]);
-
-    const handleObservationImport = useCallback(async (row) => {
-        setObservationBatchSummary(null);
-        await importObservationRow(row);
-    }, [importObservationRow]);
-
-    // 4. Fetch Function
-    // 4. Fetch Function
-    const fetchAnalytics = async () => {
-        if (!selectedAccountId || !user) return;
-
-        setLoading(true);
-        setError(null);
-        try {
-            const idToken = localStorage.getItem('google_token');
-            const apiUrl = import.meta.env.VITE_API_URL || 'http://localhost:8000';
-
-            // Build dynamic fields parameter from selected metrics
-            // Extract metric keys from composite keys (e.g., "general:spend" -> "spend")
-            const selectedKeys = Array.from(selectedMetrics).map(compositeKey => {
-                const parts = compositeKey.split(':');
-                return parts.length > 1 ? parts[1] : parts[0];
-            });
-
-            // CRITICAL: Always include essential base metrics required for derived calculations
-            // These are needed to calculate ROAS, CPA, CTR, CPM, etc. even if user didn't select them
-            const essentialMetrics = [
-                'spend', 'impressions', 'link_clicks', 'clicks', 'reach',
-                'purchases', 'purchase_value', 'add_to_cart', 'atc_value',
-                'view_content', 'initiate_checkout', 'add_payment_info',
-                'outbound_clicks' // Essential for Cost per Outbound Click summary
-            ];
-
-            // Merge selected keys with essential metrics (avoid duplicates)
-            const allKeys = new Set([...selectedKeys, ...essentialMetrics]);
-            const fieldsParam = Array.from(allKeys).join(',');
-            console.log('[Analytics] Requesting fields (with essentials):', fieldsParam);
-
-            // 1. Fetch Current Data
-            const currentQuery = new URLSearchParams({
-                account_id: selectedAccountId,
-                since: dateRange.since,
-                until: dateRange.until,
-                level: level,
-            });
-
-            // Add fields parameter if there are selected metrics
-            if (fieldsParam) {
-                currentQuery.append('fields', fieldsParam);
-            }
-
-            const headers = {
-                'Authorization': `Bearer ${idToken}`
-            };
-            if (selectedTeamId) {
-                headers['X-Team-ID'] = selectedTeamId;
-            }
-
-            const res = await fetch(`${apiUrl}/api/analytics-data?${currentQuery}`, {
-                headers: headers
-            });
-
-            if (!res.ok) {
-                if (res.status === 401) {
-                    window.location.href = '/login';
-                    return;
-                }
-                throw new Error("Failed to fetch data");
-            }
-
-            const json = await res.json();
-            setReportData(json.data);
-
-            // 2. Fetch Comparison Data (if enabled)
-            if (isCompareMode) {
-                let prevSince, prevUntil;
-                const startDate = new Date(dateRange.since);
-                const endDate = new Date(dateRange.until);
-                const diffDays = differenceInDays(endDate, startDate) + 1; // Inclusive
-
-                if (comparePreset === 'year_over_year') {
-                    prevSince = format(subYears(startDate, 1), 'yyyy-MM-dd');
-                    prevUntil = format(subYears(endDate, 1), 'yyyy-MM-dd');
-                } else if (comparePreset === 'custom') {
-                    prevSince = compareDateRange.since || format(subDays(startDate, diffDays), 'yyyy-MM-dd');
-                    prevUntil = compareDateRange.until || format(subDays(endDate, diffDays), 'yyyy-MM-dd');
-                } else {
-                    // Default: Previous Period
-                    prevSince = format(subDays(startDate, diffDays), 'yyyy-MM-dd');
-                    prevUntil = format(subDays(endDate, diffDays), 'yyyy-MM-dd');
-                }
-                setPrevDateRange({ since: prevSince, until: prevUntil });
-
-                const prevQuery = new URLSearchParams({
-                    account_id: selectedAccountId,
-                    since: prevSince,
-                    until: prevUntil,
-                    level: level,
-                });
-
-                // Add same fields parameter for comparison data
-                if (fieldsParam) {
-                    prevQuery.append('fields', fieldsParam);
-                }
-
-                const prevRes = await fetch(`${apiUrl}/api/analytics-data?${prevQuery}`, {
-                    headers: headers
-                });
-
-                if (prevRes.ok) {
-                    const prevJson = await prevRes.json();
-                    setPrevReportData(prevJson.data);
-                } else {
-                    console.warn("Failed to fetch previous data");
-                    setPrevReportData([]);
-                }
-            } else {
-                setPrevReportData(null);
-            }
-
-        } catch (err) {
-            console.error(err);
-            setError(err.message);
-        } finally {
-            setLoading(false);
-        }
-    };
-
-    useEffect(() => {
-        if (selectedAccountId) {
-            fetchAnalytics();
-        }
-    }, [selectedAccountId]);
 
     // 3.1 Toggle Metric (Checkbox)
     // 3.1 Toggle Metric (Checkbox)
@@ -1947,640 +1521,47 @@ const Analytics = () => {
                 selectedRowIds={selectedRowIds} // Pass selection to filter chart
             />
 
-            {canUseObservationImport && (
-                <div style={{
-                    display: 'flex',
-                    flexDirection: isMobile ? 'column' : 'row',
-                    alignItems: isMobile ? 'stretch' : 'center',
-                    justifyContent: 'space-between',
-                    gap: '12px',
-                    marginBottom: '12px',
-                    padding: '12px 14px',
-                    borderRadius: '12px',
-                    background: 'rgba(255,255,255,0.03)',
-                    border: '1px solid var(--glass-border)'
-                }}>
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
-                        <div style={{ fontSize: '0.92rem', fontWeight: 600, color: 'var(--text-primary)' }}>
-                            {language === 'zh' ? 'Meta Andromeda 匯入操作' : 'Meta Andromeda Import Actions'}
-                        </div>
-                        <div style={{ fontSize: '0.82rem', color: 'var(--text-secondary)' }}>
-                            {language === 'zh'
-                                ? `已選 ${selectedObservationRows.length} 筆 / 可匯入 ${observationImportableRows.length} 筆`
-                                : `${selectedObservationRows.length} selected / ${observationImportableRows.length} importable`}
-                            {observationWindowKind === 'custom' && (
-                                <span style={{ marginLeft: '8px', color: '#fbbf24' }}>
-                                    {language === 'zh'
-                                        ? '目前日期區段將以自訂時間區間匯入。'
-                                        : 'Current date preset imports as custom range.'}
-                                </span>
-                            )}
-                        </div>
-                        {observationBatchSummary?.message && (
-                            <div style={{
-                                fontSize: '0.8rem',
-                                color: observationBatchSummary.status === 'success'
-                                    ? '#34d399'
-                                    : observationBatchSummary.status === 'warning'
-                                        ? '#fbbf24'
-                                        : 'var(--text-secondary)',
-                                lineHeight: 1.4,
-                            }}>
-                                {observationBatchSummary.message}
-                            </div>
-                        )}
-                        {observationBatchSummary && (
-                            <div style={{
-                                display: 'grid',
-                                gridTemplateColumns: 'repeat(3, minmax(90px, 1fr))',
-                                gap: '8px',
-                                marginTop: '8px',
-                            }}>
-                                <div style={observationStatCardStyle}>
-                                    <div style={observationStatLabelStyle}>
-                                        {language === 'zh' ? '本次送出' : 'Attempted'}
-                                    </div>
-                                    <div style={observationStatValueStyle}>
-                                        {observationBatchSummary.attemptedCount ?? '--'}
-                                    </div>
-                                </div>
-                                <div style={observationStatCardStyle}>
-                                    <div style={observationStatLabelStyle}>
-                                        {language === 'zh' ? '本次送出成功' : 'Accepted'}
-                                    </div>
-                                    <div style={{ ...observationStatValueStyle, color: '#34d399' }}>
-                                        {observationBatchSummary.successCount ?? '--'}
-                                    </div>
-                                </div>
-                                <div style={observationStatCardStyle}>
-                                    <div style={observationStatLabelStyle}>
-                                        {language === 'zh' ? '本次送出失敗' : 'Failed'}
-                                    </div>
-                                    <div style={{ ...observationStatValueStyle, color: observationBatchSummary.failureCount > 0 ? '#fbbf24' : 'var(--text-primary)' }}>
-                                        {observationBatchSummary.failureCount ?? '--'}
-                                    </div>
-                                </div>
-                            </div>
-                        )}
-                    </div>
+            <MetaAndromedaImportActions
+                canUseObservationImport={canUseObservationImport}
+                isMobile={isMobile}
+                language={language}
+                selectedObservationRows={selectedObservationRows}
+                observationImportableRows={observationImportableRows}
+                observationWindowKind={observationWindowKind}
+                observationBatchSummary={observationBatchSummary}
+                handleToggleAllObservationRows={handleToggleAllObservationRows}
+                handleBatchObservationImport={handleBatchObservationImport}
+            />
 
-                    <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
-                        <button
-                            type="button"
-                            onClick={() => handleToggleAllObservationRows(true)}
-                            disabled={observationImportableRows.length === 0}
-                            style={{
-                                padding: '8px 12px',
-                                borderRadius: '8px',
-                                border: '1px solid var(--glass-border)',
-                                background: 'rgba(255,255,255,0.04)',
-                                color: 'var(--text-primary)',
-                                cursor: observationImportableRows.length === 0 ? 'not-allowed' : 'pointer',
-                                opacity: observationImportableRows.length === 0 ? 0.5 : 1,
-                            }}
-                        >
-                            {language === 'zh' ? '全選可匯入項目' : 'Select importable'}
-                        </button>
-                        <button
-                            type="button"
-                            onClick={() => handleToggleAllObservationRows(false)}
-                            disabled={selectedObservationRows.length === 0}
-                            style={{
-                                padding: '8px 12px',
-                                borderRadius: '8px',
-                                border: '1px solid var(--glass-border)',
-                                background: 'rgba(255,255,255,0.04)',
-                                color: 'var(--text-primary)',
-                                cursor: selectedObservationRows.length === 0 ? 'not-allowed' : 'pointer',
-                                opacity: selectedObservationRows.length === 0 ? 0.5 : 1,
-                            }}
-                        >
-                            {language === 'zh' ? '清除選取' : 'Clear selection'}
-                        </button>
-                        <button
-                            type="button"
-                            onClick={handleBatchObservationImport}
-                            disabled={selectedObservationRows.length === 0 || observationBatchSummary?.status === 'loading'}
-                            style={{
-                                padding: '8px 14px',
-                                borderRadius: '8px',
-                                border: 'none',
-                                background: 'var(--accent-primary)',
-                                color: '#fff',
-                                fontWeight: 600,
-                                cursor: selectedObservationRows.length === 0 || observationBatchSummary?.status === 'loading' ? 'not-allowed' : 'pointer',
-                                opacity: selectedObservationRows.length === 0 || observationBatchSummary?.status === 'loading' ? 0.5 : 1,
-                            }}
-                        >
-                            {observationBatchSummary?.status === 'loading'
-                                ? (language === 'zh' ? '批次匯入中...' : 'Batch importing...')
-                                : (language === 'zh' ? '批次送出' : 'Batch send')}
-                        </button>
-                    </div>
-                </div>
-            )}
-
-            {/* Data Table */}
-            {
-                loading ? (
-                    <div style={{ textAlign: 'center', padding: '40px', color: 'var(--text-secondary)' }}>載入數據中...</div>
-                ) : error ? (
-                    <div style={{ textAlign: 'center', padding: '40px', color: '#f87171' }}>{error}</div>
-                ) : (
-                    <div className="glass-panel" style={{
-                        padding: '0',
-                        borderRadius: '16px',
-                        overflowX: 'auto',
-                        maxHeight: '600px',
-                        overflowY: 'auto',
-                        // Dynamic Width: 
-                        // Mobile: Full width minus padding (32px)
-                        // Desktop: Viewport minus Sidebar (240/80) - Padding (60)
-                        maxWidth: isMobile
-                            ? 'calc(100vw - 32px)'
-                            : (isSidebarCollapsed ? 'calc(100vw - 140px)' : 'calc(100vw - 300px)'),
-                        width: '100%',
-                        display: 'block',
-                        transition: 'max-width 0.3s ease'
-                    }}>
-                        <table style={{ width: '100%', borderCollapse: 'collapse', color: 'var(--text-primary)', fontSize: '0.9rem' }}>
-                            <thead>
-                                {/* Comparison Mode Header */}
-                                {isCompareMode ? (
-                                    <>
-                                        {/* Row 1: Metric Names */}
-                                        <tr style={{ borderBottom: '1px solid var(--glass-border)', textAlign: 'center' }}>
-                                            <th rowSpan={2} style={{
-                                                padding: '12px',
-                                                minWidth: '200px',
-                                                position: 'sticky',
-                                                top: 0,
-                                                left: 0,
-                                                zIndex: 50,
-                                                background: '#242526',
-                                                textAlign: 'left',
-                                                borderRight: '1px solid var(--glass-border)'
-                                            }}>
-                                                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                                                    <input
-                                                        type="checkbox"
-                                                        checked={filteredData.length > 0 && selectedRowIds.size === filteredData.length}
-                                                        onChange={(e) => {
-                                                            if (e.target.checked) {
-                                                                setSelectedRowIds(new Set(filteredData.map(d => d.id)));
-                                                            } else {
-                                                                setSelectedRowIds(new Set());
-                                                            }
-                                                        }}
-                                                        style={{ cursor: 'pointer' }}
-                                                    />
-                                                    {txt.table.headers[level] || txt.table.name}
-                                                </div>
-                                            </th>
-                                            {activeCols.map(col => (
-                                                <th
-                                                    key={col.uniqueKey}
-                                                    colSpan={4}
-                                                    onClick={() => handleSort(col.key)}
-                                                    style={{
-                                                        padding: '8px',
-                                                        borderLeft: '1px solid var(--glass-border)',
-                                                        background: '#242526', // Use solid bg for headers
-                                                        position: 'sticky',
-                                                        top: 0,
-                                                        zIndex: 40,
-                                                        cursor: 'pointer',
-                                                        userSelect: 'none',
-                                                        color: sortConfig.key === col.key ? 'var(--accent-primary)' : 'inherit'
-                                                    }}
-                                                >
-                                                    {language === 'zh' ? col.label_zh : col.label_en}
-                                                    {sortConfig.key === col.key && (
-                                                        <span style={{ marginLeft: '4px' }}>
-                                                            {sortConfig.direction === 'asc' ? '↑' : '↓'}
-                                                        </span>
-                                                    )}
-                                                </th>
-                                            ))}
-                                            {canUseObservationImport && (
-                                                <th rowSpan={2} style={{
-                                                    padding: '12px',
-                                                    minWidth: '150px',
-                                                    position: 'sticky',
-                                                    top: 0,
-                                                    zIndex: 40,
-                                                    background: '#242526',
-                                                    textAlign: 'left',
-                                                    borderLeft: '1px solid var(--glass-border)'
-                                                }}>
-                                                    {language === 'zh' ? '操作' : 'Actions'}
-                                                </th>
-                                            )}
-                                        </tr>
-                                        {/* Row 2: Sub-columns */}
-                                        <tr style={{ borderBottom: '1px solid var(--glass-border)', textAlign: 'right', fontSize: '0.8rem', color: 'var(--text-secondary)' }}>
-                                            {activeCols.map(col => (
-                                                <React.Fragment key={col.uniqueKey}>
-                                                    <th style={{ padding: '8px', minWidth: '90px', background: '#242526', borderLeft: '1px solid var(--glass-border)', position: 'sticky', top: '38px', zIndex: 39 }}>
-                                                        {dateRange.since}<br />~ {dateRange.until?.slice(5)}
-                                                    </th>
-                                                    <th style={{ padding: '8px', minWidth: '90px', background: '#242526', position: 'sticky', top: '38px', zIndex: 39 }}>
-                                                        {prevDateRange.since}<br />~ {prevDateRange.until?.slice(5)}
-                                                    </th>
-                                                    <th style={{ padding: '8px', minWidth: '80px', background: '#242526', position: 'sticky', top: '38px', zIndex: 39 }}>
-                                                        {language === 'zh' ? '變化' : 'Change'}
-                                                    </th>
-                                                    <th style={{ padding: '8px', minWidth: '80px', background: '#242526', position: 'sticky', top: '38px', zIndex: 39 }}>
-                                                        {language === 'zh' ? '變化 (%)' : 'Change (%)'}
-                                                    </th>
-                                                </React.Fragment>
-                                            ))}
-                                        </tr>
-                                    </>
-                                ) : (
-                                    /* Standard Header */
-                                    <tr style={{ borderBottom: '1px solid var(--glass-border)', textAlign: 'left' }}>
-                                        <th style={{
-                                            padding: '12px',
-                                            minWidth: '200px',
-                                            position: 'sticky',
-                                            top: 0,
-                                            left: 0,
-                                            zIndex: 50,
-                                            background: '#242526'
-                                        }}>
-                                            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                                                <input
-                                                    type="checkbox"
-                                                    checked={filteredData.length > 0 && selectedRowIds.size === filteredData.length}
-                                                    onChange={(e) => {
-                                                        if (e.target.checked) {
-                                                            setSelectedRowIds(new Set(filteredData.map(d => d.id)));
-                                                        } else {
-                                                            setSelectedRowIds(new Set());
-                                                        }
-                                                    }}
-                                                    style={{ cursor: 'pointer' }}
-                                                />
-                                                {txt.table.headers[level] || txt.table.name}
-                                            </div>
-                                        </th>
-                                        {activeCols.map(col => (
-                                            <th
-                                                key={col.uniqueKey}
-                                                onClick={() => handleSort(col.key)}
-                                                style={{
-                                                    padding: '8px',
-                                                    minWidth: '100px',
-                                                    position: 'sticky',
-                                                    top: 0,
-                                                    zIndex: 40,
-                                                    background: '#242526',
-                                                    cursor: 'pointer',
-                                                    userSelect: 'none',
-                                                    color: sortConfig.key === col.key ? 'var(--accent-primary)' : 'inherit'
-                                                }}
-                                            >
-                                                {language === 'zh' ? col.label_zh : col.label_en}
-                                                {sortConfig.key === col.key && (
-                                                    <span style={{ marginLeft: '4px' }}>
-                                                        {sortConfig.direction === 'asc' ? '↑' : '↓'}
-                                                    </span>
-                                                )}
-                                            </th>
-                                        ))}
-                                        {canUseObservationImport && (
-                                            <th style={{
-                                                padding: '12px',
-                                                minWidth: '150px',
-                                                position: 'sticky',
-                                                top: 0,
-                                                zIndex: 40,
-                                                background: '#242526',
-                                                borderLeft: '1px solid var(--glass-border)',
-                                                textAlign: 'left'
-                                            }}>
-                                                {language === 'zh' ? '操作' : 'Actions'}
-                                            </th>
-                                        )}
-                                    </tr>
-                                )}
-                            </thead>
-                            <tbody>
-                                {sortedData && sortedData.map((row, idx) => (
-                                    <tr key={idx} style={{
-                                        borderBottom: '1px solid rgba(255,255,255,0.05)',
-                                        background: idx % 2 === 0 ? 'transparent' : 'rgba(255,255,255,0.02)'
-                                    }}>
-                                        {/* Name Column with Thumbnail */}
-                                        <td style={{
-                                            padding: '12px',
-                                            position: 'sticky',
-                                            left: 0,
-                                            zIndex: 30,
-                                            background: '#242526',
-                                            borderRight: '1px solid var(--glass-border)',
-                                            minWidth: '200px',
-                                            maxWidth: '200px'
-                                        }}>
-                                            <div style={{ display: 'flex', alignItems: 'flex-start', gap: '8px' }}>
-                                                {/* Row Selection Checkbox */}
-                                                <div style={{ marginTop: '2px', flexShrink: 0 }}>
-                                                    <input
-                                                        type="checkbox"
-                                                        checked={selectedRowIds.has(row.id)}
-                                                        onChange={(e) => {
-                                                            const newSet = new Set(selectedRowIds);
-                                                            if (e.target.checked) {
-                                                                newSet.add(row.id);
-                                                            } else {
-                                                                newSet.delete(row.id);
-                                                            }
-                                                            setSelectedRowIds(newSet);
-                                                        }}
-                                                        style={{ cursor: 'pointer' }}
-                                                    />
-                                                </div>
-
-                                                {/* Thumbnail & Preview */}
-                                                {row.image_url && (
-                                                    <div
-                                                        style={{ position: 'relative', flexShrink: 0, marginTop: '2px' }}
-                                                        onMouseEnter={(e) => {
-                                                            const rect = e.currentTarget.getBoundingClientRect();
-                                                            document.getElementById('preview-img-container').style.display = 'block';
-                                                            document.getElementById('preview-img').src = row.image_url;
-                                                            document.getElementById('preview-img-container').style.top = `${rect.top}px`;
-                                                            document.getElementById('preview-img-container').style.left = `${rect.right + 10}px`;
-                                                        }}
-                                                        onMouseLeave={() => {
-                                                            document.getElementById('preview-img-container').style.display = 'none';
-                                                        }}
-                                                    >
-                                                        <img
-                                                            src={row.image_url}
-                                                            alt="Ad"
-                                                            style={{
-                                                                width: '40px',
-                                                                height: '40px',
-                                                                objectFit: 'cover',
-                                                                borderRadius: '4px',
-                                                                cursor: 'zoom-in',
-                                                                border: '1px solid var(--glass-border)'
-                                                            }}
-                                                        />
-                                                    </div>
-                                                )}
-
-                                                <div style={{
-                                                    display: '-webkit-box',
-                                                    WebkitLineClamp: 2,
-                                                    WebkitBoxOrient: 'vertical',
-                                                    overflow: 'hidden',
-                                                    textOverflow: 'ellipsis',
-                                                    whiteSpace: 'normal',
-                                                    lineHeight: '1.4',
-                                                    wordBreak: 'break-word'
-                                                }} title={row.name}>
-                                                    {row.name}
-                                                </div>
-                                            </div>
-                                        </td>
-
-                                        {/* Data Columns */}
-                                        {activeCols.map(col => {
-                                            const currentVal = row[col.key];
-
-                                            // Formatting Helper
-                                            const formatVal = (v, format) => {
-                                                if (v === undefined || v === null) return '-';
-                                                if (format === 'percent') return `${v.toFixed(2)}%`;
-                                                if (format === 'currency') return `$${v.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 0 })}`;
-                                                if (format === 'currency_decimal') {
-                                                    // Smart decimal: show .X only if not a whole number
-                                                    const isWholeNumber = Number.isInteger(v) || Math.abs(v - Math.round(v)) < 0.01;
-                                                    return `$${v.toLocaleString(undefined, { minimumFractionDigits: isWholeNumber ? 0 : 1, maximumFractionDigits: isWholeNumber ? 0 : 1 })}`;
-                                                }
-                                                if (format === 'decimal') return v.toFixed(2);
-                                                return v.toLocaleString();
-                                            };
-
-                                            if (isCompareMode && prevReportData) {
-                                                // Comparison Logic
-                                                let prevVal = 0;
-                                                let diff = 0;
-                                                let percentStr = '-';
-                                                let diffColor = 'inherit';
-
-                                                const idField = level === 'account' ? (row.date_start ? 'date_start' : 'index') : `${level}_id`;
-
-                                                // Matching Logic
-                                                let prevRow;
-                                                if (level === 'account') {
-                                                    // If 'account' overview (single row), assume index 0 match
-                                                    if (!row.date_start) prevRow = prevReportData[0];
-                                                    // If daily breakdown, match by date_start (TODO: verify this if breakdown used)
-                                                } else {
-                                                    prevRow = prevReportData.find(p => p[idField] === row[idField]);
-                                                }
-
-                                                if (prevRow) {
-                                                    prevVal = prevRow[col.key] || 0;
-                                                    diff = (currentVal || 0) - prevVal;
-
-                                                    if (prevVal !== 0) {
-                                                        const p = (diff / prevVal) * 100;
-                                                        percentStr = `${p >= 0 ? '▲' : '▼'} ${Math.abs(p).toFixed(2)}%`;
-                                                    } else if (currentVal !== 0) {
-                                                        percentStr = '▲ 100%';
-                                                    }
-
-                                                    // Color
-                                                    if (diff !== 0) {
-                                                        const isIncrease = diff >= 0;
-                                                        if (col.isInverse) {
-                                                            diffColor = isIncrease ? '#fb7185' : '#4ade80';
-                                                        } else {
-                                                            diffColor = isIncrease ? '#4ade80' : '#fb7185';
-                                                        }
-                                                    }
-                                                } else {
-                                                    // No Prev Data found for this ID
-                                                    diff = currentVal;
-                                                    percentStr = '-'; // Don't show confusing 100% if likely data mismatch
-                                                }
-
-                                                return (
-                                                    <React.Fragment key={col.uniqueKey}>
-                                                        <td style={{ padding: '8px', textAlign: 'right', borderLeft: '1px solid var(--glass-border)' }}>{formatVal(currentVal, col.format)}</td>
-                                                        <td style={{ padding: '8px', textAlign: 'right', color: 'var(--text-secondary)' }}>{prevRow ? formatVal(prevVal, col.format) : '-'}</td>
-                                                        <td style={{ padding: '8px', textAlign: 'right' }}>{formatVal(diff, col.format)}</td>
-                                                        <td style={{ padding: '8px', textAlign: 'right', color: diffColor, fontWeight: 500 }}>{percentStr}</td>
-                                                    </React.Fragment>
-                                                );
-
-                                            } else {
-                                                // Standard Mode
-                                                return (
-                                                    <td key={col.uniqueKey} style={{ padding: '8px' }}>{formatVal(currentVal, col.format)}</td>
-                                                );
-                                            }
-                                        })}
-                                        {canUseObservationImport && (
-                                            <td style={{
-                                                padding: '12px',
-                                                borderLeft: '1px solid rgba(255,255,255,0.05)',
-                                                verticalAlign: 'top',
-                                                minWidth: '150px'
-                                            }}>
-                                                {row.ad_id ? (
-                                                    <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
-                                                        <div style={{
-                                                            display: 'flex',
-                                                            alignItems: 'center',
-                                                            gap: '8px',
-                                                            flexWrap: 'wrap'
-                                                        }}>
-                                                            <label style={{
-                                                                display: 'inline-flex',
-                                                                alignItems: 'center',
-                                                                gap: '6px',
-                                                                fontSize: '0.78rem',
-                                                                color: 'var(--text-secondary)',
-                                                                cursor: 'pointer',
-                                                                whiteSpace: 'nowrap'
-                                                            }}>
-                                                            <input
-                                                                type="checkbox"
-                                                                checked={selectedObservationIds.has(row.id)}
-                                                                onChange={(e) => handleToggleObservationRow(row.id, e.target.checked)}
-                                                                style={{ cursor: 'pointer' }}
-                                                            />
-                                                                {language === 'zh' ? '批次' : 'Batch'}
-                                                            </label>
-                                                            <button
-                                                                type="button"
-                                                                onClick={() => handleObservationImport(row)}
-                                                                disabled={['loading', 'accepted', 'polling'].includes(observationImportState[row.id]?.status)}
-                                                                title={
-                                                                    observationWindowKind === 'custom'
-                                                                        ? (language === 'zh'
-                                                                            ? '目前日期區段會以自訂時間區間匯入 observation。'
-                                                                            : 'Current date preset will import observation as custom range.')
-                                                                        : undefined
-                                                                }
-                                                                style={{
-                                                                    display: 'inline-flex',
-                                                                    alignItems: 'center',
-                                                                    justifyContent: 'center',
-                                                                    padding: '6px 10px',
-                                                                    borderRadius: '8px',
-                                                                    border: '1px solid var(--glass-border)',
-                                                                    background: 'rgba(255,255,255,0.04)',
-                                                                    color: 'var(--accent-primary)',
-                                                                    fontSize: '0.78rem',
-                                                                    fontWeight: 600,
-                                                                    cursor: ['loading', 'accepted', 'polling'].includes(observationImportState[row.id]?.status) ? 'wait' : 'pointer',
-                                                                    whiteSpace: 'nowrap'
-                                                                }}
-                                                            >
-                                                                {['loading', 'accepted', 'polling'].includes(observationImportState[row.id]?.status)
-                                                                    ? (language === 'zh' ? '處理中' : 'Processing')
-                                                                    : (language === 'zh' ? '送出' : 'Send')}
-                                                            </button>
-                                                            <div style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', flexWrap: 'wrap' }}>
-                                                                <div style={{
-                                                                    display: 'inline-flex',
-                                                                    alignItems: 'center',
-                                                                    width: 'fit-content',
-                                                                    maxWidth: '100%',
-                                                                    padding: '4px 8px',
-                                                                    borderRadius: '999px',
-                                                                    fontSize: '0.72rem',
-                                                                    fontWeight: 600,
-                                                                    background: observationImportState[row.id]?.observationStatus === 'completed'
-                                                                        ? 'rgba(52, 211, 153, 0.12)'
-                                                                        : observationImportState[row.id]?.observationStatus === 'failed'
-                                                                            ? 'rgba(248, 113, 113, 0.12)'
-                                                                            : 'rgba(96, 165, 250, 0.12)',
-                                                                    color: observationImportState[row.id]?.observationStatus === 'completed'
-                                                                        ? '#34d399'
-                                                                        : observationImportState[row.id]?.observationStatus === 'failed'
-                                                                            ? '#f87171'
-                                                                            : '#60a5fa',
-                                                                    whiteSpace: 'nowrap'
-                                                                }}>
-                                                                    {`Obs: ${getObservationStatusText(observationImportState[row.id]?.observationStatus)}`}
-                                                                </div>
-                                                                <div style={{
-                                                                    display: 'inline-flex',
-                                                                    alignItems: 'center',
-                                                                    width: 'fit-content',
-                                                                    maxWidth: '100%',
-                                                                    padding: '4px 8px',
-                                                                    borderRadius: '999px',
-                                                                    fontSize: '0.72rem',
-                                                                    fontWeight: 600,
-                                                                    background: observationImportState[row.id]?.scoreStatus === 'completed'
-                                                                        ? 'rgba(52, 211, 153, 0.12)'
-                                                                        : ['failed', 'blocked_by_observation_failure'].includes(observationImportState[row.id]?.scoreStatus)
-                                                                            ? 'rgba(248, 113, 113, 0.12)'
-                                                                            : 'rgba(255,255,255,0.06)',
-                                                                    color: observationImportState[row.id]?.scoreStatus === 'completed'
-                                                                        ? '#34d399'
-                                                                        : ['failed', 'blocked_by_observation_failure'].includes(observationImportState[row.id]?.scoreStatus)
-                                                                            ? '#f87171'
-                                                                            : 'var(--text-secondary)',
-                                                                    whiteSpace: 'nowrap'
-                                                                }}>
-                                                                    {`Score: ${getScoreStatusText(observationImportState[row.id]?.scoreStatus)}`}
-                                                                </div>
-                                                            </div>
-                                                        </div>
-                                                        {observationImportState[row.id]?.message && (
-                                                            <div style={{
-                                                                fontSize: '0.75rem',
-                                                                color: 'var(--text-secondary)',
-                                                                lineHeight: 1.4,
-                                                                wordBreak: 'break-word',
-                                                            }}>
-                                                                {observationImportState[row.id].message}
-                                                            </div>
-                                                        )}
-                                                    </div>
-                                                ) : (
-                                                    <div style={{ fontSize: '0.78rem', color: 'var(--text-tertiary)', lineHeight: 1.4 }}>
-                                                        {language === 'zh' ? '缺少 ad_id，無法匯入。' : 'Unavailable without ad_id.'}
-                                                    </div>
-                                                )}
-                                            </td>
-                                        )}
-                                    </tr>
-                                ))}
-                            </tbody>
-                        </table>
-                    </div>
-                )
-            }
-
-            {/* Hover Preview Container (Fixed Position) */}
-            <div
-                id="preview-img-container"
-                style={{
-                    display: 'none',
-                    position: 'fixed',
-                    zIndex: 9999,
-                    background: '#242526',
-                    padding: '8px',
-                    borderRadius: '8px',
-                    border: '1px solid var(--glass-border)',
-                    boxShadow: '0 20px 50px rgba(0,0,0,0.6)',
-                    pointerEvents: 'none' // Let mouse pass through so it doesn't flicker
-                }}
-            >
-                <img id="preview-img" src="" alt="Preview" style={{ maxWidth: '300px', maxHeight: '300px', borderRadius: '4px' }} />
-            </div>
-
+            <AnalyticsDataTable
+                loading={loading}
+                error={error}
+                isMobile={isMobile}
+                isSidebarCollapsed={isSidebarCollapsed}
+                isCompareMode={isCompareMode}
+                filteredData={filteredData}
+                selectedRowIds={selectedRowIds}
+                setSelectedRowIds={setSelectedRowIds}
+                txt={txt}
+                level={level}
+                activeCols={activeCols}
+                handleSort={handleSort}
+                sortConfig={sortConfig}
+                language={language}
+                dateRange={dateRange}
+                prevDateRange={prevDateRange}
+                canUseObservationImport={canUseObservationImport}
+                sortedData={sortedData}
+                prevReportData={prevReportData}
+                renderMetricValue={renderMetricValue}
+                selectedObservationIds={selectedObservationIds}
+                handleToggleObservationRow={handleToggleObservationRow}
+                handleObservationImport={handleObservationImport}
+                observationImportState={observationImportState}
+                observationWindowKind={observationWindowKind}
+                getObservationStatusText={getObservationStatusText}
+                getScoreStatusText={getScoreStatusText}
+            />
 
             {/* AI Analyst Slide-over Panel */}
             <div style={{
@@ -2753,25 +1734,6 @@ const Analytics = () => {
             />
         </div >
     );
-};
-
-const observationStatCardStyle = {
-    padding: '10px 12px',
-    borderRadius: '8px',
-    background: 'rgba(255,255,255,0.04)',
-    border: '1px solid var(--glass-border)',
-};
-
-const observationStatLabelStyle = {
-    fontSize: '0.76rem',
-    color: 'var(--text-secondary)',
-    marginBottom: '4px',
-};
-
-const observationStatValueStyle = {
-    fontSize: '1rem',
-    fontWeight: 700,
-    color: 'var(--text-primary)',
 };
 
 export default Analytics;
