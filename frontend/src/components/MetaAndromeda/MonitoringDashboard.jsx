@@ -1,0 +1,1804 @@
+import React from 'react';
+
+import {
+    Metric,
+    actionButtonStyle,
+    badgeStyle,
+    buttonPrimaryStyle,
+    detailCardStyle,
+    emptyStateStyle,
+    errorPanelStyle,
+    formatPercent,
+    infoPanelStyle,
+    inputStyle,
+    metricGridStyle,
+    panelStyle,
+    rowStyle,
+    sectionTitleStyle,
+    subTitleStyle,
+    timelineItemStyle,
+    toggleLabelStyle,
+} from './shared';
+
+export const MonitoringDashboard = ({ isMobile, language, monitoring }) => {
+    const {
+        summary,
+        timeline,
+        loading,
+        loadingTimeline,
+        runningDrift,
+        error,
+        hostFilter,
+        setHostFilter,
+        eventQuery,
+        setEventQuery,
+        deadLetterOnly,
+        setDeadLetterOnly,
+        selectedScoreEventId,
+        setSelectedScoreEventId,
+        driftWindowKind,
+        setDriftWindowKind,
+        driftSince,
+        setDriftSince,
+        driftUntil,
+        setDriftUntil,
+        driftNote,
+        setDriftNote,
+        driftAccountId,
+        setDriftAccountId,
+        trendAccountId,
+        setTrendAccountId,
+        selectedDriftReport,
+        setSelectedDriftReport,
+        excludedObsIds,
+        setExcludedObsIds,
+        syncingCal,
+        cleanupResult,
+        runningCleanup,
+        scoringProfiles,
+        loadingProfiles,
+        promotingProfile,
+        backtestingProfile,
+        backtestResults,
+        driftTrend,
+        loadingTrend,
+        observedAccounts,
+        modelRegistry,
+        loadingModelRegistry,
+        backtestModelInput,
+        setBacktestModelInput,
+        savingBacktestModel,
+        effectiveStatus,
+        candidateModelInput,
+        setCandidateModelInput,
+        validatingCandidate,
+        candidateValidation,
+        hasAccess,
+        loadingModuleAccess,
+        t,
+        getTranslation,
+        formatDateTime,
+        loadSummary,
+        loadTimeline,
+        recentEvents,
+        deadLetters,
+        visibleRecentEvents,
+        visibleDeadLetters,
+        handleDriftTrigger,
+        handleSelectTimeline,
+        handleCleanupStale,
+        loadProfiles,
+        loadModelRegistry,
+        handleSaveBacktestModel,
+        loadEffectiveScoringStatus,
+        handleValidateCandidateModel,
+        loadObservedAccounts,
+        loadDriftTrend,
+        handleRunBacktest,
+        handlePromoteProfile,
+        handleToggleExcludeObs,
+        handleSyncCalibration,
+    } = monitoring;
+
+    if (loadingModuleAccess) {
+        return (
+            <div style={{ padding: isMobile ? '16px' : '24px' }}>
+                <div style={panelStyle}>{t('Checking workspace access...', '正在檢查工作區模組權限...')}</div>
+            </div>
+        );
+    }
+
+    if (!hasAccess) {
+        return (
+            <div style={{ padding: isMobile ? '16px' : '24px' }}>
+                <div style={infoPanelStyle}>
+                    {t(
+                        'You do not have access to Meta Andromeda in this workspace.',
+                        '你目前沒有此工作區的 Meta Andromeda 模組存取權限。'
+                    )}
+                </div>
+            </div>
+        );
+    }
+
+    return (
+        <div style={{ padding: isMobile ? '16px' : '24px' }}>
+            {/* 注入精美磨砂玻璃滾動條樣式 */}
+            <style>{`
+                .queue-scroll-box::-webkit-scrollbar {
+                    width: 6px;
+                }
+                .queue-scroll-box::-webkit-scrollbar-track {
+                    background: rgba(255, 255, 255, 0.01);
+                    border-radius: 999px;
+                }
+                .queue-scroll-box::-webkit-scrollbar-thumb {
+                    background: var(--glass-border);
+                    border-radius: 999px;
+                    transition: all 0.2s;
+                }
+                .queue-scroll-box::-webkit-scrollbar-thumb:hover {
+                    background: var(--accent-primary);
+                }
+            `}</style>
+
+            <div style={{
+                marginBottom: '20px',
+                display: 'flex',
+                justifyContent: 'space-between',
+                alignItems: isMobile ? 'flex-start' : 'center',
+                gap: '16px',
+                flexDirection: isMobile ? 'column' : 'row',
+            }}>
+                <div>
+                    <div style={{ color: 'var(--accent-primary)', fontWeight: 700, marginBottom: '8px' }}>
+                        Meta Andromeda
+                    </div>
+                    <h1 style={{ margin: 0, color: 'var(--text-primary)' }}>
+                        {t('Monitoring Summary', '監控總覽')}
+                    </h1>
+                </div>
+                <button type="button" onClick={loadSummary} style={actionButtonStyle}>
+                    {t('Refresh', '重新整理')}
+                </button>
+            </div>
+
+            <div style={{
+                marginBottom: '16px',
+                display: 'grid',
+                gridTemplateColumns: isMobile ? '1fr' : '1.1fr 0.8fr auto',
+                gap: '10px',
+                alignItems: 'center',
+                padding: '14px 18px',
+                background: 'var(--bg-secondary)',
+                border: '1px solid var(--glass-border)',
+                borderRadius: '14px',
+            }}>
+                <input
+                    type="text"
+                    value={eventQuery}
+                    onChange={(event) => setEventQuery(event.target.value)}
+                    placeholder={t('Search score event, runtime job, or message', '搜尋評分事件、執行任務或訊息')}
+                    style={inputStyle}
+                />
+                <select value={hostFilter} onChange={(event) => setHostFilter(event.target.value)} style={inputStyle}>
+                    <option value="all">{t('All Hosts', '所有主機')}</option>
+                    {Array.from(new Set([
+                        summary?.worker_host?.active_host,
+                        ...(summary?.worker_host?.recent_events || []).map((event) => event.queue_host),
+                        ...(summary?.worker_host?.dead_letters || []).map((item) => item.queue_host),
+                    ].filter(Boolean))).map((host) => (
+                        <option key={host} value={host}>{host}</option>
+                    ))}
+                </select>
+                <label style={toggleLabelStyle}>
+                    <input
+                        type="checkbox"
+                        checked={deadLetterOnly}
+                        onChange={(event) => setDeadLetterOnly(event.target.checked)}
+                    />
+                    <span>{t('Dead Letters Only', '只看異常任務')}</span>
+                </label>
+            </div>
+
+            {error ? <div style={errorPanelStyle}>{error}</div> : null}
+
+            {loading ? (
+                <div style={panelStyle}>{t('Loading monitoring summary...', '正在載入監控資料...')}</div>
+            ) : (
+                <>
+                    {/* Alert Banner */}
+                    {(summary?.active_alerts || []).length > 0 && (
+                        <div style={{
+                            marginBottom: '14px',
+                            padding: '12px 16px',
+                            borderRadius: '12px',
+                            background: 'rgba(239, 68, 68, 0.08)',
+                            border: '1px solid rgba(239, 68, 68, 0.3)',
+                            display: 'flex',
+                            alignItems: 'center',
+                            gap: '12px',
+                            flexWrap: 'wrap',
+                        }}>
+                            <div style={{ width: '8px', height: '8px', borderRadius: '50%', background: '#ef4444', boxShadow: '0 0 8px #ef4444', flexShrink: 0, animation: 'pulse 1.5s infinite' }} />
+                            <span style={{ fontWeight: 700, color: '#f87171', fontSize: '0.88rem' }}>
+                                {summary.active_alerts.length} {t('active alert(s)', '條告警中')}
+                            </span>
+                            <span style={{ color: 'var(--text-secondary)', fontSize: '0.82rem' }}>
+                                {summary.active_alerts.slice(0, 2).map((a) => a.message || a.code || '').filter(Boolean).join(' · ')}
+                                {summary.active_alerts.length > 2 && ` ··· +${summary.active_alerts.length - 2}`}
+                            </span>
+                        </div>
+                    )}
+
+                    <div style={{
+                        display: 'grid',
+                        gridTemplateColumns: isMobile ? '1fr' : 'repeat(3, 1fr)',
+                        gap: '16px',
+                        marginBottom: '16px'
+                    }}>
+                        {Object.entries(summary?.jobs || {}).map(([jobKey, job]) => (
+                            <section key={jobKey} style={panelStyle}>
+                                <h2 style={sectionTitleStyle}>{getTranslation(jobKey)}</h2>
+                                <div style={metricGridStyle}>
+                                    <Metric label={getTranslation("queued_total")} value={job.queued_total} />
+                                    <Metric label={getTranslation("completed_total")} value={job.completed_total} />
+                                    <Metric label={getTranslation("failure_total")} value={job.failure_total} />
+                                    <Metric label={getTranslation("queue_depth.current")} value={job.queue_depth?.current} />
+                                    <Metric label={getTranslation("queue_depth.peak")} value={job.queue_depth?.peak} />
+                                    <Metric label={getTranslation("latency.avg(ms)")} value={job.latency_ms?.avg} />
+                                    <Metric label={getTranslation("latency.p95(ms)")} value={job.latency_ms?.p95} />
+                                    <Metric label={getTranslation("latency.max(ms)")} value={job.latency_ms?.max} />
+                                </div>
+                            </section>
+                        ))}
+
+                        <section style={panelStyle}>
+                            <h2 style={sectionTitleStyle}>{t('Observation Pipeline', 'Observation 資料管線')}</h2>
+                            <div style={{ marginBottom: '12px', color: 'var(--text-secondary)', fontSize: '0.78rem', lineHeight: 1.5 }}>
+                                {t('FB Ads import line only. Score Lab uploads excluded unless matched by a drift report.', '僅統計 FB Ads 匯入線，Score Lab 上傳不計入。')}
+                            </div>
+                            <div style={metricGridStyle}>
+                                <Metric
+                                    label={getTranslation('observed_total')}
+                                    value={summary?.observation_pipeline?.observed_total}
+                                />
+                                <Metric
+                                    label={getTranslation('latest_observed_total')}
+                                    value={summary?.observation_pipeline?.latest_observed_total}
+                                />
+                                <Metric
+                                    label={getTranslation('observed_with_asset')}
+                                    value={summary?.observation_pipeline?.observed_with_asset}
+                                />
+                                <Metric
+                                    label={getTranslation('latest_matched_total')}
+                                    value={summary?.observation_pipeline?.latest_matched_total}
+                                />
+                                <Metric
+                                    label={getTranslation('latest_match_rate')}
+                                    value={formatPercent(summary?.observation_pipeline?.latest_match_rate)}
+                                />
+                                <Metric
+                                    label={getTranslation('latest_calibration_candidate_total')}
+                                    value={summary?.observation_pipeline?.latest_calibration_candidate_total}
+                                />
+                                <Metric
+                                    label={getTranslation('latest_calibration_synced_total')}
+                                    value={summary?.observation_pipeline?.latest_calibration_synced_total}
+                                />
+                            </div>
+                            <div style={{ marginTop: '10px', color: 'var(--text-secondary)', fontSize: '0.78rem', lineHeight: 1.5 }}>
+                                {t('Calibration', '校準狀態')}: {getTranslation(summary?.observation_pipeline?.latest_calibration_status)}
+                                {summary?.observation_pipeline?.latest_calibration_dataset_id
+                                    ? ` · ${summary.observation_pipeline.latest_calibration_dataset_id}`
+                                    : ''}
+                            </div>
+                        </section>
+
+                        <section style={panelStyle}>
+                            <h2 style={sectionTitleStyle}>{t('Drift Trigger', '預估偏差檢查')}</h2>
+                            <form onSubmit={handleDriftTrigger} style={{ display: 'grid', gap: '12px' }}>
+                                <select value={driftWindowKind} onChange={(event) => setDriftWindowKind(event.target.value)} style={inputStyle}>
+                                    <option value="last_24h">{t('Last 24 Hours', '最近 24 小時')}</option>
+                                    <option value="last_7d">{t('Last 7 Days', '最近 7 天')}</option>
+                                    <option value="last_30d">{t('Last 30 Days', '最近 30 天')}</option>
+                                    <option value="custom">{t('Custom Date Range', '自訂時間區間')}</option>
+                                </select>
+                                {driftWindowKind === 'custom' && (
+                                    <div style={{ display: 'flex', gap: '8px', marginBottom: '4px' }}>
+                                        <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                                            <span style={{ fontSize: '0.8rem', color: 'var(--text-secondary)' }}>{t('Start Date', '開始日期')}</span>
+                                            <input 
+                                                type="date" 
+                                                value={driftSince} 
+                                                onChange={(e) => setDriftSince(e.target.value)} 
+                                                style={{ ...inputStyle, colorScheme: 'dark' }}
+                                            />
+                                        </div>
+                                        <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                                            <span style={{ fontSize: '0.8rem', color: 'var(--text-secondary)' }}>{t('End Date', '結束日期')}</span>
+                                            <input 
+                                                type="date" 
+                                                value={driftUntil} 
+                                                onChange={(e) => setDriftUntil(e.target.value)} 
+                                                style={{ ...inputStyle, colorScheme: 'dark' }}
+                                            />
+                                        </div>
+                                    </div>
+                                )}
+                                <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                                    <span style={{ fontSize: '0.8rem', color: 'var(--text-secondary)' }}>
+                                        {t('Ad Account', '廣告帳號')}
+                                    </span>
+                                    {observedAccounts.length > 0 ? (
+                                        <select
+                                            value={driftAccountId}
+                                            onChange={(e) => setDriftAccountId(e.target.value)}
+                                            style={inputStyle}
+                                        >
+                                            <option value="">{t('All accounts', '全部帳號')}</option>
+                                            {observedAccounts.map((acc) => (
+                                                <option key={acc.account_id} value={acc.account_id}>
+                                                    {acc.account_id}
+                                                    {acc.platform !== 'facebook_ads' ? ` (${acc.platform})` : ''}
+                                                    {' '}· {acc.total_creatives} {t('creatives', '筆素材')}
+                                                </option>
+                                            ))}
+                                        </select>
+                                    ) : (
+                                        <input
+                                            type="text"
+                                            value={driftAccountId}
+                                            onChange={(e) => setDriftAccountId(e.target.value)}
+                                            placeholder={t('No accounts imported yet', '尚未匯入任何帳號資料')}
+                                            style={inputStyle}
+                                        />
+                                    )}
+                                </div>
+                                <textarea
+                                    value={driftNote}
+                                    onChange={(event) => setDriftNote(event.target.value)}
+                                    rows={2}
+                                    placeholder={t('Optional operator note', '可選操作備註')}
+                                    style={inputStyle}
+                                />
+                                <button type="submit" style={buttonPrimaryStyle} disabled={runningDrift}>
+                                    {runningDrift ? t('Running...', '執行中...') : t('Run Drift Check', '執行預估偏差檢查')}
+                                </button>
+                            </form>
+                        </section>
+                    </div>
+
+                    <div style={{
+                        display: 'grid',
+                        gridTemplateColumns: isMobile ? '1fr' : 'repeat(3, 1fr)',
+                        gap: '16px'
+                    }}>
+                        <section style={panelStyle}>
+                            <h2 style={sectionTitleStyle}>{t('Worker Host', 'Worker 主機')}</h2>
+                            <div style={{ display: 'flex', gap: '12px', marginBottom: '14px', flexWrap: 'wrap' }}>
+                                <div style={{ flex: '1 1 auto', minWidth: 0, padding: '8px 12px', borderRadius: '8px', background: 'rgba(255,255,255,0.04)', border: '1px solid var(--glass-border)' }}>
+                                    <div style={{ fontSize: '0.72rem', color: 'var(--text-secondary)', marginBottom: '2px' }}>{t('Host', '主機')}</div>
+                                    <div style={{ fontWeight: 700, color: 'var(--text-primary)', fontSize: '0.85rem', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{summary?.worker_host?.active_host || '--'}</div>
+                                </div>
+                                <div style={{ flex: '0 0 auto', padding: '8px 12px', borderRadius: '8px', background: 'rgba(255,255,255,0.04)', border: '1px solid var(--glass-border)' }}>
+                                    <div style={{ fontSize: '0.72rem', color: 'var(--text-secondary)', marginBottom: '2px' }}>{t('Strategy', '策略')}</div>
+                                    <div style={{ fontWeight: 700, color: 'var(--text-primary)', fontSize: '0.85rem' }}>{getTranslation(summary?.worker_host?.host_strategy) || '--'}</div>
+                                </div>
+                                <div style={{ flex: '0 0 auto', padding: '8px 12px', borderRadius: '8px', background: (summary?.worker_host?.dead_letter_count || 0) > 0 ? 'rgba(239,68,68,0.08)' : 'rgba(255,255,255,0.04)', border: `1px solid ${(summary?.worker_host?.dead_letter_count || 0) > 0 ? 'rgba(239,68,68,0.3)' : 'var(--glass-border)'}` }}>
+                                    <div style={{ fontSize: '0.72rem', color: 'var(--text-secondary)', marginBottom: '2px' }}>{t('Dead Letters', '異常任務')}</div>
+                                    <div style={{ fontWeight: 700, color: (summary?.worker_host?.dead_letter_count || 0) > 0 ? '#f87171' : 'var(--text-primary)', fontSize: '0.85rem' }}>{summary?.worker_host?.dead_letter_count ?? '--'}</div>
+                                </div>
+                            </div>
+
+                            <div style={{ marginBottom: '16px', display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                                <button
+                                    type="button"
+                                    onClick={handleCleanupStale}
+                                    disabled={runningCleanup}
+                                    style={{
+                                        padding: '10px 16px',
+                                        borderRadius: '10px',
+                                        border: '1px solid rgba(239, 68, 68, 0.3)',
+                                        background: runningCleanup ? 'rgba(239, 68, 68, 0.05)' : 'rgba(239, 68, 68, 0.08)',
+                                        color: runningCleanup ? 'var(--text-secondary)' : '#f87171',
+                                        fontWeight: 600,
+                                        fontSize: '0.88rem',
+                                        cursor: runningCleanup ? 'wait' : 'pointer',
+                                        textAlign: 'left',
+                                    }}
+                                >
+                                    {runningCleanup
+                                        ? t('Cleaning up...', '清除中...')
+                                        : t('Clear Stuck Score Events (queued / processing > 30 min)', '清除卡死評分任務（queued / processing 超過 30 分鐘）')}
+                                </button>
+                                {cleanupResult && (
+                                    <div style={{
+                                        padding: '12px 14px',
+                                        borderRadius: '10px',
+                                        border: '1px solid rgba(52, 211, 153, 0.25)',
+                                        background: 'rgba(52, 211, 153, 0.06)',
+                                        color: 'var(--text-secondary)',
+                                        fontSize: '0.85rem',
+                                        lineHeight: 1.7,
+                                    }}>
+                                        <strong style={{ color: '#34d399' }}>
+                                            {t('Cleanup complete', '清除完成')} · {cleanupResult.cleaned_total} {t('events terminated', '筆任務已終止')}
+                                        </strong>
+                                        <div>{t('Cutoff', '截止時間')}: {formatDateTime(cleanupResult.cutoff_timestamp)}</div>
+                                        {cleanupResult.removed_scheduler_jobs > 0 && (
+                                            <div>{t('Scheduler jobs removed', '已移除排程工作')}: {cleanupResult.removed_scheduler_jobs}</div>
+                                        )}
+                                    </div>
+                                )}
+                            </div>
+
+                            <div style={{ marginBottom: '14px' }}>
+                                <div style={subTitleStyle}>{t('Recent Worker Events', '最近 Worker 事件')}</div>
+                                <div 
+                                    className="queue-scroll-box"
+                                    style={{ 
+                                        display: 'grid', 
+                                        gap: '10px',
+                                        maxHeight: '350px',
+                                        overflowY: 'auto',
+                                        paddingRight: '6px'
+                                    }}
+                                >
+                                    {visibleRecentEvents.map((event) => (
+                                        <button
+                                            key={event.worker_event_id}
+                                            type="button"
+                                            onClick={() => handleSelectTimeline(event.score_event_id)}
+                                            style={{
+                                                ...detailCardStyle,
+                                                textAlign: 'left',
+                                                cursor: 'pointer',
+                                                borderColor: selectedScoreEventId === event.score_event_id
+                                                    ? 'var(--accent-primary)'
+                                                    : 'var(--glass-border)',
+                                            }}
+                                        >
+                                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '6px' }}>
+                                                <div style={{ color: 'var(--accent-primary)', fontWeight: 700 }}>
+                                                    {getTranslation(event.event_type)} · {event.queue_host}
+                                                </div>
+                                                <span style={{ fontSize: '0.8rem', color: 'var(--text-secondary)' }}>
+                                                    {formatDateTime(event.created_at)}
+                                                </span>
+                                            </div>
+                                            <div style={{ color: 'var(--text-secondary)', lineHeight: 1.6, fontSize: '0.9rem' }}>
+                                                {t('status', '狀態')}: {getTranslation(event.status)} / {t('attempt', '嘗試次數')}: {event.attempt_count}
+                                            </div>
+                                            <div style={{ color: 'var(--text-secondary)', lineHeight: 1.6, fontSize: '0.9rem' }}>
+                                                {event.score_event_id}
+                                            </div>
+                                            <div style={{ color: 'var(--text-secondary)', lineHeight: 1.6, fontSize: '0.9rem' }}>
+                                                {event.message || '--'}
+                                            </div>
+                                        </button>
+                                    ))}
+                                    {visibleRecentEvents.length === 0 && (
+                                        <div style={emptyStateStyle}>{t('No worker events match the current filter.', '目前篩選條件下沒有 worker 事件。')}</div>
+                                    )}
+                                </div>
+                            </div>
+
+                            <div>
+                                <div style={subTitleStyle}>{t('Dead Letters', '異常任務')}</div>
+                                <div 
+                                    className="queue-scroll-box"
+                                    style={{ 
+                                        display: 'grid', 
+                                        gap: '10px',
+                                        maxHeight: '350px',
+                                        overflowY: 'auto',
+                                        paddingRight: '6px'
+                                    }}
+                                >
+                                    {visibleDeadLetters.map((item) => (
+                                        <button
+                                            key={item.dead_letter_id}
+                                            type="button"
+                                            onClick={() => handleSelectTimeline(item.score_event_id)}
+                                            style={{
+                                                ...detailCardStyle,
+                                                textAlign: 'left',
+                                                cursor: 'pointer',
+                                                borderColor: selectedScoreEventId === item.score_event_id
+                                                    ? '#f59e0b'
+                                                    : 'var(--glass-border)',
+                                            }}
+                                        >
+                                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '6px' }}>
+                                                <div style={{ color: '#f59e0b', fontWeight: 700 }}>
+                                                    {getTranslation(item.failure_stage)} · {item.queue_host}
+                                                </div>
+                                                <span style={{ fontSize: '0.8rem', color: 'var(--text-secondary)' }}>
+                                                    {formatDateTime(item.created_at)}
+                                                </span>
+                                            </div>
+                                            <div style={{ color: 'var(--text-secondary)', lineHeight: 1.6, fontSize: '0.9rem' }}>
+                                                {item.score_event_id}
+                                            </div>
+                                            <div style={{ color: 'var(--text-secondary)', lineHeight: 1.6, fontSize: '0.9rem' }}>
+                                                {item.final_error_message}
+                                            </div>
+                                        </button>
+                                    ))}
+                                    {visibleDeadLetters.length === 0 && (
+                                        <div style={emptyStateStyle}>{t('No dead letters match the current filter.', '目前篩選條件下沒有異常任務。')}</div>
+                                    )}
+                                </div>
+                            </div>
+                        </section>
+
+                        <section style={{ ...panelStyle, gridColumn: isMobile ? undefined : 'span 2' }}>
+                            <h2 style={sectionTitleStyle}>{t('Event Timeline', '事件時間軸')}</h2>
+                            {!selectedScoreEventId ? (
+                                <div style={emptyStateStyle}>{t('Select a worker event or dead letter to inspect the full timeline.', '請先選擇一筆 worker event 或異常任務以查看完整時間軸。')}</div>
+                            ) : loadingTimeline ? (
+                                <div style={emptyStateStyle}>{t('Loading event timeline...', '載入事件時間軸中...')}</div>
+                            ) : !timeline ? (
+                                <div style={emptyStateStyle}>{t('Timeline is unavailable.', '目前無法取得時間軸。')}</div>
+                            ) : (
+                                <div style={{ display: 'grid', gap: '12px' }}>
+                                    <div style={detailCardStyle}>
+                                        <div style={{ color: 'var(--text-secondary)', marginBottom: '6px' }}>{t('Score Event ID', '評分事件 ID')}</div>
+                                        <div style={{ color: 'var(--text-primary)', fontWeight: 700 }}>{timeline.score_event.score_event_id}</div>
+                                        <div style={{ color: 'var(--text-secondary)', marginTop: '8px' }}>
+                                            {getTranslation(timeline.score_event.status)} · {t('attempt', '嘗試')} {timeline.score_event.attempt_count}
+                                        </div>
+                                    </div>
+                                    <div style={detailCardStyle}>
+                                        <div style={subTitleStyle}>{t('Worker Timeline', 'Worker 時間軸')}</div>
+                                        <div style={{ display: 'grid', gap: '10px' }}>
+                                            {(timeline.worker_events || []).map((event) => (
+                                                <div key={event.worker_event_id} style={timelineItemStyle}>
+                                                    <strong style={{ color: 'var(--text-primary)' }}>{getTranslation(event.event_type)}</strong>
+                                                    <div style={{ color: 'var(--text-secondary)', lineHeight: 1.6 }}>
+                                                        {event.queue_host} · {getTranslation(event.status)} · {formatDateTime(event.created_at)}
+                                                    </div>
+                                                    <div style={{ color: 'var(--text-secondary)', lineHeight: 1.6 }}>
+                                                        {event.message || '--'}
+                                                    </div>
+                                                </div>
+                                            ))}
+                                        </div>
+                                    </div>
+                                    <div style={detailCardStyle}>
+                                        <div style={subTitleStyle}>{t('Dead Letter Detail', '異常任務明細')}</div>
+                                        {(timeline.dead_letters || []).length === 0 ? (
+                                            <div style={{ color: 'var(--text-secondary)' }}>{t('No dead letters for this score event.', '這筆 score event 沒有異常任務紀錄。')}</div>
+                                        ) : (
+                                            <div style={{ display: 'grid', gap: '10px' }}>
+                                                {timeline.dead_letters.map((item) => (
+                                                    <div key={item.dead_letter_id} style={timelineItemStyle}>
+                                                        <strong style={{ color: '#f59e0b' }}>{getTranslation(item.failure_stage)}</strong>
+                                                        <div style={{ color: 'var(--text-secondary)', lineHeight: 1.6 }}>
+                                                            {item.final_error_message}
+                                                        </div>
+                                                        <div style={{ color: 'var(--text-secondary)', lineHeight: 1.6 }}>
+                                                            {formatDateTime(item.created_at)}
+                                                        </div>
+                                                    </div>
+                                                ))}
+                                            </div>
+                                        )}
+                                    </div>
+                                </div>
+                            )}
+                        </section>
+
+                        <section style={panelStyle}>
+                            <h2 style={sectionTitleStyle}>{t('Prediction Distribution', '預測分布')}</h2>
+                            {(() => {
+                                const dist = summary?.prediction_distribution || {};
+                                const total = Object.values(dist).reduce((s, v) => s + (v || 0), 0);
+                                const bandColors = { high: '#10b981', mid: '#f59e0b', low: '#ef4444' };
+                                const bandOrder = ['high', 'mid', 'low'];
+                                return (
+                                    <div style={{ display: 'grid', gap: '12px' }}>
+                                        {bandOrder.map((band) => {
+                                            const count = dist[band] ?? 0;
+                                            const pct = total > 0 ? (count / total) * 100 : 0;
+                                            const color = bandColors[band] || 'var(--accent-primary)';
+                                            return (
+                                                <div key={band}>
+                                                    <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '5px' }}>
+                                                        <span style={{ color: 'var(--text-secondary)', fontSize: '0.85rem' }}>{getTranslation(band)}</span>
+                                                        <span style={{ fontWeight: 700, color: 'var(--text-primary)', fontSize: '0.85rem' }}>{count} <span style={{ fontWeight: 400, color: 'var(--text-secondary)', fontSize: '0.78rem' }}>({pct.toFixed(0)}%)</span></span>
+                                                    </div>
+                                                    <div style={{ height: '6px', borderRadius: '3px', background: 'rgba(255,255,255,0.08)' }}>
+                                                        <div style={{ height: '100%', borderRadius: '3px', background: color, width: `${pct}%`, transition: 'width 0.4s ease' }} />
+                                                    </div>
+                                                </div>
+                                            );
+                                        })}
+                                        {total > 0 && (
+                                            <div style={{ fontSize: '0.75rem', color: 'var(--text-secondary)', textAlign: 'right' }}>
+                                                {t('Total', '合計')} {total} {t('predictions', '筆預測')}
+                                            </div>
+                                        )}
+                                    </div>
+                                );
+                            })()}
+                        </section>
+
+                        <section style={{ ...panelStyle, gridColumn: isMobile ? undefined : 'span 2' }}>
+                            <h2 style={sectionTitleStyle}>{t('Latest Drift Reports', '最近預估偏差報告')}</h2>
+                            <div 
+                                className="queue-scroll-box"
+                                style={{ 
+                                    display: 'grid', 
+                                    gap: '10px', 
+                                    marginBottom: '14px',
+                                    maxHeight: '400px',
+                                    overflowY: 'auto',
+                                    paddingRight: '6px'
+                                }}
+                            >
+                                {(summary?.latest_drift_reports || []).map((report) => {
+                                    const accuracy = report.report_payload?.accuracy;
+                                    const mae = report.report_payload?.mae;
+                                    const spearmanR = report.report_payload?.spearman_r;
+                                    const periodDiagnosis = report.report_payload?.period_diagnosis;
+                                    const dominantMetric = report.report_payload?.dominant_metric;
+                                    const metricDistribution = report.report_payload?.metric_distribution;
+                                    const details = report.report_payload?.matched_details || [];
+                                    const totalObserved = report.report_payload?.total_observed;
+                                    const totalMatched = report.report_payload?.total_matched;
+                                    const calibrationCandidates = report.report_payload?.calibration_candidate_total;
+                                    const roasThresholds = report.report_payload?.roas_band_thresholds;
+                                    const hasDetails = details.length > 0;
+                                    
+                                    // 狀態樣式與呼吸燈效果
+                                    const isDrifted = report.drift_status === 'drifted';
+                                    const isStable = report.drift_status === 'stable';
+                                    const statusColor = isStable ? '#10b981' : (report.drift_status === 'warning' ? '#f59e0b' : '#ef4444');
+                                    
+                                    return (
+                                        <div key={report.drift_report_id} style={{
+                                            ...detailCardStyle,
+                                            position: 'relative',
+                                            overflow: 'hidden'
+                                        }}>
+                                            {/* 偏差呼吸燈 */}
+                                            {isDrifted && (
+                                                <div style={{
+                                                    position: 'absolute',
+                                                    top: '12px',
+                                                    right: '12px',
+                                                    width: '10px',
+                                                    height: '10px',
+                                                    borderRadius: '50%',
+                                                    background: '#ef4444',
+                                                    boxShadow: '0 0 10px #ef4444',
+                                                    animation: 'pulse 1.5s infinite'
+                                                }} />
+                                            )}
+                                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', flexWrap: 'wrap', gap: '8px' }}>
+                                                <div style={{ color: statusColor, fontWeight: 700, marginBottom: '6px' }}>
+                                                    {getTranslation(report.window_kind)}
+                                                    {report.window_kind === 'custom' && (() => {
+                                                        const since = report.report_payload?.since;
+                                                        const until = report.report_payload?.until;
+                                                        if (since && until) {
+                                                            return ` (${since} ~ ${until})`;
+                                                        }
+                                                        if (report.note && report.note.includes('~')) {
+                                                            const match = report.note.match(/(\d{4}-\d{2}-\d{2})\s*~\s*(\d{4}-\d{2}-\d{2})/);
+                                                            if (match) {
+                                                                return ` (${match[1]} ~ ${match[2]})`;
+                                                            }
+                                                        }
+                                                        return '';
+                                                    })()} · {getTranslation(report.drift_status)}
+                                                </div>
+                                                <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: '4px' }}>
+                                                    {spearmanR !== undefined && spearmanR !== null && (
+                                                        <span style={{ fontSize: '0.8rem', color: 'var(--text-secondary)' }}>
+                                                            ρ = {spearmanR.toFixed(3)} · {t('Accuracy', '準確率')}: {(accuracy * 100).toFixed(1)}% | {t('MAE', '平均絕對偏差')}: {mae.toFixed(2)}
+                                                        </span>
+                                                    )}
+                                                    {(spearmanR === undefined || spearmanR === null) && accuracy !== undefined && (
+                                                        <span style={{ fontSize: '0.8rem', color: 'var(--text-secondary)' }}>
+                                                            {t('Accuracy', '準確率')}: {(accuracy * 100).toFixed(1)}% | {t('MAE', '平均絕對偏差')}: {mae.toFixed(2)}
+                                                        </span>
+                                                    )}
+                                                    <span style={{ fontSize: '0.75rem', color: 'var(--text-secondary)' }}>
+                                                        {t('Observed', '匯入')}: {totalObserved ?? '--'} · {t('Matched', '配對成功')}: {totalMatched ?? '--'} · {t('Calibration Candidates', '可校準')}: {calibrationCandidates ?? '--'}
+                                                    </span>
+                                                    <span style={{ fontSize: '0.75rem', color: 'var(--text-secondary)' }}>
+                                                        {t('Run Time', '執行時間')}: {formatDateTime(report.created_at)}
+                                                    </span>
+                                                </div>
+                                            </div>
+                                            {roasThresholds && (
+                                                <div style={{ fontSize: '0.72rem', color: 'var(--text-secondary)', marginBottom: '6px' }}>
+                                                    {t('ROAS Band', 'ROAS 門檻')}: low &lt; {roasThresholds.low_below} · mid {roasThresholds.low_below}–{roasThresholds.high_above} · high ≥ {roasThresholds.high_above}
+                                                    {roasThresholds.method === 'percentile_p33_p67'
+                                                        ? ` (P33/P67, n=${roasThresholds.sample_count})`
+                                                        : ` (${t('fixed fallback', '固定門檻')})`}
+                                                    {dominantMetric && dominantMetric !== 'roas' && (
+                                                        <span> · {t('Primary metric', '主指標')}: {dominantMetric.toUpperCase()}</span>
+                                                    )}
+                                                    {metricDistribution && Object.keys(metricDistribution).length > 1 && (
+                                                        <span> · {t('Mixed objectives', '混合目標')}: {Object.entries(metricDistribution).map(([k, v]) => `${k.toUpperCase()}×${v}`).join(', ')}</span>
+                                                    )}
+                                                </div>
+                                            )}
+                                            <div style={{ color: 'var(--text-secondary)', lineHeight: 1.6, fontSize: '0.88rem', marginBottom: '8px' }}>{report.summary}</div>
+                                            {periodDiagnosis && (() => {
+                                                const stateColors = {
+                                                    dual_advantage:  { bg: 'rgba(16,185,129,0.07)',  border: 'rgba(16,185,129,0.3)',  text: '#34d399' },
+                                                    market_driven:   { bg: 'rgba(59,130,246,0.07)',  border: 'rgba(59,130,246,0.3)',  text: '#60a5fa' },
+                                                    creative_critical:{ bg: 'rgba(245,158,11,0.07)', border: 'rgba(245,158,11,0.3)', text: '#f59e0b' },
+                                                    needs_review:    { bg: 'rgba(239,68,68,0.07)',   border: 'rgba(239,68,68,0.3)',   text: '#f87171' },
+                                                };
+                                                const c = stateColors[periodDiagnosis.state] || stateColors.needs_review;
+                                                return (
+                                                    <div style={{
+                                                        marginBottom: '8px',
+                                                        padding: '10px 14px',
+                                                        borderRadius: '10px',
+                                                        background: c.bg,
+                                                        border: `1px solid ${c.border}`,
+                                                    }}>
+                                                        <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '6px' }}>
+                                                            <span style={{ fontWeight: 700, fontSize: '0.85rem', color: c.text }}>
+                                                                {t('Campaign State', '投放狀態')}: {periodDiagnosis.label}
+                                                            </span>
+                                                            <span style={{ fontSize: '0.72rem', color: 'var(--text-secondary)' }}>
+                                                                ρ² = {(periodDiagnosis.creative_explained_variance * 100).toFixed(1)}%
+                                                                {t(' of performance variance explained by creative', ' 的績效差異由創意品質解釋')}
+                                                            </span>
+                                                        </div>
+                                                        <div style={{ fontSize: '0.82rem', color: 'var(--text-secondary)', lineHeight: 1.6 }}>
+                                                            {periodDiagnosis.recommendation}
+                                                        </div>
+                                                    </div>
+                                                );
+                                            })()}
+                                            
+                                            {hasDetails && (
+                                                <button
+                                                    type="button"
+                                                    onClick={() => {
+                                                        setSelectedDriftReport(report);
+                                                        setExcludedObsIds(new Set());
+                                                    }}
+                                                    style={{
+                                                        marginTop: '6px',
+                                                        padding: '6px 12px',
+                                                        borderRadius: '6px',
+                                                        border: '1px solid var(--glass-border)',
+                                                        background: 'rgba(255,255,255,0.05)',
+                                                        color: 'var(--text-primary)',
+                                                        fontSize: '0.8rem',
+                                                        cursor: 'pointer',
+                                                        transition: 'all 0.2s'
+                                                    }}
+                                                    onMouseEnter={(e) => e.currentTarget.style.background = 'rgba(255,255,255,0.1)'}
+                                                    onMouseLeave={(e) => e.currentTarget.style.background = 'rgba(255,255,255,0.05)'}
+                                                >
+                                                    {t('View Diagnostic Details', '查看診斷明細')}
+                                                </button>
+                                            )}
+                                        </div>
+                                    );
+                                })}
+                            </div>
+                        </section>
+
+                        <section style={{ ...panelStyle, gridColumn: isMobile ? undefined : 'span 3' }}>
+                            <h2 style={sectionTitleStyle}>{t('Scoring Profiles', 'Scoring Profiles 管理')}</h2>
+                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px', gap: '12px' }}>
+                                <div style={{ color: 'var(--text-secondary)', fontSize: '0.85rem' }}>
+                                    {t('AI scoring prompt profiles. Calibration auto-generates new profiles when ≥10 mismatch items are synced — review and promote here.', 'AI 評分使用的 Prompt Profile 管理。校準後（≥10 筆誤判）自動生成待審核 profile，在此審核並套用。')}
+                                </div>
+                                <button type="button" aria-label={t('Refresh scoring profiles', '重整 Scoring Profiles')} onClick={loadProfiles} style={{ ...actionButtonStyle, flexShrink: 0 }}>
+                                    {t('Refresh', '重整')}
+                                </button>
+                            </div>
+
+                            {(() => {
+                                const pending = (scoringProfiles?.profiles || []).filter(
+                                    (p) => p.source === 'calibration_auto' && !p.is_promoted
+                                );
+                                if (pending.length === 0) return null;
+                                return (
+                                    <div style={{
+                                        marginBottom: '16px',
+                                        padding: '14px',
+                                        borderRadius: '12px',
+                                        background: 'rgba(245, 158, 11, 0.06)',
+                                        border: '1px solid rgba(245, 158, 11, 0.3)',
+                                    }}>
+                                        <div style={{ fontWeight: 700, color: '#f59e0b', marginBottom: '8px' }}>
+                                            {t(`${pending.length} new calibration profile(s) pending review`, `${pending.length} 個新版校準 Profile 待審核`)}
+                                        </div>
+                                        {pending.map((p) => (
+                                            <div key={p.profile_name} style={{ display: 'flex', flexDirection: 'column', gap: '6px', marginBottom: '10px' }}>
+                                                <div style={{ fontSize: '0.88rem', color: 'var(--text-primary)', fontWeight: 600 }}>{p.profile_name}</div>
+                                                {p.bias_summary && (
+                                                    <div style={{ fontSize: '0.8rem', color: 'var(--text-secondary)' }}>
+                                                        {t('Bias', '偏差方向')}: <strong style={{ color: '#f59e0b' }}>{p.bias_summary.dominant_bias}</strong>
+                                                        {' · '}{t('Items', '樣本')}: {p.bias_summary.total_items}
+                                                        {' · '}{t('Over-predict', '預估偏高')}: {p.bias_summary.over_predict_count}
+                                                        {' · '}{t('Under-predict', '預估偏低')}: {p.bias_summary.under_predict_count}
+                                                    </div>
+                                                )}
+                                                {p.calibration_guidance && (
+                                                    <div style={{ fontSize: '0.78rem', color: '#f59e0b', fontStyle: 'italic', lineHeight: 1.5 }}>
+                                                        {p.calibration_guidance.slice(0, 180)}{p.calibration_guidance.length > 180 ? '...' : ''}
+                                                    </div>
+                                                )}
+                                                {(() => {
+                                                    const persisted = p.bias_summary?.holdout_backtest;
+                                                    const fresh = backtestResults[p.profile_name];
+                                                    const backtest = fresh || persisted;
+                                                    if (!backtest) return null;
+                                                    const passed = backtest.passed_gate === true;
+                                                    return (
+                                                        <div style={{
+                                                            fontSize: '0.78rem',
+                                                            padding: '8px 10px',
+                                                            borderRadius: '6px',
+                                                            background: passed ? 'rgba(52,211,153,0.08)' : 'rgba(239,68,68,0.08)',
+                                                            border: `1px solid ${passed ? 'rgba(52,211,153,0.3)' : 'rgba(239,68,68,0.3)'}`,
+                                                            color: passed ? '#34d399' : '#ef4444',
+                                                        }}>
+                                                            {t('Backtest', '回測')}: {passed
+                                                                ? t('Passed', '通過')
+                                                                : t('Not passed (candidate not confirmed better than production)', '未通過（未確定優於正式版）')}
+                                                            {' · '}accuracy {backtest.baseline_accuracy?.toFixed?.(2) ?? backtest.baseline_accuracy} → {backtest.candidate_accuracy?.toFixed?.(2) ?? backtest.candidate_accuracy}
+                                                            {' · '}Spearman {backtest.baseline_spearman?.toFixed?.(2) ?? backtest.baseline_spearman} → {backtest.candidate_spearman?.toFixed?.(2) ?? backtest.candidate_spearman}
+                                                            {' · '}n={backtest.evaluated_count}
+                                                        </div>
+                                                    );
+                                                })()}
+                                                <div style={{ display: 'flex', gap: '8px' }}>
+                                                    <button
+                                                        type="button"
+                                                        onClick={() => handleRunBacktest(p.profile_name)}
+                                                        disabled={backtestingProfile === p.profile_name}
+                                                        style={{
+                                                            alignSelf: 'flex-start',
+                                                            padding: '7px 14px',
+                                                            borderRadius: '8px',
+                                                            border: '1px solid rgba(245,158,11,0.5)',
+                                                            background: 'transparent',
+                                                            color: '#f59e0b',
+                                                            fontWeight: 600,
+                                                            fontSize: '0.82rem',
+                                                            cursor: backtestingProfile === p.profile_name ? 'wait' : 'pointer',
+                                                        }}
+                                                    >
+                                                        {backtestingProfile === p.profile_name
+                                                            ? t('Running backtest...', '回測執行中...')
+                                                            : t('Run Backtest', '執行回測')}
+                                                    </button>
+                                                    <button
+                                                        type="button"
+                                                        onClick={() => handlePromoteProfile(p.profile_name, p.bias_summary?.holdout_backtest)}
+                                                        disabled={promotingProfile === p.profile_name}
+                                                        style={{
+                                                            alignSelf: 'flex-start',
+                                                            padding: '7px 14px',
+                                                            borderRadius: '8px',
+                                                            border: 'none',
+                                                            background: promotingProfile === p.profile_name ? 'rgba(245,158,11,0.3)' : '#f59e0b',
+                                                            color: 'white',
+                                                            fontWeight: 600,
+                                                            fontSize: '0.82rem',
+                                                            cursor: promotingProfile === p.profile_name ? 'wait' : 'pointer',
+                                                        }}
+                                                    >
+                                                        {promotingProfile === p.profile_name
+                                                            ? t('Promoting...', '套用中...')
+                                                            : t('Promote This Profile', '套用此 Profile')}
+                                                    </button>
+                                                </div>
+                                            </div>
+                                        ))}
+                                    </div>
+                                );
+                            })()}
+
+                            <div
+                                className="queue-scroll-box"
+                                style={{ display: 'grid', gridTemplateColumns: isMobile ? '1fr' : 'repeat(2, 1fr)', gap: '10px', maxHeight: '320px', overflowY: 'auto', paddingRight: '6px' }}
+                            >
+                                {loadingProfiles ? (
+                                    <div style={{ ...emptyStateStyle, gridColumn: '1 / -1' }}>{t('Loading profiles...', '載入 Profiles 中...')}</div>
+                                ) : (scoringProfiles?.profiles || []).length === 0 ? (
+                                    <div style={{ ...emptyStateStyle, gridColumn: '1 / -1' }}>{t('No scoring profiles found.', '尚無 Scoring Profile 記錄。')}</div>
+                                ) : (scoringProfiles?.profiles || []).map((p) => (
+                                    <div key={p.profile_name} style={{
+                                        ...detailCardStyle,
+                                        borderColor: p.is_promoted ? 'rgba(52, 211, 153, 0.4)' : 'var(--glass-border)',
+                                        background: p.is_promoted ? 'rgba(52, 211, 153, 0.04)' : 'rgba(255,255,255,0.02)',
+                                    }}>
+                                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', flexWrap: 'wrap', gap: '6px' }}>
+                                            <div style={{ fontWeight: 700, color: p.is_promoted ? '#34d399' : 'var(--text-primary)', fontSize: '0.88rem' }}>
+                                                {p.profile_name}
+                                                {p.is_promoted && (
+                                                    <span style={{ marginLeft: '8px', fontSize: '0.72rem', background: 'rgba(52,211,153,0.15)', color: '#34d399', padding: '2px 6px', borderRadius: '4px', fontWeight: 600 }}>
+                                                        {t('ACTIVE', '生效中')}
+                                                    </span>
+                                                )}
+                                            </div>
+                                            <div style={{ display: 'flex', gap: '6px' }}>
+                                                <span style={{
+                                                    fontSize: '0.72rem',
+                                                    padding: '2px 8px',
+                                                    borderRadius: '4px',
+                                                    fontWeight: 600,
+                                                    background: p.source === 'calibration_auto' ? 'rgba(99,102,241,0.15)' : 'rgba(107,114,128,0.15)',
+                                                    color: p.source === 'calibration_auto' ? '#818cf8' : '#9ca3af',
+                                                }}>
+                                                    {p.source === 'calibration_auto' ? t('auto', '自動校準') : t('seed', '初始')}
+                                                </span>
+                                            </div>
+                                        </div>
+                                        <div style={{ fontSize: '0.78rem', color: 'var(--text-secondary)', marginTop: '6px' }}>
+                                            {t('Created', '建立時間')}: {formatDateTime(p.created_at)}
+                                            {p.is_promoted && p.promoted_at && (
+                                                <span> · {t('Promoted', '套用時間')}: {formatDateTime(p.promoted_at)}</span>
+                                            )}
+                                            {p.few_shot_example_count > 0 && (
+                                                <span> · {p.few_shot_example_count} {t('few-shot examples', '示範案例')}</span>
+                                            )}
+                                        </div>
+                                    </div>
+                                ))}
+                            </div>
+                        </section>
+
+                        <section style={{ ...panelStyle, gridColumn: isMobile ? undefined : 'span 2' }}>
+                            <h2 style={sectionTitleStyle}>{t('Model Settings', '模型設定')}</h2>
+                            <div style={{ color: 'var(--text-secondary)', fontSize: '0.85rem', marginBottom: '14px' }}>
+                                {t(
+                                    'Interactive/production scoring model is changed via the Release workflow only (approve/rollback), shown here read-only. Backtest model is independent and can be set directly.',
+                                    '互動／正式評分模型只能透過版本總覽的核准／回退流程變更，這裡僅唯讀顯示。回測模型是獨立設定，可直接在這裡調整。'
+                                )}
+                            </div>
+
+                            {(() => {
+                                const entries = modelRegistry?.entries || [];
+                                const productionEntry = entries.find((e) => e.is_current_production);
+                                return (
+                                    <div style={{
+                                        marginBottom: '16px',
+                                        padding: '12px 14px',
+                                        borderRadius: '10px',
+                                        background: 'rgba(255,255,255,0.03)',
+                                        border: '1px solid var(--glass-border)',
+                                    }}>
+                                        <div style={{ fontSize: '0.8rem', color: 'var(--text-secondary)', marginBottom: '4px' }}>
+                                            {t('Current interactive/production model', '目前生效中的互動／正式評分模型')}
+                                        </div>
+                                        {loadingModelRegistry ? (
+                                            <div style={{ fontSize: '0.85rem', color: 'var(--text-secondary)' }}>{t('Loading...', '載入中...')}</div>
+                                        ) : productionEntry ? (
+                                            <div style={{ fontSize: '0.88rem', fontWeight: 600 }}>
+                                                {productionEntry.provider_model}
+                                                <span style={{ fontWeight: 400, color: 'var(--text-secondary)', marginLeft: '8px' }}>
+                                                    ({productionEntry.model_version})
+                                                </span>
+                                            </div>
+                                        ) : (
+                                            <div style={{ fontSize: '0.85rem', color: 'var(--text-secondary)' }}>{t('Not found', '查無資料')}</div>
+                                        )}
+                                        <a href="/meta-andromeda/release" style={{ fontSize: '0.78rem', color: '#60a5fa' }}>
+                                            {t('Change via Release Overview →', '至版本總覽變更 →')}
+                                        </a>
+                                    </div>
+                                );
+                            })()}
+
+                            {effectiveStatus && (
+                                <div style={{
+                                    marginBottom: '16px',
+                                    padding: '12px 14px',
+                                    borderRadius: '10px',
+                                    background: effectiveStatus.is_overridden ? 'rgba(245, 158, 11, 0.06)' : 'rgba(16, 185, 129, 0.06)',
+                                    border: effectiveStatus.is_overridden ? '1px solid rgba(245, 158, 11, 0.3)' : '1px solid rgba(16, 185, 129, 0.25)',
+                                }}>
+                                    <div style={{
+                                        fontSize: '0.8rem',
+                                        fontWeight: 700,
+                                        color: effectiveStatus.is_overridden ? '#fbbf24' : '#10b981',
+                                        marginBottom: '4px',
+                                    }}>
+                                        {effectiveStatus.is_overridden
+                                            ? t('⚠ Actual scoring uses an env-overridden model', '⚠ 實際評分目前使用環境變數覆寫的模型')
+                                            : t('✓ Actual scoring matches the model shown above', '✓ 實際評分與上方顯示的模型一致')}
+                                    </div>
+                                    {effectiveStatus.is_overridden && (
+                                        <>
+                                            <div style={{ fontSize: '0.85rem', fontWeight: 600, marginBottom: '2px' }}>
+                                                {t('In effect: ', '目前實際使用：')}{effectiveStatus.resolved_provider_model}
+                                                <span style={{ fontWeight: 400, color: 'var(--text-secondary)', marginLeft: '6px' }}>
+                                                    ({effectiveStatus.resolved_model_version})
+                                                </span>
+                                            </div>
+                                            <div style={{ fontSize: '0.78rem', color: 'var(--text-secondary)', marginBottom: '6px' }}>
+                                                {t(
+                                                    `Registry shows: ${effectiveStatus.db_production_provider_model || '--'} (${effectiveStatus.db_production_model_version || '--'})`,
+                                                    `資料庫顯示：${effectiveStatus.db_production_provider_model || '--'}（${effectiveStatus.db_production_model_version || '--'}）`
+                                                )}
+                                            </div>
+                                            <div style={{ fontSize: '0.72rem', color: 'var(--text-secondary)' }}>
+                                                {t(
+                                                    `Caused by deployment env vars (META_ANDROMEDA_SCORING_PROVIDER=${effectiveStatus.scoring_provider_setting}, META_ANDROMEDA_SCORING_MODEL=${effectiveStatus.scoring_model_setting}${effectiveStatus.scoring_model_version_env_set ? ', META_ANDROMEDA_SCORING_MODEL_VERSION is set' : ''}) — approving a new candidate in Release Overview will not change this until the env vars are cleared.`,
+                                                    `原因來自部署環境變數（META_ANDROMEDA_SCORING_PROVIDER=${effectiveStatus.scoring_provider_setting}、META_ANDROMEDA_SCORING_MODEL=${effectiveStatus.scoring_model_setting}${effectiveStatus.scoring_model_version_env_set ? '、META_ANDROMEDA_SCORING_MODEL_VERSION 已設定' : ''}）——在版本總覽核准新候選版本前，這些環境變數不清除的話畫面與實際評分仍會不一致。`
+                                                )}
+                                            </div>
+                                        </>
+                                    )}
+                                </div>
+                            )}
+
+                            <div style={{
+                                padding: '12px 14px',
+                                borderRadius: '10px',
+                                background: 'rgba(255,255,255,0.03)',
+                                border: '1px solid var(--glass-border)',
+                            }}>
+                                <div style={{ fontSize: '0.8rem', color: 'var(--text-secondary)', marginBottom: '8px' }}>
+                                    {t(
+                                        'Backtest model (used only when running holdout backtests before promoting a candidate profile). Leave empty to fall back to the production model above.',
+                                        '回測專用模型（僅在候選 profile 執行 holdout 回測時使用）。留空則自動退回使用上方的正式評分模型。'
+                                    )}
+                                </div>
+                                <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+                                    <input
+                                        type="text"
+                                        value={backtestModelInput}
+                                        onChange={(e) => setBacktestModelInput(e.target.value)}
+                                        placeholder="e.g. openai/gpt-4o-mini"
+                                        style={{
+                                            flex: '1 1 260px',
+                                            padding: '8px 10px',
+                                            borderRadius: '8px',
+                                            border: '1px solid var(--glass-border)',
+                                            background: 'rgba(255,255,255,0.04)',
+                                            color: 'var(--text-primary)',
+                                            fontSize: '0.85rem',
+                                        }}
+                                    />
+                                    <button
+                                        type="button"
+                                        onClick={handleSaveBacktestModel}
+                                        disabled={savingBacktestModel || !backtestModelInput.trim()}
+                                        style={{
+                                            padding: '8px 16px',
+                                            borderRadius: '8px',
+                                            border: 'none',
+                                            background: savingBacktestModel ? 'rgba(96,165,250,0.3)' : '#60a5fa',
+                                            color: 'white',
+                                            fontWeight: 600,
+                                            fontSize: '0.85rem',
+                                            cursor: savingBacktestModel ? 'wait' : 'pointer',
+                                        }}
+                                    >
+                                        {savingBacktestModel ? t('Saving...', '儲存中...') : t('Save', '儲存')}
+                                    </button>
+                                </div>
+                                {(() => {
+                                    const backtestEntry = (modelRegistry?.entries || []).find((e) => e.release_channel === 'backtest_reference');
+                                    if (!backtestEntry) return null;
+                                    return (
+                                        <div style={{ fontSize: '0.78rem', color: '#34d399', marginTop: '8px' }}>
+                                            {t('Currently set to', '目前設定為')}: {backtestEntry.provider_model}
+                                        </div>
+                                    );
+                                })()}
+                            </div>
+
+                            <div style={{
+                                marginTop: '12px',
+                                padding: '12px 14px',
+                                borderRadius: '10px',
+                                background: 'rgba(255,255,255,0.03)',
+                                border: '1px solid var(--glass-border)',
+                            }}>
+                                <div style={{ fontSize: '0.8rem', color: 'var(--text-secondary)', marginBottom: '8px' }}>
+                                    {t(
+                                        'Validate a candidate model before setting it (Release Overview candidate, or META_ANDROMEDA_SCORING_MODEL env override) — checks whether it actually exists on OpenRouter, supports image input, and what its real context/output limits are.',
+                                        '換模型前先驗證（不管是要設版本總覽的候選，還是要設 META_ANDROMEDA_SCORING_MODEL 環境變數覆寫）——查這個模型是否真的存在於 OpenRouter、支不支援圖片輸入、實際 context/輸出上限多大。'
+                                    )}
+                                </div>
+                                <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+                                    <input
+                                        type="text"
+                                        value={candidateModelInput}
+                                        onChange={(e) => setCandidateModelInput(e.target.value)}
+                                        placeholder="e.g. nvidia/nemotron-3-nano-omni-30b-a3b-reasoning:free"
+                                        style={{
+                                            flex: '1 1 260px',
+                                            padding: '8px 10px',
+                                            borderRadius: '8px',
+                                            border: '1px solid var(--glass-border)',
+                                            background: 'rgba(255,255,255,0.04)',
+                                            color: 'var(--text-primary)',
+                                            fontSize: '0.85rem',
+                                        }}
+                                    />
+                                    <button
+                                        type="button"
+                                        onClick={handleValidateCandidateModel}
+                                        disabled={validatingCandidate || !candidateModelInput.trim()}
+                                        style={{
+                                            padding: '8px 16px',
+                                            borderRadius: '8px',
+                                            border: 'none',
+                                            background: validatingCandidate ? 'rgba(96,165,250,0.3)' : '#60a5fa',
+                                            color: 'white',
+                                            fontWeight: 600,
+                                            fontSize: '0.85rem',
+                                            cursor: validatingCandidate ? 'wait' : 'pointer',
+                                        }}
+                                    >
+                                        {validatingCandidate ? t('Checking...', '查詢中...') : t('Check', '查詢')}
+                                    </button>
+                                </div>
+                                {candidateValidation && (
+                                    <div style={{
+                                        marginTop: '10px',
+                                        padding: '10px 12px',
+                                        borderRadius: '8px',
+                                        background: candidateValidation.ok ? 'rgba(16, 185, 129, 0.08)' : 'rgba(239, 68, 68, 0.08)',
+                                        border: candidateValidation.ok ? '1px solid rgba(16,185,129,0.3)' : '1px solid rgba(239,68,68,0.3)',
+                                        fontSize: '0.8rem',
+                                    }}>
+                                        <div style={{ fontWeight: 700, color: candidateValidation.ok ? '#34d399' : '#f87171', marginBottom: '4px' }}>
+                                            {candidateValidation.exists === false
+                                                ? t('✗ Model not found on OpenRouter', '✗ 這個模型 ID 在 OpenRouter 查無資料')
+                                                : candidateValidation.ok
+                                                    ? t('✓ Looks safe to use', '✓ 可以安全使用')
+                                                    : t('⚠ Found, but has issues', '⚠ 查得到，但有問題')}
+                                        </div>
+                                        {candidateValidation.exists !== false && (
+                                            <div style={{ color: 'var(--text-secondary)', marginBottom: candidateValidation.issues?.length ? '6px' : 0 }}>
+                                                {candidateValidation.name && <span>{candidateValidation.name} · </span>}
+                                                {t('context', '上下文')}: {candidateValidation.context_length ?? '--'} tokens ·{' '}
+                                                {t('max output', '輸出上限')}: {candidateValidation.max_completion_tokens ?? '--'} tokens ·{' '}
+                                                {t('image input', '圖片輸入')}: {candidateValidation.supports_image_input ? t('yes', '支援') : t('no', '不支援')}
+                                                {candidateValidation.is_free && <span> · {t('free', '免費')}</span>}
+                                            </div>
+                                        )}
+                                        {(candidateValidation.issues || []).map((issue, idx) => (
+                                            <div key={idx} style={{ color: '#fbbf24', marginTop: '2px' }}>• {issue}</div>
+                                        ))}
+                                    </div>
+                                )}
+                            </div>
+                        </section>
+
+                        <section style={panelStyle}>
+                            <h2 style={sectionTitleStyle}>{t('Active Alerts', '目前告警')}</h2>
+                            <div 
+                                className="queue-scroll-box"
+                                style={{ 
+                                    display: 'grid', 
+                                    gap: '10px',
+                                    maxHeight: '350px',
+                                    overflowY: 'auto',
+                                    paddingRight: '6px'
+                                }}
+                            >
+                                {(summary?.active_alerts || []).length === 0 ? (
+                                    <div style={emptyStateStyle}>{t('No active alerts.', '目前沒有告警。')}</div>
+                                ) : (summary?.active_alerts || []).map((alert, index) => {
+                                    const isTransition = alert.code === 'period_state_transition';
+                                    const transitionStateColors = {
+                                        dual_advantage:   { bg: 'rgba(16,185,129,0.12)',  border: 'rgba(16,185,129,0.4)',  text: '#34d399' },
+                                        market_driven:    { bg: 'rgba(59,130,246,0.12)',  border: 'rgba(59,130,246,0.4)',  text: '#60a5fa' },
+                                        creative_critical:{ bg: 'rgba(245,158,11,0.12)',  border: 'rgba(245,158,11,0.4)',  text: '#f59e0b' },
+                                        needs_review:     { bg: 'rgba(239,68,68,0.12)',   border: 'rgba(239,68,68,0.4)',   text: '#f87171' },
+                                    };
+                                    const severityColor = { high: '#f87171', medium: '#f59e0b', info: '#60a5fa' };
+                                    const headerColor = severityColor[alert.severity] || 'var(--accent-primary)';
+
+                                    if (isTransition) {
+                                        const fromC = transitionStateColors[alert.from_state] || transitionStateColors.needs_review;
+                                        const toC = transitionStateColors[alert.to_state] || transitionStateColors.needs_review;
+                                        const toCardBorder = toC.border;
+                                        return (
+                                            <div key={index} style={{
+                                                ...detailCardStyle,
+                                                borderColor: toCardBorder,
+                                                background: `linear-gradient(135deg, ${fromC.bg}, ${toC.bg})`,
+                                            }}>
+                                                <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '8px', flexWrap: 'wrap' }}>
+                                                    <span style={{ fontSize: '0.72rem', color: '#f59e0b', fontWeight: 700, letterSpacing: '0.05em' }}>
+                                                        {t('QUADRANT SHIFT', '象限切換')}
+                                                    </span>
+                                                    <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                                                        <span style={{
+                                                            padding: '2px 8px', borderRadius: '5px',
+                                                            background: fromC.bg, border: `1px solid ${fromC.border}`,
+                                                            color: fromC.text, fontWeight: 700, fontSize: '0.78rem', whiteSpace: 'nowrap',
+                                                        }}>
+                                                            {alert.from_state ? alert.from_state.replace(/_/g, ' ') : '--'}
+                                                        </span>
+                                                        <span style={{ color: 'var(--text-secondary)' }}>→</span>
+                                                        <span style={{
+                                                            padding: '2px 8px', borderRadius: '5px',
+                                                            background: toC.bg, border: `1px solid ${toC.border}`,
+                                                            color: toC.text, fontWeight: 700, fontSize: '0.78rem', whiteSpace: 'nowrap',
+                                                        }}>
+                                                            {alert.to_state ? alert.to_state.replace(/_/g, ' ') : '--'}
+                                                        </span>
+                                                    </div>
+                                                </div>
+                                                <div style={{ color: 'var(--text-secondary)', lineHeight: 1.7, fontSize: '0.85rem' }}>
+                                                    {alert.message.replace(/^【象限切換】[^。]+。/, '')}
+                                                </div>
+                                            </div>
+                                        );
+                                    }
+
+                                    return (
+                                        <div key={index} style={{
+                                            ...detailCardStyle,
+                                            borderColor: alert.severity === 'high' ? 'rgba(239,68,68,0.3)' : 'var(--glass-border)',
+                                        }}>
+                                            <div style={{ color: headerColor, fontWeight: 700, marginBottom: '6px', fontSize: '0.85rem' }}>
+                                                {getTranslation(alert.severity)} · {alert.code}
+                                            </div>
+                                            <div style={{ color: 'var(--text-secondary)', lineHeight: 1.6 }}>{alert.message}</div>
+                                        </div>
+                                    );
+                                })}
+                            </div>
+                        </section>
+                    </div>
+                </>
+            )}
+
+            {/* 投放趨勢 */}
+            {!loading && (() => {
+                const trendEntries = driftTrend?.entries || [];
+                const stateColors = {
+                    dual_advantage:   { bg: 'rgba(16,185,129,0.07)',  border: 'rgba(16,185,129,0.35)',  dot: '#34d399', text: '#34d399' },
+                    market_driven:    { bg: 'rgba(59,130,246,0.07)',  border: 'rgba(59,130,246,0.35)',  dot: '#60a5fa', text: '#60a5fa' },
+                    creative_critical:{ bg: 'rgba(245,158,11,0.07)',  border: 'rgba(245,158,11,0.35)',  dot: '#f59e0b', text: '#f59e0b' },
+                    needs_review:     { bg: 'rgba(239,68,68,0.07)',   border: 'rgba(239,68,68,0.35)',   dot: '#f87171', text: '#f87171' },
+                };
+                const driftStatusColor = { healthy: '#34d399', warning: '#f59e0b', drifted: '#f87171', insufficient_data: '#6b7280' };
+
+                const formatEntryDate = (entry) => {
+                    if (entry.window_kind === 'custom' && entry.since && entry.until) {
+                        return `${entry.since} ~ ${entry.until}`;
+                    }
+                    if (entry.note) {
+                        const match = entry.note.match(/(\d{4}-\d{2}-\d{2})\s*~\s*(\d{4}-\d{2}-\d{2})/);
+                        if (match) return `${match[1]} ~ ${match[2]}`;
+                    }
+                    if (entry.created_at) return entry.created_at.slice(0, 10);
+                    return '--';
+                };
+
+                const windowLabel = (wk) => {
+                    const map = { last_24h: '24h', last_7d: '7d', last_30d: '30d', lifetime: '全歷史', custom: '自訂' };
+                    return map[wk] || wk;
+                };
+
+                return (
+                    <section style={{ ...panelStyle, marginTop: '16px' }}>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px', flexWrap: 'wrap', gap: '10px' }}>
+                            <h2 style={{ ...sectionTitleStyle, margin: 0 }}>{t('Campaign Environment Trend', '投放趨勢')}</h2>
+                            <div style={{ display: 'flex', gap: '8px', alignItems: 'center', flexWrap: 'wrap' }}>
+                                {observedAccounts.length > 0 ? (
+                                    <select
+                                        value={trendAccountId}
+                                        onChange={(e) => {
+                                            setTrendAccountId(e.target.value);
+                                            loadDriftTrend(e.target.value || null);
+                                        }}
+                                        style={{ ...inputStyle, width: '260px', padding: '8px 12px', fontSize: '0.82rem' }}
+                                    >
+                                        <option value="">{t('All accounts', '全部帳號')}</option>
+                                        {observedAccounts.map((acc) => (
+                                            <option key={acc.account_id} value={acc.account_id}>
+                                                {acc.account_id}
+                                                {acc.platform !== 'facebook_ads' ? ` (${acc.platform})` : ''}
+                                                {' '}· {acc.total_creatives} {t('creatives', '筆')}
+                                            </option>
+                                        ))}
+                                    </select>
+                                ) : (
+                                    <>
+                                        <input
+                                            type="text"
+                                            value={trendAccountId}
+                                            onChange={(e) => setTrendAccountId(e.target.value)}
+                                            placeholder={t('Filter by account ID', '依帳號 ID 篩選')}
+                                            style={{ ...inputStyle, width: '220px', padding: '8px 12px', fontSize: '0.82rem' }}
+                                        />
+                                        <button
+                                            type="button"
+                                            onClick={() => loadDriftTrend(trendAccountId || null)}
+                                            style={actionButtonStyle}
+                                        >
+                                            {t('Apply', '套用')}
+                                        </button>
+                                    </>
+                                )}
+                            </div>
+                        </div>
+                        {trendAccountId && observedAccounts.length > 1 && (
+                            <div style={{ fontSize: '0.78rem', color: '#60a5fa', marginBottom: '12px' }}>
+                                {t('Showing trend for account:', '目前顯示帳號：')} <strong>{trendAccountId}</strong>
+                                <button
+                                    type="button"
+                                    onClick={() => { setTrendAccountId(''); loadDriftTrend(''); }}
+                                    style={{ marginLeft: '8px', background: 'none', border: 'none', color: 'var(--text-secondary)', cursor: 'pointer', fontSize: '0.78rem' }}
+                                >
+                                    {t('Clear', '清除篩選')}
+                                </button>
+                            </div>
+                        )}
+
+                        {loadingTrend ? (
+                            <div style={emptyStateStyle}>{t('Loading trend data...', '載入趨勢資料中...')}</div>
+                        ) : trendEntries.length === 0 ? (
+                            <div style={emptyStateStyle}>
+                                {t(
+                                    'No trend data yet. Run a drift check with sufficient matched data (≥5 pairs) to start tracking campaign environment quadrant history.',
+                                    '尚無趨勢資料。執行預估偏差檢查且配對成功 ≥5 筆後，投放環境象限歷史會顯示於此。'
+                                )}
+                            </div>
+                        ) : (
+                            <>
+                                {/* 橫向時間軸 */}
+                                <div
+                                    className="queue-scroll-box"
+                                    style={{
+                                        overflowX: 'auto',
+                                        paddingBottom: '8px',
+                                        marginBottom: '20px',
+                                    }}
+                                >
+                                    <div style={{
+                                        display: 'flex',
+                                        alignItems: 'flex-start',
+                                        gap: '0',
+                                        minWidth: `${trendEntries.length * 160}px`,
+                                        paddingTop: '8px',
+                                    }}>
+                                        {trendEntries.map((entry, idx) => {
+                                            const c = stateColors[entry.period_state] || stateColors.needs_review;
+                                            const dColor = driftStatusColor[entry.drift_status] || '#6b7280';
+                                            const prevState = idx > 0 ? trendEntries[idx - 1].period_state : null;
+                                            const stateChanged = prevState && prevState !== entry.period_state;
+                                            const isLast = idx === trendEntries.length - 1;
+
+                                            return (
+                                                <div key={entry.drift_report_id} style={{ display: 'flex', alignItems: 'flex-start', flex: 1 }}>
+                                                    {/* 連接線 + 節點 */}
+                                                    <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', flex: 1 }}>
+                                                        {/* 時間軸線段 + 節點 */}
+                                                        <div style={{ display: 'flex', alignItems: 'center', width: '100%' }}>
+                                                            {/* 左側線 */}
+                                                            {idx > 0 && (
+                                                                <div style={{
+                                                                    flex: 1,
+                                                                    height: '2px',
+                                                                    background: stateChanged
+                                                                        ? 'linear-gradient(to right, rgba(107,114,128,0.3), rgba(107,114,128,0.6))'
+                                                                        : 'rgba(107,114,128,0.3)',
+                                                                }} />
+                                                            )}
+                                                            {/* 節點圓點 */}
+                                                            <div style={{
+                                                                width: '14px',
+                                                                height: '14px',
+                                                                borderRadius: '50%',
+                                                                background: c.dot,
+                                                                border: stateChanged ? `3px solid ${c.dot}` : `2px solid ${c.dot}`,
+                                                                flexShrink: 0,
+                                                                boxShadow: stateChanged ? `0 0 8px ${c.dot}` : 'none',
+                                                            }} />
+                                                            {/* 右側線 */}
+                                                            {!isLast && (
+                                                                <div style={{
+                                                                    flex: 1,
+                                                                    height: '2px',
+                                                                    background: 'rgba(107,114,128,0.3)',
+                                                                }} />
+                                                            )}
+                                                        </div>
+
+                                                        {/* 節點資訊 */}
+                                                        <div style={{ marginTop: '10px', textAlign: 'center', padding: '0 4px' }}>
+                                                            <div style={{
+                                                                display: 'inline-block',
+                                                                padding: '2px 8px',
+                                                                borderRadius: '6px',
+                                                                background: c.bg,
+                                                                border: `1px solid ${c.border}`,
+                                                                color: c.text,
+                                                                fontWeight: 700,
+                                                                fontSize: '0.72rem',
+                                                                marginBottom: '4px',
+                                                                whiteSpace: 'nowrap',
+                                                            }}>
+                                                                {entry.period_label}
+                                                            </div>
+                                                            <div style={{ fontSize: '0.7rem', color: dColor, fontWeight: 600, marginBottom: '2px' }}>
+                                                                {entry.spearman_r != null ? `ρ=${entry.spearman_r.toFixed(3)}` : '--'}
+                                                            </div>
+                                                            <div style={{ fontSize: '0.68rem', color: 'var(--text-secondary)', whiteSpace: 'nowrap' }}>
+                                                                [{windowLabel(entry.window_kind)}]
+                                                            </div>
+                                                            <div style={{ fontSize: '0.66rem', color: 'var(--text-secondary)', marginTop: '2px', whiteSpace: 'nowrap' }}>
+                                                                {formatEntryDate(entry)}
+                                                            </div>
+                                                        </div>
+                                                    </div>
+                                                </div>
+                                            );
+                                        })}
+                                    </div>
+                                </div>
+
+                                {/* 象限切換提醒 */}
+                                {(() => {
+                                    const transitions = [];
+                                    for (let i = 1; i < trendEntries.length; i++) {
+                                        const prev = trendEntries[i - 1];
+                                        const curr = trendEntries[i];
+                                        if (prev.period_state && curr.period_state && prev.period_state !== curr.period_state) {
+                                            transitions.push({ from: prev, to: curr, idx: i });
+                                        }
+                                    }
+                                    if (transitions.length === 0) return null;
+                                    return (
+                                        <div style={{ marginBottom: '16px' }}>
+                                            <div style={{ ...subTitleStyle, marginBottom: '8px' }}>
+                                                {t('State Transitions', '象限切換紀錄')}
+                                            </div>
+                                            <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                                                {transitions.map(({ from, to, idx }) => {
+                                                    const fromC = stateColors[from.period_state] || stateColors.needs_review;
+                                                    const toC = stateColors[to.period_state] || stateColors.needs_review;
+                                                    return (
+                                                        <div key={idx} style={{
+                                                            padding: '10px 14px',
+                                                            borderRadius: '10px',
+                                                            background: 'rgba(255,255,255,0.02)',
+                                                            border: `1px solid ${toC.border}`,
+                                                            display: 'flex',
+                                                            alignItems: 'center',
+                                                            gap: '10px',
+                                                            flexWrap: 'wrap',
+                                                        }}>
+                                                            <span style={{ fontSize: '0.8rem', color: fromC.text, fontWeight: 700 }}>
+                                                                {from.period_label || from.period_state}
+                                                            </span>
+                                                            <span style={{ color: 'var(--text-secondary)', fontSize: '0.85rem' }}>→</span>
+                                                            <span style={{ fontSize: '0.8rem', color: toC.text, fontWeight: 700 }}>
+                                                                {to.period_label || to.period_state}
+                                                            </span>
+                                                            <span style={{ fontSize: '0.72rem', color: 'var(--text-secondary)', marginLeft: 'auto' }}>
+                                                                {formatEntryDate(to)}
+                                                            </span>
+                                                        </div>
+                                                    );
+                                                })}
+                                            </div>
+                                        </div>
+                                    );
+                                })()}
+
+                                {/* 明細列表 */}
+                                <div>
+                                    <div style={{ ...subTitleStyle, marginBottom: '8px' }}>
+                                        {t('Report Detail', '各期報告明細')}
+                                    </div>
+                                    <div
+                                        className="queue-scroll-box"
+                                        style={{ display: 'grid', gap: '8px', maxHeight: '320px', overflowY: 'auto', paddingRight: '6px' }}
+                                    >
+                                        {[...trendEntries].reverse().map((entry) => {
+                                            const c = stateColors[entry.period_state] || stateColors.needs_review;
+                                            const dColor = driftStatusColor[entry.drift_status] || '#6b7280';
+                                            return (
+                                                <div key={entry.drift_report_id} style={{
+                                                    ...detailCardStyle,
+                                                    borderColor: entry.period_state ? c.border : 'var(--glass-border)',
+                                                    display: 'flex',
+                                                    alignItems: 'center',
+                                                    gap: '12px',
+                                                    flexWrap: 'wrap',
+                                                }}>
+                                                    <div style={{ flex: '0 0 auto' }}>
+                                                        {entry.period_label ? (
+                                                            <span style={{
+                                                                padding: '3px 8px',
+                                                                borderRadius: '6px',
+                                                                background: c.bg,
+                                                                border: `1px solid ${c.border}`,
+                                                                color: c.text,
+                                                                fontWeight: 700,
+                                                                fontSize: '0.78rem',
+                                                                whiteSpace: 'nowrap',
+                                                            }}>
+                                                                {entry.period_label}
+                                                            </span>
+                                                        ) : (
+                                                            <span style={{ fontSize: '0.78rem', color: '#6b7280' }}>--</span>
+                                                        )}
+                                                    </div>
+                                                    <div style={{ flex: 1, minWidth: '120px' }}>
+                                                        <div style={{ fontSize: '0.8rem', color: dColor, fontWeight: 600 }}>
+                                                            ρ = {entry.spearman_r != null ? entry.spearman_r.toFixed(3) : '--'}
+                                                            {entry.creative_explained_variance != null && (
+                                                                <span style={{ fontWeight: 400, color: 'var(--text-secondary)' }}>
+                                                                    {' '}(ρ²={( entry.creative_explained_variance * 100).toFixed(1)}%)
+                                                                </span>
+                                                            )}
+                                                        </div>
+                                                        <div style={{ fontSize: '0.72rem', color: 'var(--text-secondary)', marginTop: '2px' }}>
+                                                            {entry.perf_median != null && (
+                                                                <span>{(entry.dominant_metric || 'ROAS').toUpperCase()} P50={entry.perf_median.toFixed(2)} · </span>
+                                                            )}
+                                                            {t('Matched', '配對')}: {entry.total_matched ?? '--'}
+                                                        </div>
+                                                    </div>
+                                                    <div style={{ flex: '0 0 auto', textAlign: 'right' }}>
+                                                        {entry.account_id && (
+                                                            <div style={{ fontSize: '0.68rem', color: 'var(--text-secondary)', marginBottom: '2px', fontFamily: 'monospace' }}>
+                                                                {entry.account_id}
+                                                            </div>
+                                                        )}
+                                                        <div style={{ fontSize: '0.72rem', color: 'var(--text-secondary)' }}>
+                                                            [{windowLabel(entry.window_kind)}] {formatEntryDate(entry)}
+                                                        </div>
+                                                        <div style={{ fontSize: '0.7rem', color: driftStatusColor[entry.drift_status] || '#6b7280', marginTop: '2px', fontWeight: 600 }}>
+                                                            {getTranslation(entry.drift_status)}
+                                                        </div>
+                                                    </div>
+                                                </div>
+                                            );
+                                        })}
+                                    </div>
+                                </div>
+                            </>
+                        )}
+                    </section>
+                );
+            })()}
+
+            {/* 預估偏差診斷 Slide-over 滑出面板 */}
+            <div style={{
+                position: 'fixed',
+                top: 0,
+                right: selectedDriftReport ? 0 : '-500px', // Slide in/out
+                width: isMobile ? '100%' : '500px',
+                height: '100vh',
+                backgroundColor: 'var(--bg-secondary)',
+                boxShadow: selectedDriftReport ? '-4px 0 24px rgba(0,0,0,0.6)' : 'none',
+                transition: 'right 0.3s ease',
+                zIndex: 2000,
+                display: 'flex',
+                flexDirection: 'column',
+                borderLeft: '1px solid var(--glass-border)',
+                backdropFilter: 'blur(20px)',
+            }}>
+                {/* Header */}
+                <div style={{
+                    padding: '16px',
+                    borderBottom: '1px solid var(--glass-border)',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'space-between',
+                    background: 'var(--bg-primary)'
+                }}>
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '2px' }}>
+                        <div style={{ fontWeight: 'bold', fontSize: '1.05rem', color: 'var(--text-primary)' }}>
+                            {t('Drift Diagnostics Workspace', '預估偏差診斷工作台')}
+                        </div>
+                        <div style={{ fontSize: '0.8rem', color: 'var(--text-secondary)' }}>
+                            {selectedDriftReport ? `${getTranslation(selectedDriftReport.window_kind)} · ${t('Accuracy', '準確率')}: ${(selectedDriftReport.report_payload?.accuracy * 100).toFixed(1)}%` : ''}
+                        </div>
+                    </div>
+                    <button
+                        onClick={() => {
+                            setSelectedDriftReport(null);
+                            setExcludedObsIds(new Set());
+                        }}
+                        style={{ background: 'transparent', border: 'none', color: 'var(--text-secondary)', cursor: 'pointer', fontSize: '1.2rem' }}
+                    >
+                        ✕
+                    </button>
+                </div>
+
+                {/* Content */}
+                <div style={{ flex: 1, overflowY: 'auto', padding: '16px', display: 'flex', flexDirection: 'column', gap: '14px' }}>
+                    {selectedDriftReport && (
+                        <>
+                            {/* 同步工具區 */}
+                            <div style={{
+                                padding: '14px',
+                                borderRadius: '12px',
+                                background: 'rgba(99, 102, 241, 0.08)',
+                                border: '1px solid rgba(99, 102, 241, 0.18)',
+                                display: 'flex',
+                                flexDirection: 'column',
+                                gap: '8px'
+                            }}>
+                                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '8px' }}>
+                                    <Metric
+                                        label={t('Observed', '匯入')}
+                                        value={selectedDriftReport.report_payload?.total_observed}
+                                    />
+                                    <Metric
+                                        label={t('Matched', '配對成功')}
+                                        value={selectedDriftReport.report_payload?.total_matched}
+                                    />
+                                    <Metric
+                                        label={t('Calibration Candidates', '可校準')}
+                                        value={selectedDriftReport.report_payload?.calibration_candidate_total}
+                                    />
+                                </div>
+                                <div style={{ fontSize: '0.85rem', color: 'var(--text-secondary)', lineHeight: 1.5 }}>
+                                    {t('Package observed creatives with prediction errors into a dataset to calibrate Gemini runtime model.', '將有預測偏差的觀測素材打包同步為校準資料集，可用於微調與校準 Gemini 創意預估模型。')}
+                                </div>
+                                <div style={{ fontSize: '0.78rem', color: 'var(--text-secondary)', lineHeight: 1.5 }}>
+                                    {t(
+                                        'The counts above belong to the observation import line only and are separate from standalone Score Lab submissions.',
+                                        '上方這些數字只屬於 observation 匯入這條線，與 Score Lab 單獨送評的素材統計分開。'
+                                    )}
+                                </div>
+                                <button
+                                    type="button"
+                                    onClick={handleSyncCalibration}
+                                    disabled={syncingCal || (selectedDriftReport.report_payload?.matched_details || []).filter(tc => !excludedObsIds.has(tc.id) && tc.error > 0).length === 0}
+                                    style={{
+                                        alignSelf: 'flex-start',
+                                        padding: '8px 16px',
+                                        borderRadius: '8px',
+                                        border: 'none',
+                                        background: 'var(--accent-primary)',
+                                        color: 'white',
+                                        fontWeight: 600,
+                                        fontSize: '0.82rem',
+                                        cursor: syncingCal ? 'wait' : 'pointer',
+                                        opacity: (syncingCal || (selectedDriftReport.report_payload?.matched_details || []).filter(tc => !excludedObsIds.has(tc.id) && tc.error > 0).length === 0) ? 0.5 : 1,
+                                    }}
+                                >
+                                    {syncingCal ? t('Syncing...', '同步中...') : t('Package & Sync Dataset', '打包並同步校準資料集')}
+                                </button>
+                            </div>
+
+                            {/* 廣告對照列表 */}
+                            <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                                <div style={{ fontSize: '0.88rem', fontWeight: 'bold', color: 'var(--text-primary)' }}>
+                                    {t('Prediction vs Observation Comparison', '預估與實際績效對比')}
+                                </div>
+                                
+                                {(selectedDriftReport.report_payload?.matched_details || []).map((item) => {
+                                    const isExcluded = excludedObsIds.has(item.id);
+                                    const hasError = item.error > 0;
+                                    
+                                    // Band styling mapping
+                                    const getBandStyle = (band) => {
+                                        if (band === 'high') return { background: 'rgba(168, 85, 247, 0.15)', color: '#c084fc', border: '1px solid rgba(168, 85, 247, 0.3)' };
+                                        if (band === 'mid') return { background: 'rgba(59, 130, 246, 0.15)', color: '#60a5fa', border: '1px solid rgba(59, 130, 246, 0.3)' };
+                                        return { background: 'rgba(107, 114, 128, 0.15)', color: '#9ca3af', border: '1px solid rgba(107, 114, 128, 0.3)' };
+                                    };
+
+                                    const predStyle = getBandStyle(item.prediction_band);
+                                    const obsStyle = getBandStyle(item.observed_band);
+                                    
+                                    return (
+                                        <div key={item.id} style={{
+                                            ...detailCardStyle,
+                                            opacity: isExcluded ? 0.4 : 1,
+                                            border: isExcluded ? '1px dashed var(--glass-border)' : (hasError ? '1px solid rgba(239, 68, 68, 0.25)' : '1px solid var(--glass-border)'),
+                                            background: hasError && !isExcluded ? 'rgba(239, 68, 68, 0.02)' : 'rgba(255,255,255,0.02)',
+                                            transition: 'all 0.2s'
+                                        }}>
+                                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '8px' }}>
+                                                <div style={{ fontWeight: 600, color: 'var(--text-primary)', fontSize: '0.88rem', maxWidth: '75%', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }} title={item.ad_name}>
+                                                    {item.ad_name || item.ad_id}
+                                                </div>
+                                                <button
+                                                    type="button"
+                                                    onClick={() => handleToggleExcludeObs(item.id)}
+                                                    style={{
+                                                        background: 'transparent',
+                                                        border: 'none',
+                                                        color: isExcluded ? 'var(--accent-primary)' : 'var(--text-secondary)',
+                                                        fontSize: '0.78rem',
+                                                        cursor: 'pointer',
+                                                        fontWeight: 600
+                                                    }}
+                                                >
+                                                    {isExcluded ? t('Include', '加入') : t('Exclude', '排除')}
+                                                </button>
+                                            </div>
+
+                                            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
+                                                {/* Prediction */}
+                                                <div style={{ ...badgeStyle, ...predStyle }}>
+                                                    {t('Pred: ', '預估: ')}{getTranslation(item.prediction_band)}
+                                                </div>
+                                                
+                                                {/* Connection arrow */}
+                                                <span style={{ color: hasError ? '#ef4444' : 'var(--text-secondary)', fontSize: '0.9rem' }}>
+                                                    {hasError ? '⚡' : '→'}
+                                                </span>
+
+                                                {/* Observation */}
+                                                <div style={{ ...badgeStyle, ...obsStyle }}>
+                                                    {t('Obs: ', '實際: ')}{getTranslation(item.observed_band)}
+                                                </div>
+
+                                                <span style={{ fontSize: '0.8rem', marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                                                    <span style={{ color: 'var(--text-secondary)' }}>
+                                                        ROAS: {typeof item.real_roas === 'number' ? item.real_roas.toFixed(2) : '—'}
+                                                    </span>
+                                                    {item.real_spend !== undefined && (
+                                                        <span style={{
+                                                            color: item.real_spend <= 0 ? '#ef4444' : 'var(--text-secondary)',
+                                                            fontSize: '0.75rem',
+                                                        }}>
+                                                            {item.real_spend <= 0
+                                                                ? t('spend=$0 ⚠', '花費=$0 ⚠')
+                                                                : `spend=$${item.real_spend.toFixed(0)}`}
+                                                        </span>
+                                                    )}
+                                                </span>
+                                            </div>
+
+                                            {hasError && !isExcluded && (() => {
+                                                const bandOrder = { low: 1, mid: 2, high: 3 };
+                                                const predVal = bandOrder[item.prediction_band] || 0;
+                                                const obsVal = bandOrder[item.observed_band] || 0;
+                                                const isOver = predVal > obsVal;
+                                                
+                                                return (
+                                                    <div style={{ fontSize: '0.75rem', color: '#ef4444', marginTop: '6px', fontStyle: 'italic' }}>
+                                                        ⚠ {isOver 
+                                                            ? t(`Overestimated by ${item.error} bands`, `預估偏高 ${item.error} 個級距`)
+                                                            : t(`Underestimated by ${item.error} bands`, `預估偏低 ${item.error} 個級距`)}
+                                                    </div>
+                                                );
+                                            })()}
+                                        </div>
+                                    );
+                                })}
+                            </div>
+                        </>
+                    )}
+                </div>
+            </div>
+
+            {/* Backdrop */}
+            {selectedDriftReport && (
+                <div
+                    onClick={() => {
+                        setSelectedDriftReport(null);
+                        setExcludedObsIds(new Set());
+                    }}
+                    style={{
+                        position: 'fixed',
+                        top: 0, left: 0, right: 0, bottom: 0,
+                        background: 'rgba(0,0,0,0.5)',
+                        zIndex: 1999,
+                        backdropFilter: 'blur(2px)'
+                    }}
+                />
+            )}
+        </div>
+    );
+
+};
