@@ -442,7 +442,6 @@ const ContributionAnalysis = () => {
         };
         // activeSnapshot 的其餘欄位（status 等）變動不需重查，只在
         // snapshot_id 或區間本身改變時重打
-        // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [accountId, activeSnapshot?.snapshot_id, activeSnapshot?.date_start, activeSnapshot?.date_end]);
 
     const reportedByGroup = useMemo(() => {
