@@ -15,7 +15,6 @@ import {
     VIZ_TOKENS,
     baseCardStyle,
     currentMonthKey,
-    currentQuarterKey,
     dayButtonStyle,
     emptyState,
     inputStyle,

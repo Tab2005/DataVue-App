@@ -372,7 +372,7 @@ const SettingsModal = ({ isOpen, onClose, language, teamId, teamName, onSuccess 
                 setStatus({ type: 'error', message: language === 'zh' ? '❌ 連線失敗，請檢查 API Key' : '❌ Connection Failed, check API Key' });
                 setAiConnectionStatus('disconnected');
             }
-        } catch (err) {
+        } catch {
             setStatus({ type: 'error', message: language === 'zh' ? '❌ 連線失敗' : '❌ Connection Failed' });
             setAiConnectionStatus('disconnected');
         } finally {
@@ -380,12 +380,6 @@ const SettingsModal = ({ isOpen, onClose, language, teamId, teamName, onSuccess 
         }
     };
 
-    const handleProviderChange = async (newProvider) => {
-        setAiData(prev => ({ ...prev, provider: newProvider }));
-        await fetchAvailableModels(newProvider);
-        // Reset model to first available
-        setAiData(prev => ({ ...prev, model: 'deepseek/deepseek-v4-flash' }));
-    };
 
     const handleClearAiKey = () => {
         localStorage.removeItem('ai_api_key');

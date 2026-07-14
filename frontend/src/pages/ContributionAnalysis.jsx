@@ -40,6 +40,7 @@ const REFRESH_POLL_TIMEOUT_MS = 60000;
 //       | 'stabilized'（連續兩次不變且 > 0，視為已抓完並穩定）
 //       | 'timeout'（逾時仍未穩定，提示使用者稍後手動重新整理）
 //       | null（尚未達停止條件，continue polling）
+// eslint-disable-next-line react-refresh/only-export-components
 export const evaluateRefreshPoll = ({ count, baselineCount, lastCount, elapsedMs, timeoutMs }) => {
     if (count > baselineCount) {
         return { stop: true, reason: 'increased' };

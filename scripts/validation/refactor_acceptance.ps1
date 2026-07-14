@@ -135,6 +135,43 @@ function Copy-EnvironmentFiles {
     }
 }
 
+function Get-FrontendLintTargets {
+    param([string]$FrontendRoot)
+
+    $candidates = @(
+        "src/pages/Analytics.jsx",
+        "src/pages/ContributionAnalysis.jsx",
+        "src/pages/GA4Insights.jsx",
+        "src/components/SettingsModal.jsx",
+        "src/pages/MetaAndromedaMonitoring.jsx"
+    )
+
+    $targets = @()
+    foreach ($relative in $candidates) {
+        if (Test-Path (Join-Path $FrontendRoot $relative)) {
+            $targets += $relative
+        }
+    }
+    return $targets
+}
+
+function Invoke-FrontendLint {
+    param(
+        [Parameter(Mandatory = $true)][string]$Name,
+        [Parameter(Mandatory = $true)][string]$FrontendRoot,
+        [Parameter(Mandatory = $true)][string]$LogPath
+    )
+
+    $targets = Get-FrontendLintTargets -FrontendRoot $FrontendRoot
+    if (-not $targets.Count) {
+        "SKIPPED: no configured lint targets exist in this worktree." | Set-Content -Path $LogPath -Encoding UTF8
+        return 0
+    }
+
+    $command = "npx eslint $($targets -join ' ')"
+    return Invoke-LoggedCommand -Name $Name -WorkingDirectory $FrontendRoot -Command $command -LogPath $LogPath
+}
+
 function Ensure-Worktree {
     param(
         [string]$RepoRoot,
@@ -239,9 +276,13 @@ if ($Backend) {
 if ($Frontend) {
     $baselineFrontendLog = Join-Path $logsRoot "baseline-frontend.log"
     $currentFrontendLog = Join-Path $logsRoot "current-frontend.log"
+    $baselineLintLog = Join-Path $logsRoot "baseline-frontend-lint.log"
+    $currentLintLog = Join-Path $logsRoot "current-frontend-lint.log"
     $baselineBuildLog = Join-Path $logsRoot "baseline-frontend-build.log"
     $currentBuildLog = Join-Path $logsRoot "current-frontend-build.log"
 
+    $baselineLintCode = Invoke-FrontendLint -Name "baseline frontend lint" -FrontendRoot (Join-Path $baselinePath "frontend") -LogPath $baselineLintLog
+    $currentLintCode = Invoke-FrontendLint -Name "current frontend lint" -FrontendRoot (Join-Path $currentPath "frontend") -LogPath $currentLintLog
     $baselineCode = Invoke-LoggedCommand -Name "baseline frontend test" -WorkingDirectory (Join-Path $baselinePath "frontend") -Command "npx vitest run" -LogPath $baselineFrontendLog
     $currentCode = Invoke-LoggedCommand -Name "current frontend test" -WorkingDirectory (Join-Path $currentPath "frontend") -Command "npx vitest run" -LogPath $currentFrontendLog
     $baselineBuildCode = Invoke-LoggedCommand -Name "baseline frontend build" -WorkingDirectory (Join-Path $baselinePath "frontend") -Command "npm run build" -LogPath $baselineBuildLog
@@ -255,6 +296,8 @@ if ($Frontend) {
         Area = "frontend"
         BaselineExitCode = $baselineCode
         CurrentExitCode = $currentCode
+        BaselineLintExitCode = $baselineLintCode
+        CurrentLintExitCode = $currentLintCode
         BaselineBuildExitCode = $baselineBuildCode
         CurrentBuildExitCode = $currentBuildCode
         BaselineFailures = $baselineFailures
@@ -279,6 +322,8 @@ foreach ($result in $results) {
     $summary.Add("- Baseline exit code: ``$($result.BaselineExitCode)``")
     $summary.Add("- Current exit code: ``$($result.CurrentExitCode)``")
     if ($null -ne $result.BaselineBuildExitCode) {
+        $summary.Add("- Baseline lint exit code: ``$($result.BaselineLintExitCode)``")
+        $summary.Add("- Current lint exit code: ``$($result.CurrentLintExitCode)``")
         $summary.Add("- Baseline build exit code: ``$($result.BaselineBuildExitCode)``")
         $summary.Add("- Current build exit code: ``$($result.CurrentBuildExitCode)``")
     }
@@ -337,6 +382,9 @@ foreach ($result in $results) {
         $hasNewRegression = $true
     }
     if ($null -ne $result.BaselineBuildExitCode -and $result.BaselineBuildExitCode -eq 0 -and $result.CurrentBuildExitCode -ne 0) {
+        $hasNewRegression = $true
+    }
+    if ($null -ne $result.BaselineLintExitCode -and $result.BaselineLintExitCode -eq 0 -and $result.CurrentLintExitCode -ne 0) {
         $hasNewRegression = $true
     }
 }
