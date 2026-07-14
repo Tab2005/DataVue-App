@@ -511,6 +511,7 @@ const Analytics = () => {
     }, [prevReportData, filterKeyword, filterMode, filterActiveOnly, filterObservationImported, observationImportState, level]);
 
     const canUseObservationImport = level === 'ad' && hasMetaAndromedaAccess && hasFbAnalyticsPermission;
+    const observationWindowKind = useMemo(() => resolveObservationWindowKind(datePreset), [datePreset]);
     const observationImportableRows = useMemo(() => {
         if (!canUseObservationImport) {
             return [];
