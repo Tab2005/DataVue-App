@@ -902,7 +902,12 @@ const MetaAndromedaRelease = () => {
                                     </div>
                                 )}
 
-                                <div style={{ display: 'grid', gap: '12px' }}>
+                                <div style={{
+                                    display: 'grid',
+                                    gridTemplateColumns: isMobile ? '1fr' : 'repeat(2, minmax(0, 1fr))',
+                                    gap: '12px',
+                                    alignItems: 'stretch',
+                                }}>
                                     {(overview?.candidates || []).map((candidate) => {
                                         const isDrifted = driftReport?.drift_status === 'drifted';
                                         const releaseGate = getCandidateReleaseGate(candidate);
@@ -913,9 +918,10 @@ const MetaAndromedaRelease = () => {
                                                 style={{
                                                     ...detailCardStyle,
                                                     display: 'grid',
-                                                    gridTemplateColumns: isMobile ? '1fr' : 'minmax(0, 1.35fr) minmax(280px, 0.65fr)',
-                                                    gap: '18px',
+                                                    gridTemplateColumns: isMobile ? '1fr' : 'minmax(0, 1fr) minmax(220px, 0.8fr)',
+                                                    gap: '16px',
                                                     alignItems: 'start',
+                                                    alignContent: 'start',
                                                 }}
                                             >
                                                 <div style={{ display: 'grid', gap: '12px' }}>
@@ -939,19 +945,19 @@ const MetaAndromedaRelease = () => {
                                                     </div>
                                                 </div>
 
-                                                <div style={{ display: 'grid', gap: '12px', justifyItems: isMobile ? 'stretch' : 'end' }}>
+                                                <div style={{ display: 'grid', gap: '12px', justifyItems: 'stretch' }}>
                                                     <div
                                                         style={{
                                                             display: 'grid',
-                                                            gridTemplateColumns: 'repeat(2, minmax(120px, 1fr))',
+                                                            gridTemplateColumns: 'repeat(2, minmax(0, 1fr))',
                                                             gap: '10px',
-                                                            width: isMobile ? '100%' : 'min(100%, 420px)',
+                                                            width: '100%',
                                                         }}
                                                     >
                                                         <Metric label={t('Pairwise Ranking Accuracy', '成對排序準確率')} value={candidate.pairwise_ranking_accuracy} />
                                                         <Metric label={t('Mean Band Error', '平均級距誤差')} value={candidate.mean_band_error} />
                                                     </div>
-                                                    <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap', justifyContent: isMobile ? 'flex-start' : 'flex-end' }}>
+                                                    <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap', justifyContent: 'flex-end' }}>
                                                         <button
                                                             type="button"
                                                             style={{
