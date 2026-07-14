@@ -1,0 +1,134 @@
+import React from 'react';
+import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from 'recharts';
+
+import {
+    AIInsightNote,
+    CHANNEL_DIMENSION_OPTIONS,
+    CHANNEL_TAG_LABELS,
+    badgeStyle,
+    baseCardStyle,
+    channelDimensionLabel,
+    emptyState,
+    fmtNumber,
+    inputStyle,
+    secondaryButtonStyle,
+    tr,
+} from './GA4InsightsShared';
+
+const ChannelsTab = ({
+    language,
+    t,
+    propertyId,
+    channelsDimension,
+    setChannelsDimension,
+    channelsDays,
+    setChannelsDays,
+    loadChannels,
+    channelsError,
+    channelsSnapshot,
+    channelsLoading,
+    DaySelector,
+}) => (
+    <>
+                    <section style={baseCardStyle}>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px', flexWrap: 'wrap', gap: '8px' }}>
+                            <div>
+                                <div style={{ color: 'var(--text-primary)', fontWeight: 700 }}>{t('Assist vs. close channels', '渠道助攻/主攻對照')}</div>
+                                <div style={{ color: 'var(--text-secondary)', fontSize: '0.8rem' }}>
+                                    {t(
+                                        'First-touch vs. last-touch conversions by channel. For deeper incremental contribution, see the Contribution Analysis page.',
+                                        '首次接觸 vs 最後接觸轉換的渠道對照。想看更深入的增量貢獻，請至貢獻分析頁。'
+                                    )}
+                                </div>
+                            </div>
+                            <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap', alignItems: 'center' }}>
+                                <select
+                                    value={channelsDimension}
+                                    onChange={(event) => {
+                                        const nextDimension = event.target.value;
+                                        setChannelsDimension(nextDimension);
+                                        loadChannels(propertyId, channelsDays, nextDimension);
+                                    }}
+                                    style={{ ...inputStyle, width: 'auto', padding: '8px 10px' }}
+                                >
+                                    {CHANNEL_DIMENSION_OPTIONS.map((option) => (
+                                        <option key={option.value} value={option.value}>{t(option.en, option.zh)}</option>
+                                    ))}
+                                </select>
+                                <DaySelector value={channelsDays} onChange={(d) => { setChannelsDays(d); loadChannels(propertyId, d, channelsDimension); }} />
+                            </div>
+                        </div>
+                        {channelsError && <div style={{ color: '#fca5a5', fontSize: '0.85rem', marginBottom: '10px' }}>{channelsError}</div>}
+                        {channelsSnapshot?.payload?.truncated && (
+                            <div style={{ color: '#fbbf24', fontSize: '0.78rem', marginBottom: '10px' }}>
+                                {t(
+                                    `Showing top 20 of ${channelsSnapshot.payload.total_row_count} (ranked by assisting + closing conversions).`,
+                                    `顯示前 20 名（依開發+收單轉換數排序），共 ${channelsSnapshot.payload.total_row_count} 個項目。`
+                                )}
+                            </div>
+                        )}
+                        {channelsLoading && !channelsSnapshot ? (
+                            emptyState(t('Loading channels…', '載入渠道資料中…'))
+                        ) : channelsSnapshot?.payload?.channels?.length ? (
+                            <>
+                                <div className="ga4-insights-chart-root">
+                                    <ResponsiveContainer width="100%" height={Math.max(220, channelsSnapshot.payload.channels.length * 40)}>
+                                        <BarChart data={channelsSnapshot.payload.channels} layout="vertical" margin={{ top: 4, right: 16, bottom: 4, left: 8 }}>
+                                            <CartesianGrid stroke="var(--viz-grid)" horizontal={false} />
+                                            <XAxis type="number" tick={{ fill: 'var(--viz-text)', fontSize: 11 }} axisLine={{ stroke: 'var(--viz-axis)' }} tickLine={false} />
+                                            <YAxis type="category" dataKey="channel" width={140} tick={{ fill: 'var(--viz-text)', fontSize: 11 }} axisLine={false} tickLine={false} />
+                                            <Tooltip contentStyle={{ background: 'var(--viz-tooltip-bg)', border: '1px solid var(--viz-tooltip-border)', borderRadius: 8, fontSize: '0.8rem' }} />
+                                            <Legend wrapperStyle={{ fontSize: '0.78rem', color: 'var(--viz-text)' }} />
+                                            <Bar dataKey="assisting_conversions" name={t('Assisting (first-touch)', '開發（首次接觸）')} fill="var(--viz-series-1)" radius={[0, 4, 4, 0]} />
+                                            <Bar dataKey="closing_conversions" name={t('Closing (last-touch)', '收單（最後接觸）')} fill="var(--viz-series-2)" radius={[0, 4, 4, 0]} />
+                                        </BarChart>
+                                    </ResponsiveContainer>
+                                </div>
+                                <div style={{ overflowX: 'auto', marginTop: '12px' }}>
+                                    <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.85rem' }}>
+                                        <thead>
+                                            <tr style={{ color: 'var(--text-secondary)', textAlign: 'left' }}>
+                                                <th style={{ padding: '6px' }}>{channelDimensionLabel(channelsSnapshot.payload.dimension, language)}</th>
+                                                <th style={{ padding: '6px' }}>{t('Assisting', '開發')}</th>
+                                                <th style={{ padding: '6px' }}>{t('Closing', '收單')}</th>
+                                                <th style={{ padding: '6px' }}>{t('Ratio', '比例')}</th>
+                                                <th style={{ padding: '6px' }}>{t('Tag', '標籤')}</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody>
+                                            {channelsSnapshot.payload.channels.map((row) => (
+                                                <tr key={row.channel} style={{ borderTop: '1px solid var(--glass-border)' }}>
+                                                    <td style={{ padding: '6px', color: 'var(--text-primary)' }}>{row.channel}</td>
+                                                    <td style={{ padding: '6px', color: 'var(--text-secondary)' }}>{fmtNumber(row.assisting_conversions)}</td>
+                                                    <td style={{ padding: '6px', color: 'var(--text-secondary)' }}>{fmtNumber(row.closing_conversions)}</td>
+                                                    <td style={{ padding: '6px', color: 'var(--text-secondary)' }}>{row.ratio != null ? row.ratio.toFixed(2) : '--'}</td>
+                                                    <td style={{ padding: '6px' }}>
+                                                        <span style={badgeStyle(row.tag)}>
+                                                            {tr(language, CHANNEL_TAG_LABELS[row.tag]?.en, CHANNEL_TAG_LABELS[row.tag]?.zh) || row.tag}
+                                                        </span>
+                                                    </td>
+                                                </tr>
+                                            ))}
+                                        </tbody>
+                                    </table>
+                                </div>
+                            </>
+                        ) : (
+                            emptyState(t('No channel data.', '暫無渠道資料。'))
+                        )}
+                    </section>
+
+                    <AIInsightNote
+                        language={language}
+                        snapshot={channelsSnapshot}
+                        kind="daily_channel"
+                        contextLabel={t(
+                            `Property ${propertyId}; dimension ${channelDimensionLabel(channelsSnapshot?.payload?.dimension || channelsDimension, 'en')}; period ${channelsSnapshot?.payload?.start_date || ''} ~ ${channelsSnapshot?.payload?.end_date || ''}`,
+                            `屬性 ${propertyId}；維度 ${channelDimensionLabel(channelsSnapshot?.payload?.dimension || channelsDimension, 'zh')}；期間 ${channelsSnapshot?.payload?.start_date || ''} ~ ${channelsSnapshot?.payload?.end_date || ''}`
+                        )}
+                        buildPayload={() => ({ dimension: channelsSnapshot?.payload?.dimension, channels: channelsSnapshot?.payload?.channels || [] })}
+                    />
+    </>
+);
+
+export default ChannelsTab;
