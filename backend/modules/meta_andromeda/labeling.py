@@ -30,6 +30,10 @@ _CPL_FALLBACK_HIGH = 350.0
 _CPL_FALLBACK_LOW = 150.0
 _CPA_FALLBACK_LOW = 120.0
 _CPA_FALLBACK_HIGH = 300.0
+_CTR_FALLBACK_LOW = 0.01
+_CTR_FALLBACK_HIGH = 0.02
+_CPC_FALLBACK_LOW = 5.0
+_CPC_FALLBACK_HIGH = 15.0
 
 
 def match_observed_to_prediction(db, obs) -> MetaAndromedaScoreEvent | None:
@@ -287,10 +291,12 @@ def label_observed_band(
 
     if group in NON_ROAS_GROUPS:
         ctr = snapshot.get("ctr")
-        ctr_thresholds = (label_thresholds.get("ctr") or {}).get("thresholds")
-        if ctr is not None and ctr_thresholds:
+        if ctr is not None:
             value = float(ctr)
-            low_t, high_t = ctr_thresholds
+            low_t, high_t = (label_thresholds.get("ctr") or {}).get("thresholds") or (
+                _CTR_FALLBACK_LOW,
+                _CTR_FALLBACK_HIGH,
+            )
             if value >= high_t:
                 return "high", {"metric": "ctr", "value": value}
             if value >= low_t:
@@ -298,10 +304,12 @@ def label_observed_band(
             return "low", {"metric": "ctr", "value": value}
 
         cpc = snapshot.get("cpc")
-        cpc_thresholds = (label_thresholds.get("cpc") or {}).get("thresholds")
-        if cpc is not None and cpc_thresholds and float(cpc) > 0:
+        if cpc is not None and float(cpc) > 0:
             value = float(cpc)
-            low_t, high_t = cpc_thresholds
+            low_t, high_t = (label_thresholds.get("cpc") or {}).get("thresholds") or (
+                _CPC_FALLBACK_HIGH,
+                _CPC_FALLBACK_LOW,
+            )
             if value <= high_t:
                 return "high", {"metric": "cpc", "value": value}
             if value <= low_t:

@@ -1210,7 +1210,16 @@ class MetaAndromedaRepository:
             if obs and obs.performance_snapshot and float((obs.performance_snapshot or {}).get("spend", 0) or 0) > 0:
                 roas_eligible = bool((row.roas_prediction or {}).get("eligible", True))
                 pred_band = row.roas_band if roas_eligible else None
-                real_band, _ = label_observed_band(obs.objective, obs.performance_snapshot)
+                # 單筆查詢無法計算動態百分位門檻，改用該 scope 已持久化的門檻（同 compute_label_thresholds
+                # 在樣本不足時的 fallback 順序），避免 NON_ROAS_GROUPS（曝光/點擊型）廣告因 ctr/cpc 門檻
+                # 缺值而被 label_observed_band() 一律判為 low
+                label_thresholds = compute_label_thresholds(
+                    [obs],
+                    db=db,
+                    scope_key=obs.source_account_id or "global",
+                    window_kind=obs.observation_window_kind,
+                )
+                real_band, _ = label_observed_band(obs.objective, obs.performance_snapshot, label_thresholds)
                 _band_score = {"low": 1, "mid": 2, "high": 3}
                 err = float(abs(_band_score.get(pred_band, 1) - _band_score.get(real_band, 1))) if pred_band else None
                 detail["observation"] = {
