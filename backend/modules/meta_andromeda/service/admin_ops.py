@@ -492,7 +492,7 @@ class AdminOpsServiceMixin:
         note: str | None = None,
     ) -> dict:
         from fastapi import HTTPException, status
-        from .model_catalog import validate_candidate_model
+        from ..model_catalog import validate_candidate_model
 
         validation = validate_candidate_model(provider_model)
         if not validation.get("ok"):
