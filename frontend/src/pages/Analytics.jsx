@@ -574,6 +574,114 @@ const Analytics = () => {
         setSelectedObservationIds(new Set(observationImportableRows.map((row) => row.id)));
     }, [observationImportableRows]);
 
+    const importObservationRow = useCallback(async (row) => {
+        if (!row?.ad_id || !selectedAccountId) {
+            const message = language === 'zh'
+                ? '缺少廣告或帳號資訊，無法匯入。'
+                : 'Missing ad or account information.';
+            setObservationImportState((prev) => ({
+                ...prev,
+                [row?.id || 'unknown']: {
+                    status: 'failed',
+                    observationStatus: 'failed',
+                    scoreStatus: 'blocked_by_observation_failure',
+                    message,
+                },
+            }));
+            return { ok: false };
+        }
+
+        const rowKey = row.id;
+        setObservationImportState((prev) => ({
+            ...prev,
+            [rowKey]: {
+                ...(prev[rowKey] || {}),
+                status: 'loading',
+                observationStatus: 'queued',
+                scoreStatus: 'pending_observation',
+                message: language === 'zh' ? '送出匯入請求中...' : 'Submitting import request...',
+            },
+        }));
+
+        try {
+            const observationWindowKind = resolveObservationWindowKind(datePreset);
+            const payload = {
+                account_id: selectedAccountId,
+                ad_id: row.ad_id,
+                observation_window_kind: observationWindowKind,
+                since: observationWindowKind === 'custom' ? dateRange.since : undefined,
+                until: observationWindowKind === 'custom' ? dateRange.until : undefined,
+                market: 'TW',
+                placement_family: 'all',
+                primary_text: row.primary_text || row.body || null,
+                headline: row.headline || row.title || row.name || null,
+                cta: row.cta || null,
+            };
+
+            const accepted = await importMetaAndromedaObservedFacebookAd(payload);
+            const observedCreativeId = accepted?.observed_creative_id;
+
+            setObservationImportState((prev) => ({
+                ...prev,
+                [rowKey]: {
+                    ...(prev[rowKey] || {}),
+                    status: 'accepted',
+                    observedCreativeId,
+                    observationStatus: accepted?.status === 'accepted' ? 'queued' : (accepted?.status || 'queued'),
+                    scoreStatus: accepted?.score_status || 'pending_observation',
+                    message: language === 'zh' ? '已送出，等待背景匯入。' : 'Accepted, waiting for background import.',
+                },
+            }));
+
+            if (observedCreativeId) {
+                try {
+                    const status = await fetchMetaAndromedaObservedImportStatus(observedCreativeId);
+                    setObservationImportState((prev) => ({
+                        ...prev,
+                        [rowKey]: {
+                            ...(prev[rowKey] || {}),
+                            status: status?.observation_status === 'completed' || status?.observation_status === 'failed'
+                                ? status.observation_status
+                                : 'polling',
+                            observedCreativeId,
+                            observationStatus: status?.observation_status || 'queued',
+                            scoreStatus: status?.score_status || accepted?.score_status || 'pending_observation',
+                            message: status?.observation_message || (language === 'zh' ? '匯入狀態已更新。' : 'Import status updated.'),
+                        },
+                    }));
+                } catch {
+                    setObservationImportState((prev) => ({
+                        ...prev,
+                        [rowKey]: {
+                            ...(prev[rowKey] || {}),
+                            status: 'polling',
+                            observedCreativeId,
+                            message: language === 'zh' ? '已送出，暫時無法讀取最新狀態。' : 'Accepted; latest status is not available yet.',
+                        },
+                    }));
+                }
+            }
+
+            return { ok: true };
+        } catch (err) {
+            setObservationImportState((prev) => ({
+                ...prev,
+                [rowKey]: {
+                    ...(prev[rowKey] || {}),
+                    status: 'failed',
+                    observationStatus: 'failed',
+                    scoreStatus: 'blocked_by_observation_failure',
+                    message: err?.message || (language === 'zh' ? '匯入失敗。' : 'Import failed.'),
+                },
+            }));
+            return { ok: false };
+        }
+    }, [datePreset, dateRange, language, selectedAccountId]);
+
+    const handleObservationImport = useCallback(async (row) => {
+        await importObservationRow(row);
+    }, [importObservationRow]);
+
     const handleBatchObservationImport = useCallback(async () => {
         if (!selectedObservationRows.length) {
             return;
