@@ -179,6 +179,27 @@ export const CHANNEL_TAG_LABELS = {
     insufficient_data: { en: 'Insufficient data', zh: '資料不足' },
 };
 
+// docs/34 第一波：歸因模式揭露。「收單」欄位的實際意義依 GA4 property 的
+// 報表歸因模式而定（資料驅動＝路徑加權功勞；最後點擊＝單純最後一次接觸）。
+export const ATTRIBUTION_MODEL_LABELS = {
+    data_driven: {
+        en: 'Data-driven attribution',
+        zh: '資料驅動歸因',
+        tooltip: {
+            en: 'This property\'s reporting attribution model is data-driven: "Closing" conversions already reflect credit distributed across the full path, not just the last touch.',
+            zh: '此 GA4 屬性的報表歸因模式為「以數據為準」：「收單」已是路徑上多個接觸點加權後的功勞總和，不是單純最後一次點擊。',
+        },
+    },
+    last_click: {
+        en: 'Last-click attribution',
+        zh: '最後點擊歸因',
+        tooltip: {
+            en: 'This property\'s reporting attribution model is last-click: "Closing" conversions are credited entirely to the last touchpoint.',
+            zh: '此 GA4 屬性的報表歸因模式為「最後點擊」：「收單」的功勞全部算給最後一次接觸的管道。',
+        },
+    },
+};
+
 // 第 4 波：渠道對照維度切換（5 選項，對映後端 CHANNEL_DIMENSION_MAP 白名單）
 export const CHANNEL_DIMENSION_OPTIONS = [
     { value: 'default_channel_group', en: 'Session default channel group', zh: '工作階段主要管道群組' },

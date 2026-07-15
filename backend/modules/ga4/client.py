@@ -275,6 +275,35 @@ class GA4Client:
             return [], str(e)
 
     @staticmethod
+    def get_attribution_settings(user: User, property_id: str, db: Session = None) -> Tuple[Optional[str], Optional[str]]:
+        """
+        唯讀查詢 property 的報表歸因模式（docs/34 第一波）。
+
+        Args:
+            user: User 物件
+            property_id: GA4 property ID
+            db: 資料庫 session（可選，用於更新 token）
+
+        Returns:
+            tuple: (raw_model, error_message)
+            raw_model 為 AttributionSettings.ReportingAttributionModel enum 的字串名稱
+            （如 "PAID_AND_ORGANIC_CHANNELS_DATA_DRIVEN"），正規化交給 service 層。
+        """
+        creds = GA4Client.get_credentials(user, db)
+        if not creds:
+            return None, "No GA4 credentials found"
+
+        try:
+            admin_client = AnalyticsAdminServiceClient(credentials=creds)
+            settings = admin_client.get_attribution_settings(
+                name=f"properties/{property_id}/attributionSettings"
+            )
+            return settings.reporting_attribution_model.name, None
+        except Exception as e:
+            print(f"[GA4] Error getting attribution settings for {property_id}: {e}")
+            return None, str(e)
+
+    @staticmethod
     def build_data_client(credentials: Credentials) -> BetaAnalyticsDataClient:
         """建立 Analytics Data API client（RunReport / RunRealtimeReport 共用）。"""
         return BetaAnalyticsDataClient(credentials=credentials)

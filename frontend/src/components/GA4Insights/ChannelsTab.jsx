@@ -3,6 +3,7 @@ import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, Responsive
 
 import {
     AIInsightNote,
+    ATTRIBUTION_MODEL_LABELS,
     CHANNEL_DIMENSION_OPTIONS,
     CHANNEL_TAG_LABELS,
     badgeStyle,
@@ -33,7 +34,25 @@ const ChannelsTab = ({
                     <section style={baseCardStyle}>
                         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px', flexWrap: 'wrap', gap: '8px' }}>
                             <div>
-                                <div style={{ color: 'var(--text-primary)', fontWeight: 700 }}>{t('Assist vs. close channels', '渠道助攻/主攻對照')}</div>
+                                <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
+                                    <div style={{ color: 'var(--text-primary)', fontWeight: 700 }}>{t('Assist vs. close channels', '渠道助攻/主攻對照')}</div>
+                                    {ATTRIBUTION_MODEL_LABELS[channelsSnapshot?.payload?.attribution_model] && (
+                                        <span
+                                            style={badgeStyle(channelsSnapshot.payload.attribution_model)}
+                                            title={tr(
+                                                language,
+                                                ATTRIBUTION_MODEL_LABELS[channelsSnapshot.payload.attribution_model].tooltip.en,
+                                                ATTRIBUTION_MODEL_LABELS[channelsSnapshot.payload.attribution_model].tooltip.zh
+                                            )}
+                                        >
+                                            {tr(
+                                                language,
+                                                ATTRIBUTION_MODEL_LABELS[channelsSnapshot.payload.attribution_model].en,
+                                                ATTRIBUTION_MODEL_LABELS[channelsSnapshot.payload.attribution_model].zh
+                                            )}
+                                        </span>
+                                    )}
+                                </div>
                                 <div style={{ color: 'var(--text-secondary)', fontSize: '0.8rem' }}>
                                     {t(
                                         'First-touch vs. last-touch conversions by channel. For deeper incremental contribution, see the Contribution Analysis page.',

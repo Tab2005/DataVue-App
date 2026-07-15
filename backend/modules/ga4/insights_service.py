@@ -53,6 +53,19 @@ CHANNEL_DIMENSION_MAP = {
     "campaign": ("sessionCampaignName", "firstUserCampaignName"),
 }
 CHANNEL_DEFAULT_DIMENSION = "default_channel_group"
+
+# docs/34 第一波：歸因模式揭露。「報表歸因模式」是 property 層級設定、極少變動，
+# 用固定 sentinel date 把 (property_id, kind) 當單例快取 key，而非日期資料。
+ATTRIBUTION_SETTINGS_KIND = "attribution_settings"
+ATTRIBUTION_SETTINGS_DATE = "static"
+ATTRIBUTION_SETTINGS_CACHE_HOURS = 24
+# AttributionSettings.ReportingAttributionModel enum 名稱 → 前端顯示用的正規化值；
+# 未列出的 enum（含 UNSPECIFIED）與查詢失敗一律回退 "unknown"。
+ATTRIBUTION_MODEL_MAP = {
+    "PAID_AND_ORGANIC_CHANNELS_DATA_DRIVEN": "data_driven",
+    "PAID_AND_ORGANIC_CHANNELS_LAST_CLICK": "last_click",
+    "GOOGLE_PAID_CHANNELS_LAST_CLICK": "last_click",
+}
 CHANNEL_TOP_N = 20
 
 # 第 3 波：KPI 目標追蹤（docs/22 5 節，選配）
@@ -525,6 +538,36 @@ class GA4InsightsService:
         start_date = end_date - timedelta(days=max(days, 1) - 1)
         return start_date.isoformat(), end_date.isoformat()
 
+    # ─── docs/34 第一波：歸因模式揭露（唯讀查詢 + 24 小時快取） ─────────
+    @staticmethod
+    def _get_attribution_model(db, *, user: User, property_id: str) -> str:
+        """回傳正規化後的歸因模式（"data_driven" / "last_click" / "unknown"）。
+
+        查詢失敗或設定不在白名單內一律回退 "unknown"，不能讓這個輔助查詢
+        影響渠道對照卡片本身的可用性（同模組既有容錯慣例）。
+        """
+        snapshot = repository.get_latest_snapshot(
+            db, property_id=property_id, kind=ATTRIBUTION_SETTINGS_KIND, date=ATTRIBUTION_SETTINGS_DATE,
+        )
+        if snapshot and (datetime.utcnow() - snapshot.fetched_at) < timedelta(hours=ATTRIBUTION_SETTINGS_CACHE_HOURS):
+            return snapshot.payload.get("attribution_model", "unknown")
+
+        try:
+            raw_model, error = GA4Client.get_attribution_settings(user, property_id, db)
+            if error:
+                raise RuntimeError(error)
+            model = ATTRIBUTION_MODEL_MAP.get(raw_model, "unknown")
+        except Exception as exc:
+            logger.warning("[GA4Insights] get_attribution_settings failed for %s: %s", property_id, exc)
+            # 查詢失敗時寧可回傳上一次快取到的值，也不要直接判 unknown（設定極少變動）。
+            return snapshot.payload.get("attribution_model", "unknown") if snapshot else "unknown"
+
+        repository.upsert_snapshot(
+            db, property_id=property_id, kind=ATTRIBUTION_SETTINGS_KIND, date=ATTRIBUTION_SETTINGS_DATE,
+            payload={"attribution_model": model, "raw_model": raw_model}, fetched_by=user.id,
+        )
+        return model
+
     # ─── 第 2/4 波：渠道主攻/助攻對照（3.3 節；第 4 波加維度切換） ─────
     @staticmethod
     def get_channels(
@@ -604,6 +647,7 @@ class GA4InsightsService:
             "channels": rows,
             "truncated": truncated,
             "total_row_count": total_row_count,
+            "attribution_model": GA4InsightsService._get_attribution_model(db, user=user, property_id=property_id),
         }
         return repository.upsert_snapshot(
             db, property_id=property_id, kind=kind, date=end_date, payload=payload, fetched_by=user.id,

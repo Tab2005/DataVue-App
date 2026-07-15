@@ -123,6 +123,77 @@ def test_get_channels_truncates_to_top_20_by_combined_conversions(mocker, db, sa
     assert "channel-24" not in kept
 
 
+# ─── docs/34 第一波：歸因模式揭露 ────────────────────────────────────
+@pytest.mark.unit
+def test_get_channels_attribution_model_unknown_without_credentials(mocker, db, sample_user):
+    """sample_user 沒有 ga4_access_token，get_credentials 回 None，
+    應優雅回退 "unknown"，不能讓渠道對照卡片掛掉。"""
+    from modules.ga4.insights_service import GA4InsightsService
+
+    mocker.patch("modules.ga4.insights_service.GA4Service.get_analytics", return_value=({"rows": []}, None))
+
+    snapshot = GA4InsightsService.get_channels(db, user=sample_user, property_id="123456", days=7)
+    db.commit()
+
+    assert snapshot.payload["attribution_model"] == "unknown"
+
+
+@pytest.mark.unit
+def test_get_channels_attribution_model_normalizes_and_caches(mocker, db, sample_user):
+    """Admin API 回傳的 enum 名稱應正規化為 "data_driven"；24 小時內重複呼叫
+    不應重打 Admin API（驗證快取生效）。"""
+    from modules.ga4.insights_service import GA4InsightsService
+
+    mocker.patch("modules.ga4.insights_service.GA4Service.get_analytics", return_value=({"rows": []}, None))
+    get_attr_mock = mocker.patch(
+        "modules.ga4.insights_service.GA4Client.get_attribution_settings",
+        return_value=("PAID_AND_ORGANIC_CHANNELS_DATA_DRIVEN", None),
+    )
+
+    first = GA4InsightsService.get_channels(db, user=sample_user, property_id="123456", days=7)
+    db.commit()
+    assert first.payload["attribution_model"] == "data_driven"
+    assert get_attr_mock.call_count == 1
+
+    second = GA4InsightsService.get_channels(db, user=sample_user, property_id="123456", days=7)
+    db.commit()
+    assert second.payload["attribution_model"] == "data_driven"
+    assert get_attr_mock.call_count == 1  # 命中快取，沒有再打一次 Admin API
+
+
+@pytest.mark.unit
+def test_get_channels_attribution_model_falls_back_to_stale_cache_on_error(mocker, db, sample_user):
+    """快取過期後若 Admin API 查詢失敗，寧可回傳上一次快取到的值，也不要
+    直接判 unknown（設定極少變動，比起丟失資訊，用舊值更合理）。"""
+    from datetime import datetime, timedelta
+
+    from modules.ga4.insights_service import (
+        ATTRIBUTION_SETTINGS_DATE,
+        ATTRIBUTION_SETTINGS_KIND,
+        GA4InsightsService,
+        repository,
+    )
+
+    stale = repository.upsert_snapshot(
+        db, property_id="123456", kind=ATTRIBUTION_SETTINGS_KIND, date=ATTRIBUTION_SETTINGS_DATE,
+        payload={"attribution_model": "data_driven", "raw_model": "PAID_AND_ORGANIC_CHANNELS_DATA_DRIVEN"},
+        fetched_by=sample_user.id,
+    )
+    stale.fetched_at = datetime.utcnow() - timedelta(hours=25)
+    db.commit()
+
+    mocker.patch("modules.ga4.insights_service.GA4Service.get_analytics", return_value=({"rows": []}, None))
+    mocker.patch(
+        "modules.ga4.insights_service.GA4Client.get_attribution_settings",
+        return_value=(None, "boom"),
+    )
+
+    snapshot = GA4InsightsService.get_channels(db, user=sample_user, property_id="123456", days=7)
+    db.commit()
+
+    assert snapshot.payload["attribution_model"] == "data_driven"
+
+
 # ─── router：422 驗證 + 端到端 ──────────────────────────────────────
 @pytest.mark.integration
 def test_channels_endpoint_accepts_valid_dimension(client, db, sample_user, mocker):
