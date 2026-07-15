@@ -1,9 +1,11 @@
-import React from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 
 import {
     AIInsightNote,
     ITEM_CATEGORY_SOURCE_LABELS,
     LANDING_MATCH_TYPE_OPTIONS,
+    TablePager,
+    badgeStyle,
     baseCardStyle,
     buttonStyle,
     emptyState,
@@ -13,6 +15,8 @@ import {
     secondaryButtonStyle,
     tr,
 } from './GA4InsightsShared';
+
+const ITEMS_PAGE_SIZE = 25;
 
 const ItemsTab = ({
     language,
@@ -43,7 +47,30 @@ const ItemsTab = ({
     itemCategoryRuleForm,
     setItemCategoryRuleForm,
     itemCategoryRuleSaving,
-}) => (
+}) => {
+    const [itemsPage, setItemsPage] = useState(1);
+
+    const filteredSortedItems = useMemo(() => (
+        sortedItemsRows(
+            (itemsSnapshot?.payload?.items || [])
+                .filter((row) => itemsCategoryFilter === 'all' || row.item_category === itemsCategoryFilter)
+                .filter((row) => !itemsSearchQuery.trim() || row.itemName?.toLowerCase().includes(itemsSearchQuery.trim().toLowerCase()))
+        )
+    ), [itemsSnapshot, itemsCategoryFilter, itemsSearchQuery, sortedItemsRows]);
+
+    const itemsTotalPages = Math.max(1, Math.ceil(filteredSortedItems.length / ITEMS_PAGE_SIZE));
+    const itemsPageClamped = Math.min(itemsPage, itemsTotalPages);
+    const pagedItems = filteredSortedItems.slice(
+        (itemsPageClamped - 1) * ITEMS_PAGE_SIZE,
+        itemsPageClamped * ITEMS_PAGE_SIZE
+    );
+
+    // 篩選/搜尋條件或資料快照變動時重置回第一頁，避免停在一個已經不存在的頁碼。
+    useEffect(() => {
+        setItemsPage(1);
+    }, [itemsCategoryFilter, itemsSearchQuery, itemsSnapshot?.snapshot_id]);
+
+    return (
     <>
                     <section style={baseCardStyle}>
                         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px', flexWrap: 'wrap', gap: '8px' }}>
@@ -118,11 +145,7 @@ const ItemsTab = ({
                                             </tr>
                                         </thead>
                                         <tbody>
-                                            {sortedItemsRows(
-                                                itemsSnapshot.payload.items
-                                                    .filter((row) => itemsCategoryFilter === 'all' || row.item_category === itemsCategoryFilter)
-                                                    .filter((row) => !itemsSearchQuery.trim() || row.itemName?.toLowerCase().includes(itemsSearchQuery.trim().toLowerCase()))
-                                            )
+                                            {pagedItems
                                                 .map((row) => {
                                                     const isNewEntry = row.views_prior_7d === 0 && row.views_recent_7d > 0;
                                                     return (
@@ -161,6 +184,12 @@ const ItemsTab = ({
                                         </tbody>
                                     </table>
                                 </div>
+                                <TablePager
+                                    page={itemsPageClamped}
+                                    totalPages={itemsTotalPages}
+                                    onPageChange={setItemsPage}
+                                    language={language}
+                                />
                             </>
                         ) : (
                             emptyState(t('No item data.', '暫無商品資料。'))
@@ -269,6 +298,7 @@ const ItemsTab = ({
                         })}
                     />
     </>
-);
+    );
+};
 
 export default ItemsTab;

@@ -160,6 +160,69 @@ export const emptyState = (text) => (
     <div style={{ color: 'var(--text-secondary)', fontSize: '0.9rem' }}>{text}</div>
 );
 
+// 大量列表的純前端分頁器（資料已一次全部載入，不重打 API，只切片顯示）。
+// 沿用 MetaAndromedaReviewQueue.jsx 的分頁 UI 樣式，維持全站視覺一致。
+const pagerButtonStyle = {
+    padding: '5px 10px',
+    borderRadius: '8px',
+    border: '1px solid var(--glass-border)',
+    background: 'rgba(255, 255, 255, 0.04)',
+    color: 'var(--text-primary)',
+    cursor: 'pointer',
+    fontSize: '0.85rem',
+    minWidth: '32px',
+};
+
+export const TablePager = ({ page, totalPages, onPageChange, language }) => {
+    if (totalPages <= 1) return null;
+
+    const pages = [];
+    const delta = 2;
+    const left = Math.max(1, page - delta);
+    const right = Math.min(totalPages, page + delta);
+    if (left > 1) { pages.push(1); if (left > 2) pages.push('…'); }
+    for (let i = left; i <= right; i++) pages.push(i);
+    if (right < totalPages) { if (right < totalPages - 1) pages.push('…'); pages.push(totalPages); }
+
+    return (
+        <div style={{ display: 'flex', gap: '6px', alignItems: 'center', justifyContent: 'center', flexWrap: 'wrap', marginTop: '14px' }}>
+            <button
+                type="button"
+                onClick={() => onPageChange(page - 1)}
+                disabled={page <= 1}
+                style={{ ...pagerButtonStyle, opacity: page <= 1 ? 0.35 : 1 }}
+            >‹</button>
+            {pages.map((p, i) => (
+                p === '…'
+                    ? <span key={`ellipsis-${i}`} style={{ color: 'var(--text-secondary)', padding: '0 4px' }}>…</span>
+                    : (
+                        <button
+                            key={p}
+                            type="button"
+                            onClick={() => onPageChange(p)}
+                            style={{
+                                ...pagerButtonStyle,
+                                background: p === page ? 'var(--accent-primary)' : 'rgba(255, 255, 255, 0.04)',
+                                color: p === page ? '#fff' : 'var(--text-primary)',
+                                borderColor: p === page ? 'var(--accent-primary)' : 'var(--glass-border)',
+                                fontWeight: p === page ? 700 : 400,
+                            }}
+                        >{p}</button>
+                    )
+            ))}
+            <button
+                type="button"
+                onClick={() => onPageChange(page + 1)}
+                disabled={page >= totalPages}
+                style={{ ...pagerButtonStyle, opacity: page >= totalPages ? 0.35 : 1 }}
+            >›</button>
+            <span style={{ color: 'var(--text-secondary)', fontSize: '0.75rem', marginLeft: '8px' }}>
+                {tr(language, `Page ${page} / ${totalPages}`, `第 ${page} / ${totalPages} 頁`)}
+            </span>
+        </div>
+    );
+};
+
 export const tr = (language, en, zh) => (language === 'en' ? en : zh);
 
 export const fmtNumber = (value, digits = 0) => {

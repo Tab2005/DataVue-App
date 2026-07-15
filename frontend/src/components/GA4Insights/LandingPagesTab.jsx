@@ -1,10 +1,11 @@
-import React from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 
 import {
     AIInsightNote,
     LANDING_CATEGORY_LABELS,
     LANDING_CATEGORY_ORDER,
     LANDING_MATCH_TYPE_OPTIONS,
+    TablePager,
     badgeStyle,
     baseCardStyle,
     buttonStyle,
@@ -16,6 +17,8 @@ import {
     secondaryButtonStyle,
     tr,
 } from './GA4InsightsShared';
+
+const LANDING_PAGE_SIZE = 25;
 
 const LandingPagesTab = ({
     language,
@@ -44,7 +47,28 @@ const LandingPagesTab = ({
     landingRuleForm,
     setLandingRuleForm,
     landingRuleSaving,
-}) => (
+}) => {
+    const [landingPage, setLandingPage] = useState(1);
+
+    const filteredSortedLandingPages = useMemo(() => (
+        (landingSnapshot?.payload?.landing_pages || [])
+            .filter((row) => landingCategoryFilter === 'all' || row.category === landingCategoryFilter)
+            .sort((a, b) => (b.sessions || 0) - (a.sessions || 0))
+    ), [landingSnapshot, landingCategoryFilter]);
+
+    const landingTotalPages = Math.max(1, Math.ceil(filteredSortedLandingPages.length / LANDING_PAGE_SIZE));
+    const landingPageClamped = Math.min(landingPage, landingTotalPages);
+    const pagedLandingPages = filteredSortedLandingPages.slice(
+        (landingPageClamped - 1) * LANDING_PAGE_SIZE,
+        landingPageClamped * LANDING_PAGE_SIZE
+    );
+
+    // 篩選條件或資料快照變動時重置回第一頁，避免停在一個已經不存在的頁碼。
+    useEffect(() => {
+        setLandingPage(1);
+    }, [landingCategoryFilter, landingSnapshot?.snapshot_id]);
+
+    return (
     <>
                     <section style={baseCardStyle}>
                         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px', flexWrap: 'wrap', gap: '8px' }}>
@@ -119,9 +143,7 @@ const LandingPagesTab = ({
                                             </tr>
                                         </thead>
                                         <tbody>
-                                            {landingSnapshot.payload.landing_pages
-                                                .filter((row) => landingCategoryFilter === 'all' || row.category === landingCategoryFilter)
-                                                .sort((a, b) => (b.sessions || 0) - (a.sessions || 0))
+                                            {pagedLandingPages
                                                 .map((row) => (
                                                     <tr key={row.landingPage} style={{ borderTop: '1px solid var(--glass-border)' }}>
                                                         <td style={{ padding: '6px', color: 'var(--text-primary)', maxWidth: '260px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={row.landingPage}>
@@ -146,6 +168,12 @@ const LandingPagesTab = ({
                                         </tbody>
                                     </table>
                                 </div>
+                                <TablePager
+                                    page={landingPageClamped}
+                                    totalPages={landingTotalPages}
+                                    onPageChange={setLandingPage}
+                                    language={language}
+                                />
                             </>
                         ) : (
                             emptyState(t('No landing page data.', '暫無到達頁資料。'))
@@ -249,6 +277,7 @@ const LandingPagesTab = ({
                         })}
                     />
     </>
-);
+    );
+};
 
 export default LandingPagesTab;
