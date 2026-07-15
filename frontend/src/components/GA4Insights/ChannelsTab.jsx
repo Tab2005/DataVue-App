@@ -8,6 +8,7 @@ import {
     CHANNEL_TAG_LABELS,
     badgeStyle,
     baseCardStyle,
+    channelClosingLabel,
     channelDimensionLabel,
     emptyState,
     fmtNumber,
@@ -59,6 +60,14 @@ const ChannelsTab = ({
                                         '首次接觸 vs 最後接觸轉換的渠道對照。想看更深入的增量貢獻，請至貢獻分析頁。'
                                     )}
                                 </div>
+                                {ATTRIBUTION_MODEL_LABELS[channelsSnapshot?.payload?.attribution_model] && (
+                                    <div style={{ color: 'var(--text-secondary)', fontSize: '0.75rem', marginTop: '2px' }}>
+                                        {t(
+                                            '"Assisting" is always a hard first-touch count. "Closing" reflects this property\'s reporting attribution model — hover the badge above for details.',
+                                            '「開發」永遠是硬計數(使用者第一次造訪的管道)；「收單」的意義依帳戶的報表歸因模式而定，詳見上方 badge 提示。'
+                                        )}
+                                    </div>
+                                )}
                             </div>
                             <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap', alignItems: 'center' }}>
                                 <select
@@ -99,7 +108,7 @@ const ChannelsTab = ({
                                             <Tooltip contentStyle={{ background: 'var(--viz-tooltip-bg)', border: '1px solid var(--viz-tooltip-border)', borderRadius: 8, fontSize: '0.8rem' }} />
                                             <Legend wrapperStyle={{ fontSize: '0.78rem', color: 'var(--viz-text)' }} />
                                             <Bar dataKey="assisting_conversions" name={t('Assisting (first-touch)', '開發（首次接觸）')} fill="var(--viz-series-1)" radius={[0, 4, 4, 0]} />
-                                            <Bar dataKey="closing_conversions" name={t('Closing (last-touch)', '收單（最後接觸）')} fill="var(--viz-series-2)" radius={[0, 4, 4, 0]} />
+                                            <Bar dataKey="closing_conversions" name={channelClosingLabel(channelsSnapshot?.payload?.attribution_model, language)} fill="var(--viz-series-2)" radius={[0, 4, 4, 0]} />
                                         </BarChart>
                                     </ResponsiveContainer>
                                 </div>
@@ -109,7 +118,7 @@ const ChannelsTab = ({
                                             <tr style={{ color: 'var(--text-secondary)', textAlign: 'left' }}>
                                                 <th style={{ padding: '6px' }}>{channelDimensionLabel(channelsSnapshot.payload.dimension, language)}</th>
                                                 <th style={{ padding: '6px' }}>{t('Assisting', '開發')}</th>
-                                                <th style={{ padding: '6px' }}>{t('Closing', '收單')}</th>
+                                                <th style={{ padding: '6px' }}>{channelClosingLabel(channelsSnapshot?.payload?.attribution_model, language)}</th>
                                                 <th style={{ padding: '6px' }}>{t('Ratio', '比例')}</th>
                                                 <th style={{ padding: '6px' }}>{t('Tag', '標籤')}</th>
                                             </tr>
@@ -145,7 +154,11 @@ const ChannelsTab = ({
                             `Property ${propertyId}; dimension ${channelDimensionLabel(channelsSnapshot?.payload?.dimension || channelsDimension, 'en')}; period ${channelsSnapshot?.payload?.start_date || ''} ~ ${channelsSnapshot?.payload?.end_date || ''}`,
                             `屬性 ${propertyId}；維度 ${channelDimensionLabel(channelsSnapshot?.payload?.dimension || channelsDimension, 'zh')}；期間 ${channelsSnapshot?.payload?.start_date || ''} ~ ${channelsSnapshot?.payload?.end_date || ''}`
                         )}
-                        buildPayload={() => ({ dimension: channelsSnapshot?.payload?.dimension, channels: channelsSnapshot?.payload?.channels || [] })}
+                        buildPayload={() => ({
+                            dimension: channelsSnapshot?.payload?.dimension,
+                            channels: channelsSnapshot?.payload?.channels || [],
+                            attribution_model: channelsSnapshot?.payload?.attribution_model,
+                        })}
                     />
     </>
 );

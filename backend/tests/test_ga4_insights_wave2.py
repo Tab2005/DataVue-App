@@ -462,3 +462,52 @@ def test_ai_service_ga4_insights_prompt_switches_focus_by_kind(mocker):
 
     assert "助攻" in captured["system_prompt"]
     assert "貢獻分析頁" in captured["system_prompt"]
+
+
+# ─── docs/34 第二波：daily_channel prompt 依 attribution_model 調整用語 ──
+@pytest.mark.unit
+def test_ai_service_ga4_insights_prompt_avoids_last_click_metaphor_for_data_driven(mocker):
+    """Data-driven 屬性不該被套用「結帳前臨門一腳」這類 last-click 專屬比喻。"""
+    from ai_service import AIService
+
+    captured = {}
+
+    def fake_zeabur(system_prompt, user_message, api_key, model):
+        captured["system_prompt"] = system_prompt
+        yield "ok"
+
+    mocker.patch.object(AIService, "_analyze_with_zeabur", side_effect=fake_zeabur)
+
+    list(AIService.analyze_data(
+        data={"kind": "daily_channel", "channels": [], "attribution_model": "data_driven"},
+        context="test",
+        report_type="ga4_insights",
+        provider="zeabur",
+    ))
+
+    assert "結帳前推最後一把" not in captured["system_prompt"]
+    assert "結帳前臨門一腳" not in captured["system_prompt"]
+    assert "貢獻比較大" in captured["system_prompt"]
+
+
+@pytest.mark.unit
+def test_ai_service_ga4_insights_prompt_keeps_last_click_metaphor_for_last_click(mocker):
+    """Last-click 屬性維持「最後一次點擊」語意，不能被 data_driven 用語覆蓋。"""
+    from ai_service import AIService
+
+    captured = {}
+
+    def fake_zeabur(system_prompt, user_message, api_key, model):
+        captured["system_prompt"] = system_prompt
+        yield "ok"
+
+    mocker.patch.object(AIService, "_analyze_with_zeabur", side_effect=fake_zeabur)
+
+    list(AIService.analyze_data(
+        data={"kind": "daily_channel", "channels": [], "attribution_model": "last_click"},
+        context="test",
+        report_type="ga4_insights",
+        provider="zeabur",
+    ))
+
+    assert "最後一次點擊進來的" in captured["system_prompt"]

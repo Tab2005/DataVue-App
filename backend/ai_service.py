@@ -181,6 +181,15 @@ class AIService:
             #   landing_page    → 哪些頁面白白流失客人
             #   item            → 哪些商品值得加碼曝光
             kind = data.get("kind", "")
+            # docs/34 第二波：「收單」欄位的真實意義依帳戶的 GA4 報表歸因模式而定
+            # （data_driven＝路徑加權功勞、last_click＝單純最後一次接觸），
+            # 這裡把前端傳來的 attribution_model 轉成給 AI 的白話備註，
+            # 避免不管什麼設定都用「結帳前臨門一腳」這個 last-click 專屬比喻。
+            attribution_model = data.get("attribution_model") if kind == "daily_channel" else None
+            attribution_close_metaphor = {
+                "data_driven": "主攻渠道是系統判斷在整趟購物旅程中貢獻比較大的（不是只看最後一次點擊）",
+                "last_click": "主攻渠道是客人結帳前最後一次點擊進來的",
+            }.get(attribution_model, "主攻渠道是系統判斷對這次購買貢獻比較大的（不一定是最後一次點擊）")
             kind_focus = {
                 "intraday_hourly": (
                     "今天到目前為止的數字跟平常同時段比起來正不正常、需不需要緊張。"
@@ -188,8 +197,9 @@ class AIService:
                     "（廣告投放中斷、網站追蹤碼壞掉、檔期效應），但不要下絕對結論。"
                 ),
                 "daily_channel": (
-                    "哪些渠道是負責把新客人帶進門的（助攻型），哪些是負責在客人結帳前臨門一腳的"
-                    "（主攻型），預算要往上加或往下砍時，這兩種渠道各自該注意什麼。"
+                    "哪些渠道是負責把新客人帶進門的（開發型，永遠是使用者第一次造訪這個管道的硬計數），"
+                    f"哪些渠道拿到比較多轉換功勞（收單型，{attribution_close_metaphor}）。"
+                    "預算要往上加或往下砍時，這兩種渠道各自該注意什麼。"
                 ),
                 "landing_page": (
                     "哪些頁面流量很大但客人幾乎都沒有轉換、等於白白流失客人，"
@@ -216,7 +226,7 @@ class AIService:
                - 參與率 → 「逛超過一定時間或有實際動作（不是滑過去就走）的比例」
                - 歸因 → 「這筆訂單該算誰的功勞」
                - 基線 → 「平常同一個時段大概會有的數字」
-               - 助攻/主攻（渠道對照專用）→ 「助攻渠道是先把客人帶進門的，主攻渠道是客人結帳前推最後一把的」
+               - 助攻/主攻（渠道對照專用）→ 「助攻渠道是先把客人帶進門的，{attribution_close_metaphor}」
             2. **只准引用 payload 內的數字**，禁止推測或編造 payload 沒有的數據。
             3. **比較語氣**：談到異常或落差時一律用「比平常同時段多/少了大約 X」的比較語氣，
                並附上預期區間（若 payload 有 baseline/expected 區間），**不要下絕對結論**

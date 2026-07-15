@@ -200,6 +200,18 @@ export const ATTRIBUTION_MODEL_LABELS = {
     },
 };
 
+// docs/34 第二波：「收單」欄位文案依 attribution_model 動態切換（依賴第一波
+// 的 payload.attribution_model）。"unknown" 時不臆測，用中性字樣。
+const CHANNEL_CLOSING_LABEL_OVERRIDES = {
+    data_driven: { en: 'Closing (path credit)', zh: '收單（路徑功勞）' },
+    last_click: { en: 'Closing (last-touch)', zh: '收單（最後接觸）' },
+};
+
+export const channelClosingLabel = (attributionModel, language) => {
+    const entry = CHANNEL_CLOSING_LABEL_OVERRIDES[attributionModel];
+    return entry ? tr(language, entry.en, entry.zh) : tr(language, 'Closing', '收單');
+};
+
 // 第 4 波：渠道對照維度切換（5 選項，對映後端 CHANNEL_DIMENSION_MAP 白名單）
 export const CHANNEL_DIMENSION_OPTIONS = [
     { value: 'default_channel_group', en: 'Session default channel group', zh: '工作階段主要管道群組' },
