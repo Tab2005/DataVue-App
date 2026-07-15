@@ -67,6 +67,10 @@ ATTRIBUTION_MODEL_MAP = {
     "GOOGLE_PAID_CHANNELS_LAST_CLICK": "last_click",
 }
 CHANNEL_TOP_N = 20
+# docs/34 第三波：小樣本比例穩健化。開發+收單總量低於此門檻時，即使收單>0
+# 也一律判 insufficient_data，避免單一事件把比例推向 0 或無限大的假象標籤
+# （例：開發0/收單6 這種案例，比例=0.00 卻只有 6 筆轉換，統計上不具代表性）。
+CHANNEL_MIN_SAMPLE = int(os.getenv("GA4_CHANNEL_MIN_SAMPLE", "10"))
 
 # 第 3 波：KPI 目標追蹤（docs/22 5 節，選配）
 KPI_PERIOD_TYPES = {"month", "quarter"}
@@ -606,7 +610,7 @@ class GA4InsightsService:
         for channel in channels:
             closing = session_by_channel.get(channel, 0)
             assisting = first_user_by_channel.get(channel, 0)
-            if closing > 0:
+            if closing > 0 and (closing + assisting) >= CHANNEL_MIN_SAMPLE:
                 ratio = assisting / closing
                 if ratio > 1.3:
                     tag = "assist"
@@ -615,7 +619,7 @@ class GA4InsightsService:
                 else:
                     tag = "balanced"
             else:
-                ratio = None
+                ratio = assisting / closing if closing > 0 else None
                 tag = "insufficient_data"
             rows.append({
                 "channel": channel,

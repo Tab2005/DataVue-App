@@ -123,6 +123,82 @@ def test_get_channels_truncates_to_top_20_by_combined_conversions(mocker, db, sa
     assert "channel-24" not in kept
 
 
+# ─── docs/34 第三波：小樣本比例穩健化 ────────────────────────────────
+@pytest.mark.unit
+def test_get_channels_marks_insufficient_data_below_min_sample(mocker, db, sample_user):
+    """實測案例（2026-07-15，HUKUROU property）：開發0/收單6，比例=0.00，
+    總量 6 < CHANNEL_MIN_SAMPLE(10)，不該再被貼上「主攻型」（close）。"""
+    from modules.ga4.insights_service import GA4InsightsService
+
+    def fake_get_analytics(*, user, property_id, start_date, end_date, metrics, dimensions, db=None, **_):
+        if dimensions == ["sessionDefaultChannelGroup"]:
+            return {"rows": [{"sessionDefaultChannelGroup": "Email", "conversions": 6}]}, None
+        return {"rows": []}, None
+
+    mocker.patch("modules.ga4.insights_service.GA4Service.get_analytics", side_effect=fake_get_analytics)
+
+    snapshot = GA4InsightsService.get_channels(db, user=sample_user, property_id="123456", days=7)
+    db.commit()
+
+    row = snapshot.payload["channels"][0]
+    assert row["channel"] == "Email"
+    assert row["tag"] == "insufficient_data"
+    # 比例數字仍照算並保留給前端顯示（只是不貼強分類標籤），不應被清成 None
+    assert row["ratio"] == 0.0
+
+
+@pytest.mark.unit
+@pytest.mark.parametrize(
+    "closing,assisting,expected_tag",
+    [
+        (9, 0, "insufficient_data"),   # 總量 9 < 10 門檻，即使 closing>0 也不分類
+        (10, 0, "close"),              # 總量剛好 = 10 門檻，恢復正常分類（ratio 0.0 < 0.7 -> close）
+    ],
+)
+def test_get_channels_min_sample_boundary(mocker, db, sample_user, closing, assisting, expected_tag):
+    from modules.ga4.insights_service import GA4InsightsService
+
+    def fake_get_analytics(*, user, property_id, start_date, end_date, metrics, dimensions, db=None, **_):
+        if dimensions == ["sessionDefaultChannelGroup"]:
+            return {"rows": [{"sessionDefaultChannelGroup": "Direct", "conversions": closing}]}, None
+        rows = [{"firstUserDefaultChannelGroup": "Direct", "conversions": assisting}] if assisting else []
+        return {"rows": rows}, None
+
+    mocker.patch("modules.ga4.insights_service.GA4Service.get_analytics", side_effect=fake_get_analytics)
+
+    snapshot = GA4InsightsService.get_channels(db, user=sample_user, property_id="123456", days=7)
+    db.commit()
+
+    assert snapshot.payload["channels"][0]["tag"] == expected_tag
+
+
+@pytest.mark.unit
+def test_get_channels_min_sample_respects_override(mocker, db, sample_user):
+    """門檻可調整（正式環境經由 `GA4_CHANNEL_MIN_SAMPLE` 環境變數在啟動時設定）。
+    這裡直接 patch 模組常數驗證行為，不用 importlib.reload——reload 會在同一
+    程序內就地重建整個模組（其他檔案 import 時拿到的 GA4InsightsService 參照
+    不會跟著換，且若在環境變數還原前就 reload 會把常數污染到其他測試），風險
+    遠高於直接 patch 這顆已知的模組級常數。"""
+    import modules.ga4.insights_service as insights_service_module
+
+    mocker.patch.object(insights_service_module, "CHANNEL_MIN_SAMPLE", 0)
+
+    def fake_get_analytics(*, user, property_id, start_date, end_date, metrics, dimensions, db=None, **_):
+        if dimensions == ["sessionDefaultChannelGroup"]:
+            return {"rows": [{"sessionDefaultChannelGroup": "Email", "conversions": 6}]}, None
+        return {"rows": []}, None
+
+    mocker.patch("modules.ga4.insights_service.GA4Service.get_analytics", side_effect=fake_get_analytics)
+
+    snapshot = insights_service_module.GA4InsightsService.get_channels(
+        db, user=sample_user, property_id="123456", days=7
+    )
+    db.commit()
+
+    # 門檻關閉（0）後，退回原本「收單>0 就分類」的行為
+    assert snapshot.payload["channels"][0]["tag"] == "close"
+
+
 # ─── docs/34 第一波：歸因模式揭露 ────────────────────────────────────
 @pytest.mark.unit
 def test_get_channels_attribution_model_unknown_without_credentials(mocker, db, sample_user):
