@@ -12,6 +12,7 @@ import {
     channelDimensionLabel,
     emptyState,
     fmtNumber,
+    fmtPct,
     inputStyle,
     secondaryButtonStyle,
     tr,
@@ -68,6 +69,12 @@ const ChannelsTab = ({
                                         )}
                                     </div>
                                 )}
+                                <div style={{ color: 'var(--text-secondary)', fontSize: '0.75rem', marginTop: '2px' }}>
+                                    {t(
+                                        'The tag reflects this channel\'s internal assist/close role — not how much it matters to total orders. Check the share (%) column for that.',
+                                        '標籤講的是這個渠道「開發 vs 收單」的內部角色，不是它在全站訂單裡的重要性——量級請看佔比欄位。'
+                                    )}
+                                </div>
                             </div>
                             <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap', alignItems: 'center' }}>
                                 <select
@@ -134,6 +141,17 @@ const ChannelsTab = ({
                                                         <span style={badgeStyle(row.tag)}>
                                                             {tr(language, CHANNEL_TAG_LABELS[row.tag]?.en, CHANNEL_TAG_LABELS[row.tag]?.zh) || row.tag}
                                                         </span>
+                                                        {channelsSnapshot.payload.total_closing_conversions > 0 && (
+                                                            <span
+                                                                style={{ color: 'var(--text-secondary)', fontSize: '0.74rem', marginLeft: '6px' }}
+                                                                title={t(
+                                                                    'Share of this channel\'s closing conversions out of all channels\' total.',
+                                                                    '這個渠道的收單轉換數，佔全部渠道收單轉換數加總的比例。'
+                                                                )}
+                                                            >
+                                                                ({t('share', '佔收單')} {fmtPct(row.closing_conversions / channelsSnapshot.payload.total_closing_conversions)})
+                                                            </span>
+                                                        )}
                                                     </td>
                                                 </tr>
                                             ))}

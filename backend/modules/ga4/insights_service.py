@@ -629,14 +629,18 @@ class GA4InsightsService:
                 "tag": tag,
             })
 
-        # 高基數保護：來源/媒介/廣告活動的列數可能遠多於管道群組，依（收單＋
-        # 開發）轉換數排序只留前 20 列，payload 註記截斷與原始總列數。
         total_row_count = len(rows)
+        # docs/34 第四波：標籤（assist/close/balanced）只反映渠道自身「開發 vs
+        # 收單」的內部角色，不反映它在全站訂單裡的份量；無論是否截斷都依
+        # （收單＋開發）轉換數降冪排序，量級大的渠道排最前面，避免使用者掃視
+        # 表格時把小量渠道的角色標籤誤讀成「主要訂單來源」。
+        total_closing_conversions = sum(r["closing_conversions"] for r in rows)
+        rows = sorted(rows, key=lambda r: r["closing_conversions"] + r["assisting_conversions"], reverse=True)
+        # 高基數保護：來源/媒介/廣告活動的列數可能遠多於管道群組，只留前 20
+        # 列，payload 註記截斷與原始總列數。
         truncated = total_row_count > CHANNEL_TOP_N
         if truncated:
-            rows = sorted(
-                rows, key=lambda r: r["closing_conversions"] + r["assisting_conversions"], reverse=True
-            )[:CHANNEL_TOP_N]
+            rows = rows[:CHANNEL_TOP_N]
 
         # kind 命名：預設維度沿用既有 "daily_channel"（向後相容既有快照與 AI
         # 解讀）；其餘維度加後綴各自獨立存放，互不覆寫
@@ -651,6 +655,7 @@ class GA4InsightsService:
             "channels": rows,
             "truncated": truncated,
             "total_row_count": total_row_count,
+            "total_closing_conversions": total_closing_conversions,
             "attribution_model": GA4InsightsService._get_attribution_model(db, user=user, property_id=property_id),
         }
         return repository.upsert_snapshot(

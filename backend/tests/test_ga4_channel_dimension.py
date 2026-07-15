@@ -123,6 +123,86 @@ def test_get_channels_truncates_to_top_20_by_combined_conversions(mocker, db, sa
     assert "channel-24" not in kept
 
 
+# ─── docs/34 第四波：量級與角色標籤脫鉤 ──────────────────────────────
+@pytest.mark.unit
+def test_get_channels_always_sorted_by_combined_conversions_even_without_truncation(mocker, db, sample_user):
+    """未截斷情境（渠道數 < 20）過去是依渠道名稱字母序排列；量級大的渠道跟
+    量級小的渠道交錯排列，容易讓人忽略量級落差。第四波起一律依（收單+開發）
+    降冪排序，不再是字母序。"""
+    from modules.ga4.insights_service import GA4InsightsService
+
+    def fake_get_analytics(*, user, property_id, start_date, end_date, metrics, dimensions, db=None, **_):
+        if dimensions == ["sessionDefaultChannelGroup"]:
+            return {"rows": [
+                {"sessionDefaultChannelGroup": "Email", "conversions": 45},        # 字母序最前，量級最小
+                {"sessionDefaultChannelGroup": "Organic Social", "conversions": 2654},  # 字母序居中，量級最大
+                {"sessionDefaultChannelGroup": "Zzz Referral", "conversions": 300},     # 字母序最後，量級居中
+            ]}, None
+        return {"rows": [
+            {"firstUserDefaultChannelGroup": "Email", "conversions": 9},
+            {"firstUserDefaultChannelGroup": "Organic Social", "conversions": 2695},
+            {"firstUserDefaultChannelGroup": "Zzz Referral", "conversions": 280},
+        ]}, None
+
+    mocker.patch("modules.ga4.insights_service.GA4Service.get_analytics", side_effect=fake_get_analytics)
+
+    snapshot = GA4InsightsService.get_channels(db, user=sample_user, property_id="123456", days=7)
+    db.commit()
+
+    order = [row["channel"] for row in snapshot.payload["channels"]]
+    assert order == ["Organic Social", "Zzz Referral", "Email"]
+
+
+@pytest.mark.unit
+def test_get_channels_total_closing_conversions_excludes_nothing_when_not_truncated(mocker, db, sample_user):
+    from modules.ga4.insights_service import GA4InsightsService
+
+    def fake_get_analytics(*, user, property_id, start_date, end_date, metrics, dimensions, db=None, **_):
+        if dimensions == ["sessionDefaultChannelGroup"]:
+            return {"rows": [
+                {"sessionDefaultChannelGroup": "Email", "conversions": 45},
+                {"sessionDefaultChannelGroup": "Organic Social", "conversions": 2654},
+            ]}, None
+        return {"rows": []}, None
+
+    mocker.patch("modules.ga4.insights_service.GA4Service.get_analytics", side_effect=fake_get_analytics)
+
+    snapshot = GA4InsightsService.get_channels(db, user=sample_user, property_id="123456", days=7)
+    db.commit()
+
+    assert snapshot.payload["total_closing_conversions"] == 45 + 2654
+
+
+@pytest.mark.unit
+def test_get_channels_total_closing_conversions_includes_truncated_rows(mocker, db, sample_user):
+    """佔比分母必須是全量（含被 top-20 截斷掉的渠道），不能只加已回傳的 20
+    筆，否則截斷情境下佔比會失真。"""
+    from modules.ga4.insights_service import GA4InsightsService
+
+    session_rows = [{"sessionSourceMedium": f"channel-{i}", "conversions": 100 - i} for i in range(25)]
+    first_user_rows = [{"firstUserSourceMedium": f"channel-{i}", "conversions": 1} for i in range(25)]
+
+    def fake_get_analytics(*, user, property_id, start_date, end_date, metrics, dimensions, db=None, **_):
+        if dimensions == ["sessionSourceMedium"]:
+            return {"rows": session_rows}, None
+        return {"rows": first_user_rows}, None
+
+    mocker.patch("modules.ga4.insights_service.GA4Service.get_analytics", side_effect=fake_get_analytics)
+
+    snapshot = GA4InsightsService.get_channels(
+        db, user=sample_user, property_id="123456", days=7, dimension="source_medium"
+    )
+    db.commit()
+
+    assert snapshot.payload["truncated"] is True
+    # 全部 25 筆的收單總和，不是截斷後 20 筆的總和
+    expected_total = sum(100 - i for i in range(25))
+    assert snapshot.payload["total_closing_conversions"] == expected_total
+    # 截斷後 20 筆的總和應該明顯小於全量（用來確認測試真的驗到「含被截斷的」這件事）
+    truncated_sum = sum(row["closing_conversions"] for row in snapshot.payload["channels"])
+    assert truncated_sum < expected_total
+
+
 # ─── docs/34 第三波：小樣本比例穩健化 ────────────────────────────────
 @pytest.mark.unit
 def test_get_channels_marks_insufficient_data_below_min_sample(mocker, db, sample_user):
