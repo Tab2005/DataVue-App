@@ -13,12 +13,11 @@ logger = logging.getLogger(__name__)
 
 from cache import get_trend_cache, set_trend_cache
 from modules.fb_ads._base import BASE_URL, TIMEOUT, get_headers
+from modules.fb_ads.actions_parsing import process_actions
 
 
 def _process_daily_item(item: dict) -> dict:
     """將每日資料列轉換為標準化指標字典"""
-    from services import FacebookService
-
     if not item:
         return {}
 
@@ -37,7 +36,7 @@ def _process_daily_item(item: dict) -> dict:
         ),
     }
 
-    acts = FacebookService._process_actions(item)
+    acts = process_actions(item)
 
     row["view_content"] = acts.get("view_content", 0)
     row["add_to_cart"] = acts.get("add_to_cart", 0)
@@ -55,8 +54,8 @@ def _process_daily_item(item: dict) -> dict:
     row["page_likes"] = acts.get("like", 0)
 
     # CPAS
-    cpas_acts = FacebookService._process_actions({"actions": item.get("catalog_segment_actions", [])})
-    cpas_vals = FacebookService._process_actions({"action_values": item.get("catalog_segment_value", [])})
+    cpas_acts = process_actions({"actions": item.get("catalog_segment_actions", [])})
+    cpas_vals = process_actions({"action_values": item.get("catalog_segment_value", [])})
 
     row["shared_purchases"] = cpas_acts.get("purchase", 0)
     row["shared_purchase_value"] = cpas_vals.get("purchase_val", 0)

@@ -6,6 +6,7 @@ Facebook Ads 服務模組。
 模組結構：
   _base.py             — 共用常數（BASE_URL, TIMEOUT）與 get_headers
   metrics_registry.py  — METRICS_REGISTRY, build_fb_fields
+  actions_parsing.py   — process_actions, format_kpi, format_charts
   accounts_service.py  — get_all_ad_accounts
   insights_service.py  — get_account_insights
   analytics_service.py — get_custom_report
@@ -14,6 +15,7 @@ Facebook Ads 服務模組。
 
 from modules.fb_ads._base import BASE_URL, TIMEOUT, get_headers
 from modules.fb_ads.metrics_registry import METRICS_REGISTRY, build_fb_fields
+from modules.fb_ads.actions_parsing import format_charts, format_kpi, process_actions
 from modules.fb_ads.accounts_service import get_all_ad_accounts
 from modules.fb_ads.insights_service import get_account_insights
 from modules.fb_ads.analytics_service import get_custom_report
@@ -64,9 +66,12 @@ __all__ = [
     "AsyncFacebookService",
     "METRICS_REGISTRY",
     "build_fb_fields",
+    "format_charts",
+    "format_kpi",
     "get_headers",
     "get_all_ad_accounts",
     "get_account_insights",
     "get_custom_report",
     "get_analytics_trend",
+    "process_actions",
 ]

@@ -14,6 +14,7 @@ logger = logging.getLogger(__name__)
 
 from cache import get_insights_cache, set_insights_cache
 from modules.fb_ads._base import BASE_URL, TIMEOUT, get_headers
+from modules.fb_ads.actions_parsing import format_charts, format_kpi
 
 
 async def get_account_insights(account_id, user_id, days=7, team_id=None, strict_token=False):
@@ -110,11 +111,9 @@ async def get_account_insights(account_id, user_id, days=7, team_id=None, strict
         prev_data = prev_data_list[0] if prev_data_list else {}
         trend_list = trend_res.get("data", [])
 
-        from services import FacebookService
-
         result = {
-            "kpi": FacebookService._format_kpi(cur_data, prev_data),
-            "chart_data": FacebookService._format_charts(trend_list),
+            "kpi": format_kpi(cur_data, prev_data),
+            "chart_data": format_charts(trend_list),
             "date_range": {
                 "start": date_start,
                 "stop": date_stop,

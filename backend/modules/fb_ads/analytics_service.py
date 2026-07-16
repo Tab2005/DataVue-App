@@ -14,12 +14,11 @@ logger = logging.getLogger(__name__)
 from cache import get_analytics_cache, set_analytics_cache
 from modules.fb_ads._base import BASE_URL, TIMEOUT, get_headers
 from modules.fb_ads.metrics_registry import build_fb_fields
+from modules.fb_ads.actions_parsing import process_actions
 
 
 def _process_flat_row(row: dict, level: str, ad_meta_map: dict) -> dict:
     """將原始 Facebook API 資料列轉換為扁平化字典"""
-    from services import FacebookService
-
     # 判斷名稱與 ID
     name = "Account Total"
     row_id = "total"
@@ -79,7 +78,7 @@ def _process_flat_row(row: dict, level: str, ad_meta_map: dict) -> dict:
         "status": meta.get("status", "UNKNOWN"),
     }
 
-    acts = FacebookService._process_actions(row)
+    acts = process_actions(row)
 
     flat["view_content"] = acts.get("view_content", 0)
     flat["add_to_cart"] = acts.get("add_to_cart", 0)
@@ -96,8 +95,8 @@ def _process_flat_row(row: dict, level: str, ad_meta_map: dict) -> dict:
     flat["post_reactions"] = acts.get("post_reaction", 0)
     flat["page_likes"] = acts.get("like", 0)
 
-    cpas_acts = FacebookService._process_actions({"actions": row.get("catalog_segment_actions", [])})
-    cpas_vals = FacebookService._process_actions({"action_values": row.get("catalog_segment_value", [])})
+    cpas_acts = process_actions({"actions": row.get("catalog_segment_actions", [])})
+    cpas_vals = process_actions({"action_values": row.get("catalog_segment_value", [])})
 
     flat["shared_purchases"] = cpas_acts.get("purchase", 0)
     flat["shared_purchase_value"] = cpas_vals.get("purchase_val", 0)
