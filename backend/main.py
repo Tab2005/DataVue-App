@@ -209,7 +209,7 @@ async def general_exception_handler(request: Request, exc: Exception):
 from routers import users, teams, invites, admin, ai, saved_views, gsc, permissions
 from routers import facebook, debug, ga4, auth, reports, line
 from routers.metrics import router as metrics_router
-from modules.meta_andromeda import router as meta_andromeda_router
+from modules.meta_andromeda.router import router as meta_andromeda_router
 from modules.contribution import router as contribution_router
 from modules.ga4.insights_router import router as ga4_insights_router
 
