@@ -1,6 +1,6 @@
-import React, { useEffect, useState, useMemo, useCallback, useRef } from 'react';
-import { getAllSourceGroups, isDefaultGroup } from '../utils/sourceGroups';
-import { getAllContentGroups, saveCustomContentGroup, deleteCustomContentGroup, isDefaultContentGroup } from '../utils/contentGroups';
+import React, { useEffect, useState, useMemo, useCallback } from 'react';
+import { getAllSourceGroups } from '../utils/sourceGroups';
+import { getAllContentGroups, saveCustomContentGroup, deleteCustomContentGroup } from '../utils/contentGroups';
 import SourceGroupModal from './SourceGroupModal';
 import ContentGroupModal from './ContentGroupModal';
 import {
@@ -21,8 +21,7 @@ import {
     CONTENT_METRICS,
     CONTENT_COLUMN_HEADERS,
     OVERVIEW_COLUMN_ORDER,
-    TABS,
-    CACHE_TTL
+    TABS
 } from './GA4/constants';
 import {
     formatLocalDate,
@@ -44,43 +43,13 @@ import {
     getEcommerceKPIData,
     getContentKPIData
 } from './GA4/ga4Kpi';
+import OverviewSection from './GA4/OverviewSection';
+import TrafficSection, { TrafficControls } from './GA4/TrafficSection';
+import { useGa4StatsData } from '../hooks/useGa4StatsData';
 
 
 const GA4Stats = ({ language, isMobile }) => {
     const t = (zh, en) => language === 'zh' ? zh : en;
-
-    // State management
-    const [properties, setProperties] = useState([]);
-    const [propertiesLoading, setPropertiesLoading] = useState(false);
-    const [selectedProperty, setSelectedProperty] = useState('');
-    const [analyticsData, setAnalyticsData] = useState(null);
-    const [summaryData, setSummaryData] = useState(null); // 新增：用於 KPI 卡片的去重總數
-    const [compareData, setCompareData] = useState(null);
-    const [compareSummaryData, setCompareSummaryData] = useState(null); // 新增：比較期間的去重總數
-    const [loading, setLoading] = useState(false);
-    const [error, setError] = useState(null);
-    const [activeTab, setActiveTab] = useState('overview');
-
-    // Server-side pagination for GA4 table data
-    const [ga4Offset, setGa4Offset] = useState(0);
-    const [ga4HasMore, setGa4HasMore] = useState(true);
-    const [ga4LoadingMore, setGa4LoadingMore] = useState(false);
-    const [showCustomDatePicker, setShowCustomDatePicker] = useState(false);
-    const [compareMode, setCompareMode] = useState('none');
-    // 日期計算：「過去 N 天」不包含今天（業界標準，因為今天數據不完整）
-    // 例如：過去 28 天 = 昨天往前推 27 天 = 共 28 天
-    const [dateRange, setDateRange] = useState(() => {
-        const yesterday = new Date();
-        yesterday.setDate(yesterday.getDate() - 1);
-        const startDate = new Date(yesterday);
-        startDate.setDate(startDate.getDate() - 27); // 28 days total (including yesterday)
-        return {
-            startDate: formatLocalDate(startDate),
-            endDate: formatLocalDate(yesterday),
-            preset: 'last_28d'
-        };
-    });
-    const [sortConfig, setSortConfig] = useState({ key: 'date', direction: 'desc' });
 
     // Table Pagination State
     const [currentPage, setCurrentPage] = useState(1);
@@ -96,6 +65,59 @@ const GA4Stats = ({ language, isMobile }) => {
     const [sourceGroups, setSourceGroups] = useState([]);
     const [showGroupModal, setShowGroupModal] = useState(false);
     const [editingGroup, setEditingGroup] = useState(null);
+
+    // Behavior Tab State
+    const [behaviorDimension, setBehaviorDimension] = useState('deviceCategory');
+    const [behaviorFilter, setBehaviorFilter] = useState('all'); // 'all' or specific value
+
+    // Ecommerce Tab State
+    const [ecommerceDimension, setEcommerceDimension] = useState('itemName');
+    const [ecommerceSecondaryDimension, setEcommerceSecondaryDimension] = useState('none');
+    const [ecommerceFilter, setEcommerceFilter] = useState('all');
+    const [ecommerceSecondaryFilter, setEcommerceSecondaryFilter] = useState('all');
+
+    // Content Tab State
+    const [contentDimension, setContentDimension] = useState('pageTitle');
+    const [contentTypeFilter, setContentTypeFilter] = useState('all');
+    const [contentGroups, setContentGroups] = useState([]);
+    const [showContentGroupModal, setShowContentGroupModal] = useState(false);
+    const [editingContentGroup, setEditingContentGroup] = useState(null);
+
+    const {
+        properties,
+        propertiesLoading,
+        selectedProperty,
+        setSelectedProperty,
+        analyticsData,
+        summaryData,
+        compareData,
+        compareSummaryData,
+        loading,
+        error,
+        activeTab,
+        setActiveTab,
+        ga4HasMore,
+        ga4LoadingMore,
+        compareMode,
+        setCompareMode,
+        dateRange,
+        setDateRange,
+        fetchAnalytics,
+        loadMoreGa4Data,
+        handleDatePresetChange,
+        getCompareDateRange,
+        handleCustomDateChange
+    } = useGa4StatsData({
+        trafficDimension,
+        behaviorDimension,
+        ecommerceDimension,
+        ecommerceSecondaryDimension,
+        contentDimension,
+        ga4PageSize,
+        setCurrentPage
+    });
+
+    const [sortConfig, setSortConfig] = useState({ key: 'date', direction: 'desc' });
 
     // Load source groups when property changes
     useEffect(() => {
@@ -126,23 +148,6 @@ const GA4Stats = ({ language, isMobile }) => {
     }, [selectedProperty]);
 
 
-    // Behavior Tab State
-    const [behaviorDimension, setBehaviorDimension] = useState('deviceCategory');
-    const [behaviorFilter, setBehaviorFilter] = useState('all'); // 'all' or specific value
-
-    // Ecommerce Tab State
-    const [ecommerceDimension, setEcommerceDimension] = useState('itemName');
-    const [ecommerceSecondaryDimension, setEcommerceSecondaryDimension] = useState('none');
-    const [ecommerceFilter, setEcommerceFilter] = useState('all');
-    const [ecommerceSecondaryFilter, setEcommerceSecondaryFilter] = useState('all');
-
-    // Content Tab State
-    const [contentDimension, setContentDimension] = useState('pageTitle');
-    const [contentTypeFilter, setContentTypeFilter] = useState('all');
-    const [contentGroups, setContentGroups] = useState([]);
-    const [showContentGroupModal, setShowContentGroupModal] = useState(false);
-    const [editingContentGroup, setEditingContentGroup] = useState(null);
-
     const getMetricLabel = (metric) => getMetricLabelForLanguage(metric, language);
 
     const getTrafficColumnOrder = () => getTrafficColumnOrderForDimension(trafficDimension);
@@ -160,487 +165,6 @@ const GA4Stats = ({ language, isMobile }) => {
     const getContentColumnOrder = () => getContentColumnOrderForDimension(contentDimension);
 
     const getContentColumnLabel = (col) => getContentColumnLabelForLanguage(col, language);
-
-    // Cache ref for analytics data
-    const cacheRef = useRef(new Map());
-
-    // Generate cache key
-    const getCacheKey = useCallback((propertyId, tab, start, end) => {
-        return `${propertyId}|${tab}|${start}|${end}`;
-    }, []);
-
-    // Check if cache is valid
-    const getCachedData = useCallback((key) => {
-        const cached = cacheRef.current.get(key);
-        if (cached && Date.now() - cached.timestamp < CACHE_TTL) {
-            return cached.data;
-        }
-        return null;
-    }, []);
-
-    // Set cache data
-    const setCachedData = useCallback((key, data) => {
-        cacheRef.current.set(key, { data, timestamp: Date.now() });
-    }, []);
-
-    // Fetch GA4 properties
-    const fetchProperties = async () => {
-        setPropertiesLoading(true);
-        try {
-            const apiUrl = import.meta.env.VITE_API_URL || 'http://localhost:8000';
-            const response = await fetch(`${apiUrl}/api/ga4/properties`, {
-                headers: { 'Authorization': `Bearer ${localStorage.getItem('google_token')}` }
-            });
-
-            if (!response.ok) {
-                throw new Error('Failed to fetch properties');
-            }
-
-            const data = await response.json();
-            setProperties(data.properties || []);
-
-            // Auto-select first property if available
-            if (data.properties && data.properties.length > 0 && !selectedProperty) {
-                setSelectedProperty(data.properties[0].property_id);
-            }
-        } catch (err) {
-            console.error('Error fetching GA4 properties:', err);
-            setError('Failed to load properties');
-        } finally {
-            setPropertiesLoading(false);
-        }
-    };
-
-    // Fetch analytics data with caching
-    // 同時獲取兩組數據：帶 dimension（表格）和不帶 dimension（KPI 總數去重）
-    const fetchAnalytics = useCallback(async (forceRefresh = false, options = {}) => {
-        const { append = false, offset = 0 } = options;
-        if (!selectedProperty) return;
-
-        if (forceRefresh) {
-            setGa4Offset(0);
-            setGa4HasMore(true);
-        }
-
-        // Include dimension in cache key for traffic, behavior, and ecommerce tabs
-        let dimensionKey;
-        if (activeTab === 'traffic') {
-            dimensionKey = trafficDimension;
-        } else if (activeTab === 'behavior') {
-            dimensionKey = behaviorDimension;
-        } else if (activeTab === 'ecommerce') {
-            dimensionKey = `${ecommerceDimension}|${ecommerceSecondaryDimension}`;
-        } else if (activeTab === 'content') {
-            dimensionKey = contentDimension;
-        } else {
-            dimensionKey = 'default';
-        }
-
-        const baseKey = getCacheKey(selectedProperty, activeTab + '|' + dimensionKey, dateRange.startDate, dateRange.endDate);
-        const pageKey = `${baseKey}|page|${offset}|${ga4PageSize}`;
-        const combinedKey = `${baseKey}|combined`;
-        const summaryCacheKey = `${baseKey}|summary`;
-
-        // Check cache first (unless force refresh)
-        if (!forceRefresh) {
-            if (!append) {
-                const cachedCombined = getCachedData(combinedKey);
-                const cachedSummary = getCachedData(summaryCacheKey);
-                if (cachedCombined && cachedSummary) {
-                    console.log('📦 Using cached data for:', combinedKey);
-                    setAnalyticsData(cachedCombined);
-                    setSummaryData(cachedSummary);
-                    if (cachedCombined.total_row_count) {
-                        setGa4HasMore(cachedCombined.rows.length < cachedCombined.total_row_count);
-                    }
-                    return;
-                }
-            } else {
-                const cachedPage = getCachedData(pageKey);
-                if (cachedPage) {
-                    setAnalyticsData(prev => {
-                        const prevRows = prev?.rows || [];
-                        const mergedRows = [...prevRows, ...(cachedPage.rows || [])];
-                        const totalRowCount = cachedPage.total_row_count || prev?.total_row_count || mergedRows.length;
-                        const mergedData = {
-                            ...cachedPage,
-                            rows: mergedRows,
-                            row_count: mergedRows.length,
-                            total_row_count: totalRowCount
-                        };
-                        setCachedData(combinedKey, mergedData);
-                        return mergedData;
-                    });
-                    if (cachedPage.total_row_count) {
-                        setGa4HasMore((analyticsData?.rows?.length || 0) + cachedPage.rows.length < cachedPage.total_row_count);
-                    }
-                    return;
-                }
-            }
-        }
-
-        if (append) {
-            setGa4LoadingMore(true);
-        } else {
-            setLoading(true);
-        }
-        setError(null);
-
-        try {
-            const apiUrl = import.meta.env.VITE_API_URL || 'http://localhost:8000';
-            const tabConfig = TABS.find(tab => tab.key === activeTab);
-
-            // For traffic/behavior/ecommerce/content tabs, use dynamic dimension; otherwise use tab config
-            let activeDimension;
-            if (activeTab === 'traffic') {
-                activeDimension = trafficDimension;
-            } else if (activeTab === 'behavior') {
-                activeDimension = behaviorDimension;
-            } else if (activeTab === 'ecommerce') {
-                // Ecommerce supports multiple dimensions
-                activeDimension = ecommerceSecondaryDimension !== 'none'
-                    ? `${ecommerceDimension},${ecommerceSecondaryDimension}`
-                    : ecommerceDimension;
-            } else if (activeTab === 'content') {
-                activeDimension = contentDimension;
-            } else {
-                activeDimension = tabConfig.dimensions[0];
-            }
-
-            // 1. 帶 dimension 的請求（用於表格顯示每日數據）
-            const params = new URLSearchParams({
-                property_id: selectedProperty,
-                start_date: dateRange.startDate,
-                end_date: dateRange.endDate,
-                metrics: tabConfig.metrics.join(','),
-                dimensions: activeDimension,
-                limit: String(ga4PageSize),
-                offset: String(offset)
-            });
-
-            // 2. 不帶 dimension 的請求（用於 KPI 卡片顯示去重總數）
-            const summaryParams = new URLSearchParams({
-                property_id: selectedProperty,
-                start_date: dateRange.startDate,
-                end_date: dateRange.endDate,
-                metrics: tabConfig.metrics.join(','),
-                dimensions: '' // 空字串表示不帶 dimension
-            });
-
-            // 並行請求兩組數據
-            const [response, summaryResponse] = await Promise.all([
-                fetch(`${apiUrl}/api/ga4/report?${params}`, {
-                    headers: { 'Authorization': `Bearer ${localStorage.getItem('google_token')}` }
-                }),
-                fetch(`${apiUrl}/api/ga4/report?${summaryParams}`, {
-                    headers: { 'Authorization': `Bearer ${localStorage.getItem('google_token')}` }
-                })
-            ]);
-
-            if (!response.ok) {
-                throw new Error('Failed to fetch analytics data');
-            }
-
-            const data = await response.json();
-            const summary = summaryResponse.ok ? await summaryResponse.json() : null;
-
-            const totalRowCount = data.total_row_count ?? data.row_count ?? (data.rows ? data.rows.length : 0);
-            const incomingRows = data.rows || [];
-            const mergedRows = append && analyticsData?.rows
-                ? [...analyticsData.rows, ...incomingRows]
-                : incomingRows;
-
-            const combinedData = {
-                ...data,
-                rows: mergedRows,
-                row_count: mergedRows.length,
-                total_row_count: totalRowCount,
-                limit: ga4PageSize,
-                offset
-            };
-
-            // Store in cache
-            setCachedData(pageKey, data);
-            setCachedData(combinedKey, combinedData);
-            if (summary) {
-                setCachedData(summaryCacheKey, summary);
-            }
-            console.log('💾 Cached data for:', combinedKey);
-
-            setAnalyticsData(combinedData);
-            setSummaryData(summary);
-            setCurrentPage(1);
-
-            if (totalRowCount) {
-                setGa4HasMore(mergedRows.length < totalRowCount);
-            } else if (ga4PageSize && incomingRows.length < ga4PageSize) {
-                setGa4HasMore(false);
-            }
-
-            if (append) {
-                setGa4Offset(offset);
-            } else {
-                setGa4Offset(0);
-            }
-        } catch (err) {
-            console.error('Error fetching GA4 analytics:', err);
-            setError('Failed to load analytics data');
-        } finally {
-            if (append) {
-                setGa4LoadingMore(false);
-            } else {
-                setLoading(false);
-            }
-        }
-    }, [selectedProperty, activeTab, dateRange.startDate, dateRange.endDate, trafficDimension, behaviorDimension, ecommerceDimension, ecommerceSecondaryDimension, contentDimension, ga4PageSize, analyticsData, getCacheKey, getCachedData, setCachedData]);
-
-    const loadMoreGa4Data = () => {
-        if (ga4LoadingMore || !ga4HasMore) return;
-        const nextOffset = ga4Offset + ga4PageSize;
-        fetchAnalytics(false, { append: true, offset: nextOffset });
-    };
-
-    // Fetch comparison data (also with summary for KPI)
-    const fetchCompareData = useCallback(async (compareDateRange) => {
-        if (!selectedProperty || !compareDateRange) {
-            setCompareData(null);
-            setCompareSummaryData(null);
-            return;
-        }
-
-        // Include dimension in cache key for traffic, behavior, ecommerce, and content tabs
-        let dimensionKey;
-        if (activeTab === 'traffic') {
-            dimensionKey = trafficDimension;
-        } else if (activeTab === 'behavior') {
-            dimensionKey = behaviorDimension;
-        } else if (activeTab === 'ecommerce') {
-            dimensionKey = `${ecommerceDimension}|${ecommerceSecondaryDimension}`;
-        } else if (activeTab === 'content') {
-            dimensionKey = contentDimension;
-        } else {
-            dimensionKey = 'default';
-        }
-        const cacheKey = getCacheKey(selectedProperty, activeTab + '|compare|' + dimensionKey, compareDateRange.startDate, compareDateRange.endDate);
-        const summaryCacheKey = `${cacheKey}|summary`;
-
-        // Check cache first
-        const cachedData = getCachedData(cacheKey);
-        const cachedSummary = getCachedData(summaryCacheKey);
-        if (cachedData && cachedSummary) {
-            console.log('📦 Using cached compare data for:', cacheKey);
-            setCompareData(cachedData);
-            setCompareSummaryData(cachedSummary);
-            return;
-        }
-
-        try {
-            const apiUrl = import.meta.env.VITE_API_URL || 'http://localhost:8000';
-            const tabConfig = TABS.find(tab => tab.key === activeTab);
-
-            // For traffic/behavior/ecommerce/content tabs, use dynamic dimension; otherwise use tab config
-            let activeDimension;
-            if (activeTab === 'traffic') {
-                activeDimension = trafficDimension;
-            } else if (activeTab === 'behavior') {
-                activeDimension = behaviorDimension;
-            } else if (activeTab === 'ecommerce') {
-                // Ecommerce supports multiple dimensions
-                activeDimension = ecommerceSecondaryDimension !== 'none'
-                    ? `${ecommerceDimension},${ecommerceSecondaryDimension}`
-                    : ecommerceDimension;
-            } else if (activeTab === 'content') {
-                activeDimension = contentDimension;
-            } else {
-                activeDimension = tabConfig.dimensions[0];
-            }
-
-            const params = new URLSearchParams({
-                property_id: selectedProperty,
-                start_date: compareDateRange.startDate,
-                end_date: compareDateRange.endDate,
-                metrics: tabConfig.metrics.join(','),
-                dimensions: activeDimension
-            });
-
-
-            // 比較期間也需要不帶 dimension 的總數
-            const summaryParams = new URLSearchParams({
-                property_id: selectedProperty,
-                start_date: compareDateRange.startDate,
-                end_date: compareDateRange.endDate,
-                metrics: tabConfig.metrics.join(','),
-                dimensions: ''
-            });
-
-            const [response, summaryResponse] = await Promise.all([
-                fetch(`${apiUrl}/api/ga4/report?${params}`, {
-                    headers: { 'Authorization': `Bearer ${localStorage.getItem('google_token')}` }
-                }),
-                fetch(`${apiUrl}/api/ga4/report?${summaryParams}`, {
-                    headers: { 'Authorization': `Bearer ${localStorage.getItem('google_token')}` }
-                })
-            ]);
-
-            if (response.ok) {
-                const data = await response.json();
-                const summary = summaryResponse.ok ? await summaryResponse.json() : null;
-                setCachedData(cacheKey, data);
-                if (summary) {
-                    setCachedData(summaryCacheKey, summary);
-                }
-                setCompareData(data);
-                setCompareSummaryData(summary);
-            }
-        } catch (err) {
-            console.error('Error fetching compare data:', err);
-        }
-    }, [selectedProperty, activeTab, trafficDimension, behaviorDimension, ecommerceDimension, ecommerceSecondaryDimension, contentDimension, getCacheKey, getCachedData, setCachedData]);
-
-    // Handle date preset change (aligned with Analytics page logic)
-    const handleDatePresetChange = (preset) => {
-        const presetConfig = DATE_PRESETS.find(p => p.key === preset);
-        const today = new Date();
-        let startDate, endDate;
-
-        // Handle special presets that need custom date calculation
-        if (presetConfig.isToday) {
-            startDate = endDate = new Date(today);
-        } else if (presetConfig.isYesterday) {
-            startDate = endDate = new Date(today);
-            startDate.setDate(startDate.getDate() - 1);
-        } else if (presetConfig.isThisWeek) {
-            // 本週：從本週一到今天
-            endDate = new Date(today);
-            startDate = new Date(today);
-            const dayOfWeek = startDate.getDay();
-            const daysToMonday = dayOfWeek === 0 ? 6 : dayOfWeek - 1;
-            startDate.setDate(startDate.getDate() - daysToMonday);
-        } else if (presetConfig.isLastWeek) {
-            // 上週：從上週一到上週日
-            const lastWeekEnd = new Date(today);
-            const dayOfWeek = lastWeekEnd.getDay();
-            const daysToLastSunday = dayOfWeek === 0 ? 7 : dayOfWeek;
-            lastWeekEnd.setDate(lastWeekEnd.getDate() - daysToLastSunday);
-            endDate = new Date(lastWeekEnd);
-            startDate = new Date(lastWeekEnd);
-            startDate.setDate(startDate.getDate() - 6);
-        } else if (presetConfig.isThisMonth) {
-            // 本月：從本月1日到本月最後一天
-            endDate = new Date(today.getFullYear(), today.getMonth() + 1, 0);
-            startDate = new Date(today.getFullYear(), today.getMonth(), 1);
-        } else if (presetConfig.isLastMonth) {
-            // 上月：從上月1日到上月最後一天
-            startDate = new Date(today.getFullYear(), today.getMonth() - 1, 1);
-            endDate = new Date(today.getFullYear(), today.getMonth(), 0);
-        } else if (presetConfig.days !== null && presetConfig.days > 0) {
-            // 「過去 N 天」不包含今天（業界標準）
-            // endDate = 昨天，startDate = 昨天往前推 (N-1) 天
-            const yesterday = new Date(today);
-            yesterday.setDate(yesterday.getDate() - 1);
-            endDate = new Date(yesterday);
-            startDate = new Date(yesterday);
-            startDate.setDate(startDate.getDate() - (presetConfig.days - 1));
-        } else if (preset === 'custom') {
-            // Custom preset - toggle date picker
-            setShowCustomDatePicker(true);
-            setDateRange(prev => ({ ...prev, preset: 'custom' }));
-            return;
-        }
-
-        if (startDate && endDate) {
-            setDateRange({
-                startDate: formatLocalDate(startDate),
-                endDate: formatLocalDate(endDate),
-                preset
-            });
-            setShowCustomDatePicker(false);
-        }
-    };
-
-
-    // Toggle custom date picker visibility
-    const toggleCustomDatePicker = () => {
-        if (dateRange.preset === 'custom') {
-            setShowCustomDatePicker(prev => !prev);
-        } else {
-            handleDatePresetChange('custom');
-        }
-    };
-
-    // Calculate comparison date range
-    const getCompareDateRange = useCallback(() => {
-        if (compareMode === 'none') return null;
-
-        const start = new Date(dateRange.startDate);
-        const end = new Date(dateRange.endDate);
-        const daysDiff = Math.ceil((end - start) / (1000 * 60 * 60 * 24));
-
-        if (compareMode === 'previous_period') {
-            const compareEnd = new Date(start.getTime() - 24 * 60 * 60 * 1000);
-            const compareStart = new Date(compareEnd.getTime() - daysDiff * 24 * 60 * 60 * 1000);
-            return {
-                startDate: formatLocalDate(compareStart),
-                endDate: formatLocalDate(compareEnd)
-            };
-        } else if (compareMode === 'previous_year') {
-            const compareStart = new Date(start);
-            compareStart.setFullYear(compareStart.getFullYear() - 1);
-            const compareEnd = new Date(end);
-            compareEnd.setFullYear(compareEnd.getFullYear() - 1);
-            return {
-                startDate: formatLocalDate(compareStart),
-                endDate: formatLocalDate(compareEnd)
-            };
-        }
-        return null;
-    }, [compareMode, dateRange.startDate, dateRange.endDate]);
-
-    // Handle custom date selection
-    const handleCustomDateChange = (type, value) => {
-        setDateRange(prev => ({
-            ...prev,
-            [type]: value,
-            preset: 'custom'
-        }));
-    };
-
-    // Apply custom date range
-    const applyCustomDateRange = () => {
-        setShowCustomDatePicker(false);
-        // The fetchAnalytics will be triggered by useEffect
-    };
-
-    // Effects
-    useEffect(() => {
-        fetchProperties();
-    }, []);
-
-    useEffect(() => {
-        setGa4Offset(0);
-        setGa4HasMore(true);
-        setGa4LoadingMore(false);
-        setCurrentPage(1);
-    }, [selectedProperty, activeTab, dateRange.startDate, dateRange.endDate, trafficDimension, behaviorDimension, ecommerceDimension, ecommerceSecondaryDimension, contentDimension]);
-
-    useEffect(() => {
-        if (selectedProperty && !showCustomDatePicker) {
-            fetchAnalytics();
-        }
-    }, [selectedProperty, activeTab, dateRange, showCustomDatePicker, fetchAnalytics]);
-
-    // Fetch compare data when compare mode changes
-    useEffect(() => {
-        if (compareMode !== 'none' && selectedProperty && analyticsData) {
-            const compareDateRange = getCompareDateRange();
-            if (compareDateRange) {
-                fetchCompareData(compareDateRange);
-            }
-        } else {
-            setCompareData(null);
-            setCompareSummaryData(null);
-        }
-    }, [compareMode, getCompareDateRange, fetchCompareData, selectedProperty, analyticsData, trafficDimension, behaviorDimension, ecommerceDimension, ecommerceSecondaryDimension]);
 
     // Reset source filter when dimension changes (for traffic tab)
     useEffect(() => {
@@ -1137,154 +661,19 @@ const GA4Stats = ({ language, isMobile }) => {
 
                 {/* Traffic Tab Controls */}
                 {activeTab === 'traffic' && (
-                    <div style={{
-                        display: 'flex',
-                        flexDirection: isMobile ? 'column' : 'row',
-                        gap: '16px',
-                        marginBottom: '20px',
-                        padding: '16px',
-                        background: 'rgba(255, 255, 255, 0.02)',
-                        borderRadius: '12px',
-                        border: '1px solid var(--glass-border)'
-                    }}>
-                        {/* Dimension Selector */}
-                        <div style={{ flex: 1 }}>
-                            <label style={{
-                                display: 'block',
-                                marginBottom: '8px',
-                                fontSize: '13px',
-                                fontWeight: 600,
-                                color: 'var(--text-secondary)'
-                            }}>
-                                📊 {t('分析維度', 'Analysis Dimension')}
-                            </label>
-                            <select
-                                value={trafficDimension}
-                                onChange={(e) => setTrafficDimension(e.target.value)}
-                                style={{
-                                    width: '100%',
-                                    padding: '10px 12px',
-                                    border: '1px solid var(--glass-border)',
-                                    borderRadius: '8px',
-                                    background: '#ffffff',
-                                    color: '#000000',
-                                    fontSize: '14px'
-                                }}
-                            >
-                                {TRAFFIC_DIMENSIONS.map(dim => (
-                                    <option key={dim.key} value={dim.key} style={{ color: 'black' }}>
-                                        {language === 'zh' ? dim.label_zh : dim.label_en}
-                                    </option>
-                                ))}
-                            </select>
-                        </div>
-
-                        {/* Dynamic Source Filter */}
-                        <div style={{ flex: 1 }}>
-                            <label style={{
-                                display: 'flex',
-                                marginBottom: '8px',
-                                fontSize: '13px',
-                                fontWeight: 600,
-                                color: 'var(--text-secondary)',
-                                justifyContent: 'space-between',
-                                alignItems: 'center'
-                            }}>
-                                <span>🎯 {t('來源篩選', 'Source Filter')}</span>
-                                <button
-                                    onClick={() => {
-                                        setEditingGroup(null);
-                                        setShowGroupModal(true);
-                                    }}
-                                    style={{
-                                        background: 'rgba(99, 102, 241, 0.2)',
-                                        border: '1px solid rgba(99, 102, 241, 0.4)',
-                                        borderRadius: '4px',
-                                        color: '#818cf8',
-                                        fontSize: '11px',
-                                        padding: '2px 8px',
-                                        cursor: 'pointer'
-                                    }}
-                                >
-                                    + {t('新增分組', 'Add Group')}
-                                </button>
-                            </label>
-                            <div style={{ display: 'flex', gap: '8px' }}>
-                                <select
-                                    value={sourceFilter}
-                                    onChange={(e) => setSourceFilter(e.target.value)}
-                                    style={{
-                                        flex: 1,
-                                        padding: '10px 12px',
-                                        border: '1px solid var(--glass-border)',
-                                        borderRadius: '8px',
-                                        background: 'rgba(255, 255, 255, 0.05)',
-                                        color: 'var(--text-primary)',
-                                        fontSize: '14px'
-                                    }}
-                                >
-                                    <option value="all" style={{ color: 'black' }}>
-                                        {t('全部來源', 'All Sources')}
-                                    </option>
-
-                                    {/* Source Groups - only show groups that have matching data */}
-                                    {analyticsData && analyticsData.rows && sourceGroups.filter(group => {
-                                        // Only show group if there are matching sources in data
-                                        const sources = analyticsData.rows.map(row =>
-                                            (row[trafficDimension] || row.dimension || '').toLowerCase()
-                                        );
-                                        return group.patterns.some(pattern =>
-                                            sources.some(source => source.includes(pattern.toLowerCase()))
-                                        );
-                                    }).map(group => (
-                                        <option key={group.key} value={group.key} style={{ color: 'black', fontWeight: 'bold' }}>
-                                            {language === 'zh' ? group.label_zh : group.label_en}
-                                        </option>
-                                    ))}
-
-                                    {/* Separator */}
-                                    <option disabled style={{ color: '#666' }}>──────────────</option>
-
-                                    {/* Individual sources */}
-                                    {analyticsData && analyticsData.rows &&
-                                        [...new Set(analyticsData.rows.map(row => {
-                                            const dimKey = trafficDimension.replace('session', '').replace('Default', '').toLowerCase();
-                                            return row[trafficDimension] || row[dimKey] || row.dimension;
-                                        }).filter(Boolean))].sort().map(source => (
-                                            <option key={source} value={source} style={{ color: 'black' }}>
-                                                {source}
-                                            </option>
-                                        ))
-                                    }
-                                </select>
-
-                                {/* Edit button - only show when a group is selected */}
-                                {(sourceFilter.startsWith('group_') || sourceFilter.startsWith('custom_')) && sourceFilter !== 'all' && (
-                                    <button
-                                        onClick={() => {
-                                            const group = sourceGroups.find(g => g.key === sourceFilter);
-                                            if (group) {
-                                                setEditingGroup(group);
-                                                setShowGroupModal(true);
-                                            }
-                                        }}
-                                        style={{
-                                            padding: '10px 12px',
-                                            border: '1px solid var(--glass-border)',
-                                            borderRadius: '8px',
-                                            background: 'rgba(255, 255, 255, 0.05)',
-                                            color: 'var(--text-secondary)',
-                                            cursor: 'pointer',
-                                            fontSize: '14px'
-                                        }}
-                                        title={t('編輯分組', 'Edit Group')}
-                                    >
-                                        ✏️
-                                    </button>
-                                )}
-                            </div>
-                        </div>
-                    </div>
+                    <TrafficControls
+                        analyticsData={analyticsData}
+                        isMobile={isMobile}
+                        language={language}
+                        setEditingGroup={setEditingGroup}
+                        setShowGroupModal={setShowGroupModal}
+                        setSourceFilter={setSourceFilter}
+                        setTrafficDimension={setTrafficDimension}
+                        sourceFilter={sourceFilter}
+                        sourceGroups={sourceGroups}
+                        t={t}
+                        trafficDimension={trafficDimension}
+                    />
                 )}
 
                 {/* Behavior Tab Controls */}
@@ -1884,7 +1273,44 @@ const GA4Stats = ({ language, isMobile }) => {
                 )}
 
                 {/* Data Table Placeholder */}
-                {!loading && !error && analyticsData && (
+                {!loading && !error && analyticsData && activeTab === 'overview' && (
+                    <OverviewSection
+                        analyticsData={analyticsData}
+                        currentPage={currentPage}
+                        ga4HasMore={ga4HasMore}
+                        ga4LoadingMore={ga4LoadingMore}
+                        getMetricLabel={getMetricLabel}
+                        isMobile={isMobile}
+                        itemsPerPage={itemsPerPage}
+                        loadMoreGa4Data={loadMoreGa4Data}
+                        setCurrentPage={setCurrentPage}
+                        setItemsPerPage={setItemsPerPage}
+                        setSortConfig={setSortConfig}
+                        sortConfig={sortConfig}
+                        t={t}
+                    />
+                )}
+
+                {!loading && !error && analyticsData && activeTab === 'traffic' && (
+                    <TrafficSection
+                        analyticsData={analyticsData}
+                        currentPage={currentPage}
+                        ga4HasMore={ga4HasMore}
+                        ga4LoadingMore={ga4LoadingMore}
+                        getTrafficColumnLabel={getTrafficColumnLabel}
+                        getTrafficColumnOrder={getTrafficColumnOrder}
+                        isMobile={isMobile}
+                        itemsPerPage={itemsPerPage}
+                        loadMoreGa4Data={loadMoreGa4Data}
+                        setCurrentPage={setCurrentPage}
+                        setItemsPerPage={setItemsPerPage}
+                        setSortConfig={setSortConfig}
+                        sortConfig={sortConfig}
+                        t={t}
+                    />
+                )}
+
+                {!loading && !error && analyticsData && activeTab !== 'overview' && activeTab !== 'traffic' && (
                     <div style={{
                         background: 'var(--bg-secondary)',
                         border: '1px solid var(--glass-border)',
