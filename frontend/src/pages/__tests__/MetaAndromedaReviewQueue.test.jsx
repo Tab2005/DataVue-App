@@ -1,24 +1,25 @@
 import React from 'react';
-import { fireEvent, screen, waitFor } from '@testing-library/react';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { screen, waitFor } from '@testing-library/react';
 
 import MetaAndromedaReviewQueue from '../MetaAndromedaReviewQueue';
 import { renderWithOutlet } from '../../test/renderWithOutlet';
 import {
+    batchDeleteMetaAndromedaReviewItems,
+    deleteMetaAndromedaReviewItem,
     fetchMetaAndromedaReviewDetail,
-    fetchMetaAndromedaReviewFeedback,
     fetchMetaAndromedaReviewQueue,
-    submitMetaAndromedaReviewFeedback,
 } from '../../services/metaAndromedaReviewQueueService';
 
 vi.mock('../../hooks/usePermission', () => ({
-    usePermission: vi.fn(() => ({ hasPermission: true, loading: false })),
+    useModuleAccess: vi.fn(() => ({ hasAccess: true, loading: false })),
 }));
 
 vi.mock('../../services/metaAndromedaReviewQueueService', () => ({
     fetchMetaAndromedaReviewQueue: vi.fn(),
     fetchMetaAndromedaReviewDetail: vi.fn(),
-    fetchMetaAndromedaReviewFeedback: vi.fn(),
-    submitMetaAndromedaReviewFeedback: vi.fn(),
+    deleteMetaAndromedaReviewItem: vi.fn(),
+    batchDeleteMetaAndromedaReviewItems: vi.fn(),
 }));
 
 describe('MetaAndromedaReviewQueue', () => {
@@ -33,10 +34,12 @@ describe('MetaAndromedaReviewQueue', () => {
                     placement_family: 'feed',
                     market: 'TW',
                     overall_score: 88,
-                    reviewed: false,
-                    latest_feedback_decision: null,
+                    source: 'score_lab',
+                    asset_type: 'image',
+                    roas_band: 'high',
                 },
             ],
+            summary: { total: 1, total_pages: 1 },
         });
         fetchMetaAndromedaReviewDetail.mockResolvedValue({
             score_event_id: 'evt_review_001',
@@ -49,35 +52,26 @@ describe('MetaAndromedaReviewQueue', () => {
             top_positive_drivers: ['clear CTA'],
             top_negative_drivers: ['text density'],
         });
-        fetchMetaAndromedaReviewFeedback.mockResolvedValue({
-            feedback: [],
-        });
-        submitMetaAndromedaReviewFeedback.mockResolvedValue({
-            feedback_event_id: 'fb_001',
-        });
+        deleteMetaAndromedaReviewItem.mockResolvedValue({ ok: true });
+        batchDeleteMetaAndromedaReviewItems.mockResolvedValue({ deleted: 1 });
     });
 
-    it('submits reviewer feedback with parsed reason codes', async () => {
+    it('loads the review queue and selected record detail', async () => {
         renderWithOutlet(<MetaAndromedaReviewQueue />);
 
         await screen.findByText('evt_review_001');
         await screen.findByText('review me');
 
-        const decisionSelect = screen.getAllByRole('combobox')[2];
-        fireEvent.change(decisionSelect, { target: { value: 'revise' } });
-        fireEvent.change(screen.getByPlaceholderText('reason codes, comma separated'), {
-            target: { value: 'hook_soft, offer_late' },
+        expect(fetchMetaAndromedaReviewQueue).toHaveBeenCalledWith({
+            status: 'completed',
+            has_observation: null,
+            roas_band: null,
+            source: null,
+            scoring_engine: null,
+            search: null,
+            page: 1,
+            page_size: 25,
         });
-        fireEvent.change(screen.getByPlaceholderText('review notes'), {
-            target: { value: 'Need sharper hook.' },
-        });
-
-        fireEvent.click(screen.getByRole('button', { name: 'Submit Feedback' }));
-
-        await waitFor(() => expect(submitMetaAndromedaReviewFeedback).toHaveBeenCalledWith('evt_review_001', {
-            decision: 'revise',
-            reason_codes: ['hook_soft', 'offer_late'],
-            comment: 'Need sharper hook.',
-        }));
+        await waitFor(() => expect(fetchMetaAndromedaReviewDetail).toHaveBeenCalledWith('evt_review_001'));
     });
 });

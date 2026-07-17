@@ -97,7 +97,7 @@ const ReviewQueueList = ({
             </div>
         )}
 
-        <ReviewQueuePagination page={page} totalPages={totalPages} onPageChange={handlePageChange} t={t} />
+        <ReviewQueuePagination page={page} totalPages={totalPages} onPageChange={handlePageChange} />
         {totalPages > 1 && (
             <div style={{ textAlign: 'center', color: 'var(--text-secondary)', fontSize: '0.75rem', marginTop: '8px' }}>
                 {t(`Page ${page} / ${totalPages}`, `第 ${page} 頁，共 ${totalPages} 頁`)}

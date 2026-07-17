@@ -27,9 +27,10 @@ export const useReviewQueue = (t) => {
     const [loadingDetail, setLoadingDetail] = useState(false);
     const [error, setError] = useState(null);
     const [searchTerm, setSearchTerm] = useState('');
+    const searchTermRef = useRef('');
     const searchTimerRef = useRef(null);
 
-    const loadQueue = useCallback(async (targetPage = 1, searchValue = searchTerm) => {
+    const loadQueue = useCallback(async (targetPage = 1, searchValue = searchTermRef.current) => {
         setLoadingQueue(true);
         setError(null);
         try {
@@ -58,7 +59,7 @@ export const useReviewQueue = (t) => {
         } finally {
             setLoadingQueue(false);
         }
-    }, [observationFilter, roasBandFilter, scoringEngineFilter, searchTerm, sourceFilter, statusFilter, t]);
+    }, [observationFilter, roasBandFilter, scoringEngineFilter, sourceFilter, statusFilter, t]);
 
     const handlePageChange = useCallback((newPage) => {
         if (newPage < 1 || newPage > totalPages) return;
@@ -121,6 +122,7 @@ export const useReviewQueue = (t) => {
     const handleSearchChange = useCallback((e) => {
         const val = e.target.value;
         setSearchTerm(val);
+        searchTermRef.current = val;
         clearTimeout(searchTimerRef.current);
         searchTimerRef.current = setTimeout(() => {
             setPage(1);

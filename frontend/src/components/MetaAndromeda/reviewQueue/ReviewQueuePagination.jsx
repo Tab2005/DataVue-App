@@ -1,6 +1,6 @@
 import { pagebtnStyle } from './reviewQueueShared';
 
-const ReviewQueuePagination = ({ page, totalPages, onPageChange, t }) => {
+const ReviewQueuePagination = ({ page, totalPages, onPageChange }) => {
     if (totalPages <= 1) return null;
 
     const pages = [];

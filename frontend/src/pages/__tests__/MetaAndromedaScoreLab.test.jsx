@@ -1,5 +1,6 @@
 import React from 'react';
-import { act, fireEvent, screen, waitFor } from '@testing-library/react';
+import { fireEvent, screen, waitFor } from '@testing-library/react';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import MetaAndromedaScoreLab from '../MetaAndromedaScoreLab';
 import { renderWithOutlet } from '../../test/renderWithOutlet';
@@ -23,6 +24,8 @@ vi.mock('../../services/metaAndromedaWorkflowService', () => ({
 describe('MetaAndromedaScoreLab', () => {
     beforeEach(() => {
         vi.clearAllMocks();
+        URL.createObjectURL = vi.fn(() => 'blob:creative-preview');
+        URL.revokeObjectURL = vi.fn();
         useModuleAccess.mockReturnValue({ hasAccess: true, loading: false, error: null });
         vi.spyOn(window, 'setInterval').mockImplementation((callback) => {
             Promise.resolve().then(() => callback());
@@ -58,17 +61,17 @@ describe('MetaAndromedaScoreLab', () => {
         const { container } = renderWithOutlet(<MetaAndromedaScoreLab />);
 
         const file = new File(['image-bytes'], 'creative.png', { type: 'image/png' });
-        fireEvent.change(container.querySelector('#file-upload-input'), {
+        fireEvent.change(container.querySelector('#sl-file-input'), {
             target: { files: [file] },
         });
 
-        await screen.findByText('storage://meta-andromeda/uploads/test.png');
+        await screen.findByText('Uploaded');
 
         fireEvent.click(screen.getByRole('button', { name: 'Submit Score' }));
         await screen.findByText('evt_score_001');
 
         await waitFor(() => expect(fetchMetaAndromedaScore).toHaveBeenCalledWith('evt_score_001'));
-        await waitFor(() => expect(screen.getByText('91')).toBeInTheDocument());
+        await waitFor(() => expect(screen.getAllByText('91').length).toBeGreaterThan(0));
         expect(screen.getByText('ready')).toBeInTheDocument();
     });
 
@@ -77,7 +80,7 @@ describe('MetaAndromedaScoreLab', () => {
 
         renderWithOutlet(<MetaAndromedaScoreLab />);
 
-        expect(screen.getByText('You do not have access to Meta Andromeda in this workspace.')).toBeInTheDocument();
+        expect(screen.getByText('No access to Meta Andromeda in this workspace.')).toBeInTheDocument();
         expect(screen.queryByRole('button', { name: 'Submit Score' })).not.toBeInTheDocument();
     });
 });
