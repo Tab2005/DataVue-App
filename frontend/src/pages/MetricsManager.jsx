@@ -1,208 +1,51 @@
 /**
  * MetricsManager - Metrics Management Page
- * 
+ *
  * This page allows users to browse, select and save metric configurations.
  * Saved views can be used in the Analytics page.
- * 
+ *
  * Access via: /metrics
  */
-import React, { useState, useMemo, useEffect, useCallback } from 'react';
+import React, { useMemo, useState } from 'react';
 import { useOutletContext } from 'react-router-dom';
-import { FiSearch, FiCheck, FiX, FiGrid, FiList, FiSave, FiTrash2, FiFolder, FiStar, FiUser, FiUsers, FiEdit } from 'react-icons/fi';
-import {
-    METRICS_REGISTRY,
-    METRIC_CATEGORIES,
-    getDefaultMetrics,
-    REGISTRY_STATS
-} from '../constants/metricsRegistry';
+import { FiCheck, FiGrid, FiList, FiSave, FiSearch, FiX } from 'react-icons/fi';
+import EditViewModal from '../components/MetricsManager/EditViewModal';
+import MetricCardGrid from '../components/MetricsManager/MetricCardGrid';
+import SaveViewModal from '../components/MetricsManager/SaveViewModal';
+import SavedViewsSection from '../components/MetricsManager/SavedViewsSection';
+import metricsManagerTranslations from '../components/MetricsManager/metricsManagerTranslations';
+import { METRICS_REGISTRY, METRIC_CATEGORIES, getDefaultMetrics, REGISTRY_STATS } from '../constants/metricsRegistry';
+import useSavedMetricViews from '../hooks/useSavedMetricViews';
 import './MetricsManager.css';
-
-const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:8000';
-
-// localStorage key for migration detection
-const SAVED_VIEWS_KEY = 'metricslab_saved_views';
-const MIGRATION_DONE_KEY = 'metricslab_migration_done';
 
 const MetricsManager = () => {
     const { language = 'zh', user, selectedTeamId } = useOutletContext() || {};
+    const txt = metricsManagerTranslations[language] || metricsManagerTranslations.zh;
 
-    // State
     const [selectedCategory, setSelectedCategory] = useState('all');
     const [searchQuery, setSearchQuery] = useState('');
-    const [viewMode, setViewMode] = useState('grid'); // grid | list
+    const [viewMode, setViewMode] = useState('grid');
     const [selectedMetrics, setSelectedMetrics] = useState(new Set(
         getDefaultMetrics().map(m => m.key)
     ));
     const [showOnlySelected, setShowOnlySelected] = useState(false);
 
-    // Save functionality state
-    const [savedViews, setSavedViews] = useState([]);
-    const [showSaveModal, setShowSaveModal] = useState(false);
-    const [newViewName, setNewViewName] = useState('');
-    const [saveMessage, setSaveMessage] = useState(null);
-    const [saveToTeam, setSaveToTeam] = useState(false); // New: save to team or personal
-    const [isLoading, setIsLoading] = useState(false);
+    const savedViewState = useSavedMetricViews({
+        user,
+        selectedTeamId,
+        language,
+        selectedMetrics,
+        setSelectedMetrics,
+        txt
+    });
 
-    // Edit functionality state
-    const [showEditModal, setShowEditModal] = useState(false);
-    const [editingView, setEditingView] = useState(null);
-    const [editViewName, setEditViewName] = useState('');
-    const [editViewMetrics, setEditViewMetrics] = useState(new Set());
-
-    // Get auth token
-    const getAuthToken = useCallback(() => {
-        return localStorage.getItem('google_token');
-    }, []);
-
-    // Fetch saved views from API
-    const fetchSavedViews = useCallback(async () => {
-        if (!user?.id) return;
-        setIsLoading(true);
-        try {
-            const params = new URLSearchParams({ user_id: user.id });
-            if (selectedTeamId) params.append('team_id', selectedTeamId);
-
-            const res = await fetch(`${API_BASE}/api/saved-views?${params}`, {
-                headers: { 'Authorization': `Bearer ${getAuthToken()}` }
-            });
-            if (res.ok) {
-                const data = await res.json();
-                setSavedViews(data);
-            }
-        } catch (e) {
-            console.error('Failed to fetch saved views:', e);
-        } finally {
-            setIsLoading(false);
-        }
-    }, [user?.id, selectedTeamId, getAuthToken]);
-
-    // Migrate localStorage views to database (one-time)
-    const migrateLocalStorage = useCallback(async () => {
-        if (!user?.id) return;
-        const migrated = localStorage.getItem(MIGRATION_DONE_KEY);
-        if (migrated) return;
-
-        try {
-            const localViews = localStorage.getItem(SAVED_VIEWS_KEY);
-            if (localViews) {
-                const views = JSON.parse(localViews);
-                if (views.length > 0) {
-                    const res = await fetch(`${API_BASE}/api/saved-views/migrate?user_id=${user.id}`, {
-                        method: 'POST',
-                        headers: {
-                            'Content-Type': 'application/json',
-                            'Authorization': `Bearer ${getAuthToken()}`
-                        },
-                        body: JSON.stringify({ views })
-                    });
-                    if (res.ok) {
-                        console.log('Migration complete');
-                    }
-                }
-            }
-        } catch (e) {
-            console.error('Migration failed:', e);
-        } finally {
-            localStorage.setItem(MIGRATION_DONE_KEY, 'true');
-        }
-    }, [user?.id, getAuthToken]);
-
-    // Load saved views on mount
-    useEffect(() => {
-        migrateLocalStorage().then(fetchSavedViews);
-    }, [migrateLocalStorage, fetchSavedViews]);
-
-    // Translations
-    const t = {
-        zh: {
-            title: '📋 指標管理',
-            subtitle: '瀏覽與設定 Facebook 廣告指標',
-            search: '搜尋指標...',
-            all: '全部',
-            selected: '已選擇',
-            stats: '統計',
-            totalMetrics: '總指標數',
-            selectedCount: '已選擇',
-            clear: '清除全部',
-            selectDefaults: '選擇預設',
-            selectAll: '全選',
-            showSelected: '只顯示已選',
-            // Save functionality translations
-            saveView: '儲存視角',
-            savedViews: '已儲存的視角',
-            noSavedViews: '尚未儲存任何視角',
-            viewNamePlaceholder: '輸入視角名稱...',
-            save: '儲存',
-            cancel: '取消',
-            load: '載入',
-            delete: '刪除',
-            saveSuccess: '視角已儲存！',
-            deleteSuccess: '視角已刪除',
-            loadSuccess: '視角已載入',
-            metricsCount: '個指標',
-            // Team/Personal labels
-            personal: '個人',
-            team: '團隊',
-            saveAsPersonal: '儲存為個人視角',
-            saveAsTeam: '儲存為團隊視角',
-            // Edit functionality
-            edit: '編輯',
-            editView: '編輯視角',
-            updateSuccess: '視角已更新！',
-            update: '更新',
-            editMetricsHint: '點擊下方指標卡片以新增或移除',
-        },
-        en: {
-            title: '📋 Metrics Manager',
-            subtitle: 'Browse & Configure Facebook Ads Metrics',
-            search: 'Search metrics...',
-            all: 'All',
-            selected: 'Selected',
-            stats: 'Stats',
-            totalMetrics: 'Total Metrics',
-            selectedCount: 'Selected',
-            clear: 'Clear All',
-            selectDefaults: 'Select Defaults',
-            selectAll: 'Select All',
-            showSelected: 'Show Selected Only',
-            // Save functionality translations
-            saveView: 'Save View',
-            savedViews: 'Saved Views',
-            noSavedViews: 'No saved views yet',
-            viewNamePlaceholder: 'Enter view name...',
-            save: 'Save',
-            cancel: 'Cancel',
-            load: 'Load',
-            delete: 'Delete',
-            saveSuccess: 'View saved!',
-            deleteSuccess: 'View deleted',
-            loadSuccess: 'View loaded',
-            metricsCount: 'metrics',
-            // Team/Personal labels
-            personal: 'Personal',
-            team: 'Team',
-            saveAsPersonal: 'Save as personal view',
-            saveAsTeam: 'Save as team view',
-            // Edit functionality
-            edit: 'Edit',
-            editView: 'Edit View',
-            updateSuccess: 'View updated!',
-            update: 'Update',
-            editMetricsHint: 'Click metrics below to add or remove',
-        }
-    };
-    const txt = t[language] || t.zh;
-
-    // Filtered metrics
     const filteredMetrics = useMemo(() => {
         let metrics = Object.values(METRICS_REGISTRY);
 
-        // Filter by category
         if (selectedCategory !== 'all') {
             metrics = metrics.filter(m => m.category === selectedCategory);
         }
 
-        // Filter by search query
         if (searchQuery) {
             const lowerQuery = searchQuery.toLowerCase();
             metrics = metrics.filter(m =>
@@ -212,7 +55,6 @@ const MetricsManager = () => {
             );
         }
 
-        // Filter by selected only
         if (showOnlySelected) {
             metrics = metrics.filter(m => selectedMetrics.has(m.key));
         }
@@ -220,7 +62,14 @@ const MetricsManager = () => {
         return metrics;
     }, [selectedCategory, searchQuery, showOnlySelected, selectedMetrics]);
 
-    // Handlers
+    const categoryCounts = useMemo(() => {
+        const counts = { all: Object.keys(METRICS_REGISTRY).length };
+        Object.keys(METRIC_CATEGORIES).forEach(cat => {
+            counts[cat] = Object.values(METRICS_REGISTRY).filter(m => m.category === cat).length;
+        });
+        return counts;
+    }, []);
+
     const toggleMetric = (key) => {
         const newSet = new Set(selectedMetrics);
         if (newSet.has(key)) {
@@ -243,175 +92,14 @@ const MetricsManager = () => {
         setSelectedMetrics(new Set());
     };
 
-    // Get auth token
-
-
-    // Save view handler - using API
-    const handleSaveView = async () => {
-        if (!newViewName.trim()) return;
-
-        try {
-            // Backend now extracts user from token, so no need to pass user_id in params
-            const body = {
-                name: newViewName.trim(),
-                metrics: Array.from(selectedMetrics),
-                team_id: saveToTeam && selectedTeamId ? selectedTeamId : null
-            };
-
-            const token = getAuthToken();
-            if (!token) {
-                alert(language === 'zh' ? '請先登入' : 'Please login first');
-                return;
-            }
-
-            const res = await fetch(`${API_BASE}/api/saved-views`, {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                    'Authorization': `Bearer ${token}`
-                },
-                body: JSON.stringify(body)
-            });
-
-            if (res.ok) {
-                const newView = await res.json();
-                setSavedViews(prev => [...prev, newView]);
-                setShowSaveModal(false);
-                setNewViewName('');
-                showTemporaryMessage(txt.saveSuccess); // Assuming txt.saveSuccess is the correct key
-            } else {
-                const errData = await res.json().catch(() => ({}));
-                console.error("Save failed:", res.status, errData);
-                alert(language === 'zh'
-                    ? `儲存失敗 (${res.status}): ${errData.detail || '未知錯誤'}`
-                    : `Save failed (${res.status}): ${errData.detail || 'Unknown error'}`
-                );
-            }
-        } catch (error) {
-            console.error('Failed to save view:', error);
-            const targetUrl = `${API_BASE}/api/saved-views`;
-            alert(language === 'zh'
-                ? `儲存時發生錯誤: ${error.message}\n請求網址: ${targetUrl}`
-                : `Error saving view: ${error.message}\nRequest URL: ${targetUrl}`
-            );
-        }
-    };
-
-    // Load view handler
-    const handleLoadView = (view) => {
-        setSelectedMetrics(new Set(view.metrics));
-        showTemporaryMessage(txt.loadSuccess);
-    };
-
-    // Delete view handler - using API
-    const handleDeleteView = async (viewId) => {
-        if (!user?.id) return;
-
-        try {
-            const params = new URLSearchParams({ user_id: user.id });
-            const res = await fetch(`${API_BASE}/api/saved-views/${viewId}?${params}`, {
-                method: 'DELETE',
-                headers: { 'Authorization': `Bearer ${getAuthToken()}` }
-            });
-
-            if (res.ok) {
-                showTemporaryMessage(txt.deleteSuccess);
-                fetchSavedViews(); // Refresh list
-            }
-        } catch (e) {
-            console.error('Failed to delete view:', e);
-        }
-    };
-
-    // Edit view handler - open modal with view data
-    const handleEditView = (view) => {
-        setEditingView(view);
-        setEditViewName(view.name);
-        setEditViewMetrics(new Set(view.metrics));
-        setShowEditModal(true);
-    };
-
-    // Toggle metric in edit mode
-    const toggleEditMetric = (key) => {
-        const newSet = new Set(editViewMetrics);
-        if (newSet.has(key)) {
-            newSet.delete(key);
-        } else {
-            newSet.add(key);
-        }
-        setEditViewMetrics(newSet);
-    };
-
-    // Update view handler - call API
-    const handleUpdateView = async () => {
-        if (!editingView || !editViewName.trim()) return;
-
-        try {
-            const token = getAuthToken();
-            if (!token) {
-                alert(language === 'zh' ? '請先登入' : 'Please login first');
-                return;
-            }
-
-            const res = await fetch(`${API_BASE}/api/saved-views/${editingView.id}`, {
-                method: 'PATCH',
-                headers: {
-                    'Content-Type': 'application/json',
-                    'Authorization': `Bearer ${token}`
-                },
-                body: JSON.stringify({
-                    name: editViewName.trim(),
-                    metrics: Array.from(editViewMetrics)
-                })
-            });
-
-            if (res.ok) {
-                const updatedView = await res.json();
-                setSavedViews(prev => prev.map(v => v.id === updatedView.id ? updatedView : v));
-                setShowEditModal(false);
-                setEditingView(null);
-                showTemporaryMessage(txt.updateSuccess);
-            } else {
-                const errData = await res.json().catch(() => ({}));
-                alert(language === 'zh'
-                    ? `更新失敗: ${errData.detail || '未知錯誤'}`
-                    : `Update failed: ${errData.detail || 'Unknown error'}`
-                );
-            }
-        } catch (error) {
-            console.error('Failed to update view:', error);
-            alert(language === 'zh'
-                ? `更新時發生錯誤: ${error.message}`
-                : `Error updating view: ${error.message}`
-            );
-        }
-    };
-
-    // Show temporary message
-    const showTemporaryMessage = (message) => {
-        setSaveMessage(message);
-        setTimeout(() => setSaveMessage(null), 2000);
-    };
-
-    // Category counts
-    const categoryCounts = useMemo(() => {
-        const counts = { all: Object.keys(METRICS_REGISTRY).length };
-        Object.keys(METRIC_CATEGORIES).forEach(cat => {
-            counts[cat] = Object.values(METRICS_REGISTRY).filter(m => m.category === cat).length;
-        });
-        return counts;
-    }, []);
-
     return (
         <div className="metrics-lab">
-            {/* Toast Message */}
-            {saveMessage && (
+            {savedViewState.saveMessage && (
                 <div className="toast-message">
-                    <FiCheck /> {saveMessage}
+                    <FiCheck /> {savedViewState.saveMessage}
                 </div>
             )}
 
-            {/* Header */}
             <div className="lab-header">
                 <div className="lab-title">
                     <h1>{txt.title}</h1>
@@ -429,9 +117,7 @@ const MetricsManager = () => {
                 </div>
             </div>
 
-            {/* Controls */}
             <div className="lab-controls">
-                {/* Search */}
                 <div className="search-box">
                     <FiSearch />
                     <input
@@ -447,7 +133,6 @@ const MetricsManager = () => {
                     )}
                 </div>
 
-                {/* Actions */}
                 <div className="action-buttons">
                     <button onClick={selectDefaults} className="btn-secondary">
                         {txt.selectDefaults}
@@ -458,9 +143,8 @@ const MetricsManager = () => {
                     <button onClick={clearAll} className="btn-danger">
                         {txt.clear}
                     </button>
-                    {/* Save Button */}
                     <button
-                        onClick={() => setShowSaveModal(true)}
+                        onClick={() => savedViewState.setShowSaveModal(true)}
                         className="btn-primary"
                         disabled={selectedMetrics.size === 0}
                     >
@@ -468,23 +152,15 @@ const MetricsManager = () => {
                     </button>
                 </div>
 
-                {/* View Toggle */}
                 <div className="view-toggle">
-                    <button
-                        className={viewMode === 'grid' ? 'active' : ''}
-                        onClick={() => setViewMode('grid')}
-                    >
+                    <button className={viewMode === 'grid' ? 'active' : ''} onClick={() => setViewMode('grid')}>
                         <FiGrid />
                     </button>
-                    <button
-                        className={viewMode === 'list' ? 'active' : ''}
-                        onClick={() => setViewMode('list')}
-                    >
+                    <button className={viewMode === 'list' ? 'active' : ''} onClick={() => setViewMode('list')}>
                         <FiList />
                     </button>
                 </div>
 
-                {/* Show Selected Toggle */}
                 <label className="checkbox-label">
                     <input
                         type="checkbox"
@@ -495,272 +171,52 @@ const MetricsManager = () => {
                 </label>
             </div>
 
-            {/* Saved Views Section */}
-            {savedViews.length > 0 && (
-                <div className="saved-views-section">
-                    <h3><FiFolder /> {txt.savedViews}</h3>
-                    <div className="saved-views-list">
-                        {savedViews.map(view => (
-                            <div key={view.id} className="saved-view-item">
-                                <div className="view-info">
-                                    {view.is_personal ? <FiUser className="view-icon" style={{ color: 'var(--accent-primary)' }} /> : <FiUsers className="view-icon" style={{ color: '#10b981' }} />}
-                                    <span className="view-name">{view.name}</span>
-                                    <span className="view-type-badge" style={{
-                                        backgroundColor: view.is_personal ? 'rgba(45, 136, 255, 0.1)' : 'rgba(16, 185, 129, 0.1)',
-                                        color: view.is_personal ? 'var(--accent-primary)' : '#10b981',
-                                        padding: '2px 8px',
-                                        borderRadius: '4px',
-                                        fontSize: '0.7rem',
-                                        fontWeight: 500
-                                    }}>
-                                        {view.is_personal ? txt.personal : txt.team}
-                                    </span>
-                                    <span className="view-count">{view.metrics.length} {txt.metricsCount}</span>
-                                </div>
-                                <div className="view-actions">
-                                    <button
-                                        onClick={() => handleLoadView(view)}
-                                        className="btn-load"
-                                        title={txt.load}
-                                    >
-                                        {txt.load}
-                                    </button>
-                                    <button
-                                        onClick={() => handleEditView(view)}
-                                        className="btn-edit"
-                                        title={txt.edit}
-                                    >
-                                        <FiEdit />
-                                    </button>
-                                    <button
-                                        onClick={() => handleDeleteView(view.id)}
-                                        className="btn-delete"
-                                        title={txt.delete}
-                                    >
-                                        <FiTrash2 />
-                                    </button>
-                                </div>
-                            </div>
-                        ))}
-                    </div>
-                </div>
-            )}
+            <SavedViewsSection
+                savedViews={savedViewState.savedViews}
+                txt={txt}
+                onLoadView={savedViewState.handleLoadView}
+                onEditView={savedViewState.handleEditView}
+                onDeleteView={savedViewState.handleDeleteView}
+            />
 
-            {/* Save Modal */}
-            {showSaveModal && (
-                <div className="modal-overlay" onClick={() => setShowSaveModal(false)}>
-                    <div className="save-modal" onClick={e => e.stopPropagation()}>
-                        <h3><FiSave /> {txt.saveView}</h3>
-                        <p>{selectedMetrics.size} {txt.metricsCount} {txt.selected.toLowerCase()}</p>
-                        <input
-                            type="text"
-                            value={newViewName}
-                            onChange={(e) => setNewViewName(e.target.value)}
-                            placeholder={txt.viewNamePlaceholder}
-                            autoFocus
-                            onKeyDown={(e) => {
-                                if (e.key === 'Enter') handleSaveView();
-                                if (e.key === 'Escape') setShowSaveModal(false);
-                            }}
-                        />
+            <SaveViewModal
+                isOpen={savedViewState.showSaveModal}
+                selectedMetrics={selectedMetrics}
+                selectedTeamId={selectedTeamId}
+                newViewName={savedViewState.newViewName}
+                saveToTeam={savedViewState.saveToTeam}
+                txt={txt}
+                onClose={() => savedViewState.setShowSaveModal(false)}
+                onNameChange={savedViewState.setNewViewName}
+                onSaveToTeamChange={savedViewState.setSaveToTeam}
+                onSave={savedViewState.handleSaveView}
+            />
 
-                        {/* Personal/Team Toggle - only show if in a team workspace */}
-                        {selectedTeamId && (
-                            <div style={{
-                                display: 'flex',
-                                gap: '8px',
-                                margin: '16px 0',
-                                padding: '12px',
-                                backgroundColor: 'var(--bg-tertiary)',
-                                borderRadius: '8px'
-                            }}>
-                                <button
-                                    onClick={() => setSaveToTeam(false)}
-                                    style={{
-                                        flex: 1,
-                                        padding: '10px',
-                                        border: 'none',
-                                        borderRadius: '6px',
-                                        cursor: 'pointer',
-                                        display: 'flex',
-                                        alignItems: 'center',
-                                        justifyContent: 'center',
-                                        gap: '6px',
-                                        backgroundColor: !saveToTeam ? 'var(--accent-primary)' : 'transparent',
-                                        color: !saveToTeam ? '#fff' : 'var(--text-secondary)',
-                                        transition: 'all 0.2s'
-                                    }}
-                                >
-                                    <FiUser /> {txt.personal}
-                                </button>
-                                <button
-                                    onClick={() => setSaveToTeam(true)}
-                                    style={{
-                                        flex: 1,
-                                        padding: '10px',
-                                        border: 'none',
-                                        borderRadius: '6px',
-                                        cursor: 'pointer',
-                                        display: 'flex',
-                                        alignItems: 'center',
-                                        justifyContent: 'center',
-                                        gap: '6px',
-                                        backgroundColor: saveToTeam ? '#10b981' : 'transparent',
-                                        color: saveToTeam ? '#fff' : 'var(--text-secondary)',
-                                        transition: 'all 0.2s'
-                                    }}
-                                >
-                                    <FiUsers /> {txt.team}
-                                </button>
-                            </div>
-                        )}
+            <EditViewModal
+                isOpen={savedViewState.showEditModal}
+                editingView={savedViewState.editingView}
+                editViewName={savedViewState.editViewName}
+                editViewMetrics={savedViewState.editViewMetrics}
+                language={language}
+                txt={txt}
+                onClose={() => savedViewState.setShowEditModal(false)}
+                onNameChange={savedViewState.setEditViewName}
+                onToggleMetric={savedViewState.toggleEditMetric}
+                onUpdate={savedViewState.handleUpdateView}
+            />
 
-                        <div className="modal-actions">
-                            <button onClick={() => setShowSaveModal(false)} className="btn-secondary">
-                                {txt.cancel}
-                            </button>
-                            <button
-                                onClick={handleSaveView}
-                                className="btn-primary"
-                                disabled={!newViewName.trim()}
-                            >
-                                <FiSave /> {txt.save}
-                            </button>
-                        </div>
-                    </div>
-                </div>
-            )}
+            <MetricCardGrid
+                filteredMetrics={filteredMetrics}
+                selectedMetrics={selectedMetrics}
+                selectedCategory={selectedCategory}
+                categoryCounts={categoryCounts}
+                viewMode={viewMode}
+                language={language}
+                txt={txt}
+                onSelectCategory={setSelectedCategory}
+                onToggleMetric={toggleMetric}
+            />
 
-            {/* Edit Modal */}
-            {showEditModal && editingView && (
-                <div className="modal-overlay" onClick={() => setShowEditModal(false)}>
-                    <div className="save-modal edit-modal" onClick={e => e.stopPropagation()}>
-                        <h3><FiEdit /> {txt.editView}</h3>
-                        <input
-                            type="text"
-                            value={editViewName}
-                            onChange={(e) => setEditViewName(e.target.value)}
-                            placeholder={txt.viewNamePlaceholder}
-                            autoFocus
-                            onKeyDown={(e) => {
-                                if (e.key === 'Enter') handleUpdateView();
-                                if (e.key === 'Escape') setShowEditModal(false);
-                            }}
-                        />
-
-                        <p style={{ marginTop: '16px', color: 'var(--text-secondary)', fontSize: '0.85rem' }}>
-                            {txt.editMetricsHint} ({editViewMetrics.size} {txt.metricsCount})
-                        </p>
-
-                        {/* Mini metrics grid for editing */}
-                        <div className="edit-metrics-grid">
-                            {Object.values(METRICS_REGISTRY).slice(0, 30).map(metric => {
-                                const isSelected = editViewMetrics.has(metric.key);
-                                const category = METRIC_CATEGORIES[metric.category];
-                                return (
-                                    <div
-                                        key={metric.key}
-                                        className={`edit-metric-chip ${isSelected ? 'selected' : ''}`}
-                                        onClick={() => toggleEditMetric(metric.key)}
-                                        style={{ borderColor: isSelected ? category?.color : 'transparent' }}
-                                    >
-                                        <span className="category-dot" style={{ backgroundColor: category?.color }} />
-                                        {language === 'zh' ? metric.label_zh : metric.label_en}
-                                        {isSelected && <FiCheck className="check-icon" />}
-                                    </div>
-                                );
-                            })}
-                        </div>
-
-                        {Object.values(METRICS_REGISTRY).length > 30 && (
-                            <p style={{ textAlign: 'center', color: 'var(--text-tertiary)', fontSize: '0.75rem', marginTop: '8px' }}>
-                                {language === 'zh'
-                                    ? `… 及其他 ${Object.values(METRICS_REGISTRY).length - 30} 個指標`
-                                    : `... and ${Object.values(METRICS_REGISTRY).length - 30} more metrics`
-                                }
-                            </p>
-                        )}
-
-                        <div className="modal-actions">
-                            <button onClick={() => setShowEditModal(false)} className="btn-secondary">
-                                {txt.cancel}
-                            </button>
-                            <button
-                                onClick={handleUpdateView}
-                                className="btn-primary"
-                                disabled={!editViewName.trim() || editViewMetrics.size === 0}
-                            >
-                                <FiCheck /> {txt.update}
-                            </button>
-                        </div>
-                    </div>
-                </div>
-            )}
-
-            {/* Category Tabs */}
-            <div className="category-tabs">
-                <button
-                    className={selectedCategory === 'all' ? 'active' : ''}
-                    onClick={() => setSelectedCategory('all')}
-                >
-                    {txt.all} ({categoryCounts.all})
-                </button>
-                {Object.entries(METRIC_CATEGORIES).map(([key, cat]) => (
-                    <button
-                        key={key}
-                        className={selectedCategory === key ? 'active' : ''}
-                        onClick={() => setSelectedCategory(key)}
-                        style={{ borderColor: cat.color }}
-                    >
-                        {cat.icon} {language === 'zh' ? cat.label_zh : cat.label_en} ({categoryCounts[key] || 0})
-                    </button>
-                ))}
-            </div>
-
-            {/* Metrics Grid/List */}
-            <div className={`metrics-container ${viewMode}`}>
-                {filteredMetrics.length === 0 ? (
-                    <div className="empty-state">
-                        {language === 'zh' ? '找不到符合的指標' : 'No metrics found'}
-                    </div>
-                ) : (
-                    filteredMetrics.map(metric => {
-                        const isSelected = selectedMetrics.has(metric.key);
-                        const category = METRIC_CATEGORIES[metric.category];
-
-                        return (
-                            <div
-                                key={metric.key}
-                                className={`metric-card ${isSelected ? 'selected' : ''}`}
-                                onClick={() => toggleMetric(metric.key)}
-                                style={{ borderColor: isSelected ? category?.color : 'transparent' }}
-                            >
-                                <div className="metric-header">
-                                    <span
-                                        className="category-dot"
-                                        style={{ backgroundColor: category?.color }}
-                                    />
-                                    <span className="metric-key">{metric.key}</span>
-                                </div>
-                                <div className="metric-label">
-                                    {language === 'zh' ? metric.label_zh : metric.label_en}
-                                </div>
-                                {metric.description_zh && (
-                                    <div className="metric-desc">
-                                        {language === 'zh' ? metric.description_zh : metric.description_en || metric.description_zh}
-                                    </div>
-                                )}
-
-                                <div className="check-indicator">
-                                    {isSelected ? <FiCheck /> : null}
-                                </div>
-                            </div>
-                        );
-                    })
-                )}
-            </div>
-
-            {/* Footer */}
             <div className="lab-footer">
                 <p>
                     {language === 'zh'
