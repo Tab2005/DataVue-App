@@ -3,6 +3,8 @@ import { TABS } from './constants';
 import BehaviorSection, { BehaviorControls } from './BehaviorSection';
 import ContentSection, { ContentControls } from './ContentSection';
 import EcommerceSection, { EcommerceControls } from './EcommerceSection';
+import GA4KpiCards from './GA4KpiCards';
+import { GA4ErrorState, GA4LoadingState, GA4NoDataState } from './GA4UiStates';
 import OverviewSection from './OverviewSection';
 import TrafficSection, { TrafficControls } from './TrafficSection';
 
