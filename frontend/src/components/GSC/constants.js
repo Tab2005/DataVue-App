@@ -137,3 +137,30 @@ export const DEVICE_NAMES = {
     DESKTOP: { zh: '💻 桌機', en: '💻 Desktop', color: '#3B82F6' },
     TABLET: { zh: '📟 平板', en: '📟 Tablet', color: '#F59E0B' }
 };
+
+// searchAppearance 維度的官方類型對照（依 Google Search Console 官方文件整理，2026-07-17 查證）
+// https://support.google.com/webmasters/answer/17011259
+// 未列在此表的值（含未來新增或未公開類型）會直接顯示 API 原始字串，不會顯示為空白，
+// 避免因為硬編碼清單而漏掉新類型。
+export const SEARCH_APPEARANCE_NAMES = {
+    AMP_TOP_STORIES: { zh: 'AMP 頭條新聞', en: 'AMP Top Stories' },
+    AMP_BLUE_LINK: { zh: 'AMP 一般連結', en: 'AMP Blue Link' },
+    AMP_IMAGE_RESULT: { zh: 'AMP 圖片結果', en: 'AMP Image Result' },
+    FORUMS: { zh: '論壇討論', en: 'Forum Discussions' },
+    EDU_Q_AND_A: { zh: '教育問答', en: 'Education Q&A' },
+    JOB_DETAILS: { zh: '職缺詳情', en: 'Job Details' },
+    JOB_LISTING: { zh: '職缺列表', en: 'Job Listing' },
+    MATH_SOLVERS: { zh: '數學解題', en: 'Math Solvers' },
+    ACTION: { zh: '媒體互動內容', en: 'Media Actions' },
+    MERCHANT_LISTINGS: { zh: '商家資訊', en: 'Merchant Listings' },
+    PRACTICE_PROBLEMS: { zh: '練習題', en: 'Practice Problems' },
+    PRODUCT_SNIPPETS: { zh: '商品摘要', en: 'Product Snippets' },
+    TPF_QA: { zh: '問答摘要', en: 'Q&A Rich Results' },
+    RECIPE_FEATURE: { zh: '食譜集錦', en: 'Recipe Gallery' },
+    RECIPE_RICH_SNIPPET: { zh: '食譜摘要', en: 'Recipe Rich Result' },
+    REVIEW_SNIPPET: { zh: '評論摘要', en: 'Review Snippet' },
+    SUBSCRIBED_CONTENT: { zh: '訂閱內容', en: 'Subscribed Content' },
+    TRANSLATED_RESULT: { zh: '翻譯結果', en: 'Translated Result' },
+    VIDEO: { zh: '影片', en: 'Video' },
+    AMP_STORY: { zh: 'AMP 圖文故事', en: 'Web Story' }
+};

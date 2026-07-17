@@ -91,8 +91,15 @@ def get_gsc_analytics(
         raise HTTPException(status_code=500, detail=f"Internal Server Error: {str(e)}")
 
 # 3b. Search Appearance Summary (docs/35_GSC_AI_Overview_生成式AI搜尋數據擴充實作規劃.md Phase 1)
-# 已知的 AI Overview / 生成式搜尋相關提示關鍵字，僅用於前端標示，不作為硬編碼的判斷依據，
-# 因為 Google 未公開穩定的 searchAppearance 列舉值文件，實際字串需以 API 回傳為準。
+# 已知的 AI 相關提示關鍵字，僅用於前端標示疑似項目，不作為硬編碼的判斷依據。
+#
+# 重要澄清（2026-07-17 查證 Google 官方文件與公告後確認）：Google 於 2026-06-03 推出的
+# 「Generative AI performance report」（AI Overview / AI Mode 曝光數據）目前只能在 GSC 後台
+# UI 查看（成效 > 搜尋結果 > 生成式 AI），並「未」透過 Search Analytics API 開放——
+# searchAppearance 維度與 type 參數都沒有對應的值。也就是說，這個關鍵字比對機制目前
+# 保證不會匹配到任何真正的 AI Overview 資料，只是預留給 Google 未來若把它併入
+# searchAppearance 維度時的相容處理，前端呈現時必須明確告知使用者這個限制，不能讓
+# 「沒有比對到」被誤解為「這個網站沒有 AI Overview 曝光」。
 AI_APPEARANCE_HINT_KEYWORDS = ["AI", "OVERVIEW", "GENERATIVE", "SGE"]
 
 
@@ -106,7 +113,10 @@ def get_search_appearance_summary(
     _: bool = Depends(gsc_module_check)
 ):
     """
-    彙總 searchAppearance 維度成效（含 AI Overview 等搜尋外觀類型）。
+    彙總 searchAppearance 維度成效（AMP、Rich Result、Merchant Listing 等既有搜尋外觀類型）。
+
+    不含 AI Overview / AI Mode 數據：Google 尚未透過 API 開放該報表，詳見上方
+    AI_APPEARANCE_HINT_KEYWORDS 註解。
 
     注意：同一次搜尋結果可能同時符合多種 searchAppearance 類型（例如同時是 AMP 又是
     Rich Result），各列的 clicks/impressions 直接加總會重複計算。因此占比分母改用

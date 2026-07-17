@@ -48,10 +48,10 @@ AI 模組支援標準 JSON 回應與 SSE (Server-Sent Events) 串流回應，適
 - `POST /gsc/authorize`：提交 GSC 授權碼。
 - `GET /gsc/sites`：列出使用者擁有的網站清單。
 - `GET /gsc/analytics`：取得點擊、曝光、CTR 與排名數據，`dimensions` 可傳任意 GSC 維度（如 `date`、`query`、`page`、`country`、`device`、`searchAppearance`，可用逗號組合）。
-- `GET /gsc/search-appearance-summary`：彙總 `searchAppearance` 維度成效（含 AMP、Rich Result、AI Overview 等搜尋外觀類型）。
+- `GET /gsc/search-appearance-summary`：彙總 `searchAppearance` 維度成效（AMP、Product Snippets、Merchant Listings、Review Snippet 等既有 Rich Result 類型）。
   - **參數**：`site_url`、`start_date`、`end_date`。
   - **回傳**：`has_data`、`total_clicks`、`total_impressions`（以 `date` 維度加總為分母，避免同一結果符合多種外觀類型造成重複計算），以及 `types[]`（每個外觀類型的 clicks/impressions/ctr/position/click_share/impression_share/`is_ai_related_hint`）。
-  - `is_ai_related_hint` 僅為關鍵字提示（比對 `AI`/`OVERVIEW`/`GENERATIVE`/`SGE`），非 Google 官方分類，因 Google 未公開穩定的 `searchAppearance` 列舉值文件。詳見 `docs/35_GSC_AI_Overview_生成式AI搜尋數據擴充實作規劃.md`。
+  - **不含 AI Overview / 生成式 AI 數據**：Google 於 2026-06-03 推出的「生成式 AI 效能報表」目前僅能在 GSC 後台查看（成效 > 搜尋結果 > 生成式 AI），尚未透過任何 API 開放。`is_ai_related_hint` 只是對 `search_appearance` 字串做關鍵字比對（`AI`/`OVERVIEW`/`GENERATIVE`/`SGE`）的預留機制，目前保證恆為 `false`，不代表這個網站沒有 AI Overview 曝光。詳見 `docs/35_GSC_AI_Overview_生成式AI搜尋數據擴充實作規劃.md`。
 - `POST /gsc/page-intents`：利用 AI 對搜尋頁面進行意圖分類 (Intent Classification)。
 
 ### 📊 Google Analytics 4 (GA4)

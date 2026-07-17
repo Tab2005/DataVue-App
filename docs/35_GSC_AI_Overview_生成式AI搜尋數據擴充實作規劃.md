@@ -1,9 +1,24 @@
 # GSC AI Overview（生成式 AI 搜尋）數據擴充實作規劃
 
 > 建立日期：2026-07-17
-> 狀態：Phase 0～3 全部完成（可行性驗證腳本、後端串接、前端呈現、文件同步）；仍待使用者用實際連接 GSC 的帳號跑過 Phase 0 腳本並在瀏覽器實測，才能確認真實資料與 UI 是否符合預期
-> 範圍：透過 Google Search Console Search Analytics API 的 `searchAppearance` 維度，擷取網站在 AI Overview / 生成式 AI 搜尋結果中的成效數據。
-> 前置關聯：本文件延伸自 [`docs/29_GSC_API_資料呈現擴充實作規劃.md`](./29_GSC_API_資料呈現擴充實作規劃.md) 第 1 項「Search Appearance 成效」，聚焦 AI Overview 這個子項目並補上專屬的驗證、風險與文案規劃。
+> 狀態：Phase 0～3 全部完成並已部署驗證（後端 `search-appearance-summary` 端點、前端「搜尋外觀」分頁）。**2026-07-17 追加查證結論：Google 的「生成式 AI 效能報表」（AI Overview / AI Mode）目前完全未開放 API，本功能無法且不會取得該報表數據**，詳見下方「⚠️ 2026-07-17 重大結論更新」。
+> 範圍：透過 Google Search Console Search Analytics API 的 `searchAppearance` 維度，呈現網站在既有搜尋外觀（Rich Result 等）中的成效數據；AI Overview 本身目前不在範圍內（Google 尚未開放 API）。
+> 前置關聯：本文件延伸自 [`docs/29_GSC_API_資料呈現擴充實作規劃.md`](./29_GSC_API_資料呈現擴充實作規劃.md) 第 1 項「Search Appearance 成效」。
+
+## ⚠️ 2026-07-17 重大結論更新（部署後實測 + 官方文件查證）
+
+部署後用真實站台（ecohukurou.com.tw）測試 `search-appearance-summary` 端點，結果正確但完全沒有 AI 相關項目（只有 `PRODUCT_SNIPPETS`／`MERCHANT_LISTINGS`／`REVIEW_SNIPPET`）。使用者同時提供了 GSC 後台的實際畫面：左側選單「成效 > 搜尋結果」底下有一個**獨立於一般 Performance 報表的「生成式 AI」（Beta）報表**，跟「探索」（Discover）平級，只有網頁／國家地區／裝置／天四個分頁，**沒有點擊、CTR、排名欄位**。
+
+查證 Google 官方文件與公告後確認：
+
+1. **這是 2026-06-03 才上線的全新報表**（"Generative AI performance report"），涵蓋 AI Overviews、AI Mode 與 Discover 的生成式功能曝光。
+2. **目前僅限 GSC 後台 UI 查看，尚未透過任何 API 開放**：Search Analytics API 的 `type` 參數目前仍只支援 `web`/`image`/`video`/`news`/`discover`/`googleNews` 六個值；`searchAppearance` 維度的官方列舉值（見下方「searchAppearance 官方列表」）裡也沒有任何 AI Overview / 生成式 AI 對應值。沒有別的 API 端點提供這份資料。
+3. **這份報表本身也還在分階段開放給部分網站**（最初只開放給英國一小群網站，受當地監管機構 CMA 影響），且**只有曝光數，沒有點擊、CTR、排名，也看不到觸發的關鍵字**——即使未來開放 API，能拿到的欄位可能也很有限。Google 表示會隨時間補上點擊、排名等指標。
+4. 這與 Discover、News 報表當年的模式一致：UI 先上線，API 通常在數月甚至數年後才跟上。
+
+**因此，本文件與 2026-07-17 之前的規劃（背景段落原先假設「searchAppearance 已含 AI Overview 對應值」）是錯誤的，予以更正**：目前透過 GSC API（含本專案的 `search-appearance-summary` 端點）**保證無法**取得任何 AI Overview / AI Mode / 生成式 AI 曝光數據。已完成的 `search-appearance-summary` 端點本身仍然正確、有價值——它呈現的是真實的 Rich Result 等既有搜尋外觀成效——只是跟「生成式 AI」報表是兩個互不相干的資料來源，程式碼與 UI 文案已同步修正，明確告知使用者這項限制（見 Phase 1／Phase 2 更新記錄）。
+
+若未來 Google 開放這份資料的 API，需要重新確認的地方：是走 `type` 參數新增一個值（比照 `discover`），還是 `searchAppearance` 新增值，或是全新的獨立端點——目前三種可能都存在，需等 Google 正式公告 API 支援時再查證。
 
 ## 背景
 
@@ -12,12 +27,13 @@
 - `backend/gsc_service.py` 的 `GSCService.get_analytics()`（約第 184-337 行）目前 request body 只帶 `startDate`、`endDate`、`dimensions`、`dimensionFilterGroups`、`rowLimit`、`startRow`，**未傳入 `searchAppearance` 維度**。
 - `backend/routers/gsc.py` 目前所有端點寫死的 `dimensions` 僅有 `date`、`query`、`page`、`country`、`device`、`page,query`，**沒有任何端點使用 `searchAppearance`**。
 - `frontend/src/components/GSCStats.jsx` 的分頁僅有 `trend`、`country`、`device`、`gap`、`query`、`page`，**沒有搜尋外觀 tab**。
-- 專案內 `google-generativeai`（Gemini SDK）依賴是站內「AI 搜尋意圖分析」等自建功能使用，與 GSC 官方的 AI Overview 報表是兩個不同的資料來源，避免混淆。
+- 專案內 `google-generativeai`（Gemini SDK）依賴是站內「AI 搜尋意圖分析」等自建功能使用，與 GSC 官方的生成式 AI 報表是兩個不同的資料來源，避免混淆。
 
-**GSC API 本身的能力**：Google Search Console 的 Search Analytics API（`searchanalytics.query`）自 2025 年起，在 `searchAppearance` 維度中新增了對應 AI Overview 的搜尋外觀類型，讓 Performance 報表（包含 API）可依此類型篩選、聚合 `clicks`、`impressions`、`ctr`、`position`。也就是說：
+**GSC API 本身的能力（2026-07-17 查證後的正確結論，取代原先的錯誤假設）**：
 
-- **可以抓到「你的網站被 AI Overview 引用時的成效聚合數據」**（點擊數、曝光數、CTR、平均排名）。
-- **無法抓到 AI Overview 的實際生成內容、引用文字片段、在答案中的排序位置**等細節，Google 未提供這類明細 API。
+- `searchAppearance` 維度**可以**抓到既有 Rich Result 等搜尋外觀（AMP、Product Snippets、Merchant Listings、Review Snippet 等）的 `clicks`、`impressions`、`ctr`、`position` 聚合數據——這部分已實作且部署驗證正確。
+- `searchAppearance` 維度與 `type` 參數**都無法**抓到 AI Overview / AI Mode / 生成式 AI 報表的數據，因為 Google 尚未透過 API 開放這份 2026-06-03 才上線的新報表，目前只能在 GSC 後台手動查看。
+- 即使未來開放 API，該報表目前只有曝光數，**沒有**點擊、CTR、排名、觸發關鍵字等細節。
 
 ## 目標
 
@@ -40,9 +56,11 @@
 | `GSCService.get_analytics()` | 不支援任何非 date/query/page/country/device 以外的維度傳遞限制（技術上可傳，但從未用 `searchAppearance` 測試過） | 需實測 API 回傳的 `searchAppearance` 列舉值中，AI Overview 對應的實際字串（如 `AI_OVERVIEW` 或其他命名），以帳號本身有 AI Overview 曝光的站台驗證 |
 | `routers/gsc.py` | 無 `searchAppearance` 相關端點 | 新增端點時的路徑與參數命名 |
 | 前端 `GSCStats.jsx` | 無搜尋外觀 tab | 需拆成獨立子元件避免檔案再度膨脹（延續 `docs/33_大型檔案拆分重構實作計劃.md` 的原則） |
-| 資料可得性 | 未知 | 需先用一個有實際 AI Overview 曝光的測試站台，確認 GSC 帳號層級是否已能查到此類型資料（部分地區/語言可能尚未大量出現 AI Overview） |
+| 資料可得性 | **已於 2026-07-17 確認**：`searchAppearance` 維度本身沒有任何 AI Overview 對應值——不是「這個站台剛好沒有」，而是 Google 根本沒有把這份資料放進 API | 無需再驗證，見上方「⚠️ 2026-07-17 重大結論更新」 |
 
 ## 建議實作項目
+
+> 以下 1-4 項為 2026-07-17 執行 Phase 0 之前的原始規劃草稿，撰寫時誤以為 AI Overview 資料會出現在 `searchAppearance` 維度中。實際執行後發現此假設錯誤（見上方「⚠️ 重大結論更新」），保留於此作為歷史記錄；實際採用的作法與差異請看下方「實作階段」各 Phase 的完成記錄。
 
 ### 1. 後端：擴充 `get_analytics()` 支援 `searchAppearance` 維度
 
@@ -122,20 +140,23 @@
       ]
     }
     ```
-  - `is_ai_related_hint`：對 `search_appearance` 字串做關鍵字比對（`AI`、`OVERVIEW`、`GENERATIVE`、`SGE`），**僅是提示旗標，不是官方分類**，因為 Google 未公開穩定列舉值文件；前端可用它來高亮，但不應假設它等於「這一定是 AI Overview」。
+  - `is_ai_related_hint`：對 `search_appearance` 字串做關鍵字比對（`AI`、`OVERVIEW`、`GENERATIVE`、`SGE`），**僅是提示旗標，不是官方分類**。**2026-07-17 查證更新：此旗標目前保證恆為 `false`**，因為 Google 的生成式 AI 報表根本不在 `searchAppearance` 維度裡（見上方「⚠️ 重大結論更新」），這不是「等驗證」的問題，而是已確認不可能匹配。保留此機制只是為了未來 Google 若把它併入 `searchAppearance` 時的相容處理，成本很低。
   - 無資料時回傳 `has_data: false`，`types: []`，不視為錯誤。
   - GSC API 錯誤會以既有模式轉為 `HTTPException(400)`。
 - 沿用既有 `GSCService.get_analytics()` 的快取機制（已包含 dimensions 於 cache key），未額外實作快取層。
 - 測試：`backend/tests/test_gsc_search_appearance.py`（3 個案例：無資料、占比與 AI 提示旗標計算、錯誤傳遞），全數通過（`venv/Scripts/python.exe -m pytest tests/test_gsc_search_appearance.py`，此專案需用 `backend/venv`，`.venv311` 缺少 numpy 等依賴不可用於測試）。
+- **2026-07-17 部署後實測**：對真實站台 `ecohukurou.com.tw` 查詢，回傳 3 種類型（`PRODUCT_SNIPPETS`、`MERCHANT_LISTINGS`、`REVIEW_SNIPPET`），數值與分母加總、占比計算皆正確（人工驗算通過）。`AI_APPEARANCE_HINT_KEYWORDS` 註解已更新，明確記錄「這是永遠不會命中的預留機制，不是尚待驗證」。
 
 ### Phase 2：前端呈現 — 已完成
 
 - `frontend/src/components/GSC/constants.js`：`TABS` 新增 `searchAppearance`（🎨 搜尋外觀）分頁。
 - `frontend/src/hooks/useGscSearchAppearance.js`（新增）：獨立 hook，當 `activeTab === 'searchAppearance'` 時呼叫 Phase 1 的 `/api/gsc/search-appearance-summary`，含簡易 cache（依 site+日期區間，用 `useRef` 存放，避免切換分頁重複打 API）。
 - `frontend/src/components/GSC/SearchAppearanceTab.jsx`（新增）：
-  - KPI 卡：搜尋外觀類型數、最高 CTR 搜尋外觀、最大曝光搜尋外觀、疑似 AI Overview 點擊占比（依 `is_ai_related_hint` 加總，明確標示「關鍵字比對提示，非官方分類」）。
+  - KPI 卡：搜尋外觀類型數、最高 CTR 搜尋外觀、最大曝光搜尋外觀、關鍵字疑似 AI 相關點擊占比（依 `is_ai_related_hint` 加總，明確標示「關鍵字比對提示，非官方分類」）。
   - 表格：搜尋外觀／點擊／曝光／CTR／平均排名／點擊占比（含長條圖），`is_ai_related_hint` 為真的列會加上 🪄 圖示提示。
   - 無資料時顯示空狀態說明文字，而非誤判為故障。
+  - **2026-07-17 修正**：分頁頂部新增固定提示區塊，明確告知「Google 的生成式 AI 效能報表目前僅能在 GSC 後台查看，尚未透過 API 開放，此分頁不包含它」，避免使用者把「AI 提示卡顯示無資料」誤解為「這個網站沒有 AI Overview 曝光」——正確理解應該是「這個功能現在拿不到這份資料，跟網站有沒有曝光無關」。AI 提示卡的文案也從「尚無資料」改為「Google 尚未透過 API 開放」，用詞更精確。
+  - **2026-07-17 追加**：新增 `SEARCH_APPEARANCE_NAMES` 對照表（`frontend/src/components/GSC/constants.js`，依 [Google 官方文件](https://support.google.com/webmasters/answer/17011259) 整理），把 `PRODUCT_SNIPPETS`、`MERCHANT_LISTINGS`、`REVIEW_SNIPPET` 等原始英文代碼顯示為繁體中文（如「商品摘要」「商家資訊」「評論摘要」）；未收錄的值（含未來新類型）會直接顯示原始字串，不會顯示空白，維持「不硬編碼假設、動態呈現」的原則。
 - `frontend/src/components/GSCStats.jsx`：接入 `useGscSearchAppearance`，新增 `SearchAppearanceTab` 分頁渲染分支。
 - `frontend/src/hooks/useGscAnalytics.js`：既有的通用 dimension 抓取流程新增排除分支，`searchAppearance` 分頁不會誤觸發 `/api/gsc/analytics?dimensions=searchAppearance` 的重複請求（改由專屬 hook 負責）。
 - `frontend/src/components/GSC/GSCShared.jsx`：`GscSummaryCards`（各分頁共用的頂部 KPI 卡）在 `searchAppearance` 分頁回傳 `null`，避免直接加總 `searchAppearance` 各列造成的重複計算誤導使用者（原因見 Phase 1 說明），改由 `SearchAppearanceTab` 自行呈現正確的彙總數據。
@@ -155,9 +176,9 @@
 
 | 風險 | 影響 | 對策 |
 |---|---|---|
-| `searchAppearance` 實際列舉值與預期不符或隨時間變動 | UI 判斷錯誤或顯示空白 | 不硬編碼字串比對邏輯以外的顯示規則，優先以「動態列出所有回傳的 searchAppearance 值」呈現，AI Overview 僅作為其中一個高亮項目 |
-| 帳號 / 站台尚無 AI Overview 曝光 | 功能看似無效，使用者誤判為 bug | 明確空狀態文案，並在 Phase 0 先確認至少一個測試站台有資料 |
-| Google 未公開完整官方列舉文件 | 難以窮舉所有可能值 | 以實際 API 回傳為準，UI 動態渲染，不維護固定 enum 清單 |
+| **使用者誤以為此功能已能顯示 AI Overview 數據**（2026-07-17 確認為實際發生的風險，非假設） | 使用者依據錯誤資訊做 SEO 判斷，或誤判功能故障 | 前端固定顯示提示區塊說明「Google 尚未透過 API 開放」；AI 提示卡文案避免使用「無資料」等易誤解字眼；文件（本文件、`docs/05`、`docs/01`）同步澄清 |
+| `searchAppearance` 實際列舉值與預期不符或隨時間變動 | UI 判斷錯誤或顯示空白 | 不硬編碼字串比對邏輯以外的顯示規則，優先以「動態列出所有回傳的 searchAppearance 值」呈現；未知值 fallback 顯示原始字串 |
+| Google 未來若開放生成式 AI 報表的 API | 目前的關鍵字提示機制可能對不上實際欄位/dimension 名稱 | 待 Google 正式公告 API 支援時，重新查證是走 `type` 新增值、`searchAppearance` 新增值、或全新端點，再更新程式碼與本文件 |
 | 與既有搜尋外觀規劃（`docs/29`）功能重疊 | 重複實作或衝突 | 本文件的 Phase 1-2 直接併入 `docs/29` 的「Search Appearance 成效」項目一併實作，不重複建立端點 |
 
 ## 測試規劃
@@ -169,4 +190,6 @@
 ## 官方參考
 
 - Search Analytics API: `https://developers.google.com/webmaster-tools/v1/searchanalytics/query`
-- Search Console Performance report（AI Overview 相關公告，實作前應重新查閱最新版本以核對欄位與可用性）：`https://support.google.com/webmasters/answer/96568`
+- Performance report（Search results）Dimensions and data groupings（`searchAppearance` 官方列表出處）：`https://support.google.com/webmasters/answer/17011259`
+- Generative AI performance report（Search Console Help，2026-07-17 查證：目前 UI-only，未開放 API）：`https://support.google.com/webmasters/answer/16984139?hl=en`
+- Introducing Search Generative AI performance reports in Search Console（Google Search Central Blog，2026-06 公告）：`https://developers.google.com/search/blog/2026/06/gen-ai-performance-reports`
