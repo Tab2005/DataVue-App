@@ -23,9 +23,11 @@ import KeywordGapTab from './GSC/KeywordGapTab';
 import DailyTab from './GSC/DailyTab';
 import QueryTab from './GSC/QueryTab';
 import PageTab from './GSC/PageTab';
+import SearchAppearanceTab from './GSC/SearchAppearanceTab';
 import { useGscAnalytics } from '../hooks/useGscAnalytics';
 import { useGscPageAnalysis } from '../hooks/useGscPageAnalysis';
 import { useGscTableData } from '../hooks/useGscTableData';
+import { useGscSearchAppearance } from '../hooks/useGscSearchAppearance';
 
 const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:8000';
 
@@ -88,6 +90,13 @@ const GSCStats = ({ language, isMobile = false }) => {
         rowLimit
     });
 
+    const searchAppearanceState = useGscSearchAppearance({
+        apiUrl: API_URL,
+        selectedSite,
+        activeDateRange,
+        activeTab
+    });
+
     const pageAnalysis = useGscPageAnalysis({
         apiUrl: API_URL,
         selectedSite,
@@ -136,6 +145,7 @@ const GSCStats = ({ language, isMobile = false }) => {
         ...styles,
         ...tableData,
         ...pageAnalysis,
+        ...searchAppearanceState,
         activeTab,
         analytics,
         COUNTRY_NAMES,
@@ -204,6 +214,8 @@ const GSCStats = ({ language, isMobile = false }) => {
                         <DeviceTab context={tabContext} />
                     ) : activeTab === 'gap' ? (
                         <KeywordGapTab context={tabContext} />
+                    ) : activeTab === 'searchAppearance' ? (
+                        <SearchAppearanceTab context={tabContext} />
                     ) : activeTab === 'query' ? (
                         <QueryTab context={tabContext} />
                     ) : activeTab === 'page' ? (

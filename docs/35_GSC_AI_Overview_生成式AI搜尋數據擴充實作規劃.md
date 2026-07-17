@@ -1,7 +1,7 @@
 # GSC AI Overview（生成式 AI 搜尋）數據擴充實作規劃
 
 > 建立日期：2026-07-17
-> 狀態：規劃中，尚未實作
+> 狀態：Phase 0～3 全部完成（可行性驗證腳本、後端串接、前端呈現、文件同步）；仍待使用者用實際連接 GSC 的帳號跑過 Phase 0 腳本並在瀏覽器實測，才能確認真實資料與 UI 是否符合預期
 > 範圍：透過 Google Search Console Search Analytics API 的 `searchAppearance` 維度，擷取網站在 AI Overview / 生成式 AI 搜尋結果中的成效數據。
 > 前置關聯：本文件延伸自 [`docs/29_GSC_API_資料呈現擴充實作規劃.md`](./29_GSC_API_資料呈現擴充實作規劃.md) 第 1 項「Search Appearance 成效」，聚焦 AI Overview 這個子項目並補上專屬的驗證、風險與文案規劃。
 
@@ -80,28 +80,76 @@
 
 ## 實作階段
 
-### Phase 0：可行性驗證（建議先做，成本低）
+### Phase 0：可行性驗證（建議先做，成本低）— 已建立驗證腳本
 
-- 寫一支一次性驗證腳本（或在既有測試環境）呼叫 `searchanalytics.query`，`dimensions=["searchAppearance"]`，觀察：
-  - 是否能成功呼叫（不需額外 scope 或參數）。
+- 腳本位置：`backend/scripts/verify_gsc_search_appearance.py`
+- 用法：
+  ```
+  python scripts/verify_gsc_search_appearance.py --email user@example.com --site-url sc-domain:example.com --days 90
+  ```
+  不帶 `--site-url` 時會先列出該使用者已連接的所有站台。
+- 腳本直接沿用既有 `GSCService.get_analytics()`（`dimensions=["searchAppearance"]`），未修改任何服務層程式碼，證實現有架構已能傳遞此維度，只是從未有呼叫端使用過。
+- 執行後會列出所有回傳的 `searchAppearance` 值與其 `clicks`/`impressions`/`ctr`/`position`，並對命中 `AI`/`OVERVIEW`/`GENERATIVE`/`SGE` 等關鍵字的值給出提示（僅供人工判讀，不作為程式篩選依據）。
+- **已知限制**：本機開發資料庫目前沒有任何使用者連接 GSC（`gsc_refresh_token` 皆為空），因此無法在本機直接驗證出真實資料。需由使用者對正式環境資料庫、或自己本機已連接 GSC 的帳號執行此腳本，才能確認：
+  - 是否能成功呼叫（不需額外 scope 或參數）— 目前判斷技術上可行，因為 dimensions 參數本就透傳給 GSC API。
   - 帳號綁定站台中，是否已有 AI Overview 對應的列與非零數值。
-- 驗收：確認 AI Overview 對應的 `searchAppearance` 字串值，並記錄在本文件或程式註解中，作為後續動態比對／展示用的已知範例值（非硬編碼判斷依據）。
+- 驗收：由使用者實際執行腳本後，確認 AI Overview 對應的 `searchAppearance` 字串值，並回填至本文件，作為後續動態比對／展示用的已知範例值（非硬編碼判斷依據）。
 
-### Phase 1：後端串接
+### Phase 1：後端串接 — 已完成
 
-- 擴充 `get_analytics()` 呼叫路徑支援 `searchAppearance`。
-- 新增 `/api/gsc/analytics` 對應 query 參數或沿用既有 `dimensions` 傳遞方式。
-- 加上 cache key 涵蓋新 dimension。
+- `backend/gsc_service.py` 的 `get_analytics()` 本就透傳任意 `dimensions`，`backend/routers/gsc.py` 既有的 `GET /api/gsc/analytics?dimensions=searchAppearance` 也已可直接運作，**未修改**這兩處。
+- 新增端點 `GET /api/gsc/search-appearance-summary`（`backend/routers/gsc.py`，緊接在既有 `/analytics` 端點之後）：
+  - Query 參數：`site_url`、`start_date`、`end_date`。
+  - 內部呼叫兩次 `GSCService.get_analytics()`：一次 `dimensions=["searchAppearance"]` 取得各外觀類型成效，一次 `dimensions=["date"]` 取得全站總量作為占比分母。
+    - **原因**：同一次搜尋結果可能同時符合多種 `searchAppearance` 類型（例如同時是 AMP 又是 Rich Result），直接加總 `searchAppearance` 各列的 clicks/impressions 會重複計算，因此改用 `dimensions=["date"]` 的加總當分母，而非搜尋外觀列本身加總。
+  - 回傳格式：
+    ```json
+    {
+      "has_data": true,
+      "total_clicks": 50,
+      "total_impressions": 500,
+      "types": [
+        {
+          "search_appearance": "AMP_BLUE_LINK",
+          "clicks": 30,
+          "impressions": 300,
+          "ctr": 0.1,
+          "position": 5.0,
+          "click_share": 0.6,
+          "impression_share": 0.6,
+          "is_ai_related_hint": false
+        }
+      ]
+    }
+    ```
+  - `is_ai_related_hint`：對 `search_appearance` 字串做關鍵字比對（`AI`、`OVERVIEW`、`GENERATIVE`、`SGE`），**僅是提示旗標，不是官方分類**，因為 Google 未公開穩定列舉值文件；前端可用它來高亮，但不應假設它等於「這一定是 AI Overview」。
+  - 無資料時回傳 `has_data: false`，`types: []`，不視為錯誤。
+  - GSC API 錯誤會以既有模式轉為 `HTTPException(400)`。
+- 沿用既有 `GSCService.get_analytics()` 的快取機制（已包含 dimensions 於 cache key），未額外實作快取層。
+- 測試：`backend/tests/test_gsc_search_appearance.py`（3 個案例：無資料、占比與 AI 提示旗標計算、錯誤傳遞），全數通過（`venv/Scripts/python.exe -m pytest tests/test_gsc_search_appearance.py`，此專案需用 `backend/venv`，`.venv311` 缺少 numpy 等依賴不可用於測試）。
 
-### Phase 2：前端呈現
+### Phase 2：前端呈現 — 已完成
 
-- 拆出搜尋外觀子元件，加入 AI Overview 專屬 KPI 卡與空狀態。
-- 串接 Phase 1 端點，驗證有資料/無資料兩種情境的 UI。
+- `frontend/src/components/GSC/constants.js`：`TABS` 新增 `searchAppearance`（🎨 搜尋外觀）分頁。
+- `frontend/src/hooks/useGscSearchAppearance.js`（新增）：獨立 hook，當 `activeTab === 'searchAppearance'` 時呼叫 Phase 1 的 `/api/gsc/search-appearance-summary`，含簡易 cache（依 site+日期區間，用 `useRef` 存放，避免切換分頁重複打 API）。
+- `frontend/src/components/GSC/SearchAppearanceTab.jsx`（新增）：
+  - KPI 卡：搜尋外觀類型數、最高 CTR 搜尋外觀、最大曝光搜尋外觀、疑似 AI Overview 點擊占比（依 `is_ai_related_hint` 加總，明確標示「關鍵字比對提示，非官方分類」）。
+  - 表格：搜尋外觀／點擊／曝光／CTR／平均排名／點擊占比（含長條圖），`is_ai_related_hint` 為真的列會加上 🪄 圖示提示。
+  - 無資料時顯示空狀態說明文字，而非誤判為故障。
+- `frontend/src/components/GSCStats.jsx`：接入 `useGscSearchAppearance`，新增 `SearchAppearanceTab` 分頁渲染分支。
+- `frontend/src/hooks/useGscAnalytics.js`：既有的通用 dimension 抓取流程新增排除分支，`searchAppearance` 分頁不會誤觸發 `/api/gsc/analytics?dimensions=searchAppearance` 的重複請求（改由專屬 hook 負責）。
+- `frontend/src/components/GSC/GSCShared.jsx`：`GscSummaryCards`（各分頁共用的頂部 KPI 卡）在 `searchAppearance` 分頁回傳 `null`，避免直接加總 `searchAppearance` 各列造成的重複計算誤導使用者（原因見 Phase 1 說明），改由 `SearchAppearanceTab` 自行呈現正確的彙總數據。
 
-### Phase 3：文件同步
+**驗證方式與限制**：
+- `npx eslint`（新增/修改的 6 個檔案）：0 error，僅既有檔案原有的 3 個無關 warning。
+- `npx vite build`：建置成功。
+- **未做**：實際瀏覽器操作驗證。原因與 Phase 0 相同——本機開發環境沒有任何已連接 GSC 的帳號/站台，且登入需要真實 Google OAuth，無法在此環境模擬出「有資料」與「AI Overview 有曝光」的畫面。待使用者用真實帳號跑過 Phase 0 腳本確認資料存在後，建議直接在瀏覽器切到「🎨 搜尋外觀」分頁做最終確認。
 
-- 更新 `docs/05_API_參考手冊.md`、`docs/01_專案概覽.md`。
-- 若 Phase 0 發現目前串接帳號完全無 AI Overview 資料，於文件中註明「功能已就緒，待實際站台累積曝光後生效」。
+### Phase 3：文件同步 — 已完成
+
+- `docs/05_API_參考手冊.md`：GSC 段落新增 `GET /gsc/search-appearance-summary` 說明（參數、回傳格式、`is_ai_related_hint` 的提示性質），並補充 `/gsc/analytics` 的 `dimensions` 可傳任意維度（含 `searchAppearance`）。
+- `docs/01_專案概覽.md`：Roadmap 新增一行「GSC 搜尋外觀／AI Overview 曝光洞察」，並註明「待實際站台累積 AI Overview 曝光後生效」——因 Phase 0 尚未在真實帳號驗證過是否真的有 AI Overview 資料。
+- `docs/29_GSC_API_資料呈現擴充實作規劃.md`：更新頂部狀態與第 1 項「Search Appearance 成效」，標記為已透過本文件（`docs/35`）實作完成，並說明實作與原規劃的差異（分母計算方式、新增 AI 提示旗標），避免兩份文件對現況描述互相矛盾。
 
 ## 風險與對策
 

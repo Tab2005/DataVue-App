@@ -90,6 +90,85 @@ def get_gsc_analytics(
         traceback.print_exc()
         raise HTTPException(status_code=500, detail=f"Internal Server Error: {str(e)}")
 
+# 3b. Search Appearance Summary (docs/35_GSC_AI_Overview_生成式AI搜尋數據擴充實作規劃.md Phase 1)
+# 已知的 AI Overview / 生成式搜尋相關提示關鍵字，僅用於前端標示，不作為硬編碼的判斷依據，
+# 因為 Google 未公開穩定的 searchAppearance 列舉值文件，實際字串需以 API 回傳為準。
+AI_APPEARANCE_HINT_KEYWORDS = ["AI", "OVERVIEW", "GENERATIVE", "SGE"]
+
+
+@router.get("/search-appearance-summary")
+def get_search_appearance_summary(
+    site_url: str,
+    start_date: str,
+    end_date: str,
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+    _: bool = Depends(gsc_module_check)
+):
+    """
+    彙總 searchAppearance 維度成效（含 AI Overview 等搜尋外觀類型）。
+
+    注意：同一次搜尋結果可能同時符合多種 searchAppearance 類型（例如同時是 AMP 又是
+    Rich Result），各列的 clicks/impressions 直接加總會重複計算。因此占比分母改用
+    dimensions=["date"] 的加總作為全站總量，而非加總 searchAppearance 各列。
+    """
+    try:
+        appearance_rows, error = GSCService.get_analytics(
+            user, site_url, start_date, end_date,
+            dimensions=["searchAppearance"], db=db
+        )
+        if error:
+            raise HTTPException(status_code=400, detail=error)
+
+        if not appearance_rows:
+            return {
+                "has_data": False,
+                "total_clicks": 0,
+                "total_impressions": 0,
+                "types": [],
+            }
+
+        total_rows, total_error = GSCService.get_analytics(
+            user, site_url, start_date, end_date,
+            dimensions=["date"], db=db
+        )
+        if total_error:
+            raise HTTPException(status_code=400, detail=total_error)
+
+        total_clicks = sum(r.get("clicks", 0) for r in (total_rows or []))
+        total_impressions = sum(r.get("impressions", 0) for r in (total_rows or []))
+
+        types = []
+        for row in appearance_rows:
+            keys = row.get("keys") or []
+            key = keys[0] if keys else "(unknown)"
+            clicks = row.get("clicks", 0)
+            impressions = row.get("impressions", 0)
+            types.append({
+                "search_appearance": key,
+                "clicks": clicks,
+                "impressions": impressions,
+                "ctr": row.get("ctr", 0),
+                "position": row.get("position", 0),
+                "click_share": (clicks / total_clicks) if total_clicks else 0,
+                "impression_share": (impressions / total_impressions) if total_impressions else 0,
+                "is_ai_related_hint": any(kw in key.upper() for kw in AI_APPEARANCE_HINT_KEYWORDS),
+            })
+
+        types.sort(key=lambda t: t["clicks"], reverse=True)
+
+        return {
+            "has_data": True,
+            "total_clicks": total_clicks,
+            "total_impressions": total_impressions,
+            "types": types,
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=f"Internal Server Error: {str(e)}")
+
 # 4. Fetch Page Titles (with Database Caching)
 class PageTitlesRequest(BaseModel):
     urls: List[str]

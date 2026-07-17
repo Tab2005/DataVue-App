@@ -47,7 +47,11 @@ AI 模組支援標準 JSON 回應與 SSE (Server-Sent Events) 串流回應，適
 ### 🔍 Google Search Console (GSC)
 - `POST /gsc/authorize`：提交 GSC 授權碼。
 - `GET /gsc/sites`：列出使用者擁有的網站清單。
-- `GET /gsc/analytics`：取得點擊、曝光、CTR 與排名數據。
+- `GET /gsc/analytics`：取得點擊、曝光、CTR 與排名數據，`dimensions` 可傳任意 GSC 維度（如 `date`、`query`、`page`、`country`、`device`、`searchAppearance`，可用逗號組合）。
+- `GET /gsc/search-appearance-summary`：彙總 `searchAppearance` 維度成效（含 AMP、Rich Result、AI Overview 等搜尋外觀類型）。
+  - **參數**：`site_url`、`start_date`、`end_date`。
+  - **回傳**：`has_data`、`total_clicks`、`total_impressions`（以 `date` 維度加總為分母，避免同一結果符合多種外觀類型造成重複計算），以及 `types[]`（每個外觀類型的 clicks/impressions/ctr/position/click_share/impression_share/`is_ai_related_hint`）。
+  - `is_ai_related_hint` 僅為關鍵字提示（比對 `AI`/`OVERVIEW`/`GENERATIVE`/`SGE`），非 Google 官方分類，因 Google 未公開穩定的 `searchAppearance` 列舉值文件。詳見 `docs/35_GSC_AI_Overview_生成式AI搜尋數據擴充實作規劃.md`。
 - `POST /gsc/page-intents`：利用 AI 對搜尋頁面進行意圖分類 (Intent Classification)。
 
 ### 📊 Google Analytics 4 (GA4)

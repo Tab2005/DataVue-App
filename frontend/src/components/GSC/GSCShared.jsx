@@ -110,7 +110,10 @@ export const GscSummaryCards = ({
     isMobile,
     t
 }) => {
-    if (activeTab === 'trend') return null;
+    // trend 與 searchAppearance 有各自的彙總 KPI 呈現方式：
+    // trend 沒有單一期間總量的概念；searchAppearance 各列可能重複計算（同一結果可同時符合多種外觀類型），
+    // 所以這裡的通用加總不適用，改由各自的 tab 元件顯示正確的彙總數據。
+    if (activeTab === 'trend' || activeTab === 'searchAppearance') return null;
 
     const { gridStyle, cardStyle, cardLabelStyle, cardValueStyle } = buildSummaryStyles(isMobile);
     const currentClicks = analytics.reduce((acc, row) => acc + row.clicks, 0);

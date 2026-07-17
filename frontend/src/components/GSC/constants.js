@@ -29,7 +29,8 @@ export const TABS = [
     { key: 'trend', label_zh: '📊 頁面趨勢', label_en: '📊 Page Trends', dimension: 'page' },
     { key: 'country', label_zh: '🌍 地區分佈', label_en: '🌍 Country', dimension: 'country' },
     { key: 'device', label_zh: '📱 裝置分佈', label_en: '📱 Device', dimension: 'device' },
-    { key: 'gap', label_zh: '🎯 內容缺口', label_en: '🎯 Keyword Gap', dimension: 'page' }
+    { key: 'gap', label_zh: '🎯 內容缺口', label_en: '🎯 Keyword Gap', dimension: 'page' },
+    { key: 'searchAppearance', label_zh: '🎨 搜尋外觀', label_en: '🎨 Search Appearance', dimension: 'searchAppearance' }
 ];
 
 // Trend Sub-tabs

@@ -79,6 +79,8 @@ export const useGscAnalytics = ({ apiUrl, rowLimit, queryPageSize }) => {
 
             if (activeTab === 'trend') {
                 fetchTrendData(selectedSite, activeDateRange.start, activeDateRange.end);
+            } else if (activeTab === 'searchAppearance') {
+                // 由 useGscSearchAppearance 負責抓取（含 searchAppearance 各列與全站占比分母），這裡不重複抓取。
             } else if (!loadedDimensions.has(dimension)) {
                 fetchAnalytics(selectedSite, activeDateRange.start, activeDateRange.end, dimension);
             } else {
