@@ -1,7 +1,7 @@
 # GSC 內容缺口 → AI 文章方向建議 實作規劃
 
 > 建立日期：2026-07-21
-> 狀態：規劃中，尚未實作
+> 狀態：Phase 1（後端服務與端點）、Phase 2（前端呈現）已完成並通過測試/建置驗證；Phase 3（文件同步）`docs/05` 已同步更新。
 > 範圍：延伸現有 `POST /api/gsc/keyword-gap`（單一頁面的內容缺口分析），新增一層 AI 分析，把「有排名但內文未涵蓋」的關鍵字整理成具體的文章方向建議（補充現有頁面段落，或獨立成新文章）。
 > 非範圍（列為後續延伸）：全站規模的「機會關鍵字 → 全新文章題目」分群建議，見文末「後續延伸（做法 B）」。
 
@@ -123,13 +123,29 @@
 
 ## 實作階段
 
-### Phase 1：後端服務與端點
-- 新增 `AIContentGapSuggester`、`content-gap-suggestions` 端點。
-- 單元測試：mock AI client 回應，驗證 JSON 解析與空缺口情境。
+### Phase 1：後端服務與端點 — 已完成（2026-07-21）
 
-### Phase 2：前端呈現
-- `KeywordGapTab.jsx` 新增按鈕與建議卡片畫面。
-- 涵蓋 loading/error/空狀態/正常顯示四種情境。
+- 新增 `backend/services/ai/content_gap_suggester.py` 的 `AIContentGapSuggester`，結構仿照 `AIIntentClassifier`（system prompt + `_parse_json_response` 三層 fallback），並在 `backend/services/ai/__init__.py` 加入匯出。
+- `backend/routers/gsc.py`：
+  - 把原本寫死在 `/keyword-gap` 端點內的分析邏輯抽成共用的 `_compute_keyword_gap()`，`/keyword-gap` 與新端點皆呼叫它，避免重複程式碼、也讓新端點在未帶 `missing_keywords` 時能重跑同一套分析。
+  - 新增 `ContentGapSuggestionRequest` 與 `POST /content-gap-suggestions` 端點：支援直接帶入 `missing_keywords`（略過重新分析）或不帶（內部重跑 `_compute_keyword_gap` 並篩出 `in_content=false` 的項目）；API Key 解析沿用 `page-intents` 既有順序（`TokenManager.get_ai_api_key` → request 參數 → 環境變數）；缺口關鍵字為 0 時直接短路回傳，不呼叫 AI。
+- 測試：`backend/tests/test_gsc_content_gap_suggestions.py`（5 案例：直接帶入缺口關鍵字、空缺口短路、API Key 未設定的空狀態、退回重跑 `keyword-gap` 分析並正確過濾、AI 失敗回傳 500），與既有 `test_gsc_search_appearance.py`、其餘 GSC/AI 相關測試（共 86 項）全數通過。
+
+**⚠️ 實作過程中發現並修復一個既有、無關本次規劃的 bug**：`backend/services/ai/zeabur_client.py` 的 `ZeaburAIClient` 原本**沒有可用的 `generate_content()` 方法**。追查 git 歷史發現，commit `c59a69f`（"fix(ai): deep fix for NoneType startswith crash and frontend model matching"）誤刪了 `generate_content` 的方法簽章與前段程式碼，導致該方法主體變成 `fetch_remote_models()` 內部 `return` 之後的一段不可執行的死代碼（dead code），`generate_content` 這個方法名稱在類別上實際上**不存在**。
+
+這代表：**任何使用預設 provider（`"zeabur"`）呼叫 AI 的既有功能都會拋出 `AttributeError`**，包含既有的 `/api/gsc/page-intents` 端點（`AIIntentClassifier` 預設 `provider="zeabur"`）——這不是本次新功能造成的迴歸，而是先前某次修復遺留的既有缺陷，只是没有測試覆蓋到才沒被發現。已將方法簽章與 guard clause（`if not self.client: raise RuntimeError(...)`、`if not model: raise ValueError(...)`）還原到正確位置並保留其餘邏輯不變，修復後 `hasattr(ZeaburAIClient(...), "generate_content")` 為 `True`，且不影響任何既有測試（`-k "gsc or ai"` 86 項測試修復前後行為一致，因先前無測試覆蓋此路徑）。
+
+**未做**：實際瀏覽器 / 真實 API Key 端到端驗證。原因與 `docs/35` 相同——本機環境沒有真實 Zeabur AI Hub / Gemini API Key 可用於整合測試，僅完成 mock 層級的單元測試。建議待前端（Phase 2）完成後，用真實帳號一併驗證。
+
+### Phase 2：前端呈現 — 已完成（2026-07-21）
+
+- `frontend/src/hooks/useGscPageAnalysis.js`：新增狀態 `suggestLoading`、`suggestResults`、`suggestError`，以及 `fetchContentGapSuggestions()`——從目前的 `gapResults.results` 篩出 `in_content === false` 的項目組成 `missing_keywords`，呼叫 `POST /api/gsc/content-gap-suggestions`（`provider` 沿用既有的 `localStorage.getItem('ai_provider')` 慣例，與 `fetchPageIntent` 一致）。`fetchKeywordGap()` 重新分析時會重置 `suggestResults`/`suggestError`，避免顯示上一個頁面的舊建議。
+- `frontend/src/components/GSC/KeywordGapTab.jsx`：在缺口結果表格下方（`missing_count > 0` 時）新增：
+  - `🪄 產生文章方向建議` 按鈕（分析中顯示 loading 文案並停用）。
+  - 錯誤訊息區塊（沿用既有 `gapError` 的視覺樣式）。
+  - 建議卡片列表：每張卡片顯示類型 badge（📝 補充現有內容／✨ 新文章方向）、標題、大綱條列、關鍵字 tag、AI 判斷理由；卡片區塊上方固定顯示「AI 生成建議僅供參考，請人工確認後再採用」提示；空建議時顯示後端回傳的 `message`。
+- 驗證：`npx eslint`（僅 3 個既有、與本次改動無關的 pre-existing warning，0 error）；`npx vite build` 建置成功。
+- **未做**：實際瀏覽器操作驗證與真實 API Key 端到端測試，原因與 Phase 1 相同——本機無真實 GSC 連線帳號與 AI API Key。
 
 ### Phase 3：文件同步
 - `docs/05_API_參考手冊.md` 新增 `POST /gsc/content-gap-suggestions` 說明。

@@ -47,6 +47,9 @@ export const useGscPageAnalysis = ({
     const [gapTopN, setGapTopN] = useState(100);
     const [gapDatePreset, setGapDatePreset] = useState('last_28d');
     const [gapDateRange, setGapDateRange] = useState(getDateRangeFromPreset('last_28d'));
+    const [suggestLoading, setSuggestLoading] = useState(false);
+    const [suggestResults, setSuggestResults] = useState(null);
+    const [suggestError, setSuggestError] = useState(null);
     const pageKeywordsPageSize = 2000;
 
     useEffect(() => {
@@ -267,6 +270,8 @@ export const useGscPageAnalysis = ({
         }
         setGapLoading(true);
         setGapError(null);
+        setSuggestResults(null);
+        setSuggestError(null);
         setActiveTab('gap');
         if (targetUrl) setGapUrl(targetUrl);
         try {
@@ -294,6 +299,46 @@ export const useGscPageAnalysis = ({
             setGapError(err.message);
         } finally {
             setGapLoading(false);
+        }
+    };
+
+    const fetchContentGapSuggestions = async () => {
+        if (!gapResults || !gapResults.results) return;
+        const missingKeywords = gapResults.results
+            .filter(r => !r.in_content)
+            .map(r => ({ query: r.query, clicks: r.clicks, impressions: r.impressions, position: r.position }));
+        if (missingKeywords.length === 0) return;
+
+        setSuggestLoading(true);
+        setSuggestError(null);
+        try {
+            const resp = await fetch(`${apiUrl}/api/gsc/content-gap-suggestions`, {
+                method: 'POST',
+                headers: {
+                    'Authorization': `Bearer ${localStorage.getItem('google_token')}`,
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({
+                    site_url: selectedSite,
+                    page_url: gapResults.page,
+                    start_date: gapDateRange.start,
+                    end_date: gapDateRange.end,
+                    missing_keywords: missingKeywords,
+                    provider: localStorage.getItem('ai_provider') || 'zeabur'
+                })
+            });
+            if (!resp.ok) {
+                const errorData = await resp.json();
+                throw new Error(errorData.error || errorData.detail || 'Content gap suggestion failed');
+            }
+            const data = await resp.json();
+            if (data.message && data.message.includes('not configured')) throw new Error(data.message);
+            setSuggestResults(data);
+        } catch (err) {
+            console.error('Failed to fetch content gap suggestions:', err);
+            setSuggestError(err.message);
+        } finally {
+            setSuggestLoading(false);
         }
     };
 
@@ -327,6 +372,10 @@ export const useGscPageAnalysis = ({
         setGapDatePreset,
         gapDateRange,
         setGapDateRange,
-        fetchKeywordGap
+        fetchKeywordGap,
+        suggestLoading,
+        suggestResults,
+        suggestError,
+        fetchContentGapSuggestions
     };
 };

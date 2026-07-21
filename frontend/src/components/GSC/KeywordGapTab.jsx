@@ -31,8 +31,17 @@ const KeywordGapTab = ({ context }) => {
         tableStyle,
         tdStyle,
         thStyle,
-        toggleButtonStyle
+        toggleButtonStyle,
+        suggestLoading,
+        suggestResults,
+        suggestError,
+        fetchContentGapSuggestions
     } = context;
+
+    const SUGGESTION_TYPE_LABELS = {
+        expand_existing: { emoji: '📝', label_zh: '補充現有內容', label_en: 'Expand Existing Page' },
+        new_article: { emoji: '✨', label_zh: '新文章方向', label_en: 'New Article Direction' }
+    };
 
     return (
                         /* Keyword Gap Analysis Tab */
@@ -311,6 +320,123 @@ const KeywordGapTab = ({ context }) => {
                                             </tbody>
                                         </table>
                                     </div>
+
+                                    {gapResults.missing_count > 0 && (
+                                        <div style={{ marginTop: '24px' }}>
+                                            <button
+                                                onClick={() => fetchContentGapSuggestions()}
+                                                disabled={suggestLoading}
+                                                style={{
+                                                    padding: '10px 24px',
+                                                    background: 'linear-gradient(135deg, #8B5CF6, #6D28D9)',
+                                                    border: 'none',
+                                                    borderRadius: '8px',
+                                                    color: 'white',
+                                                    fontWeight: '600',
+                                                    cursor: suggestLoading ? 'wait' : 'pointer',
+                                                    opacity: suggestLoading ? 0.7 : 1,
+                                                    width: isMobile ? '100%' : 'auto'
+                                                }}
+                                            >
+                                                {suggestLoading
+                                                    ? t('產生建議中...', 'Generating suggestions...')
+                                                    : t('🪄 產生文章方向建議', '🪄 Generate Article Direction Suggestions')}
+                                            </button>
+
+                                            {suggestError && (
+                                                <div style={{
+                                                    padding: '16px',
+                                                    background: 'rgba(239, 68, 68, 0.1)',
+                                                    border: '1px solid rgba(239, 68, 68, 0.3)',
+                                                    borderRadius: '8px',
+                                                    color: '#EF4444',
+                                                    marginTop: '16px'
+                                                }}>
+                                                    ⚠️ {suggestError}
+                                                </div>
+                                            )}
+
+                                            {suggestResults && (
+                                                <div style={{ marginTop: '16px' }}>
+                                                    <div style={{
+                                                        fontSize: '0.8rem',
+                                                        color: 'var(--text-tertiary)',
+                                                        marginBottom: '12px'
+                                                    }}>
+                                                        ⚠️ {t(
+                                                            'AI 生成建議僅供參考，請人工確認後再採用。',
+                                                            'AI-generated suggestions are for reference only — please review before using.'
+                                                        )}
+                                                    </div>
+
+                                                    {suggestResults.suggestions.length === 0 ? (
+                                                        <div style={{ padding: '16px', color: 'var(--text-secondary)' }}>
+                                                            {suggestResults.message || t('沒有可用的建議。', 'No suggestions available.')}
+                                                        </div>
+                                                    ) : (
+                                                        <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+                                                            {suggestResults.suggestions.map((sug, idx) => {
+                                                                const typeInfo = SUGGESTION_TYPE_LABELS[sug.type] || { emoji: '💡', label_zh: sug.type, label_en: sug.type };
+                                                                return (
+                                                                    <div key={idx} style={{
+                                                                        ...cardStyle,
+                                                                        background: 'rgba(139, 92, 246, 0.05)',
+                                                                        border: '1px solid rgba(139, 92, 246, 0.25)',
+                                                                        padding: '20px'
+                                                                    }}>
+                                                                        <div style={{
+                                                                            display: 'inline-flex',
+                                                                            alignItems: 'center',
+                                                                            gap: '4px',
+                                                                            padding: '2px 10px',
+                                                                            borderRadius: '12px',
+                                                                            fontSize: '11px',
+                                                                            fontWeight: '600',
+                                                                            background: 'rgba(139, 92, 246, 0.15)',
+                                                                            color: '#8B5CF6',
+                                                                            marginBottom: '10px'
+                                                                        }}>
+                                                                            {typeInfo.emoji} {t(typeInfo.label_zh, typeInfo.label_en)}
+                                                                        </div>
+                                                                        <h4 style={{ margin: '0 0 10px 0', fontSize: '1.05rem', color: 'var(--text-primary)' }}>
+                                                                            {sug.title}
+                                                                        </h4>
+                                                                        {Array.isArray(sug.outline) && sug.outline.length > 0 && (
+                                                                            <ul style={{ margin: '0 0 12px 0', paddingLeft: '20px', color: 'var(--text-secondary)', fontSize: '0.9rem' }}>
+                                                                                {sug.outline.map((point, i) => (
+                                                                                    <li key={i} style={{ marginBottom: '4px' }}>{point}</li>
+                                                                                ))}
+                                                                            </ul>
+                                                                        )}
+                                                                        {Array.isArray(sug.target_keywords) && sug.target_keywords.length > 0 && (
+                                                                            <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px', marginBottom: '10px' }}>
+                                                                                {sug.target_keywords.map((kw, i) => (
+                                                                                    <span key={i} style={{
+                                                                                        fontSize: '11px',
+                                                                                        padding: '2px 8px',
+                                                                                        borderRadius: '10px',
+                                                                                        background: 'rgba(255, 255, 255, 0.08)',
+                                                                                        color: 'var(--text-secondary)'
+                                                                                    }}>
+                                                                                        {kw}
+                                                                                    </span>
+                                                                                ))}
+                                                                            </div>
+                                                                        )}
+                                                                        {sug.reasoning && (
+                                                                            <p style={{ margin: 0, fontSize: '0.85rem', color: 'var(--text-tertiary)', fontStyle: 'italic' }}>
+                                                                                {sug.reasoning}
+                                                                            </p>
+                                                                        )}
+                                                                    </div>
+                                                                );
+                                                            })}
+                                                        </div>
+                                                    )}
+                                                </div>
+                                            )}
+                                        </div>
+                                    )}
                                 </div>
                             )}
                         </div>

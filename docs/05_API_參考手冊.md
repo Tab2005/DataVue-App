@@ -53,6 +53,11 @@ AI 模組支援標準 JSON 回應與 SSE (Server-Sent Events) 串流回應，適
   - **回傳**：`has_data`、`total_clicks`、`total_impressions`（以 `date` 維度加總為分母，避免同一結果符合多種外觀類型造成重複計算），以及 `types[]`（每個外觀類型的 clicks/impressions/ctr/position/click_share/impression_share/`is_ai_related_hint`）。
   - **不含 AI Overview / 生成式 AI 數據**：Google 於 2026-06-03 推出的「生成式 AI 效能報表」目前僅能在 GSC 後台查看（成效 > 搜尋結果 > 生成式 AI），尚未透過任何 API 開放。`is_ai_related_hint` 只是對 `search_appearance` 字串做關鍵字比對（`AI`/`OVERVIEW`/`GENERATIVE`/`SGE`）的預留機制，目前保證恆為 `false`，不代表這個網站沒有 AI Overview 曝光。詳見 `docs/35_GSC_AI_Overview_生成式AI搜尋數據擴充實作規劃.md`。
 - `POST /gsc/page-intents`：利用 AI 對搜尋頁面進行意圖分類 (Intent Classification)。
+- `POST /gsc/keyword-gap`：分析單一頁面「有排名但內文未涵蓋」的關鍵字缺口。
+- `POST /gsc/content-gap-suggestions`：針對 `keyword-gap` 找到的缺口關鍵字，用 AI 產生文章方向建議（`expand_existing` 補充現有頁面段落／`new_article` 獨立新文章方向），含建議標題與大綱要點。
+  - **參數**：`site_url`、`page_url`、`start_date`、`end_date`、`top_n`（選填）、`missing_keywords`（選填，若已呼叫過 `keyword-gap` 可直接帶入其 `in_content=false` 的項目，避免重複分析）、`provider`（`zeabur`/`gemini`，預設 `zeabur`）、`ai_api_key`（選填）。
+  - **回傳**：`suggestions[]`（每項含 `type`、`title`、`outline`、`target_keywords`、`reasoning`）、`model`、`keyword_count`。缺口關鍵字為 0 或 API Key 未設定時回傳空陣列與 `message`，不視為錯誤。
+  - 僅生成方向與大綱層級建議，不生成完整文章全文，前端應標示「僅供參考，需人工確認」。詳見 `docs/37_GSC_內容缺口_AI文章方向建議_實作規劃.md`。
 
 ### 📊 Google Analytics 4 (GA4)
 - `GET /ga4/properties`：取得可用資源清單。

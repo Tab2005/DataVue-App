@@ -3,7 +3,7 @@ from sqlalchemy.orm import Session
 from database import SessionLocal, User
 from dependencies import get_db, get_current_user, require_module
 from gsc_service import GSCService
-from typing import List, Optional
+from typing import List, Optional, Dict
 from pydantic import BaseModel
 import logging
 import traceback
@@ -487,6 +487,154 @@ class KeywordGapRequest(BaseModel):
     end_date: str           # YYYY-MM-DD
     top_n: Optional[int] = 100
 
+
+async def _compute_keyword_gap(
+    user: User,
+    db: Session,
+    site_url: str,
+    page_url: str,
+    start_date: str,
+    end_date: str,
+    top_n: Optional[int] = 100
+) -> Dict:
+    """
+    Analyzes the "gap" between keywords the page ranks for vs. keywords present in the content.
+    1. Fetches top keywords for the page from GSC.
+    2. Scrapes the actual content of the page.
+    3. Checks if each keyword exists in the content.
+
+    Shared by /keyword-gap and /content-gap-suggestions (docs/37) to avoid
+    re-fetching GSC data / re-scraping the page twice for the same analysis.
+    """
+    import httpx
+    from bs4 import BeautifulSoup
+
+    # Step 1: Fetch GSC Keywords for this specific page using server-side filtering
+    # Use 'contains' instead of 'equals' for more robustness with trailing slashes/protocols
+    dimension_filters = [
+        {
+            "dimension": "page",
+            "operator": "contains",
+            "expression": page_url.rstrip('/')
+        }
+    ]
+
+    logger.info(f"[Gap Analysis] Fetching GSC data for {page_url} ({start_date} to {end_date})")
+    query_data, error = GSCService.get_analytics(
+        user,
+        site_url,
+        start_date,
+        end_date,
+        dimensions=['page', 'query'],
+        limit=None,
+        offset=0,
+        db=db,
+        dimension_filters=dimension_filters
+    )
+
+    if error:
+        logger.warning(f"[Gap Analysis] GSC Error: {error}")
+        raise HTTPException(status_code=400, detail=f"GSC Error: {error}")
+
+    # Structure the keywords results
+    page_keywords = []
+    target_url_clean = page_url.rstrip('/')
+
+    for row in query_data:
+        keys = row.get('keys', [])
+        if len(keys) >= 2:
+            row_url_clean = keys[0].rstrip('/')
+            if row_url_clean == target_url_clean:
+                page_keywords.append({
+                    "query": keys[1],
+                    "clicks": row.get('clicks', 0),
+                    "impressions": row.get('impressions', 0),
+                    "ctr": row.get('ctr', 0),
+                    "position": row.get('position', 0)
+                })
+
+    logger.debug(f"[Gap Analysis] Found {len(page_keywords)} total keywords for page.")
+
+    # Sort and limit
+    page_keywords.sort(key=lambda x: x['clicks'], reverse=True)
+
+    # Support "All" keywords if top_n is 0 or negative
+    if top_n and top_n > 0:
+        top_page_keywords = page_keywords[:top_n]
+    else:
+        top_page_keywords = page_keywords
+
+    if not top_page_keywords:
+        return {
+            "page": page_url,
+            "status": "no_data",
+            "message": "No GSC data found for this URL in the given period.",
+            "results": [],
+            "total_analyzed": 0,
+            "missing_count": 0,
+            "total_found_in_gsc": len(page_keywords)
+        }
+
+    # Step 2: Scrape Page Content
+    content_text = ""
+    page_title = ""
+    try:
+        async with httpx.AsyncClient(follow_redirects=True, timeout=15.0) as client:
+            resp = await client.get(page_url)
+            if resp.status_code == 200:
+                soup = BeautifulSoup(resp.text, 'html.parser')
+
+                # Get title
+                title_tag = soup.find('title')
+                page_title = title_tag.get_text().strip() if title_tag else ""
+
+                # Remove script and style elements
+                for script in soup(["script", "style"]):
+                    script.extract()
+
+                # Get text and clean up whitespace
+                content_text = soup.get_text(separator=' ', strip=True).lower()
+            else:
+                raise Exception(f"Failed to fetch page: HTTP {resp.status_code}")
+    except Exception as e:
+        logger.warning(f"Scraping error for {page_url}: {e}")
+        # We continue even if scraping fails, marking all as "unknown" content status
+        return {
+            "page": page_url,
+            "status": "scrape_failed",
+            "message": f"Could not fetch page content: {str(e)}",
+            "results": top_page_keywords,
+            "total_analyzed": len(top_page_keywords),
+            "missing_count": len(top_page_keywords), # Default to all missing if we can't scrape
+            "total_found_in_gsc": len(page_keywords)
+        }
+
+    # Step 3: Match Keywords in Content
+    results = []
+    for kw in top_page_keywords:
+        query = kw['query'].lower()
+        # Basic matching: check if query exists as a string
+        # Better matching: use regex for word boundaries if it's alphanumeric
+        is_present = False
+        if query in content_text:
+            is_present = True
+
+        results.append({
+            **kw,
+            "in_content": is_present
+        })
+
+    return {
+        "page": page_url,
+        "page_title": page_title,
+        "status": "success",
+        "results": results,
+        "total_analyzed": len(results),
+        "missing_count": len([r for r in results if not r['in_content']]),
+        "total_found_in_gsc": len(page_keywords)
+    }
+
+
 @router.post("/keyword-gap")
 async def analyze_keyword_gap(
     request: KeywordGapRequest,
@@ -496,144 +644,126 @@ async def analyze_keyword_gap(
 ):
     """
     Analyzes the "gap" between keywords the page ranks for vs. keywords present in the content.
-    1. Fetches top keywords for the page from GSC.
-    2. Scrapes the actual content of the page.
-    3. Checks if each keyword exists in the content.
     """
-    import httpx
-    from bs4 import BeautifulSoup
-    import re
-    
     try:
-        # Step 1: Fetch GSC Keywords for this specific page using server-side filtering
-        # Prepare dimension filters
-        # Use 'contains' instead of 'equals' for more robustness with trailing slashes/protocols
-        dimension_filters = [
-            {
-                "dimension": "page",
-                "operator": "contains",
-                "expression": request.page_url.rstrip('/')
-            }
-        ]
-        
-        logger.info(f"[Gap Analysis] Fetching GSC data for {request.page_url} ({request.start_date} to {request.end_date})")
-        query_data, error = GSCService.get_analytics(
-            user,
-            request.site_url,
-            request.start_date,
-            request.end_date,
-            dimensions=['page', 'query'],
-            limit=None,
-            offset=0,
-            db=db,
-            dimension_filters=dimension_filters
+        return await _compute_keyword_gap(
+            user, db, request.site_url, request.page_url,
+            request.start_date, request.end_date, request.top_n
         )
-        
-        if error:
-            logger.warning(f"[Gap Analysis] GSC Error: {error}")
-            raise HTTPException(status_code=400, detail=f"GSC Error: {error}")
-            
-        # Structure the keywords results
-        page_keywords = []
-        target_url_clean = request.page_url.rstrip('/')
-        
-        for row in query_data:
-            keys = row.get('keys', [])
-            if len(keys) >= 2:
-                row_url_clean = keys[0].rstrip('/')
-                if row_url_clean == target_url_clean:
-                    page_keywords.append({
-                        "query": keys[1],
-                        "clicks": row.get('clicks', 0),
-                        "impressions": row.get('impressions', 0),
-                        "ctr": row.get('ctr', 0),
-                        "position": row.get('position', 0)
-                    })
-        
-        logger.debug(f"[Gap Analysis] Found {len(page_keywords)} total keywords for page.")
-        
-        # Sort and limit
-        page_keywords.sort(key=lambda x: x['clicks'], reverse=True)
-        
-        # Support "All" keywords if top_n is 0 or negative
-        if request.top_n and request.top_n > 0:
-            top_page_keywords = page_keywords[:request.top_n]
-        else:
-            top_page_keywords = page_keywords
-            
-        if not top_page_keywords:
-            return {
-                "page": request.page_url,
-                "status": "no_data",
-                "message": "No GSC data found for this URL in the given period.",
-                "results": [],
-                "total_analyzed": 0,
-                "missing_count": 0,
-                "total_found_in_gsc": len(page_keywords)
-            }
-            
-        # Step 2: Scrape Page Content
-        content_text = ""
-        page_title = ""
-        try:
-            async with httpx.AsyncClient(follow_redirects=True, timeout=15.0) as client:
-                resp = await client.get(request.page_url)
-                if resp.status_code == 200:
-                    soup = BeautifulSoup(resp.text, 'html.parser')
-                    
-                    # Get title
-                    title_tag = soup.find('title')
-                    page_title = title_tag.get_text().strip() if title_tag else ""
-                    
-                    # Remove script and style elements
-                    for script in soup(["script", "style"]):
-                        script.extract()
-                        
-                    # Get text and clean up whitespace
-                    content_text = soup.get_text(separator=' ', strip=True).lower()
-                else:
-                    raise Exception(f"Failed to fetch page: HTTP {resp.status_code}")
-        except Exception as e:
-            logger.warning(f"Scraping error for {request.page_url}: {e}")
-            # We continue even if scraping fails, marking all as "unknown" content status
-            return {
-                "page": request.page_url,
-                "status": "scrape_failed",
-                "message": f"Could not fetch page content: {str(e)}",
-                "results": top_page_keywords,
-                "total_analyzed": len(top_page_keywords),
-                "missing_count": len(top_page_keywords), # Default to all missing if we can't scrape
-                "total_found_in_gsc": len(page_keywords)
-            }
-
-        # Step 3: Match Keywords in Content
-        results = []
-        for kw in top_page_keywords:
-            query = kw['query'].lower()
-            # Basic matching: check if query exists as a string
-            # Better matching: use regex for word boundaries if it's alphanumeric
-            is_present = False
-            if query in content_text:
-                is_present = True
-            
-            results.append({
-                **kw,
-                "in_content": is_present
-            })
-            
-        return {
-            "page": request.page_url,
-            "page_title": page_title,
-            "status": "success",
-            "results": results,
-            "total_analyzed": len(results),
-            "missing_count": len([r for r in results if not r['in_content']]),
-            "total_found_in_gsc": len(page_keywords)
-        }
-        
     except HTTPException:
         raise
     except Exception as e:
         import traceback
         traceback.print_exc()
         raise HTTPException(status_code=500, detail=f"Gap analysis failed: {str(e)}")
+
+
+# 7. Content Gap Suggestions (docs/37_GSC_內容缺口_AI文章方向建議_實作規劃.md)
+class ContentGapSuggestionRequest(BaseModel):
+    site_url: str
+    page_url: str
+    start_date: str
+    end_date: str
+    top_n: Optional[int] = 100
+    missing_keywords: Optional[List[Dict]] = None  # 若已有 /keyword-gap 結果可直接帶入，避免重複分析
+    provider: Optional[str] = "zeabur"
+    ai_api_key: Optional[str] = None
+
+
+@router.post("/content-gap-suggestions")
+async def get_content_gap_suggestions(
+    request: ContentGapSuggestionRequest,
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+    _: bool = Depends(gsc_module_check)
+):
+    """
+    針對「有排名但內文未涵蓋」的關鍵字，用 AI 產生文章方向建議
+    （補充現有頁面段落，或獨立成新文章）。
+
+    若 request.missing_keywords 未提供，會重新執行一次 /keyword-gap 的分析邏輯
+    取得缺口關鍵字；若前端已呼叫過 /keyword-gap，建議直接帶入其 results 中
+    in_content=false 的項目，避免重複打 GSC API 與重複爬取頁面。
+    """
+    import os
+    from services.ai import AIContentGapSuggester
+
+    try:
+        page_title = ""
+
+        if request.missing_keywords is not None:
+            missing_keywords = [
+                {
+                    "query": kw.get("query"),
+                    "clicks": kw.get("clicks", 0),
+                    "impressions": kw.get("impressions", 0),
+                    "position": kw.get("position", 0)
+                }
+                for kw in request.missing_keywords
+            ]
+        else:
+            gap_result = await _compute_keyword_gap(
+                user, db, request.site_url, request.page_url,
+                request.start_date, request.end_date, request.top_n
+            )
+            page_title = gap_result.get("page_title", "")
+            missing_keywords = [
+                {
+                    "query": r["query"],
+                    "clicks": r.get("clicks", 0),
+                    "impressions": r.get("impressions", 0),
+                    "position": r.get("position", 0)
+                }
+                for r in gap_result.get("results", [])
+                if not r.get("in_content", False)
+            ]
+
+        if not missing_keywords:
+            return {
+                "page": request.page_url,
+                "suggestions": [],
+                "message": "此頁面內容已涵蓋所有排名關鍵字，或目前沒有缺口資料。"
+            }
+
+        # Determine AI provider and get API key from encrypted storage
+        provider = request.provider or "zeabur"
+
+        from modules.auth.service import TokenManager
+        api_key = TokenManager.get_ai_api_key(user.google_id, provider=provider)
+
+        if not api_key:
+            if provider == "gemini":
+                api_key = request.ai_api_key or os.getenv("GOOGLE_AI_API_KEY")
+            else:
+                api_key = request.ai_api_key or os.getenv("ZEABUR_AI_HUB_API_KEY")
+
+        if not api_key:
+            provider_name = "Google Gemini" if provider == "gemini" else "Zeabur AI Hub"
+            return {
+                "page": request.page_url,
+                "suggestions": [],
+                "message": f"{provider_name} API key not configured",
+                "model": None
+            }
+
+        suggester = AIContentGapSuggester(api_key=api_key, provider=provider)
+        result = suggester.suggest_directions(request.page_url, page_title, missing_keywords)
+
+        if not result.get("success"):
+            raise HTTPException(
+                status_code=500,
+                detail=f"AI suggestion failed: {result.get('error')}"
+            )
+
+        return {
+            "page": request.page_url,
+            "suggestions": result.get("suggestions", []),
+            "model": result.get("model"),
+            "keyword_count": len(missing_keywords)
+        }
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=f"Content gap suggestion failed: {str(e)}")

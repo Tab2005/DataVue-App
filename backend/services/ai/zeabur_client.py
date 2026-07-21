@@ -162,8 +162,26 @@ class ZeaburAIClient:
             logger.error("Failed to fetch remote models: %s", e)
             return self.MODELS
 
+    def generate_content(
+        self,
+        prompt: str,
+        model: str = "gemini-1.5-flash",
+        temperature: float = 0.7,
+        max_tokens: Optional[int] = None,
+        stream: bool = False,
+        system_prompt: Optional[str] = None
+    ) -> Union[str, Iterator[str]]:
+        """
+        生成 AI 內容
+        """
+        if not self.client:
+            raise RuntimeError("AI Client not initialized. API Key is missing.")
+
+        if not model:
+            raise ValueError("Model name is required")
+
         model_to_use = model or "gemini-1.5-flash"
-        
+
         # 嘗試從 MODELS 獲取配置，否則使用預設值
         model_config = self.MODELS.get(model_to_use, {"max_tokens": 8192, "provider": "unknown"})
         max_output = max_tokens or model_config["max_tokens"]
