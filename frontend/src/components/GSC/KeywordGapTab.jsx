@@ -282,47 +282,8 @@ const KeywordGapTab = ({ context }) => {
                                         </div>
                                     </div>
 
-                                    <div style={tableScrollStyle}>
-                                        <table style={tableStyle}>
-                                            <thead>
-                                                <tr style={{ background: 'var(--bg-hover)' }}>
-                                                    <th style={thStyle}>{t('關鍵字', 'Keyword')}</th>
-                                                    <th style={thStyle}>{t('狀態', 'Status')}</th>
-                                                    <th style={thStyle}>{t('點擊', 'Clicks')}</th>
-                                                    <th style={thStyle}>{t('曝光', 'Impr.')}</th>
-                                                    <th style={thStyle}>{t('排名', 'Pos.')}</th>
-                                                </tr>
-                                            </thead>
-                                            <tbody>
-                                                {gapResults.results.map((res, idx) => (
-                                                    <tr key={idx} style={{ transition: 'background 0.2s' }}>
-                                                        <td style={tdStyle}>{res.query}</td>
-                                                        <td style={tdStyle}>
-                                                            <span style={{
-                                                                display: 'inline-flex',
-                                                                alignItems: 'center',
-                                                                gap: '4px',
-                                                                padding: '2px 8px',
-                                                                borderRadius: '12px',
-                                                                fontSize: '11px',
-                                                                fontWeight: '600',
-                                                                background: res.in_content ? 'rgba(16, 185, 129, 0.15)' : 'rgba(239, 68, 68, 0.15)',
-                                                                color: res.in_content ? '#10B981' : '#EF4444'
-                                                            }}>
-                                                                {res.in_content ? '✅ ' + t('已涵蓋', 'In Content') : '❌ ' + t('未出現', 'Missing')}
-                                                            </span>
-                                                        </td>
-                                                        <td style={tdStyle}>{res.clicks.toLocaleString()}</td>
-                                                        <td style={tdStyle}>{res.impressions.toLocaleString()}</td>
-                                                        <td style={tdStyle}>{res.position.toFixed(1)}</td>
-                                                    </tr>
-                                                ))}
-                                            </tbody>
-                                        </table>
-                                    </div>
-
                                     {gapResults.missing_count > 0 && (
-                                        <div style={{ marginTop: '24px' }}>
+                                        <div style={{ marginBottom: '24px' }}>
                                             <button
                                                 onClick={() => fetchContentGapSuggestions()}
                                                 disabled={suggestLoading}
@@ -437,6 +398,45 @@ const KeywordGapTab = ({ context }) => {
                                             )}
                                         </div>
                                     )}
+
+                                    <div style={tableScrollStyle}>
+                                        <table style={tableStyle}>
+                                            <thead>
+                                                <tr style={{ background: 'var(--bg-hover)' }}>
+                                                    <th style={thStyle}>{t('關鍵字', 'Keyword')}</th>
+                                                    <th style={thStyle}>{t('狀態', 'Status')}</th>
+                                                    <th style={thStyle}>{t('點擊', 'Clicks')}</th>
+                                                    <th style={thStyle}>{t('曝光', 'Impr.')}</th>
+                                                    <th style={thStyle}>{t('排名', 'Pos.')}</th>
+                                                </tr>
+                                            </thead>
+                                            <tbody>
+                                                {gapResults.results.map((res, idx) => (
+                                                    <tr key={idx} style={{ transition: 'background 0.2s' }}>
+                                                        <td style={tdStyle}>{res.query}</td>
+                                                        <td style={tdStyle}>
+                                                            <span style={{
+                                                                display: 'inline-flex',
+                                                                alignItems: 'center',
+                                                                gap: '4px',
+                                                                padding: '2px 8px',
+                                                                borderRadius: '12px',
+                                                                fontSize: '11px',
+                                                                fontWeight: '600',
+                                                                background: res.in_content ? 'rgba(16, 185, 129, 0.15)' : 'rgba(239, 68, 68, 0.15)',
+                                                                color: res.in_content ? '#10B981' : '#EF4444'
+                                                            }}>
+                                                                {res.in_content ? '✅ ' + t('已涵蓋', 'In Content') : '❌ ' + t('未出現', 'Missing')}
+                                                            </span>
+                                                        </td>
+                                                        <td style={tdStyle}>{res.clicks.toLocaleString()}</td>
+                                                        <td style={tdStyle}>{res.impressions.toLocaleString()}</td>
+                                                        <td style={tdStyle}>{res.position.toFixed(1)}</td>
+                                                    </tr>
+                                                ))}
+                                            </tbody>
+                                        </table>
+                                    </div>
                                 </div>
                             )}
                         </div>
