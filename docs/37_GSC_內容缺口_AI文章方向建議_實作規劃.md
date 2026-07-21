@@ -157,6 +157,27 @@
 
 **已修復**：兩個端點都改成先呼叫 `TokenManager.get_ai_settings(user.google_id)` 取得 `ai_provider`／`ai_model`，`model = user_ai_settings.get("ai_model") or "deepseek/deepseek-v4-flash"` 後傳入建構子（`AIIntentClassifier(..., model=model)`／`AIContentGapSuggester(..., model=model)`），使用者在設定頁選的模型才會真正生效。新增測試 `test_content_gap_suggestions_uses_user_configured_model` 驗證此行為，過程中也發現：測試環境的 `db` fixture（獨立 in-memory SQLite）與 `TokenManager` 內部自建的 `SessionLocal()` 是兩個不同的資料庫連線，直接寫入 `sample_user.ai_model` 再呼叫真正的 `get_ai_settings` 不會生效，需改為直接 mock `TokenManager.get_ai_settings`（與既有測試 mock `get_ai_api_key` 的手法一致）。修復後 `pytest tests/ -k "gsc or ai"` 87 項測試全數通過。
 
+**前端修復：頁面分析分頁的「缺口分析」按鈕在分析意圖後消失**
+
+使用者回報：在「頁面分析」分頁，尚未點「分析意圖」時看得到「🎯 缺口分析」按鈕，但點過分析意圖、分析完成後按鈕就不見了。追查 `frontend/src/components/GSC/RegularDataTab.jsx` 發現，每列的動作區是一個 4 分支條件渲染（尚未分析／分析中／分析完成／分析失敗），缺口分析按鈕當初只寫在「尚未分析」分支，「分析完成」與「分析失敗」兩個分支都沒有渲染它——不是樣式問題，是這兩個分支的 JSX 從一開始就漏寫了這顆按鈕。已在這兩個分支都補上相同的缺口分析按鈕（沿用一致的樣式與 `fetchKeywordGap(pageUrl)` 呼叫）。`npx eslint`／`npx vite build` 皆通過。
+
+**2026-07-21 追加修復：AI 產生文章建議報「Failed to parse JSON from response: ...」**
+
+使用者用 OpenRouter 的 `Nemotron 3 Ultra (free)` 模型測試時遇到此錯誤，要求把 JSON 解析邏輯改寬容，或直接查伺服器 log 診斷。透過 `npx zeabur@latest deployment log --service-id <backend-service-id> -t runtime` 查看 Zeabur 後端 runtime log，找到真正原因：
+
+```
+[OpenRouterClient] API response returned no choices: ChatCompletion(..., error={'message': 'Upstream error from Nvidia: ResourceExhausted: Worker local total request limit reached (32/32)', 'code': 502})
+```
+
+真正的成因**不是 JSON 格式問題**，而是 NVIDIA 提供的免費 Nemotron 3 Ultra 端點觸發了自身的流量上限（`ResourceExhausted`，上游回傳 502），導致這次請求完全沒有內容。但 `backend/services/ai/openrouter_client.py` 的 `generate_content()`（第 192-194 行舊版）遇到 `response.choices` 為空時，只記一筆 WARNING log 就直接 `return ""`（吞掉了 `response.error` 裡的真正錯誤訊息），空字串再往下傳到 `AIContentGapSuggester._parse_json_response()` 自然三層 fallback 都解析失敗，才產生了完全誤導的「JSON 解析失敗」錯誤，實際上跟 JSON 格式一點關係都沒有。
+
+**已修復**：
+- `openrouter_client.py`：`response.choices` 為空時，改成讀取 `response.error` 並 `raise RuntimeError(f"OpenRouter upstream error ({model}): {error_message}")`，把上游真正的錯誤訊息（例如 NVIDIA 的流量限制訊息）往上拋，不再靜默吞掉；沒有 `error` 欄位時也拋出明確訊息而非回傳空字串。所有既有呼叫端（`content_gap_suggester.py`、`intent_classifier.py`、`ai_service.py`、`calibration_pipeline.py`）本來就都有 `try/except` 包住 `generate_content()`，不受影響。
+- `content_gap_suggester.py`：`_parse_json_response()` 開頭新增空字串檢查，明確拋出「AI provider returned an empty response (no error code) — likely rate-limited or overloaded upstream」，避免未來若有其他 provider 路徑也靜默回傳空字串時，又出現同樣誤導性的「JSON 解析失敗」訊息。
+- 新增測試：`backend/tests/test_openrouter_client.py`（3 案例：無 choices 且有 error 訊息時正確拋出、無 choices 且無 error 訊息時拋出通用訊息、正常有 choices 時正確回傳內容）、`backend/tests/test_content_gap_suggester.py`（3 案例：空缺口關鍵字短路、空 AI 回應時錯誤訊息清楚可辨識、正常 JSON 回應能正確解析）。
+- **這是免費模型本身的流量限制，不是程式錯誤，重試通常就會成功**；修復後使用者遇到這類情況時，看到的錯誤訊息會直接是「OpenRouter upstream error (nvidia/nemotron-3-ultra-550b-a55b:free): Upstream error from Nvidia: ResourceExhausted: ...」，能一眼看出是上游限流問題該重試或換模型，而不是誤以為程式碼壞了。
+- 驗證：`pytest tests/ -k "gsc or ai or openrouter"` 92 項測試全數通過。
+
 ### Phase 2：前端呈現 — 已完成（2026-07-21）
 
 - `frontend/src/hooks/useGscPageAnalysis.js`：新增狀態 `suggestLoading`、`suggestResults`、`suggestError`，以及 `fetchContentGapSuggestions()`——從目前的 `gapResults.results` 篩出 `in_content === false` 的項目組成 `missing_keywords`，呼叫 `POST /api/gsc/content-gap-suggestions`（`provider` 沿用既有的 `localStorage.getItem('ai_provider')` 慣例，與 `fetchPageIntent` 一致）。`fetchKeywordGap()` 重新分析時會重置 `suggestResults`/`suggestError`，避免顯示上一個頁面的舊建議。

@@ -148,6 +148,11 @@ class AIContentGapSuggester:
 
     def _parse_json_response(self, response: str) -> Dict:
         """解析 AI 回應中的 JSON（三層 fallback，沿用 AIIntentClassifier 的模式）"""
+        if not response or not response.strip():
+            # 常見成因：上游 provider（例如免費/限流模型）沒有實際錯誤碼卻回傳空內容，
+            # 明確標示「空回應」而非丟出容易誤導成「JSON 格式錯誤」的訊息。
+            raise ValueError("AI provider returned an empty response (no error code) — likely rate-limited or overloaded upstream.")
+
         try:
             return json.loads(response)
         except json.JSONDecodeError:

@@ -190,9 +190,14 @@ class OpenRouterClient:
             response = self.client.with_options(timeout=api_timeout).chat.completions.create(**create_kwargs)
 
             if not response.choices:
+                error_info = getattr(response, "error", None)
+                if error_info:
+                    error_message = error_info.get("message") if isinstance(error_info, dict) else str(error_info)
+                    logger.warning("[OpenRouterClient] API response returned no choices, error=%s", error_info)
+                    raise RuntimeError(f"OpenRouter upstream error ({model_to_use}): {error_message}")
                 logger.warning("[OpenRouterClient] API response returned no choices: %s", response)
-                return ""
-                
+                raise RuntimeError(f"OpenRouter API returned no choices for model {model_to_use}.")
+
             content = response.choices[0].message.content or ""
             logger.info("[OpenRouterClient] Received response content length: %d", len(content))
             return content
