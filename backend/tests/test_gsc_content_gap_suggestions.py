@@ -144,6 +144,47 @@ def test_content_gap_suggestions_falls_back_to_keyword_gap_analysis(client, samp
     assert passed_keywords[0]["query"] == "kw1"
 
 
+def test_content_gap_suggestions_uses_user_configured_model(client, sample_user):
+    """
+    Regression test: the AI model actually requested must follow the user's
+    saved ai_model setting (TokenManager.get_ai_settings), not a hardcoded
+    default, regardless of which provider/model the frontend passed.
+    """
+    _override_dependencies(client.app, sample_user)
+
+    mock_instance = MagicMock()
+    mock_instance.suggest_directions.return_value = {
+        "success": True,
+        "model": "nvidia/nemotron-3-ultra:free",
+        "page": "https://example.com/page",
+        "suggestions": []
+    }
+
+    with patch("modules.auth.service.TokenManager.get_ai_api_key", return_value="fake-key"), \
+         patch(
+             "modules.auth.service.TokenManager.get_ai_settings",
+             return_value={"ai_provider": "openrouter", "ai_model": "nvidia/nemotron-3-ultra:free"}
+         ), \
+         patch("services.ai.AIContentGapSuggester", return_value=mock_instance) as mock_cls:
+        resp = client.post(
+            "/api/gsc/content-gap-suggestions",
+            json={
+                "site_url": "sc-domain:example.com",
+                "page_url": "https://example.com/page",
+                "start_date": "2026-01-01",
+                "end_date": "2026-01-31",
+                "provider": "openrouter",
+                "missing_keywords": [
+                    {"query": "kw1", "clicks": 5, "impressions": 100, "position": 8.0}
+                ]
+            }
+        )
+
+    assert resp.status_code == 200
+    assert resp.json()["model"] == "nvidia/nemotron-3-ultra:free"
+    mock_cls.assert_called_once_with(api_key="fake-key", provider="openrouter", model="nvidia/nemotron-3-ultra:free")
+
+
 def test_content_gap_suggestions_ai_failure_returns_500(client, sample_user):
     _override_dependencies(client.app, sample_user)
 

@@ -299,7 +299,7 @@ class PageIntentRequest(BaseModel):
     end_date: str           # YYYY-MM-DD
     top_n: Optional[int] = 50  # Number of keywords to analyze (default 50)
     keywords: Optional[List[str]] = None  # Optional: specific keywords to analyze (skip GSC fetch)
-    provider: Optional[str] = "zeabur"  # AI provider: "zeabur" or "gemini"
+    provider: Optional[str] = "zeabur"  # AI provider: "zeabur" or "openrouter" ("gemini" accepted as legacy alias for "openrouter")
     ai_api_key: Optional[str] = None  # Optional: user-provided API key
 
 @router.post("/page-intents")
@@ -377,22 +377,29 @@ async def get_page_intents(
             page_queries.sort(key=lambda x: x['clicks'], reverse=True)
             top_queries = page_queries[:request.top_n]
         
-        # Step 4: Determine AI provider and get API key from encrypted storage
-        provider = request.provider or "zeabur"
-        
-        # Try to get API key from user's encrypted settings in database first
+        # Step 4: Determine AI provider, model and API key from encrypted storage
         from modules.auth.service import TokenManager
+        user_ai_settings = TokenManager.get_ai_settings(user.google_id) or {}
+
+        provider = request.provider or user_ai_settings.get("ai_provider", "zeabur")
+        if provider in ("gemini", "google_gemini"):
+            # Legacy value: standalone Gemini API integration was removed in favor of
+            # OpenRouter (see modules.auth.service.TokenManager._normalize_ai_provider).
+            provider = "openrouter"
+        model = user_ai_settings.get("ai_model") or "deepseek/deepseek-v4-flash"
+
+        # Try to get API key from user's encrypted settings in database first
         api_key = TokenManager.get_ai_api_key(user.google_id, provider=provider)
-        
+
         # Fallback to request parameter or environment variable
         if not api_key:
-            if provider == "gemini":
-                api_key = request.ai_api_key or os.getenv("GOOGLE_AI_API_KEY")
+            if provider == "openrouter":
+                api_key = request.ai_api_key or os.getenv("OPENROUTER_API_KEY")
             else:
                 api_key = request.ai_api_key or os.getenv("ZEABUR_AI_HUB_API_KEY")
-        
+
         if not api_key:
-            provider_name = "Google Gemini" if provider == "gemini" else "Zeabur AI Hub"
+            provider_name = "OpenRouter" if provider == "openrouter" else "Zeabur AI Hub"
             return {
                 "page": request.page_url,
                 "primary_intent": "unknown",
@@ -418,7 +425,7 @@ async def get_page_intents(
             }
         
         # Step 5: Use AI to classify intents
-        classifier = AIIntentClassifier(api_key=api_key, provider=provider)
+        classifier = AIIntentClassifier(api_key=api_key, provider=provider, model=model)
         query_texts = [q["query"] for q in top_queries]
         
         result = classifier.classify_queries(query_texts)
@@ -666,7 +673,7 @@ class ContentGapSuggestionRequest(BaseModel):
     end_date: str
     top_n: Optional[int] = 100
     missing_keywords: Optional[List[Dict]] = None  # 若已有 /keyword-gap 結果可直接帶入，避免重複分析
-    provider: Optional[str] = "zeabur"
+    provider: Optional[str] = "zeabur"  # AI provider: "zeabur" or "openrouter" ("gemini" accepted as legacy alias for "openrouter")
     ai_api_key: Optional[str] = None
 
 
@@ -725,20 +732,27 @@ async def get_content_gap_suggestions(
                 "message": "此頁面內容已涵蓋所有排名關鍵字，或目前沒有缺口資料。"
             }
 
-        # Determine AI provider and get API key from encrypted storage
-        provider = request.provider or "zeabur"
-
+        # Determine AI provider, model and API key from encrypted storage
         from modules.auth.service import TokenManager
+        user_ai_settings = TokenManager.get_ai_settings(user.google_id) or {}
+
+        provider = request.provider or user_ai_settings.get("ai_provider", "zeabur")
+        if provider in ("gemini", "google_gemini"):
+            # Legacy value: standalone Gemini API integration was removed in favor of
+            # OpenRouter (see modules.auth.service.TokenManager._normalize_ai_provider).
+            provider = "openrouter"
+        model = user_ai_settings.get("ai_model") or "deepseek/deepseek-v4-flash"
+
         api_key = TokenManager.get_ai_api_key(user.google_id, provider=provider)
 
         if not api_key:
-            if provider == "gemini":
-                api_key = request.ai_api_key or os.getenv("GOOGLE_AI_API_KEY")
+            if provider == "openrouter":
+                api_key = request.ai_api_key or os.getenv("OPENROUTER_API_KEY")
             else:
                 api_key = request.ai_api_key or os.getenv("ZEABUR_AI_HUB_API_KEY")
 
         if not api_key:
-            provider_name = "Google Gemini" if provider == "gemini" else "Zeabur AI Hub"
+            provider_name = "OpenRouter" if provider == "openrouter" else "Zeabur AI Hub"
             return {
                 "page": request.page_url,
                 "suggestions": [],
@@ -746,7 +760,7 @@ async def get_content_gap_suggestions(
                 "model": None
             }
 
-        suggester = AIContentGapSuggester(api_key=api_key, provider=provider)
+        suggester = AIContentGapSuggester(api_key=api_key, provider=provider, model=model)
         result = suggester.suggest_directions(request.page_url, page_title, missing_keywords)
 
         if not result.get("success"):

@@ -627,6 +627,28 @@ const RegularDataTab = ({ context }) => {
                                                                                                         🔄 {t('繼續分析', 'Continue')} +{uncachedCount}
                                                                                                     </button>
                                                                                                 )}
+                                                                                                <button
+                                                                                                    onClick={(e) => {
+                                                                                                        e.stopPropagation();
+                                                                                                        fetchKeywordGap(pageUrl);
+                                                                                                    }}
+                                                                                                    style={{
+                                                                                                        display: 'inline-flex',
+                                                                                                        alignItems: 'center',
+                                                                                                        gap: '4px',
+                                                                                                        background: 'rgba(139, 92, 246, 0.1)',
+                                                                                                        border: '1px solid rgba(139, 92, 246, 0.3)',
+                                                                                                        color: '#8B5CF6',
+                                                                                                        padding: '3px 10px',
+                                                                                                        borderRadius: '12px',
+                                                                                                        fontSize: '11px',
+                                                                                                        cursor: 'pointer',
+                                                                                                        transition: 'all 0.2s'
+                                                                                                    }}
+                                                                                                    title={t('分析內容中缺少的關鍵字', 'Analyze missing keywords in content')}
+                                                                                                >
+                                                                                                    🎯 {t('缺口分析', 'Gap Analysis')}
+                                                                                                </button>
                                                                                             </>
                                                                                         );
                                                                                     } else if (intentLoading[pageUrl]) {
@@ -646,15 +668,39 @@ const RegularDataTab = ({ context }) => {
                                                                                     } else if (intentError[pageUrl]) {
                                                                                         // Error state
                                                                                         return (
-                                                                                            <span style={{
-                                                                                                fontSize: '11px',
-                                                                                                color: '#EF4444',
-                                                                                                display: 'flex',
-                                                                                                alignItems: 'center',
-                                                                                                gap: '4px'
-                                                                                            }}>
-                                                                                                ⚠️ {t('分析失敗', 'Analysis failed')}
-                                                                                            </span>
+                                                                                            <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+                                                                                                <span style={{
+                                                                                                    fontSize: '11px',
+                                                                                                    color: '#EF4444',
+                                                                                                    display: 'flex',
+                                                                                                    alignItems: 'center',
+                                                                                                    gap: '4px'
+                                                                                                }}>
+                                                                                                    ⚠️ {t('分析失敗', 'Analysis failed')}
+                                                                                                </span>
+                                                                                                <button
+                                                                                                    onClick={(e) => {
+                                                                                                        e.stopPropagation();
+                                                                                                        fetchKeywordGap(pageUrl);
+                                                                                                    }}
+                                                                                                    style={{
+                                                                                                        display: 'inline-flex',
+                                                                                                        alignItems: 'center',
+                                                                                                        gap: '4px',
+                                                                                                        background: 'rgba(139, 92, 246, 0.1)',
+                                                                                                        border: '1px solid rgba(139, 92, 246, 0.3)',
+                                                                                                        color: '#8B5CF6',
+                                                                                                        padding: '3px 10px',
+                                                                                                        borderRadius: '12px',
+                                                                                                        fontSize: '11px',
+                                                                                                        cursor: 'pointer',
+                                                                                                        transition: 'all 0.2s'
+                                                                                                    }}
+                                                                                                    title={t('分析內容中缺少的關鍵字', 'Analyze missing keywords in content')}
+                                                                                                >
+                                                                                                    🎯 {t('缺口分析', 'Gap Analysis')}
+                                                                                                </button>
+                                                                                            </div>
                                                                                         );
                                                                                     } else {
                                                                                         // Analyze button with keyword count

@@ -137,6 +137,26 @@
 
 **未做**：實際瀏覽器 / 真實 API Key 端到端驗證。原因與 `docs/35` 相同——本機環境沒有真實 Zeabur AI Hub / Gemini API Key 可用於整合測試，僅完成 mock 層級的單元測試。建議待前端（Phase 2）完成後，用真實帳號一併驗證。
 
+**2026-07-21 追加清理：移除 `provider == "gemini"` 死代碼**
+
+使用者詢問「`gemini_api_key` 不是已經完全移除不用了嗎，為何還看到相關資訊」，追查後確認：
+
+- 獨立的 Gemini 直連 API 整合已於 commit `23847e6`（2026-06-17，「整合 OpenRouter 並遷移 Gemini 為選用備援方案」）移除：`backend/services/ai/gemini_client.py` 整支刪除，前端 `ActiveAiProviderSelector.jsx` 只剩 Zeabur／OpenRouter 兩個選項。
+- `modules.auth.service.TokenManager._normalize_ai_provider()` 會把任何 `"gemini"`/`"google_gemini"` 值正規化為 `"openrouter"`，`user.gemini_api_key` 欄位保留下來只作為「使用者選 OpenRouter、但只填過 Gemini Key」情境的備援讀取來源，這是刻意保留的相容設計。
+- 但 `backend/routers/gsc.py` 的 `/page-intents`（既有功能）與 `/content-gap-suggestions`（本文件 Phase 1 新增，直接複製了 `/page-intents` 的寫法）都還留著一段**沒有正規化、獨立判斷 `provider == "gemini"`** 的 fallback 死代碼，讀取的是已經不再有意義的 `GOOGLE_AI_API_KEY` 環境變數，且就算被觸發，`AIIntentClassifier`/`AIContentGapSuggester` 建構子只認 `"openrouter"` 這個字串，`"gemini"` 會被誤判走 `ZeaburAIClient`，行為是錯的（只是前端已不會送出這個值，才沒有實際爆炸）。
+
+**已修復**：兩個端點都在讀取 `TokenManager.get_ai_api_key()` 之前，先把 `provider in ("gemini", "google_gemini")` 正規化為 `"openrouter"`，並把 fallback 環境變數從 `GOOGLE_AI_API_KEY` 改成正確的 `OPENROUTER_API_KEY`（對應 `OpenRouterClient.__init__` 本身的 env fallback 順序）。`PageIntentRequest`/`ContentGapSuggestionRequest` 的 `provider` 欄位註解也同步更新，說明 `"gemini"` 只是相容用的舊值。修復後 `pytest tests/ -k "gsc or ai"` 86 項測試仍全數通過。`docs/05_API_參考手冊.md` 的 `content-gap-suggestions` 參數說明已同步更新。
+
+**2026-07-21 追加修復：GSC 的 AI 端點從未讀取使用者在設定頁選的模型**
+
+使用者實測時在「AI 模組設定」選了 OpenRouter 的 `Nemotron 3 Ultra (free)`，但 OpenRouter 後台 Log 顯示實際打的是 `DeepSeek V4 Flash`。追查後確認：
+
+- `AIIntentClassifier`／`AIContentGapSuggester` 的建構子都有預設值 `model="deepseek/deepseek-v4-flash"`。
+- `backend/routers/gsc.py` 的 `/page-intents`（既有功能）與 `/content-gap-suggestions`（本文件新增）呼叫建構子時都**只傳了 `api_key` 與 `provider`，從未傳 `model`**，也從未查詢使用者存在 `user.ai_model` 欄位裡的選擇——不管使用者在設定頁選什麼模型，這兩個端點永遠都送出硬編碼的 `deepseek/deepseek-v4-flash`。
+- 專案裡其實已有正確做法可參考：`backend/routers/ai.py` 的 `/api/ai/analyze` 端點（第 117-122 行）會先 `TokenManager.get_ai_settings(user.google_id)` 取出 `ai_model`，再決定實際送出的模型，只是 GSC 這兩個端點沒跟上這個既有模式。
+
+**已修復**：兩個端點都改成先呼叫 `TokenManager.get_ai_settings(user.google_id)` 取得 `ai_provider`／`ai_model`，`model = user_ai_settings.get("ai_model") or "deepseek/deepseek-v4-flash"` 後傳入建構子（`AIIntentClassifier(..., model=model)`／`AIContentGapSuggester(..., model=model)`），使用者在設定頁選的模型才會真正生效。新增測試 `test_content_gap_suggestions_uses_user_configured_model` 驗證此行為，過程中也發現：測試環境的 `db` fixture（獨立 in-memory SQLite）與 `TokenManager` 內部自建的 `SessionLocal()` 是兩個不同的資料庫連線，直接寫入 `sample_user.ai_model` 再呼叫真正的 `get_ai_settings` 不會生效，需改為直接 mock `TokenManager.get_ai_settings`（與既有測試 mock `get_ai_api_key` 的手法一致）。修復後 `pytest tests/ -k "gsc or ai"` 87 項測試全數通過。
+
 ### Phase 2：前端呈現 — 已完成（2026-07-21）
 
 - `frontend/src/hooks/useGscPageAnalysis.js`：新增狀態 `suggestLoading`、`suggestResults`、`suggestError`，以及 `fetchContentGapSuggestions()`——從目前的 `gapResults.results` 篩出 `in_content === false` 的項目組成 `missing_keywords`，呼叫 `POST /api/gsc/content-gap-suggestions`（`provider` 沿用既有的 `localStorage.getItem('ai_provider')` 慣例，與 `fetchPageIntent` 一致）。`fetchKeywordGap()` 重新分析時會重置 `suggestResults`/`suggestError`，避免顯示上一個頁面的舊建議。
