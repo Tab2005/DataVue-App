@@ -191,9 +191,10 @@ const KeywordGapTab = ({ context }) => {
                                 <div style={{
                                     resize: isMobile ? 'none' : 'horizontal',
                                     overflow: 'auto',
-                                    minWidth: isMobile ? '100%' : '220px',
+                                    flex: isMobile ? 'none' : '1 1 auto',
+                                    minWidth: isMobile ? '100%' : '300px',
                                     maxWidth: '100%',
-                                    width: isMobile ? '100%' : '420px'
+                                    width: isMobile ? '100%' : undefined
                                 }}>
                                     <input
                                         type="text"
