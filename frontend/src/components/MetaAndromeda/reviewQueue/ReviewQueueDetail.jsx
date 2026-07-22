@@ -1,3 +1,5 @@
+import { useRef, useState } from 'react';
+import html2canvas from 'html2canvas';
 import { formatPerfValue, getDiagnosticLabel, getPerfMetricLabel, getPredictedBandLabel } from '../../../utils/metaAndromedaLabels';
 import {
     detailCardStyle,
@@ -10,27 +12,102 @@ import {
     sectionTitleStyle,
 } from './reviewQueueShared';
 
-const ReviewQueueDetail = ({ detail, isMobile, loadingDetail, language, t }) => (
-    <section style={panelStyle}>
-        <h2 style={sectionTitleStyle}>{t('Evaluation Detail', '評估明細')}</h2>
-        {loadingDetail ? (
-            <div style={{ color: 'var(--text-secondary)' }}>{t('Loading...', '載入中...')}</div>
-        ) : !detail ? (
-            <div style={{ color: 'var(--text-secondary)' }}>{t('Select a record to view details.', '請選擇一筆紀錄查看明細。')}</div>
-        ) : (
-            <div className="queue-scroll-box" style={{ display: 'grid', gap: '14px', maxHeight: 'calc(100vh - 290px)', overflowY: 'auto', paddingRight: '4px' }}>
-                <PreviewCard detail={detail} t={t} />
-                <ScoreSummary detail={detail} isMobile={isMobile} language={language} t={t} />
-                <ScoringEngineCard detail={detail} t={t} />
-                <ObservationCard detail={detail} language={language} t={t} />
-                <SummaryCard detail={detail} t={t} />
-                <DiagnosticBreakdown detail={detail} language={language} t={t} />
-                <DriverCards detail={detail} isMobile={isMobile} t={t} />
-                <AdCopyContext detail={detail} t={t} />
+const ReviewQueueDetail = ({ detail, isMobile, loadingDetail, language, t }) => {
+    const sectionRef = useRef(null);
+    const scrollBoxRef = useRef(null);
+    const [exporting, setExporting] = useState(false);
+
+    const handleExportSnapshot = async () => {
+        if (!sectionRef.current || !detail || exporting) return;
+        setExporting(true);
+
+        const scrollBox = scrollBoxRef.current;
+        const prevMaxHeight = scrollBox?.style.maxHeight;
+        const prevOverflowY = scrollBox?.style.overflowY;
+
+        try {
+            // 暫時解除捲動區塊的高度限制，確保快照包含完整內容而非只有目前可見的部分
+            if (scrollBox) {
+                scrollBox.style.maxHeight = 'none';
+                scrollBox.style.overflowY = 'visible';
+            }
+            // 等待瀏覽器完成重新排版（reflow），再開始擷取
+            await new Promise((resolve) => setTimeout(resolve, 50));
+
+            const canvas = await html2canvas(sectionRef.current, {
+                backgroundColor: '#18191a',
+                scale: 2,
+                useCORS: true,
+            });
+
+            const now = new Date();
+            const dateStr = now.toISOString().slice(0, 10).replace(/-/g, '');
+            const idPart = String(detail.event_id || detail.id || 'eval').replace(/[^a-zA-Z0-9_-]/g, '');
+            const filename = `${idPart}_${dateStr}.png`;
+
+            const link = document.createElement('a');
+            link.download = filename;
+            link.href = canvas.toDataURL();
+            link.click();
+        } catch (err) {
+            console.error('Export snapshot failed', err);
+        } finally {
+            if (scrollBox) {
+                scrollBox.style.maxHeight = prevMaxHeight;
+                scrollBox.style.overflowY = prevOverflowY;
+            }
+            setExporting(false);
+        }
+    };
+
+    return (
+        <section ref={sectionRef} style={panelStyle}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: '12px', marginBottom: '14px' }}>
+                <h2 style={{ ...sectionTitleStyle, marginBottom: 0 }}>{t('Evaluation Detail', '評估明細')}</h2>
+                {detail && !loadingDetail && (
+                    <button
+                        onClick={handleExportSnapshot}
+                        disabled={exporting}
+                        data-html2canvas-ignore="true"
+                        title={t('Download a snapshot image of this evaluation detail', '下載這筆評估明細的完整快照圖片')}
+                        style={{
+                            display: 'flex',
+                            alignItems: 'center',
+                            gap: '6px',
+                            padding: '6px 12px',
+                            background: 'rgba(255,255,255,0.06)',
+                            border: '1px solid var(--glass-border)',
+                            borderRadius: '8px',
+                            color: 'var(--text-primary)',
+                            fontSize: '0.8rem',
+                            cursor: exporting ? 'wait' : 'pointer',
+                            opacity: exporting ? 0.6 : 1,
+                            flexShrink: 0,
+                        }}
+                    >
+                        📷 {exporting ? t('Exporting...', '匯出中...') : t('Download Snapshot', '下載快照')}
+                    </button>
+                )}
             </div>
-        )}
-    </section>
-);
+            {loadingDetail ? (
+                <div style={{ color: 'var(--text-secondary)' }}>{t('Loading...', '載入中...')}</div>
+            ) : !detail ? (
+                <div style={{ color: 'var(--text-secondary)' }}>{t('Select a record to view details.', '請選擇一筆紀錄查看明細。')}</div>
+            ) : (
+                <div ref={scrollBoxRef} className="queue-scroll-box" style={{ display: 'grid', gap: '14px', maxHeight: 'calc(100vh - 290px)', overflowY: 'auto', paddingRight: '4px' }}>
+                    <PreviewCard detail={detail} t={t} />
+                    <ScoreSummary detail={detail} isMobile={isMobile} language={language} t={t} />
+                    <ScoringEngineCard detail={detail} t={t} />
+                    <ObservationCard detail={detail} language={language} t={t} />
+                    <SummaryCard detail={detail} t={t} />
+                    <DiagnosticBreakdown detail={detail} language={language} t={t} />
+                    <DriverCards detail={detail} isMobile={isMobile} t={t} />
+                    <AdCopyContext detail={detail} t={t} />
+                </div>
+            )}
+        </section>
+    );
+};
 
 const PreviewCard = ({ detail, t }) => {
     const url = resolvePreviewUrl(detail);
