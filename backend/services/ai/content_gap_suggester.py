@@ -120,12 +120,7 @@ class AIContentGapSuggester:
 請依照系統指示，將這些關鍵字整理成文章方向建議。"""
 
         try:
-            response = self.client.generate_content(
-                prompt=prompt,
-                model=self.model,
-                temperature=temperature,
-                system_prompt=self.SYSTEM_PROMPT
-            )
+            response = self._generate_full_content(prompt, temperature)
 
             parsed = self._parse_json_response(response)
 
@@ -145,6 +140,30 @@ class AIContentGapSuggester:
                 "error": str(e),
                 "suggestions": []
             }
+
+    def _generate_full_content(self, prompt: str, temperature: float) -> str:
+        """呼叫 AI 模型並回傳完整內容。
+
+        改用串流呼叫（與 ai_service.py 內 GA4 轉換洞察 AI 分析功能相同的呼叫方式），
+        而非一次性阻塞呼叫：部分 provider（例如 OpenRouter 上游的免費/限流模型）
+        對非串流請求偶爾會回傳無 choices 的空內容，但串流呼叫可正常運作。
+        """
+        if self.provider == "openrouter":
+            chunks = self.client.generate_content_stream(
+                prompt=prompt,
+                model=self.model,
+                temperature=temperature,
+                system_prompt=self.SYSTEM_PROMPT
+            )
+        else:
+            chunks = self.client.generate_content(
+                prompt=prompt,
+                model=self.model,
+                temperature=temperature,
+                system_prompt=self.SYSTEM_PROMPT,
+                stream=True
+            )
+        return "".join(chunks)
 
     def _parse_json_response(self, response: str) -> Dict:
         """解析 AI 回應中的 JSON（三層 fallback，沿用 AIIntentClassifier 的模式）"""

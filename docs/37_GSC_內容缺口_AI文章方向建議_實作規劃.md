@@ -223,6 +223,46 @@
 - 需要新的批次掃描端點與可能的排程/快照機制（掃描全站關鍵字可能耗時較長，不適合每次請求即時計算）。
 - 建議待做法 A 上線並取得使用者實際使用回饋後，再評估是否啟動此項目、以及優先順序。
 
+## 2026-07-22 追加修復：改用串流呼叫，比照 GA4 轉換洞察 AI 分析功能
+
+**背景**：上一版修復（2026-07-21）已讓 `openrouter_client.py` 在遇到 `response.choices` 為空時拋出上游真實錯誤（NVIDIA 免費 Nemotron 模型當時剛好額滿限流），但屬於治標：只是讓錯誤訊息變清楚，沒有解決「非串流請求容易在免費/限流模型上拿到空 choices」這個根本行為差異。
+
+使用者回報：後來用同一顆 Nemotron 3 Ultra (free) 模型測試 GA4「即時轉換洞察」頁面的 AI 分析功能，完全沒有出現任何問題，並要求參考該功能的呼叫方式來調整內容缺口建議功能。
+
+**差異分析**：比對 `backend/ai_service.py`（GA4 轉換洞察等其他 AI 分析功能共用的服務層）與 `backend/services/ai/content_gap_suggester.py`：
+
+| | GA4 轉換洞察等（`ai_service.py`） | 內容缺口建議（修復前） |
+|---|---|---|
+| Zeabur 呼叫方式 | `client.generate_content(..., stream=True)`，逐 chunk yield | `client.generate_content(...)`（阻塞、一次性） |
+| OpenRouter 呼叫方式 | `client.generate_content_stream(...)`，逐 chunk yield | 同上（阻塞、一次性） |
+
+也就是說，目前唯一「已知在免費/限流模型下穩定運作」的呼叫路徑是**串流**。`AIIntentClassifier`（意圖分析）與 `AIContentGapSuggester`（本功能）兩者都是走非串流的 `generate_content()`，屬於同一類風險，但只有本功能被實際回報出錯。
+
+**修復**：
+- `backend/services/ai/content_gap_suggester.py`：新增 `_generate_full_content()`，內部依 provider 分流：
+  - `openrouter` → 呼叫 `client.generate_content_stream(...)`
+  - `zeabur` → 呼叫 `client.generate_content(..., stream=True)`
+  再用 `"".join(chunks)` 組回完整字串後才進入既有的 JSON 解析邏輯（`_parse_json_response` 不變，仍保留 2026-07-21 加的空回應防呆訊息）。`suggest_directions()` 改呼叫這個新方法取代原本直接呼叫 `client.generate_content(...)`。
+- `backend/services/ai/openrouter_client.py`：`generate_content_stream()` 補上與 `generate_content()` 對稱的防呆——遇到某個 chunk 沒有 `choices` 時，若該 chunk 帶有 `error` 資訊就拋出 `RuntimeError` 附上游真實訊息，否則略過該 chunk 繼續處理下一個（避免 `IndexError` 蓋掉真正原因）。
+
+**測試**：
+- 新增 `test_suggest_directions_uses_streaming_call_for_openrouter`（`backend/tests/test_content_gap_suggester.py`）：驗證 OpenRouter provider 會呼叫 `generate_content_stream` 而非 `generate_content`，且分段 chunk 組合後仍能正確解析 JSON。
+- 既有 `test_content_gap_suggester.py`／`test_openrouter_client.py`／`test_gsc_content_gap_suggestions.py` 全數維持通過（mock 的 `generate_content.return_value` 字串本身可逐字元迭代，`"".join(...)` 後結果不變，無需修改既有測試）。
+- `pytest tests/ -k "gsc or ai or openrouter"` → 93 passed。
+
+**備註**：`AIIntentClassifier`（頁面意圖分析）原本仍走非串流路徑——已於同日追加修復一併調整，見下一節。
+
+## 2026-07-22 追加修復（順手調整）：`AIIntentClassifier` 比照同樣改為串流呼叫
+
+上一節備註提到 `AIIntentClassifier`（GSC「頁面分析」頁籤的「分析意圖」功能）有相同的非串流風險但尚未被回報，使用者要求順手一併調整，避免日後在免費/限流模型下遇到同樣的空回應問題。
+
+**修復**（`backend/services/ai/intent_classifier.py`）：
+- 新增 `_generate_full_content()`，與 `AIContentGapSuggester` 相同的 provider 分流邏輯（openrouter → `generate_content_stream`；zeabur → `generate_content(..., stream=True)`），收集 chunk 組回完整字串。
+- `classify_queries()`（單批）與 `_classify_queries_batched()`（OpenRouter 超過 10 個關鍵字時的批次路徑）都改呼叫這個新方法。
+- `_parse_json_response()` 補上與 `AIContentGapSuggester` 一致的空回應防呆訊息（原本完全沒有這層防呆，空字串會直接進入三層 JSON fallback 全部失敗，跳出誤導性的「Failed to parse JSON」訊息）。
+
+**測試**：新增 `backend/tests/test_intent_classifier.py`（3 個測試：OpenRouter 走串流呼叫、空回應清楚報錯、有效 JSON 正確解析）。`pytest tests/ -k "gsc or ai or openrouter or intent"` → 96 passed。
+
 ## 官方參考
 
 - Search Analytics API（缺口分析所需的關鍵字排名資料來源，與現有 `keyword-gap` 相同）：`https://developers.google.com/webmaster-tools/v1/searchanalytics/query`

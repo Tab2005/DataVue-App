@@ -232,6 +232,13 @@ class OpenRouterClient:
                 stream=True
             )
             for chunk in response:
+                if not chunk.choices:
+                    error_info = getattr(chunk, "error", None)
+                    if error_info:
+                        error_message = error_info.get("message") if isinstance(error_info, dict) else str(error_info)
+                        logger.warning("[OpenRouterClient] Stream chunk returned no choices, error=%s", error_info)
+                        raise RuntimeError(f"OpenRouter upstream error ({model_to_use}): {error_message}")
+                    continue
                 content = chunk.choices[0].delta.content
                 if content:
                     yield content
