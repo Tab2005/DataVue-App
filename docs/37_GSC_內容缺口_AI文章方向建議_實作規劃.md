@@ -263,6 +263,19 @@
 
 **測試**：新增 `backend/tests/test_intent_classifier.py`（3 個測試：OpenRouter 走串流呼叫、空回應清楚報錯、有效 JSON 正確解析）。`pytest tests/ -k "gsc or ai or openrouter or intent"` → 96 passed。
 
+## 2026-07-22 追加調整：Prompt 改為白話輸出
+
+使用者回報：產生出來的文章方向建議「太過深奧」，希望改成比較白話的建議內容。
+
+**調整**（`backend/services/ai/content_gap_suggester.py` 的 `SYSTEM_PROMPT`）：
+- 顧問人設從「專業 SEO 內容策略顧問」改成「幫中小企業老闆／小編規劃文章的內容顧問，講話直白、生活化」。
+- 標題規則：明確要求寫成「真正會發布的文章標題」，禁止「XX 主題分析」「關於 XX 之探討」這種報告式標題。
+- 大綱規則：要求具體到「可以直接照著動筆」的程度（例如「怎麼挑」「常見情境有哪些」），禁止「探討可行性」「分析其重要性」這種空泛講法。
+- 理由（reasoning）規則：禁止使用「語意相關性」「內容策略」「使用者意圖」等術語，改用「這些字問的都是同一件事」之類的白話說法；若真的需要提到專業詞，後面要立刻接白話解釋。
+- 這個調整風格參考 `ai_service.py` 內 GA4 轉換洞察等 prompt 既有的「術語必須接白話比喻」硬性規則。
+
+純 prompt 文字調整，不影響程式邏輯與既有測試，`pytest tests/ -k "gsc or ai or openrouter or intent"` 仍為 96 passed。
+
 ## 官方參考
 
 - Search Analytics API（缺口分析所需的關鍵字排名資料來源，與現有 `keyword-gap` 相同）：`https://developers.google.com/webmaster-tools/v1/searchanalytics/query`
