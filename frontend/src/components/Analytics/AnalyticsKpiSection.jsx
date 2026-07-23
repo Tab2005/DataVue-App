@@ -131,17 +131,6 @@ const AnalyticsKpiSection = ({
                                                 const currentVal = currentSummaryData ? (currentSummaryData[m.key] || 0) : 0;
                                                 const prevVal = prevSummaryData ? (prevSummaryData[m.key] || 0) : null;
 
-                                                // Debug: Log each metric's value
-                                                if (m.key === 'ctr') {
-                                                    console.log('[Analytics Debug] Rendering CTR card:', {
-                                                        key: m.key,
-                                                        currentVal,
-                                                        raw_value: currentSummaryData?.[m.key],
-                                                        summaryData_exists: !!currentSummaryData,
-                                                        format: m.format
-                                                    });
-                                                }
-
                                                 // Diff calculation
                                                 let diff = null;
                                                 let percent = null;

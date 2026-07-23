@@ -647,47 +647,24 @@ const Analytics = () => {
             // Instant Experience (New)
             instant_experience_open: sum('instant_experience_open'),
             instant_experience_start: sum('instant_experience_start'),
-            // CTR fields (from Facebook API, not calculated)
-            ctr: sum('ctr'),
-            inline_link_click_ctr: sum('inline_link_click_ctr'),
-            unique_ctr: sum('unique_ctr'),
-            outbound_clicks_ctr: sum('outbound_clicks_ctr'),
         };
 
         // Recalculate derived rates
         total.cpc = total.link_clicks > 0 ? total.spend / total.link_clicks : 0;
         total.cpm = total.impressions > 0 ? (total.spend / total.impressions) * 1000 : 0;
 
-        // Debug CTR calculation
-        console.log('[Analytics Debug] CTR from API:', {
-            ctr: total.ctr,
-            inline_link_click_ctr: total.inline_link_click_ctr,
-            link_clicks: total.link_clicks,
-            impressions: total.impressions,
-            targetData_count: targetData.length,
-            sample_rows: targetData.slice(0, 3).map(r => ({
-                id: r.id,
-                ctr: r.ctr,
-                inline_link_click_ctr: r.inline_link_click_ctr,
-                link_clicks: r.link_clicks,
-                impressions: r.impressions
-            }))
-        });
-
         total.cpa = total.purchases > 0 ? total.spend / total.purchases : 0;
         total.cost_per_atc = total.add_to_cart > 0 ? total.spend / total.add_to_cart : 0;
         total.roas = total.spend > 0 ? total.purchase_value / total.spend : 0;
         total.shared_roas = total.spend > 0 ? total.shared_purchase_value / total.spend : 0;
 
-        // CTR Recalculations (REMOVED - use direct values from API)
-        // If API doesn't provide these values, fallback to calculation
-        if (!total.unique_ctr && total.reach > 0) {
-            total.unique_ctr = (total.unique_clicks / total.reach) * 100;
-        }
-        if (!total.outbound_clicks_ctr && total.impressions > 0) {
-            total.outbound_clicks_ctr = (total.outbound_clicks / total.impressions) * 100;
-        }
-        // Note: ctr and inline_link_click_ctr should come from API, not calculated
+        // CTR fields: per-row CTR values are rates (clicks/impressions), so they must be
+        // recomputed from the summed raw counts (weighted average), never summed directly -
+        // summing rates across rows inflates the total (e.g. 10 days at 2% becomes "20%").
+        total.ctr = total.impressions > 0 ? (total.clicks / total.impressions) * 100 : 0;
+        total.inline_link_click_ctr = total.impressions > 0 ? (total.link_clicks / total.impressions) * 100 : 0;
+        total.unique_ctr = total.reach > 0 ? (total.unique_clicks / total.reach) * 100 : 0;
+        total.outbound_clicks_ctr = total.impressions > 0 ? (total.outbound_clicks / total.impressions) * 100 : 0;
 
         // Cost & Spend Derived
         total.cpp = total.reach > 0 ? (total.spend / total.reach) * 1000 : 0;
