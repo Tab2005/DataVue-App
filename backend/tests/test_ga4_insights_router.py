@@ -55,6 +55,7 @@ def test_ga4_anomaly_rule_crud_and_ack_flow(client, db, sample_user):
     events = client.get("/api/ga4/insights/anomaly-events")
     assert events.status_code == 200
     assert events.json()["total"] == 1
+    assert events.json()["unacknowledged_total"] == 1
 
     acked = client.patch(
         f"/api/ga4/insights/anomaly-events/{event.id}/ack",
@@ -62,6 +63,10 @@ def test_ga4_anomaly_rule_crud_and_ack_flow(client, db, sample_user):
     )
     assert acked.status_code == 200
     assert acked.json()["acknowledged_by"] == sample_user.id
+
+    events_after_ack = client.get("/api/ga4/insights/anomaly-events")
+    assert events_after_ack.json()["total"] == 1
+    assert events_after_ack.json()["unacknowledged_total"] == 0
 
     updated = client.put(
         f"/api/ga4/insights/anomaly-rules/{rule_id}",
@@ -83,3 +88,52 @@ def test_ga4_anomaly_rule_crud_and_ack_flow(client, db, sample_user):
     deleted = client.delete(f"/api/ga4/insights/anomaly-rules/{rule_id}")
     assert deleted.status_code == 200
     assert deleted.json()["status"] == "deleted"
+
+
+def test_ga4_anomaly_events_unacknowledged_total_is_independent_of_pagination(client, db, sample_user):
+    _override_dependencies(client.app, sample_user, db)
+
+    from database.models.ga4_insights import GA4AnomalyEvent, GA4AnomalyRule
+
+    rule = GA4AnomalyRule(
+        property_id="123456",
+        metric_key="conversions",
+        sensitivity="medium",
+        check_frequency="hourly",
+        created_by=sample_user.id,
+    )
+    db.add(rule)
+    db.commit()
+    db.refresh(rule)
+
+    # 建立 3 則事件，其中 1 則先標記已讀，驗證 unacknowledged_total 不受分頁影響。
+    for i in range(3):
+        event = GA4AnomalyEvent(
+            rule_id=rule.id,
+            severity="warning",
+            direction="drop",
+            observed_value=10 + i,
+            expected_low=50,
+            expected_high=80,
+            message=f"test alert {i}",
+            notified_channels={},
+        )
+        db.add(event)
+    db.commit()
+
+    first_event = db.query(GA4AnomalyEvent).order_by(GA4AnomalyEvent.created_at.asc()).first()
+    client.patch(f"/api/ga4/insights/anomaly-events/{first_event.id}/ack", json={"acknowledged": True})
+
+    page1 = client.get("/api/ga4/insights/anomaly-events?page=1&page_size=2")
+    assert page1.status_code == 200
+    body1 = page1.json()
+    assert len(body1["events"]) == 2
+    assert body1["total"] == 3
+    assert body1["unacknowledged_total"] == 2
+
+    page2 = client.get("/api/ga4/insights/anomaly-events?page=2&page_size=2")
+    body2 = page2.json()
+    assert len(body2["events"]) == 1
+    assert body2["total"] == 3
+    # 未讀總數在不同分頁之間應保持一致，不會因為切頁而變動。
+    assert body2["unacknowledged_total"] == 2

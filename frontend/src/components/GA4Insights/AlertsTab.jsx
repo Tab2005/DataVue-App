@@ -1,6 +1,7 @@
 import React from 'react';
 
 import {
+    TablePager,
     baseCardStyle,
     buttonStyle,
     emptyState,
@@ -9,6 +10,7 @@ import {
 } from './GA4InsightsShared';
 
 const AlertsTab = ({
+    language,
     t,
     isMobile,
     propertyId,
@@ -23,8 +25,13 @@ const AlertsTab = ({
     startEdit,
     handleDelete,
     events,
+    eventsLoading,
+    eventsPage,
+    eventsTotalPages,
+    onEventsPageChange,
     handleAck,
-}) => (
+}) => {
+    return (
     <>
                     <section style={{ ...baseCardStyle, display: 'grid', gap: '14px' }}>
                         <div style={{ color: 'var(--text-primary)', fontWeight: 700 }}>
@@ -114,36 +121,45 @@ const AlertsTab = ({
                         <div style={{ marginBottom: '12px', color: 'var(--text-primary)', fontWeight: 700 }}>
                             {t('Alert history', '告警歷史')}
                         </div>
-                        {loading ? emptyState(t('Loading events…', '載入事件中…')) : events.length === 0 ? emptyState(t('No events yet.', '目前沒有事件。')) : (
-                            <div style={{ display: 'grid', gap: '10px' }}>
-                                {events.map((eventRow) => (
-                                    <div key={eventRow.id} style={{ border: '1px solid var(--glass-border)', borderRadius: '12px', padding: '14px' }}>
-                                        <div style={{ display: 'flex', justifyContent: 'space-between', gap: '12px', flexWrap: 'wrap' }}>
-                                            <div style={{ display: 'grid', gap: '6px' }}>
-                                                <div style={{ color: 'var(--text-primary)', fontWeight: 700 }}>
-                                                    {eventRow.metric_key} · {eventRow.direction} · {eventRow.severity}
+                        {loading || eventsLoading ? emptyState(t('Loading events…', '載入事件中…')) : events.length === 0 ? emptyState(t('No events yet.', '目前沒有事件。')) : (
+                            <>
+                                <div style={{ display: 'grid', gap: '10px' }}>
+                                    {events.map((eventRow) => (
+                                        <div key={eventRow.id} style={{ border: '1px solid var(--glass-border)', borderRadius: '12px', padding: '14px' }}>
+                                            <div style={{ display: 'flex', justifyContent: 'space-between', gap: '12px', flexWrap: 'wrap' }}>
+                                                <div style={{ display: 'grid', gap: '6px' }}>
+                                                    <div style={{ color: 'var(--text-primary)', fontWeight: 700 }}>
+                                                        {eventRow.metric_key} · {eventRow.direction} · {eventRow.severity}
+                                                    </div>
+                                                    <div style={{ color: 'var(--text-secondary)', fontSize: '0.85rem' }}>{eventRow.message}</div>
+                                                    <div style={{ color: 'var(--text-tertiary)', fontSize: '0.8rem' }}>
+                                                        observed {eventRow.observed_value} / expected {eventRow.expected_low} - {eventRow.expected_high}
+                                                    </div>
                                                 </div>
-                                                <div style={{ color: 'var(--text-secondary)', fontSize: '0.85rem' }}>{eventRow.message}</div>
-                                                <div style={{ color: 'var(--text-tertiary)', fontSize: '0.8rem' }}>
-                                                    observed {eventRow.observed_value} / expected {eventRow.expected_low} - {eventRow.expected_high}
+                                                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                                                    {eventRow.acknowledged_at ? (
+                                                        <span style={{ color: '#86efac', fontSize: '0.85rem' }}>{t('Acknowledged', '已讀')}</span>
+                                                    ) : (
+                                                        <button type="button" style={buttonStyle} onClick={() => handleAck(eventRow.id)}>
+                                                            {t('Acknowledge', '標記已讀')}
+                                                        </button>
+                                                    )}
                                                 </div>
-                                            </div>
-                                            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                                                {eventRow.acknowledged_at ? (
-                                                    <span style={{ color: '#86efac', fontSize: '0.85rem' }}>{t('Acknowledged', '已讀')}</span>
-                                                ) : (
-                                                    <button type="button" style={buttonStyle} onClick={() => handleAck(eventRow.id)}>
-                                                        {t('Acknowledge', '標記已讀')}
-                                                    </button>
-                                                )}
                                             </div>
                                         </div>
-                                    </div>
-                                ))}
-                            </div>
+                                    ))}
+                                </div>
+                                <TablePager
+                                    page={eventsPage}
+                                    totalPages={eventsTotalPages}
+                                    onPageChange={onEventsPageChange}
+                                    language={language}
+                                />
+                            </>
                         )}
                     </section>
     </>
-);
+    );
+};
 
 export default AlertsTab;

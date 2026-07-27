@@ -12,9 +12,10 @@ export const ga4InsightsService = {
 
     deleteRule: async (ruleId) => apiClient.delete(`/api/ga4/insights/anomaly-rules/${ruleId}`),
 
-    listEvents: async (propertyId) => {
-        const query = propertyId ? `?property_id=${encodeURIComponent(propertyId)}` : '';
-        return apiClient.get(`/api/ga4/insights/anomaly-events${query}`);
+    listEvents: async (propertyId, page = 1, pageSize = 20) => {
+        const params = new URLSearchParams({ page: String(page), page_size: String(pageSize) });
+        if (propertyId) params.set('property_id', propertyId);
+        return apiClient.get(`/api/ga4/insights/anomaly-events?${params.toString()}`);
     },
 
     acknowledgeEvent: async (eventId) => apiClient.patch(`/api/ga4/insights/anomaly-events/${eventId}/ack`, { acknowledged: true }),

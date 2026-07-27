@@ -21,7 +21,7 @@ const OverviewTab = ({
     realtime,
     refreshNotice,
     handleRefreshDashboard,
-    unackedEvents,
+    unacknowledgedTotal,
 }) => (
     <>
                     <section style={baseCardStyle}>
@@ -93,7 +93,7 @@ const OverviewTab = ({
                             baseline: dashboard?.payload?.baseline,
                             is_anomaly: dashboard?.payload?.is_anomaly,
                             realtime_active_users: realtime?.active_users ?? null,
-                            unacked_alerts: unackedEvents.length,
+                            unacked_alerts: unacknowledgedTotal,
                         })}
                     />
     </>

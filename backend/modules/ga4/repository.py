@@ -134,13 +134,15 @@ class GA4InsightsRepository:
         if created_by:
             query = query.filter(GA4AnomalyRule.created_by == created_by)
         total = query.count()
+        # 未讀總數不受分頁影響，讓前端的「N 則未讀告警」提示可以獨立於目前顯示的分頁。
+        unacknowledged_total = query.filter(GA4AnomalyEvent.acknowledged_at.is_(None)).count()
         rows = (
             query.order_by(desc(GA4AnomalyEvent.created_at))
             .offset((page - 1) * page_size)
             .limit(page_size)
             .all()
         )
-        return rows, total
+        return rows, total, unacknowledged_total
 
     def acknowledge_event(self, db, *, event_id: str, user_id: str):
         row = self.get_event(db, event_id)

@@ -477,7 +477,7 @@ def list_anomaly_events(
     _perm: bool = Depends(require_ga4_insights_view),
     db=Depends(get_db),
 ):
-    rows, total = GA4InsightsService.list_events(
+    rows, total, unacknowledged_total = GA4InsightsService.list_events(
         db,
         user_id=user.id,
         property_id=property_id,
@@ -487,6 +487,7 @@ def list_anomaly_events(
     return {
         "events": [serialize_event(row) for row in rows],
         "total": total,
+        "unacknowledged_total": unacknowledged_total,
         "page": page,
         "page_size": page_size,
     }

@@ -23,6 +23,8 @@ import {
     tr,
 } from '../components/GA4Insights/GA4InsightsShared';
 
+const EVENTS_PAGE_SIZE = 10;
+
 const GA4Insights = () => {
     const { language, isMobile } = useOutletContext();
     const t = (en, zh) => tr(language, en, zh);
@@ -49,6 +51,12 @@ const GA4Insights = () => {
     // 第 1 波：告警規則 / 事件歷史
     const [rules, setRules] = useState([]);
     const [events, setEvents] = useState([]);
+    const [eventsPage, setEventsPage] = useState(1);
+    const [eventsTotalPages, setEventsTotalPages] = useState(1);
+    const [eventsLoading, setEventsLoading] = useState(false);
+    // 未讀總數獨立於分頁抓取（docs/39 追加）：分頁只影響 events 顯示哪一頁，
+    // 未讀提示卡永遠顯示「全部歷史」的未讀數，不會因為使用者切頁而跳動。
+    const [unacknowledgedTotal, setUnacknowledgedTotal] = useState(0);
     const [lineStatus, setLineStatus] = useState(null);
     const [saving, setSaving] = useState(false);
     const [form, setForm] = useState({
@@ -120,6 +128,23 @@ const GA4Insights = () => {
         target_value: '',
     });
 
+    const loadEvents = async (nextPropertyId, page = 1) => {
+        const targetPropertyId = nextPropertyId || propertyId;
+        if (!targetPropertyId) return;
+        setEventsLoading(true);
+        try {
+            const eventsRes = await ga4InsightsService.listEvents(targetPropertyId, page, EVENTS_PAGE_SIZE);
+            setEvents(eventsRes.events || []);
+            setEventsPage(eventsRes.page || page);
+            setEventsTotalPages(Math.max(1, Math.ceil((eventsRes.total || 0) / EVENTS_PAGE_SIZE)));
+            setUnacknowledgedTotal(eventsRes.unacknowledged_total || 0);
+        } catch (err) {
+            setError(err.message || t('Failed to load alert history.', '載入告警歷史失敗。'));
+        } finally {
+            setEventsLoading(false);
+        }
+    };
+
     const load = async (nextPropertyId) => {
         setLoading(true);
         setError('');
@@ -127,11 +152,14 @@ const GA4Insights = () => {
             const targetPropertyId = nextPropertyId || propertyId;
             const [rulesRes, eventsRes, lineRes] = await Promise.all([
                 ga4InsightsService.listRules(targetPropertyId),
-                ga4InsightsService.listEvents(targetPropertyId),
+                ga4InsightsService.listEvents(targetPropertyId, 1, EVENTS_PAGE_SIZE),
                 lineService.getStatus(),
             ]);
             setRules(rulesRes.rules || []);
             setEvents(eventsRes.events || []);
+            setEventsPage(eventsRes.page || 1);
+            setEventsTotalPages(Math.max(1, Math.ceil((eventsRes.total || 0) / EVENTS_PAGE_SIZE)));
+            setUnacknowledgedTotal(eventsRes.unacknowledged_total || 0);
             setLineStatus(lineRes);
         } catch (err) {
             setError(err.message || t('Failed to load GA4 insights.', '載入 GA4 洞察失敗。'));
@@ -492,7 +520,7 @@ const GA4Insights = () => {
     const handleAck = async (eventId) => {
         try {
             await ga4InsightsService.acknowledgeEvent(eventId);
-            await load(propertyId);
+            await loadEvents(propertyId, eventsPage);
         } catch (err) {
             setError(err.message || t('Failed to acknowledge event.', '標記已讀失敗。'));
         }
@@ -585,14 +613,14 @@ const GA4Insights = () => {
                 </div>
             </section>
 
-            {unackedEvents.length > 0 && (
+            {unacknowledgedTotal > 0 && (
                 <section style={{ ...baseCardStyle, borderColor: 'rgba(239, 68, 68, 0.3)' }}>
                     <div style={{ color: '#fca5a5', fontWeight: 700, marginBottom: '6px' }}>
-                        {t(`${unackedEvents.length} unacknowledged alert(s)`, `${unackedEvents.length} 則未讀告警`)}
+                        {t(`${unacknowledgedTotal} unacknowledged alert(s)`, `${unacknowledgedTotal} 則未讀告警`)}
                     </div>
                     <div style={{ color: 'var(--text-secondary)', fontSize: '0.85rem' }}>
                         {unackedEvents[0]?.message}
-                        {unackedEvents.length > 1 && ` …`}
+                        {unacknowledgedTotal > 1 && ` …`}
                     </div>
                     <button type="button" style={{ ...secondaryButtonStyle, marginTop: '10px' }} onClick={() => setActiveTab('alerts')}>
                         {t('Go to alert settings', '前往告警設定')}
@@ -629,7 +657,7 @@ const GA4Insights = () => {
                     realtime={realtime}
                     refreshNotice={refreshNotice}
                     handleRefreshDashboard={handleRefreshDashboard}
-                    unackedEvents={unackedEvents}
+                    unacknowledgedTotal={unacknowledgedTotal}
                 />
             )}
 
@@ -732,6 +760,7 @@ const GA4Insights = () => {
 
             {propertyId && activeTab === 'alerts' && (
                 <AlertsTab
+                    language={language}
                     t={t}
                     isMobile={isMobile}
                     propertyId={propertyId}
@@ -746,6 +775,10 @@ const GA4Insights = () => {
                     startEdit={startEdit}
                     handleDelete={handleDelete}
                     events={events}
+                    eventsLoading={eventsLoading}
+                    eventsPage={eventsPage}
+                    eventsTotalPages={eventsTotalPages}
+                    onEventsPageChange={(page) => loadEvents(propertyId, page)}
                     handleAck={handleAck}
                 />
             )}
