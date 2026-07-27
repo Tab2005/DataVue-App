@@ -92,27 +92,11 @@ const LandingPagesTab = ({
                             emptyState(t('Loading landing pages…', '載入到達頁資料中…'))
                         ) : landingSnapshot?.payload?.landing_pages?.length ? (
                             <>
+                                {/* 篩選列：關鍵事件／渠道維度／渠道值下拉統一放最左邊，分類篩選按鈕
+                                    接在後面，全部擠在同一行（畫面窄時自然換行，同既有 flexWrap 慣例）。
+                                    docs/42：渠道維度選單複用渠道對照分頁既有的 CHANNEL_DIMENSION_OPTIONS，
+                                    渠道值選單選了維度後才顯示，選項來自 loadLandingChannelValues 抓到的清單。 */}
                                 <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', marginBottom: '10px', alignItems: 'center' }}>
-                                    {['all', ...LANDING_CATEGORY_ORDER].map((cat) => {
-                                        const count = cat === 'all'
-                                            ? landingSnapshot.payload.landing_pages.length
-                                            : (landingSnapshot.payload.category_counts?.[cat] || 0);
-                                        const label = cat === 'all'
-                                            ? t('All', '全部')
-                                            : tr(language, LANDING_CATEGORY_LABELS[cat].en, LANDING_CATEGORY_LABELS[cat].zh);
-                                        return (
-                                            <button
-                                                key={cat}
-                                                type="button"
-                                                style={dayButtonStyle(landingCategoryFilter === cat)}
-                                                onClick={() => setLandingCategoryFilter(cat)}
-                                            >
-                                                {label} ({count})
-                                            </button>
-                                        );
-                                    })}
-                                </div>
-                                <div style={{ display: 'flex', gap: '8px', alignItems: 'center', marginBottom: '12px', flexWrap: 'wrap' }}>
                                     <select
                                         value={landingKeyEvent}
                                         onChange={(event) => {
@@ -120,6 +104,7 @@ const LandingPagesTab = ({
                                             setLandingKeyEvent(next);
                                             loadLandingPages(propertyId, landingDays, next);
                                         }}
+                                        title={t('Only events marked as "key events" in GA4 are counted.', '僅統計已在 GA4 標為關鍵事件的事件。')}
                                         style={{ ...inputStyle, width: 'auto', padding: '8px 10px' }}
                                     >
                                         <option value="">{t('All key events', '全部關鍵事件')}</option>
@@ -127,14 +112,6 @@ const LandingPagesTab = ({
                                             <option key={event} value={event}>{event}</option>
                                         ))}
                                     </select>
-                                    <span style={{ color: 'var(--text-tertiary)', fontSize: '0.76rem' }} title={t('Only events marked as "key events" in GA4 are counted.', '僅統計已在 GA4 標為關鍵事件的事件。')}>
-                                        ⓘ {t('Only events marked as key events in GA4', '僅統計已在 GA4 標為關鍵事件的事件')}
-                                    </span>
-                                </div>
-                                {/* docs/42：到達頁渠道篩選——維度選單複用渠道對照分頁既有的
-                                    CHANNEL_DIMENSION_OPTIONS，渠道值選單選了維度後才啟用，
-                                    選項來自 loadLandingChannelValues 抓到的清單。 */}
-                                <div style={{ display: 'flex', gap: '8px', alignItems: 'center', marginBottom: '12px', flexWrap: 'wrap' }}>
                                     <select
                                         value={landingChannelDimension}
                                         onChange={(event) => {
@@ -171,6 +148,25 @@ const LandingPagesTab = ({
                                     {landingChannelValuesLoading && (
                                         <span style={{ color: 'var(--text-tertiary)', fontSize: '0.76rem' }}>{t('Loading channels…', '載入渠道清單中…')}</span>
                                     )}
+                                    <span style={{ width: '1px', alignSelf: 'stretch', background: 'var(--glass-border)', margin: '0 2px' }} />
+                                    {['all', ...LANDING_CATEGORY_ORDER].map((cat) => {
+                                        const count = cat === 'all'
+                                            ? landingSnapshot.payload.landing_pages.length
+                                            : (landingSnapshot.payload.category_counts?.[cat] || 0);
+                                        const label = cat === 'all'
+                                            ? t('All', '全部')
+                                            : tr(language, LANDING_CATEGORY_LABELS[cat].en, LANDING_CATEGORY_LABELS[cat].zh);
+                                        return (
+                                            <button
+                                                key={cat}
+                                                type="button"
+                                                style={dayButtonStyle(landingCategoryFilter === cat)}
+                                                onClick={() => setLandingCategoryFilter(cat)}
+                                            >
+                                                {label} ({count})
+                                            </button>
+                                        );
+                                    })}
                                 </div>
                                 <div style={{ overflowX: 'auto' }}>
                                     <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.85rem' }}>
