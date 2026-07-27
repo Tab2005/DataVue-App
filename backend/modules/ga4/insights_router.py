@@ -333,6 +333,32 @@ def save_ai_summary(
     return serialize_snapshot(row)
 
 
+# ─── docs/39：快照分享連結 ───────────────────────────────────────────
+@router.post("/snapshots/{snapshot_id}/share")
+def create_snapshot_share_link(
+    snapshot_id: str,
+    user=Depends(get_current_user),
+    _module: bool = Depends(require_ga4_module),
+    _perm: bool = Depends(require_ga4_insights_view),
+    db=Depends(get_db),
+):
+    row = GA4InsightsService.create_share_link(db, snapshot_id=snapshot_id)
+    if not row:
+        raise HTTPException(status_code=404, detail="Snapshot not found")
+    db.commit()
+    db.refresh(row)
+    return {"snapshot_id": row.id, "share_token": row.share_token}
+
+
+@router.get("/share/{token}")
+def get_shared_snapshot(token: str, db=Depends(get_db)):
+    """公開分享端點：無需登入即可取得快照數據與 AI 解讀。"""
+    row = GA4InsightsService.get_snapshot_by_share_token(db, token)
+    if not row:
+        raise HTTPException(status_code=404, detail="Shared snapshot not found")
+    return serialize_shared_snapshot(row)
+
+
 # ─── 第 3 波：KPI 目標追蹤（選配，docs/22 5 節） ───────────────────────
 @router.get("/kpi-targets")
 def list_kpi_targets(
@@ -535,6 +561,17 @@ def serialize_snapshot(row):
         "ai_summary": row.ai_summary,
         "ai_summary_generated_at": row.ai_summary_generated_at,
         "fetched_at": row.fetched_at,
+    }
+
+
+def serialize_shared_snapshot(row):
+    """公開分享端點專用序列化：不回傳 property_id / fetched_by 等內部識別資訊。"""
+    return {
+        "kind": row.kind,
+        "date": row.date,
+        "payload": row.payload,
+        "ai_summary": row.ai_summary,
+        "ai_summary_generated_at": row.ai_summary_generated_at,
     }
 
 

@@ -42,6 +42,7 @@ from .landing_pages import (
     list_landing_page_rules,
     upsert_landing_page_rule,
 )
+from .sharing import create_share_link, get_snapshot_by_share_token
 
 
 class GA4InsightsService:
@@ -79,6 +80,8 @@ class GA4InsightsService:
     delete_item_category_rule = staticmethod(delete_item_category_rule)
 
     save_ai_summary = staticmethod(save_ai_summary)
+    create_share_link = staticmethod(create_share_link)
+    get_snapshot_by_share_token = staticmethod(get_snapshot_by_share_token)
     _kpi_period_bounds = staticmethod(_kpi_period_bounds)
     compute_kpi_pacing = staticmethod(compute_kpi_pacing)
     get_kpi_targets_with_pacing = staticmethod(get_kpi_targets_with_pacing)

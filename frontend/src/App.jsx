@@ -26,6 +26,7 @@ const GA4Insights = lazy(() => import('./pages/GA4Insights'));
 const Reports = lazy(() => import('./pages/Reports'));
 const ReportViewer = lazy(() => import('./pages/ReportViewer'));
 const SharedReport = lazy(() => import('./pages/SharedReport'));
+const SharedGA4Insight = lazy(() => import('./pages/SharedGA4Insight'));
 const MetaAndromeda = lazy(() => import('./pages/MetaAndromeda'));
 const MetaAndromedaReviewQueue = lazy(() => import('./pages/MetaAndromedaReviewQueue'));
 const MetaAndromedaMonitoring = lazy(() => import('./pages/MetaAndromedaMonitoring'));
@@ -62,6 +63,7 @@ function AppInner() {
               <Route path="/login" element={<Login />} />
               <Route path="/invite/:code" element={<InvitePage />} />
               <Route path="/reports/share/:token" element={<SharedReport />} />
+              <Route path="/ga4-insights/share/:token" element={<SharedGA4Insight />} />
               <Route element={<ProtectedRoute><Layout /></ProtectedRoute>}>
                 <Route path="/dashboard" element={
                   <ProtectedModule module="fb_ads">

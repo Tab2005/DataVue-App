@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import uuid
 from datetime import datetime, timedelta
 
 from sqlalchemy import desc
@@ -67,6 +68,20 @@ class GA4InsightsRepository:
         row.ai_summary_generated_at = datetime.utcnow()
         db.add(row)
         return row
+
+    # ─── docs/39：快照分享連結 ─────────────────────────────────────────
+    def get_or_create_share_token(self, db, *, snapshot_id: str):
+        row = self.get_snapshot_by_id(db, snapshot_id)
+        if not row:
+            return None
+        if not row.share_token:
+            row.share_token = uuid.uuid4().hex
+            db.add(row)
+            db.flush()
+        return row
+
+    def get_snapshot_by_share_token(self, db, token: str):
+        return db.query(GA4InsightsSnapshot).filter(GA4InsightsSnapshot.share_token == token).first()
 
     def create_rule(self, db, **payload):
         row = GA4AnomalyRule(**payload)

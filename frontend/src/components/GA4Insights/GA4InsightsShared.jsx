@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { FiCpu, FiRefreshCcw } from 'react-icons/fi';
+import { FiCpu, FiRefreshCcw, FiShare2, FiCheck } from 'react-icons/fi';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import rehypeRaw from 'rehype-raw';
@@ -362,11 +362,18 @@ export const AIInsightNote = ({ language, snapshot, kind, buildPayload, contextL
     const [isSaving, setIsSaving] = useState(false);
     const [aiError, setAiError] = useState(null);
     const aiContentRef = useRef(existing);
+    const [shareToken, setShareToken] = useState(null);
+    const [isSharing, setIsSharing] = useState(false);
+    const [shareError, setShareError] = useState(null);
+    const [linkCopied, setLinkCopied] = useState(false);
 
     useEffect(() => {
         setAiContent(existing);
         aiContentRef.current = existing;
         setAiError(null);
+        setShareToken(null);
+        setShareError(null);
+        setLinkCopied(false);
     }, [snapshot?.snapshot_id, existing]);
 
     if (!snapshot) return null;
@@ -409,8 +416,35 @@ export const AIInsightNote = ({ language, snapshot, kind, buildPayload, contextL
         }
     };
 
+    const handleShare = async () => {
+        if (isSharing) return;
+        setIsSharing(true);
+        setShareError(null);
+        setLinkCopied(false);
+        try {
+            const res = await ga4InsightsService.createShareLink(snapshot.snapshot_id);
+            setShareToken(res.share_token);
+        } catch (err) {
+            setShareError(err?.message || t('Failed to create share link.', '產生分享連結失敗，請重試。'));
+        } finally {
+            setIsSharing(false);
+        }
+    };
+
+    const handleCopyLink = async () => {
+        const url = `${window.location.origin}/ga4-insights/share/${shareToken}`;
+        try {
+            await navigator.clipboard.writeText(url);
+            setLinkCopied(true);
+            setTimeout(() => setLinkCopied(false), 2000);
+        } catch {
+            // clipboard API 可能因權限被拒；連結仍顯示在下方可手動選取複製。
+        }
+    };
+
     const hasContent = aiContent && aiContent.length > 0;
     const buttonLabel = hasContent ? t('Regenerate', '重新解讀') : t('Generate Insights', '開始 AI 解讀');
+    const shareUrl = shareToken ? `${window.location.origin}/ga4-insights/share/${shareToken}` : null;
 
     return (
         <div style={{ ...baseCardStyle, marginTop: '14px' }}>
@@ -421,19 +455,64 @@ export const AIInsightNote = ({ language, snapshot, kind, buildPayload, contextL
                         {t('Translates the numbers above into a quick read.', '把上方數字翻成白話文，快速掌握重點。')}
                     </div>
                 </div>
-                <button
-                    type="button"
-                    onClick={handleGenerate}
-                    disabled={isAnalyzing || isSaving}
-                    style={{ ...secondaryButtonStyle, display: 'flex', alignItems: 'center', gap: '6px', opacity: isAnalyzing || isSaving ? 0.5 : 1 }}
-                >
-                    {isAnalyzing || isSaving ? <FiRefreshCcw className="spin" /> : <FiCpu />}
-                    {isAnalyzing ? t('Analyzing…', '解讀中…') : isSaving ? t('Saving…', '儲存中…') : buttonLabel}
-                </button>
+                <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+                    {hasContent && (
+                        <button
+                            type="button"
+                            onClick={handleShare}
+                            disabled={isSharing}
+                            style={{ ...secondaryButtonStyle, display: 'flex', alignItems: 'center', gap: '6px', opacity: isSharing ? 0.5 : 1 }}
+                        >
+                            {isSharing ? <FiRefreshCcw className="spin" /> : <FiShare2 />}
+                            {isSharing ? t('Creating link…', '產生連結中…') : t('Share Link', '產生分享連結')}
+                        </button>
+                    )}
+                    <button
+                        type="button"
+                        onClick={handleGenerate}
+                        disabled={isAnalyzing || isSaving}
+                        style={{ ...secondaryButtonStyle, display: 'flex', alignItems: 'center', gap: '6px', opacity: isAnalyzing || isSaving ? 0.5 : 1 }}
+                    >
+                        {isAnalyzing || isSaving ? <FiRefreshCcw className="spin" /> : <FiCpu />}
+                        {isAnalyzing ? t('Analyzing…', '解讀中…') : isSaving ? t('Saving…', '儲存中…') : buttonLabel}
+                    </button>
+                </div>
             </div>
 
             {aiError && (
                 <div style={{ color: '#fca5a5', fontSize: '0.85rem', marginBottom: '10px' }}>{aiError}</div>
+            )}
+
+            {shareError && (
+                <div style={{ color: '#fca5a5', fontSize: '0.85rem', marginBottom: '10px' }}>{shareError}</div>
+            )}
+
+            {shareUrl && (
+                <div
+                    style={{
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: '8px',
+                        flexWrap: 'wrap',
+                        background: 'rgba(34, 197, 94, 0.08)',
+                        border: '1px solid rgba(34, 197, 94, 0.25)',
+                        borderRadius: '10px',
+                        padding: '10px 12px',
+                        marginBottom: '10px',
+                    }}
+                >
+                    <input
+                        type="text"
+                        readOnly
+                        value={shareUrl}
+                        onFocus={(e) => e.target.select()}
+                        style={{ ...inputStyle, flex: 1, minWidth: '200px', fontSize: '0.8rem' }}
+                    />
+                    <button type="button" onClick={handleCopyLink} style={{ ...secondaryButtonStyle, display: 'flex', alignItems: 'center', gap: '6px' }}>
+                        {linkCopied ? <FiCheck /> : <FiShare2 />}
+                        {linkCopied ? t('Copied', '已複製') : t('Copy', '複製')}
+                    </button>
+                </div>
             )}
 
             <div

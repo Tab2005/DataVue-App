@@ -47,6 +47,13 @@ export const ga4InsightsService = {
     saveAiSummary: async (snapshotId, aiSummary) =>
         apiClient.put(`/api/ga4/insights/snapshots/${snapshotId}/ai-summary`, { ai_summary: aiSummary }),
 
+    // ─── docs/39：快照分享連結 ───────────────────────────────────────
+    createShareLink: async (snapshotId) =>
+        apiClient.post(`/api/ga4/insights/snapshots/${snapshotId}/share`, {}),
+
+    getSharedSnapshot: async (token) =>
+        apiClient.get(`/api/ga4/insights/share/${token}`, { skipAuth: true }),
+
     // ─── 第 3 波：KPI 目標追蹤（選配） ───────────────────────────────
     listKpiTargets: async (propertyId) =>
         apiClient.get(`/api/ga4/insights/kpi-targets?property_id=${encodeURIComponent(propertyId)}`),

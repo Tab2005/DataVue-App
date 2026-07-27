@@ -23,6 +23,9 @@ class GA4InsightsSnapshot(Base):
     payload = Column(JSON, nullable=False, default=dict)
     ai_summary = Column(Text, nullable=True)
     ai_summary_generated_at = Column(DateTime, nullable=True)
+    # 分享連結 token（docs/39）：null 表示尚未產生過分享連結，第一次點擊
+    # 「產生分享連結」才會補上，之後重複點擊回傳同一組 token。
+    share_token = Column(String(64), nullable=True, unique=True, index=True)
     fetched_by = Column(String, ForeignKey("users.id"), nullable=True)
     fetched_at = Column(DateTime, nullable=False, server_default=text("CURRENT_TIMESTAMP"))
 
