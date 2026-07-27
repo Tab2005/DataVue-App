@@ -35,10 +35,13 @@ export const ga4InsightsService = {
             `/api/ga4/insights/channels?property_id=${encodeURIComponent(propertyId)}&days=${days}&dimension=${encodeURIComponent(dimension)}`
         ),
 
-    getLandingPages: async (propertyId, days = 7, keyEvent = null) =>
+    getLandingPages: async (propertyId, days = 7, keyEvent = null, channelDimension = null, channelValue = null) =>
         apiClient.get(
             `/api/ga4/insights/landing-pages?property_id=${encodeURIComponent(propertyId)}&days=${days}`
             + (keyEvent ? `&key_event=${encodeURIComponent(keyEvent)}` : '')
+            + (channelDimension && channelValue
+                ? `&channel_dimension=${encodeURIComponent(channelDimension)}&channel_value=${encodeURIComponent(channelValue)}`
+                : '')
         ),
 
     getItems: async (propertyId, days = 7) =>

@@ -91,6 +91,12 @@ const GA4Insights = () => {
     const [landingError, setLandingError] = useState('');
     const [landingCategoryFilter, setLandingCategoryFilter] = useState('all');
     const [landingKeyEvent, setLandingKeyEvent] = useState('');
+    // docs/42：到達頁渠道篩選——維度＋渠道值兩層下拉，渠道值清單複用
+    // getChannels 既有回應，不用另外開一支「列出渠道值」的端點。
+    const [landingChannelDimension, setLandingChannelDimension] = useState('');
+    const [landingChannelValue, setLandingChannelValue] = useState('');
+    const [landingChannelValues, setLandingChannelValues] = useState([]);
+    const [landingChannelValuesLoading, setLandingChannelValuesLoading] = useState(false);
     const [landingRules, setLandingRules] = useState(null);
     const [landingRulesOpen, setLandingRulesOpen] = useState(false);
     const [landingRulesLoading, setLandingRulesLoading] = useState(false);
@@ -219,16 +225,41 @@ const GA4Insights = () => {
         }
     };
 
-    const loadLandingPages = async (pid, days, keyEvent = landingKeyEvent) => {
+    const loadLandingPages = async (
+        pid, days,
+        keyEvent = landingKeyEvent,
+        channelDimension = landingChannelDimension,
+        channelValue = landingChannelValue,
+    ) => {
         if (!pid) return;
         setLandingLoading(true);
         setLandingError('');
         try {
-            setLandingSnapshot(await ga4InsightsService.getLandingPages(pid, days, keyEvent || null));
+            setLandingSnapshot(
+                await ga4InsightsService.getLandingPages(pid, days, keyEvent || null, channelDimension || null, channelValue || null)
+            );
         } catch (err) {
             setLandingError(err.message || t('Failed to load landing pages.', '載入到達頁分析失敗。'));
         } finally {
             setLandingLoading(false);
+        }
+    };
+
+    // docs/42：渠道值清單——選了「維度」後，用該維度呼叫一次既有的渠道
+    // 對照端點，取實際存在的渠道值來組第二層下拉選單，不用另開新端點。
+    const loadLandingChannelValues = async (pid, days, dimension) => {
+        if (!pid || !dimension) {
+            setLandingChannelValues([]);
+            return;
+        }
+        setLandingChannelValuesLoading(true);
+        try {
+            const res = await ga4InsightsService.getChannels(pid, days, dimension);
+            setLandingChannelValues((res.payload?.channels || []).map((c) => c.channel).filter(Boolean));
+        } catch (err) {
+            setLandingError(err.message || t('Failed to load channel values.', '載入渠道清單失敗。'));
+        } finally {
+            setLandingChannelValuesLoading(false);
         }
     };
 
@@ -694,6 +725,13 @@ const GA4Insights = () => {
                     setLandingCategoryFilter={setLandingCategoryFilter}
                     landingKeyEvent={landingKeyEvent}
                     setLandingKeyEvent={setLandingKeyEvent}
+                    landingChannelDimension={landingChannelDimension}
+                    setLandingChannelDimension={setLandingChannelDimension}
+                    landingChannelValue={landingChannelValue}
+                    setLandingChannelValue={setLandingChannelValue}
+                    landingChannelValues={landingChannelValues}
+                    landingChannelValuesLoading={landingChannelValuesLoading}
+                    loadLandingChannelValues={loadLandingChannelValues}
                     DaySelector={DaySelector}
                     landingRulesOpen={landingRulesOpen}
                     setLandingRulesOpen={setLandingRulesOpen}

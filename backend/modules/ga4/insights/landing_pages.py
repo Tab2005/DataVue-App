@@ -2,12 +2,32 @@
 
 from __future__ import annotations
 
+import hashlib
+
 from ._shared import *
 
 
-def get_landing_pages(db, *, user: User, property_id: str, days: int = 7, key_event: str | None = None):
+def get_landing_pages(
+    db, *, user: User, property_id: str, days: int = 7, key_event: str | None = None,
+    channel_dimension: str | None = None, channel_value: str | None = None,
+):
     if key_event and not LANDING_PAGE_KEY_EVENT_PATTERN.match(key_event):
         raise ValueError(f"Invalid key_event: {key_event}")
+
+    # docs/42：到達頁渠道篩選。兩個參數必須同時有值或同時沒有，避免「只給
+    # 維度沒給值」這種篩選條件不完整的狀態被誤當成「有篩選」處理。
+    if bool(channel_dimension) != bool(channel_value):
+        raise ValueError("channel_dimension and channel_value must be provided together")
+    if channel_dimension and channel_dimension not in CHANNEL_DIMENSION_MAP:
+        raise ValueError(f"Unsupported channel_dimension: {channel_dimension}")
+
+    # 只取工作階段那一半（CHANNEL_DIMENSION_MAP[dim][0]），不用 firstUser 那
+    # 一半：到達頁本身就是工作階段層級的概念，配「這次工作階段的渠道」才
+    # 有意義，見 docs/41 的討論。GA4 Data API 的 dimensionFilter 是獨立於
+    # dimensions（group by）之外的篩選條件，不需要把這個維度也放進
+    # dimensions 才能篩，回傳列的形狀（一個到達頁一列）完全不受影響。
+    ga4_channel_dimension = CHANNEL_DIMENSION_MAP[channel_dimension][0] if channel_dimension else None
+    dimension_filter = (ga4_channel_dimension, channel_value) if ga4_channel_dimension else None
 
     start_date, end_date = _service_attr("_trailing_period", _trailing_period)(days)
 
@@ -21,6 +41,7 @@ def get_landing_pages(db, *, user: User, property_id: str, days: int = 7, key_ev
         user=user, property_id=property_id, start_date=start_date, end_date=end_date,
         metrics=["sessions", "engagementRate", "bounceRate", key_events_metric, key_event_rate_metric],
         dimensions=["landingPage"], db=db,
+        dimension_filter=dimension_filter,
     )
     if error:
         raise RuntimeError(error)
@@ -28,11 +49,13 @@ def get_landing_pages(db, *, user: User, property_id: str, days: int = 7, key_ev
 
     # 關鍵事件分項統計：pivot landingPage × eventName，供前端下拉與明細
     # （查詢失敗不影響主表格，只是分項/下拉暫缺，同模組既有的容錯慣例）。
+    # 渠道篩選也要一併帶上，否則主表格數字有篩、這裡的明細沒篩，會對不起來。
     key_events_breakdown: dict[str, dict[str, int]] = {}
     available_key_events: set[str] = set()
     breakdown_data, breakdown_error = GA4Service.get_analytics(
         user=user, property_id=property_id, start_date=start_date, end_date=end_date,
         metrics=["keyEvents"], dimensions=["landingPage", "eventName"], db=db,
+        dimension_filter=dimension_filter,
     )
     if not breakdown_error:
         for row in (breakdown_data or {}).get("rows", []):
@@ -93,14 +116,24 @@ def get_landing_pages(db, *, user: User, property_id: str, days: int = 7, key_ev
     category_counts = {category: len(category_rows) for category, category_rows in by_category.items()}
 
     # snapshot kind：全部事件維持 "landing_page"；指定事件加後綴各自獨立
-    # 存放、AI 解讀互不覆寫（同第 4 波渠道維度切換前例）。
-    kind = "landing_page" if not key_event else f"landing_page:{key_event}"
+    # 存放、AI 解讀互不覆寫（同第 4 波渠道維度切換前例）。渠道篩選比照同一
+    # 套規則疊加後綴，但 channel_value 是自由文字（例如完整 UTM campaign
+    # 名稱），直接串進 kind 可能撐爆 String(80) 欄位、也可能因為截斷而讓
+    # 兩個不同篩選值誤判成同一筆快照，所以改用短雜湊代表這組篩選條件。
+    kind = "landing_page"
+    if key_event:
+        kind += f":{key_event}"
+    if channel_dimension:
+        filter_digest = hashlib.md5(f"{channel_dimension}:{channel_value}".encode()).hexdigest()[:10]
+        kind += f":ch_{filter_digest}"
 
     payload = {
         "start_date": start_date,
         "end_date": end_date,
         "days": days,
         "key_event": key_event,
+        "channel_dimension": channel_dimension,
+        "channel_value": channel_value,
         "landing_pages": enriched,
         "category_counts": category_counts,
         "available_key_events": sorted(available_key_events),

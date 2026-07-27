@@ -11,7 +11,13 @@ import json
 import os
 from typing import Any, Dict, List, Optional, Tuple
 
-from google.analytics.data_v1beta.types import RunReportRequest, DateRange, Dimension
+from google.analytics.data_v1beta.types import (
+    DateRange,
+    Dimension,
+    Filter,
+    FilterExpression,
+    RunReportRequest,
+)
 from sqlalchemy.orm import Session
 
 from database import User
@@ -32,7 +38,8 @@ class GA4AnalyticsService:
         dimensions: Optional[List[str]] = None,
         limit: Optional[int] = None,
         offset: int = 0,
-        db: Session = None
+        db: Session = None,
+        dimension_filter: Optional[Tuple[str, str]] = None
     ) -> Tuple[Optional[Dict[str, Any]], Optional[str]]:
         """
         取得 GA4 分析資料
@@ -46,6 +53,8 @@ class GA4AnalyticsService:
             metrics: 指標列表，預設使用常見指標
             dimensions: 維度列表，預設使用日期
             db: 資料庫 session（可選，用於更新 token）
+            dimension_filter: (維度名, 篩選值) 的 tuple，對該維度做精確比對篩選
+                （docs/42：到達頁渠道篩選用），None 表示不篩選
 
         Returns:
             tuple: (analytics_data, error_message)
@@ -93,7 +102,8 @@ class GA4AnalyticsService:
                         dimensions=dimensions,
                         limit=limit,
                         offset=offset,
-                        db=db
+                        db=db,
+                        dimension_filter=dimension_filter
                     )
 
                     if chunk_err:
@@ -127,6 +137,10 @@ class GA4AnalyticsService:
             # Use Analytics Data API
             data_client = GA4Client.build_data_client(creds)
 
+            # 不同的 dimension_filter 一定要各自有獨立快取鍵，否則會撈到別的
+            # 篩選條件快取下來的結果（docs/42：到達頁渠道篩選）。
+            filter_cache_key_part = json.dumps(dimension_filter) if dimension_filter else ""
+
             # Cache keys
             base_cache_key = generate_cache_key(
                 "ga4_analytics",
@@ -134,7 +148,8 @@ class GA4AnalyticsService:
                 start_date,
                 end_date,
                 json.dumps(metrics, sort_keys=True),
-                json.dumps(dimensions, sort_keys=True)
+                json.dumps(dimensions, sort_keys=True),
+                filter_cache_key_part
             )
 
             page_cache_key = None
@@ -149,7 +164,8 @@ class GA4AnalyticsService:
                     json.dumps(metrics, sort_keys=True),
                     json.dumps(dimensions, sort_keys=True),
                     str(offset or 0),
-                    str(effective_limit) if effective_limit is not None else ""
+                    str(effective_limit) if effective_limit is not None else "",
+                    filter_cache_key_part
                 )
 
             use_redis = bool(os.getenv("REDIS_URL"))
@@ -252,6 +268,25 @@ class GA4AnalyticsService:
             def _build_api_metrics(m_keys):
                 return GA4Client.build_metrics(m_keys)
 
+            # docs/42：到達頁渠道篩選——把 (維度名, 篩選值) 轉成 GA4 Data API 的
+            # FilterExpression（精確比對，非 contains，避免模糊匹配到非預期的渠道值）。
+            def _build_dimension_filter_expression():
+                if not dimension_filter:
+                    return None
+                filter_dimension, filter_value = dimension_filter
+                return FilterExpression(
+                    filter=Filter(
+                        field_name=filter_dimension,
+                        string_filter=Filter.StringFilter(
+                            value=filter_value,
+                            match_type=Filter.StringFilter.MatchType.EXACT,
+                        ),
+                    )
+                )
+
+            filter_expression = _build_dimension_filter_expression()
+            filter_kwargs = {"dimension_filter": filter_expression} if filter_expression is not None else {}
+
             # Build and execute the request(s)
             if not use_dimensions:
                 # 不帶 dimension 的請求，會返回整個期間的去重總數
@@ -259,6 +294,7 @@ class GA4AnalyticsService:
                     property=f"properties/{property_id}",
                     date_ranges=[DateRange(start_date=start_date, end_date=effective_end_date)],
                     metrics=_build_api_metrics(metrics),
+                    **filter_kwargs
                 )
                 dimensions = []  # 確保後續處理正確
                 response = data_client.run_report(request)
@@ -274,7 +310,8 @@ class GA4AnalyticsService:
                     dimensions=[Dimension(name=dim) for dim in dimensions],
                     metrics=_build_api_metrics(metrics),
                     limit=request_limit,
-                    offset=offset
+                    offset=offset,
+                    **filter_kwargs
                 )
                 response = data_client.run_report(request)
                 rows = _convert_rows(response.rows)
@@ -293,7 +330,8 @@ class GA4AnalyticsService:
                         dimensions=[Dimension(name=dim) for dim in dimensions],
                         metrics=_build_api_metrics(metrics),
                         limit=page_limit,
-                        offset=page_offset
+                        offset=page_offset,
+                        **filter_kwargs
                     )
 
                     response = data_client.run_report(request)

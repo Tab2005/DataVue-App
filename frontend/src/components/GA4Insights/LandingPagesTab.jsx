@@ -2,6 +2,7 @@ import React, { useEffect, useMemo, useState } from 'react';
 
 import {
     AIInsightNote,
+    CHANNEL_DIMENSION_OPTIONS,
     LANDING_CATEGORY_LABELS,
     LANDING_CATEGORY_ORDER,
     LANDING_MATCH_TYPE_OPTIONS,
@@ -35,6 +36,13 @@ const LandingPagesTab = ({
     setLandingCategoryFilter,
     landingKeyEvent,
     setLandingKeyEvent,
+    landingChannelDimension,
+    setLandingChannelDimension,
+    landingChannelValue,
+    setLandingChannelValue,
+    landingChannelValues,
+    landingChannelValuesLoading,
+    loadLandingChannelValues,
     DaySelector,
     landingRulesOpen,
     setLandingRulesOpen,
@@ -73,7 +81,11 @@ const LandingPagesTab = ({
                     <section style={baseCardStyle}>
                         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px', flexWrap: 'wrap', gap: '8px' }}>
                             <div style={{ color: 'var(--text-primary)', fontWeight: 700 }}>{t('Landing pages', '到達頁分析')}</div>
-                            <DaySelector value={landingDays} onChange={(d) => { setLandingDays(d); loadLandingPages(propertyId, d); }} />
+                            <DaySelector value={landingDays} onChange={(d) => {
+                                setLandingDays(d);
+                                loadLandingPages(propertyId, d);
+                                if (landingChannelDimension) loadLandingChannelValues(propertyId, d, landingChannelDimension);
+                            }} />
                         </div>
                         {landingError && <div style={{ color: '#fca5a5', fontSize: '0.85rem', marginBottom: '10px' }}>{landingError}</div>}
                         {landingLoading && !landingSnapshot ? (
@@ -118,6 +130,47 @@ const LandingPagesTab = ({
                                     <span style={{ color: 'var(--text-tertiary)', fontSize: '0.76rem' }} title={t('Only events marked as "key events" in GA4 are counted.', '僅統計已在 GA4 標為關鍵事件的事件。')}>
                                         ⓘ {t('Only events marked as key events in GA4', '僅統計已在 GA4 標為關鍵事件的事件')}
                                     </span>
+                                </div>
+                                {/* docs/42：到達頁渠道篩選——維度選單複用渠道對照分頁既有的
+                                    CHANNEL_DIMENSION_OPTIONS，渠道值選單選了維度後才啟用，
+                                    選項來自 loadLandingChannelValues 抓到的清單。 */}
+                                <div style={{ display: 'flex', gap: '8px', alignItems: 'center', marginBottom: '12px', flexWrap: 'wrap' }}>
+                                    <select
+                                        value={landingChannelDimension}
+                                        onChange={(event) => {
+                                            const nextDimension = event.target.value;
+                                            setLandingChannelDimension(nextDimension);
+                                            setLandingChannelValue('');
+                                            loadLandingChannelValues(propertyId, landingDays, nextDimension);
+                                            loadLandingPages(propertyId, landingDays, landingKeyEvent, nextDimension, '');
+                                        }}
+                                        style={{ ...inputStyle, width: 'auto', padding: '8px 10px' }}
+                                    >
+                                        <option value="">{t('No channel filter', '不篩選渠道')}</option>
+                                        {CHANNEL_DIMENSION_OPTIONS.map((option) => (
+                                            <option key={option.value} value={option.value}>{t(option.en, option.zh)}</option>
+                                        ))}
+                                    </select>
+                                    {landingChannelDimension && (
+                                        <select
+                                            value={landingChannelValue}
+                                            onChange={(event) => {
+                                                const nextValue = event.target.value;
+                                                setLandingChannelValue(nextValue);
+                                                loadLandingPages(propertyId, landingDays, landingKeyEvent, landingChannelDimension, nextValue);
+                                            }}
+                                            disabled={landingChannelValuesLoading}
+                                            style={{ ...inputStyle, width: 'auto', padding: '8px 10px', opacity: landingChannelValuesLoading ? 0.6 : 1 }}
+                                        >
+                                            <option value="">{t('All channel values', '全部渠道')}</option>
+                                            {landingChannelValues.map((value) => (
+                                                <option key={value} value={value}>{value}</option>
+                                            ))}
+                                        </select>
+                                    )}
+                                    {landingChannelValuesLoading && (
+                                        <span style={{ color: 'var(--text-tertiary)', fontSize: '0.76rem' }}>{t('Loading channels…', '載入渠道清單中…')}</span>
+                                    )}
                                 </div>
                                 <div style={{ overflowX: 'auto' }}>
                                     <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.85rem' }}>

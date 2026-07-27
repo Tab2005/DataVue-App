@@ -264,6 +264,108 @@ def test_get_landing_pages_rejects_invalid_key_event_format():
         )
 
 
+# ─── docs/42：到達頁渠道篩選 ──────────────────────────────────────────
+@pytest.mark.unit
+def test_get_landing_pages_with_channel_filter_applies_dimension_filter(mocker, db, sample_user):
+    from modules.ga4.insights_service import GA4InsightsService
+
+    captured_calls = []
+
+    def fake_get_analytics(*, user, property_id, start_date, end_date, metrics, dimensions, db=None, dimension_filter=None, **_):
+        captured_calls.append({"dimensions": dimensions, "dimension_filter": dimension_filter})
+        if dimensions == ["landingPage", "eventName"]:
+            return {"rows": []}, None
+        return {
+            "rows": [{
+                "landingPage": "/products/a", "sessions": 40, "engagementRate": 0.5,
+                "keyEvents": 2, "bounceRate": 0.3, "sessionKeyEventRate": 0.05,
+            }]
+        }, None
+
+    mocker.patch("modules.ga4.insights_service.GA4Service.get_analytics", side_effect=fake_get_analytics)
+
+    snapshot = GA4InsightsService.get_landing_pages(
+        db, user=sample_user, property_id="123456", days=7,
+        channel_dimension="source_medium", channel_value="google / organic",
+    )
+    db.commit()
+
+    # 只取工作階段那一半（sessionSourceMedium），不用 firstUserSourceMedium。
+    assert captured_calls[0]["dimension_filter"] == ("sessionSourceMedium", "google / organic")
+    assert captured_calls[1]["dimension_filter"] == ("sessionSourceMedium", "google / organic")
+    # dimensions（group by）不因為篩選而多帶渠道維度，回傳列的形狀不變。
+    assert captured_calls[0]["dimensions"] == ["landingPage"]
+    assert snapshot.payload["channel_dimension"] == "source_medium"
+    assert snapshot.payload["channel_value"] == "google / organic"
+    assert snapshot.kind.startswith("landing_page:ch_")
+
+
+@pytest.mark.unit
+def test_get_landing_pages_channel_filter_requires_both_params():
+    from modules.ga4.insights_service import GA4InsightsService
+
+    with pytest.raises(ValueError):
+        GA4InsightsService.get_landing_pages(
+            db=None, user=MagicMock(), property_id="123456", days=7,
+            channel_dimension="source_medium", channel_value=None,
+        )
+    with pytest.raises(ValueError):
+        GA4InsightsService.get_landing_pages(
+            db=None, user=MagicMock(), property_id="123456", days=7,
+            channel_dimension=None, channel_value="google / organic",
+        )
+
+
+@pytest.mark.unit
+def test_get_landing_pages_rejects_unsupported_channel_dimension():
+    from modules.ga4.insights_service import GA4InsightsService
+
+    with pytest.raises(ValueError):
+        GA4InsightsService.get_landing_pages(
+            db=None, user=MagicMock(), property_id="123456", days=7,
+            channel_dimension="not_a_real_dimension", channel_value="x",
+        )
+
+
+@pytest.mark.unit
+def test_get_landing_pages_channel_filter_snapshots_are_independent(mocker, db, sample_user):
+    """不同渠道篩選值各自存成獨立快照，互不覆寫（同 key_event 前例）。"""
+    from modules.ga4.insights_service import GA4InsightsService
+    from modules.ga4.repository import repository
+
+    def fake_get_analytics(*, user, property_id, start_date, end_date, metrics, dimensions, db=None, dimension_filter=None, **_):
+        if dimensions == ["landingPage", "eventName"]:
+            return {"rows": []}, None
+        return {
+            "rows": [{
+                "landingPage": "/products/a", "sessions": 10, "engagementRate": 0.5,
+                "keyEvents": 1, "bounceRate": 0.3, "sessionKeyEventRate": 0.1,
+            }]
+        }, None
+
+    mocker.patch("modules.ga4.insights_service.GA4Service.get_analytics", side_effect=fake_get_analytics)
+
+    unfiltered = GA4InsightsService.get_landing_pages(db, user=sample_user, property_id="123456", days=7)
+    db.commit()
+    organic_snapshot = GA4InsightsService.get_landing_pages(
+        db, user=sample_user, property_id="123456", days=7,
+        channel_dimension="source_medium", channel_value="google / organic",
+    )
+    db.commit()
+    paid_snapshot = GA4InsightsService.get_landing_pages(
+        db, user=sample_user, property_id="123456", days=7,
+        channel_dimension="source_medium", channel_value="google / cpc",
+    )
+    db.commit()
+
+    assert len({unfiltered.id, organic_snapshot.id, paid_snapshot.id}) == 3
+    assert unfiltered.kind == "landing_page"
+    assert organic_snapshot.kind != paid_snapshot.kind
+
+    reloaded_unfiltered = repository.get_latest_snapshot(db, property_id="123456", kind="landing_page")
+    assert reloaded_unfiltered.id == unfiltered.id
+
+
 # ─── repository + service：upsert 語意 ──────────────────────────────
 @pytest.mark.unit
 def test_repository_list_landing_page_rules_ordered_by_priority(db, sample_user):
@@ -389,3 +491,48 @@ def test_landing_pages_endpoint_rejects_invalid_key_event_with_422(client, db, s
         params={"property_id": "123456", "days": 7, "key_event": "not valid!"},
     )
     assert resp.status_code == 422
+
+
+# ─── docs/42：到達頁渠道篩選端點 ──────────────────────────────────────
+@pytest.mark.integration
+def test_landing_pages_endpoint_accepts_channel_filter(client, db, sample_user, mocker):
+    _override_dependencies(client.app, sample_user, db)
+    mocker.patch(
+        "modules.ga4.insights_service.GA4Service.get_analytics",
+        return_value=({"rows": [{"landingPage": "/products/x", "sessions": 5, "engagementRate": 0.5, "keyEvents": 1, "bounceRate": 0.2, "sessionKeyEventRate": 0.2}]}, None),
+    )
+
+    resp = client.get(
+        "/api/ga4/insights/landing-pages",
+        params={
+            "property_id": "123456", "days": 7,
+            "channel_dimension": "source_medium", "channel_value": "google / organic",
+        },
+    )
+    assert resp.status_code == 200
+    payload = resp.json()["payload"]
+    assert payload["channel_dimension"] == "source_medium"
+    assert payload["channel_value"] == "google / organic"
+    assert resp.json()["kind"].startswith("landing_page:ch_")
+
+
+@pytest.mark.integration
+def test_landing_pages_endpoint_rejects_unknown_channel_dimension_with_422(client, db, sample_user):
+    _override_dependencies(client.app, sample_user, db)
+
+    resp = client.get(
+        "/api/ga4/insights/landing-pages",
+        params={"property_id": "123456", "days": 7, "channel_dimension": "not_a_real_dimension", "channel_value": "x"},
+    )
+    assert resp.status_code == 422
+
+
+@pytest.mark.integration
+def test_landing_pages_endpoint_rejects_unpaired_channel_filter_with_400(client, db, sample_user):
+    _override_dependencies(client.app, sample_user, db)
+
+    resp = client.get(
+        "/api/ga4/insights/landing-pages",
+        params={"property_id": "123456", "days": 7, "channel_dimension": "source_medium"},
+    )
+    assert resp.status_code == 400

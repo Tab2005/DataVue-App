@@ -108,6 +108,7 @@ def test_ga4_service_get_analytics_forwards_to_analytics_service(mocker):
         limit=10,
         offset=5,
         db="db-session",
+        dimension_filter=None,
     )
     assert result == ({"rows": []}, None)
 
@@ -199,6 +200,75 @@ def test_get_analytics_converts_rows_by_type_and_caches_result(mocker):
     ]
     assert result["property_id"] == "123456"
     mock_cache_set.assert_called_once()
+
+
+@pytest.mark.unit
+def test_get_analytics_applies_dimension_filter_when_provided(mocker):
+    """docs/42：到達頁渠道篩選——dimension_filter 要被組進 RunReportRequest。"""
+    from google.analytics.data_v1beta.types import Filter
+    from modules.ga4.service import GA4AnalyticsService
+
+    mocker.patch("modules.ga4.service.GA4Client.get_credentials", return_value=MagicMock())
+
+    fake_data_client = MagicMock()
+    fake_data_client.run_report.return_value = _FakeReportResponse(
+        [_FakeRow(["/products/foo"], ["10"])]
+    )
+    mocker.patch(
+        "modules.ga4.service.GA4Client.build_data_client", return_value=fake_data_client
+    )
+    mocker.patch("modules.ga4.service.cache_get", return_value=None)
+    mocker.patch("modules.ga4.service.cache_set")
+
+    result, error = GA4AnalyticsService.get_analytics(
+        user=MagicMock(),
+        property_id="123456",
+        start_date="2026-07-01",
+        end_date="2026-07-02",
+        metrics=["sessions"],
+        dimensions=["landingPage"],
+        dimension_filter=("sessionDefaultChannelGroup", "Organic Search"),
+    )
+
+    assert error is None
+    sent_request = fake_data_client.run_report.call_args[0][0]
+    assert sent_request.dimension_filter.filter.field_name == "sessionDefaultChannelGroup"
+    assert sent_request.dimension_filter.filter.string_filter.value == "Organic Search"
+    assert (
+        sent_request.dimension_filter.filter.string_filter.match_type
+        == Filter.StringFilter.MatchType.EXACT
+    )
+
+
+@pytest.mark.unit
+def test_get_analytics_without_dimension_filter_omits_filter_field(mocker):
+    """不帶 dimension_filter 時，RunReportRequest 不應設定 dimension_filter 欄位（向下相容）。"""
+    from modules.ga4.service import GA4AnalyticsService
+
+    mocker.patch("modules.ga4.service.GA4Client.get_credentials", return_value=MagicMock())
+
+    fake_data_client = MagicMock()
+    fake_data_client.run_report.return_value = _FakeReportResponse(
+        [_FakeRow(["/products/foo"], ["10"])]
+    )
+    mocker.patch(
+        "modules.ga4.service.GA4Client.build_data_client", return_value=fake_data_client
+    )
+    mocker.patch("modules.ga4.service.cache_get", return_value=None)
+    mocker.patch("modules.ga4.service.cache_set")
+
+    result, error = GA4AnalyticsService.get_analytics(
+        user=MagicMock(),
+        property_id="123456",
+        start_date="2026-07-01",
+        end_date="2026-07-02",
+        metrics=["sessions"],
+        dimensions=["landingPage"],
+    )
+
+    assert error is None
+    sent_request = fake_data_client.run_report.call_args[0][0]
+    assert "dimension_filter" not in sent_request
 
 
 @pytest.mark.unit

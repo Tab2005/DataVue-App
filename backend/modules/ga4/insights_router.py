@@ -175,6 +175,10 @@ def get_landing_pages(
     property_id: str = Query(...),
     days: int = Query(7, ge=1, le=90),
     key_event: str | None = Query(None, pattern=r"^[A-Za-z0-9_]{1,40}$"),
+    # docs/42：到達頁渠道篩選。兩者是否成對提供由 service 層驗證（ValueError
+    # 統一在下面轉成 400），這裡只負責型別/白名單/長度層級的基本驗證。
+    channel_dimension: ChannelDimension | None = Query(None),
+    channel_value: str | None = Query(None, max_length=100),
     user=Depends(get_current_user),
     _module: bool = Depends(require_ga4_module),
     _perm: bool = Depends(require_ga4_insights_view),
@@ -182,7 +186,8 @@ def get_landing_pages(
 ):
     try:
         snapshot = GA4InsightsService.get_landing_pages(
-            db, user=user, property_id=property_id, days=days, key_event=key_event
+            db, user=user, property_id=property_id, days=days, key_event=key_event,
+            channel_dimension=channel_dimension, channel_value=channel_value,
         )
     except (RuntimeError, ValueError) as exc:
         raise HTTPException(status_code=400, detail=str(exc))
