@@ -588,7 +588,23 @@ export const IntradayMetricCard = ({ language, metricKey, hourlyTotals, baseline
     return (
         <div className="ga4-insights-chart-root" style={baseCardStyle}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: '4px' }}>
-                <div style={{ fontWeight: 700, color: 'var(--text-primary)' }}>{label}</div>
+                <div style={{ fontWeight: 700, color: 'var(--text-primary)' }}>
+                    {label}
+                    {/* docs/48：GA4 官方 conversions 是「所有被標記為關鍵事件的事件」總和
+                        （在 GA4 後台設定，不是我們系統決定的），常見情境是加入購物車也被
+                        標成關鍵事件、跟購買混在一起算，容易被誤以為這裡只算購買轉換。 */}
+                    {metricKey === 'conversions' && (
+                        <span
+                            style={{ cursor: 'help', marginLeft: '4px', color: 'var(--text-tertiary)', fontSize: '0.8rem', fontWeight: 400 }}
+                            title={t(
+                                'GA4 "Conversions" sums every event marked as a key event in this property\'s GA4 settings — it may include add-to-cart, sign-up, etc., not just purchases.',
+                                '此為 GA4「關鍵事件」總和，加總的是你在 GA4 後台標記為關鍵事件的所有事件，可能包含加入購物車、註冊等，不一定只是購買轉換。'
+                            )}
+                        >
+                            ⓘ
+                        </span>
+                    )}
+                </div>
                 {isAnomaly && (
                     <span style={badgeStyle('flagged')}>{t('Unusual', '異常')}</span>
                 )}
