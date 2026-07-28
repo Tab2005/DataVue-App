@@ -126,6 +126,22 @@ const GA4Insights = () => {
     const [itemsSortKey, setItemsSortKey] = useState(null);
     const [itemsSortDirection, setItemsSortDirection] = useState('desc');
 
+    // docs/45：商品渠道篩選，比照到達頁（42+44）同一套維度／渠道值／自訂
+    // 分組三個下拉＋規則管理面板；渠道分組規則跨分頁共用（綁維度不綁分頁）。
+    const [itemsChannelDimension, setItemsChannelDimension] = useState('');
+    const [itemsChannelValue, setItemsChannelValue] = useState('');
+    const [itemsChannelValues, setItemsChannelValues] = useState([]);
+    const [itemsChannelValuesLoading, setItemsChannelValuesLoading] = useState(false);
+    const [itemsChannelGroup, setItemsChannelGroup] = useState('');
+    const [itemsChannelGroups, setItemsChannelGroups] = useState([]);
+    const [itemsChannelGroupsLoading, setItemsChannelGroupsLoading] = useState(false);
+    const [itemsChannelGroupRulesOpen, setItemsChannelGroupRulesOpen] = useState(false);
+    const [itemsChannelGroupRules, setItemsChannelGroupRules] = useState(null);
+    const [itemsChannelGroupRulesLoading, setItemsChannelGroupRulesLoading] = useState(false);
+    const [itemsChannelGroupRulesError, setItemsChannelGroupRulesError] = useState('');
+    const [itemsChannelGroupRuleSaving, setItemsChannelGroupRuleSaving] = useState(false);
+    const [itemsChannelGroupRuleForm, setItemsChannelGroupRuleForm] = useState({ group_label: '', match_type: 'contains', pattern: '', priority: 0 });
+
     // 第 7 波：商品分類補充規則（GA4 itemCategory 缺值時的補充來源）
     const [itemCategoryRules, setItemCategoryRules] = useState(null);
     const [itemCategoryRulesOpen, setItemCategoryRulesOpen] = useState(false);
@@ -396,16 +412,113 @@ const GA4Insights = () => {
         }
     };
 
-    const loadItems = async (pid, days) => {
+    const loadItems = async (
+        pid, days,
+        channelDimension = itemsChannelDimension,
+        channelValue = itemsChannelValue,
+        channelGroup = itemsChannelGroup,
+    ) => {
         if (!pid) return;
         setItemsLoading(true);
         setItemsError('');
         try {
-            setItemsSnapshot(await ga4InsightsService.getItems(pid, days));
+            setItemsSnapshot(
+                await ga4InsightsService.getItems(
+                    pid, days, channelDimension || null, channelValue || null, channelGroup || null
+                )
+            );
         } catch (err) {
             setItemsError(err.message || t('Failed to load item insights.', '載入商品分析失敗。'));
         } finally {
             setItemsLoading(false);
+        }
+    };
+
+    // docs/45：渠道值清單——沿用到達頁既有作法，複用渠道對照端點取實際
+    // 存在的渠道值，不用另開新端點。
+    const loadItemsChannelValues = async (pid, days, dimension) => {
+        if (!pid || !dimension) {
+            setItemsChannelValues([]);
+            return;
+        }
+        setItemsChannelValuesLoading(true);
+        try {
+            const res = await ga4InsightsService.getChannels(pid, days, dimension);
+            setItemsChannelValues((res.payload?.channels || []).map((c) => c.channel).filter(Boolean));
+        } catch (err) {
+            setItemsError(err.message || t('Failed to load channel values.', '載入渠道清單失敗。'));
+        } finally {
+            setItemsChannelValuesLoading(false);
+        }
+    };
+
+    // docs/45：自訂分組清單——渠道分組規則綁定維度、不綁分頁，到達頁跟
+    // 商品分頁共用同一批規則，這裡只是重新用目前選的維度查一次。
+    const loadItemsChannelGroups = async (pid, dimension) => {
+        if (!pid || !dimension) {
+            setItemsChannelGroups([]);
+            return;
+        }
+        setItemsChannelGroupsLoading(true);
+        try {
+            const res = await ga4InsightsService.listChannelGroups(pid, dimension);
+            setItemsChannelGroups(res.groups || []);
+        } catch (err) {
+            setItemsError(err.message || t('Failed to load channel groups.', '載入自訂分組失敗。'));
+        } finally {
+            setItemsChannelGroupsLoading(false);
+        }
+    };
+
+    const loadItemsChannelGroupRules = async (pid, dimension) => {
+        if (!pid || !dimension) {
+            setItemsChannelGroupRules([]);
+            return;
+        }
+        setItemsChannelGroupRulesLoading(true);
+        setItemsChannelGroupRulesError('');
+        try {
+            const res = await ga4InsightsService.listChannelGroupRules(pid, dimension);
+            setItemsChannelGroupRules(res.rules || []);
+        } catch (err) {
+            setItemsChannelGroupRulesError(err.message || t('Failed to load channel group rules.', '載入渠道分組規則失敗。'));
+        } finally {
+            setItemsChannelGroupRulesLoading(false);
+        }
+    };
+
+    const handleCreateItemsChannelGroupRule = async (event) => {
+        event.preventDefault();
+        if (!propertyId || !itemsChannelDimension || !itemsChannelGroupRuleForm.group_label.trim() || !itemsChannelGroupRuleForm.pattern.trim()) return;
+        setItemsChannelGroupRuleSaving(true);
+        setItemsChannelGroupRulesError('');
+        try {
+            await ga4InsightsService.upsertChannelGroupRule({
+                property_id: propertyId,
+                channel_dimension: itemsChannelDimension,
+                group_label: itemsChannelGroupRuleForm.group_label.trim(),
+                match_type: itemsChannelGroupRuleForm.match_type,
+                pattern: itemsChannelGroupRuleForm.pattern.trim(),
+                priority: Number(itemsChannelGroupRuleForm.priority) || 0,
+            });
+            setItemsChannelGroupRuleForm((prev) => ({ ...prev, group_label: '', pattern: '' }));
+            await loadItemsChannelGroupRules(propertyId, itemsChannelDimension);
+            await loadItemsChannelGroups(propertyId, itemsChannelDimension);
+        } catch (err) {
+            setItemsChannelGroupRulesError(err.message || t('Failed to save rule.', '儲存規則失敗。'));
+        } finally {
+            setItemsChannelGroupRuleSaving(false);
+        }
+    };
+
+    const handleDeleteItemsChannelGroupRule = async (ruleId) => {
+        if (!window.confirm(t('Delete this channel group rule?', '要刪除此渠道分組規則嗎？'))) return;
+        try {
+            await ga4InsightsService.deleteChannelGroupRule(ruleId);
+            await loadItemsChannelGroupRules(propertyId, itemsChannelDimension);
+            await loadItemsChannelGroups(propertyId, itemsChannelDimension);
+        } catch (err) {
+            setItemsChannelGroupRulesError(err.message || t('Failed to delete rule.', '刪除規則失敗。'));
         }
     };
 
@@ -864,6 +977,29 @@ const GA4Insights = () => {
                     setItemsCategoryFilter={setItemsCategoryFilter}
                     itemsSearchQuery={itemsSearchQuery}
                     setItemsSearchQuery={setItemsSearchQuery}
+                    itemsChannelDimension={itemsChannelDimension}
+                    setItemsChannelDimension={setItemsChannelDimension}
+                    itemsChannelValue={itemsChannelValue}
+                    setItemsChannelValue={setItemsChannelValue}
+                    itemsChannelValues={itemsChannelValues}
+                    itemsChannelValuesLoading={itemsChannelValuesLoading}
+                    loadItemsChannelValues={loadItemsChannelValues}
+                    itemsChannelGroup={itemsChannelGroup}
+                    setItemsChannelGroup={setItemsChannelGroup}
+                    itemsChannelGroups={itemsChannelGroups}
+                    itemsChannelGroupsLoading={itemsChannelGroupsLoading}
+                    loadItemsChannelGroups={loadItemsChannelGroups}
+                    itemsChannelGroupRulesOpen={itemsChannelGroupRulesOpen}
+                    setItemsChannelGroupRulesOpen={setItemsChannelGroupRulesOpen}
+                    itemsChannelGroupRules={itemsChannelGroupRules}
+                    itemsChannelGroupRulesLoading={itemsChannelGroupRulesLoading}
+                    itemsChannelGroupRulesError={itemsChannelGroupRulesError}
+                    loadItemsChannelGroupRules={loadItemsChannelGroupRules}
+                    handleCreateItemsChannelGroupRule={handleCreateItemsChannelGroupRule}
+                    handleDeleteItemsChannelGroupRule={handleDeleteItemsChannelGroupRule}
+                    itemsChannelGroupRuleForm={itemsChannelGroupRuleForm}
+                    setItemsChannelGroupRuleForm={setItemsChannelGroupRuleForm}
+                    itemsChannelGroupRuleSaving={itemsChannelGroupRuleSaving}
                     DaySelector={DaySelector}
                     renderItemsSortHeader={renderItemsSortHeader}
                     sortedItemsRows={sortedItemsRows}

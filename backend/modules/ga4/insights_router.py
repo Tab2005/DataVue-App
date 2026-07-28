@@ -352,14 +352,23 @@ def list_channel_groups(
 def get_items(
     property_id: str = Query(...),
     days: int = Query(7, ge=1, le=90),
+    # docs/45：商品渠道篩選，比照到達頁（42+44），channel_value/channel_group
+    # 互斥的驗證在 service 層做（ValueError 統一轉 400）。
+    channel_dimension: ChannelDimension | None = Query(None),
+    channel_value: str | None = Query(None, max_length=100),
+    channel_group: str | None = Query(None, max_length=100),
     user=Depends(get_current_user),
     _module: bool = Depends(require_ga4_module),
     _perm: bool = Depends(require_ga4_insights_view),
     db=Depends(get_db),
 ):
     try:
-        snapshot = GA4InsightsService.get_items(db, user=user, property_id=property_id, days=days)
-    except RuntimeError as exc:
+        snapshot = GA4InsightsService.get_items(
+            db, user=user, property_id=property_id, days=days,
+            channel_dimension=channel_dimension, channel_value=channel_value,
+            channel_group=channel_group,
+        )
+    except (RuntimeError, ValueError) as exc:
         raise HTTPException(status_code=400, detail=str(exc))
     db.commit()
     db.refresh(snapshot)

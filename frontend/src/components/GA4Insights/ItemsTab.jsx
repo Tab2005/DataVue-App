@@ -2,6 +2,8 @@ import React, { useEffect, useMemo, useState } from 'react';
 
 import {
     AIInsightNote,
+    CHANNEL_DIMENSION_OPTIONS,
+    CHANNEL_GROUP_MATCH_TYPE_OPTIONS,
     ITEM_CATEGORY_SOURCE_LABELS,
     LANDING_MATCH_TYPE_OPTIONS,
     TablePager,
@@ -33,6 +35,29 @@ const ItemsTab = ({
     setItemsCategoryFilter,
     itemsSearchQuery,
     setItemsSearchQuery,
+    itemsChannelDimension,
+    setItemsChannelDimension,
+    itemsChannelValue,
+    setItemsChannelValue,
+    itemsChannelValues,
+    itemsChannelValuesLoading,
+    loadItemsChannelValues,
+    itemsChannelGroup,
+    setItemsChannelGroup,
+    itemsChannelGroups,
+    itemsChannelGroupsLoading,
+    loadItemsChannelGroups,
+    itemsChannelGroupRulesOpen,
+    setItemsChannelGroupRulesOpen,
+    itemsChannelGroupRules,
+    itemsChannelGroupRulesLoading,
+    itemsChannelGroupRulesError,
+    loadItemsChannelGroupRules,
+    handleCreateItemsChannelGroupRule,
+    handleDeleteItemsChannelGroupRule,
+    itemsChannelGroupRuleForm,
+    setItemsChannelGroupRuleForm,
+    itemsChannelGroupRuleSaving,
     DaySelector,
     renderItemsSortHeader,
     sortedItemsRows,
@@ -79,14 +104,18 @@ const ItemsTab = ({
                                 <div
                                     style={{ color: 'var(--text-secondary)', fontSize: '0.8rem', cursor: 'help' }}
                                     title={t(
-                                        'Always compares the last 7 days vs. the prior 7 days, independent of the date range above. Items with a small prior base can swing wildly — cross-check the raw counts.',
-                                        '固定比較近 7 天 vs 前 7 天，與上方期間選擇無關；前期瀏覽極少的商品成長率波動大，請搭配原始次數判讀。'
+                                        'Always compares the last 7 days vs. the prior 7 days, independent of the date range above and of the channel filter below. Items with a small prior base can swing wildly — cross-check the raw counts.',
+                                        '固定比較近 7 天 vs 前 7 天，與上方期間選擇及下方渠道篩選皆無關（全渠道成長趨勢）；前期瀏覽極少的商品成長率波動大，請搭配原始次數判讀。'
                                     )}
                                 >
-                                    {t('View growth compares the last 7 days vs. the prior 7 days.', '瀏覽成長比較固定用近 7 天 vs 前 7 天。')} ⓘ
+                                    {t('View growth compares the last 7 days vs. the prior 7 days (all channels).', '瀏覽成長比較固定用近 7 天 vs 前 7 天（全渠道，不受下方篩選影響）。')} ⓘ
                                 </div>
                             </div>
-                            <DaySelector value={itemsDays} onChange={(d) => { setItemsDays(d); loadItems(propertyId, d); }} />
+                            <DaySelector value={itemsDays} onChange={(d) => {
+                                setItemsDays(d);
+                                loadItems(propertyId, d);
+                                if (itemsChannelDimension) loadItemsChannelValues(propertyId, d, itemsChannelDimension);
+                            }} />
                         </div>
                         {itemsError && <div style={{ color: '#fca5a5', fontSize: '0.85rem', marginBottom: '10px' }}>{itemsError}</div>}
                         {itemsSnapshot?.payload?.used_fallback_conversion_metrics && (
@@ -109,7 +138,7 @@ const ItemsTab = ({
                             emptyState(t('Loading items…', '載入商品資料中…'))
                         ) : itemsSnapshot?.payload?.items?.length ? (
                             <>
-                                <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap', marginBottom: '12px', alignItems: 'center' }}>
+                                <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', marginBottom: '12px', alignItems: 'center' }}>
                                     <select
                                         value={itemsCategoryFilter}
                                         onChange={(event) => setItemsCategoryFilter(event.target.value)}
@@ -129,6 +158,70 @@ const ItemsTab = ({
                                         placeholder={t('Search item name…', '搜尋商品名稱…')}
                                         style={{ ...inputStyle, width: 'auto', padding: '8px 10px' }}
                                     />
+                                    <span style={{ width: '1px', alignSelf: 'stretch', background: 'var(--glass-border)', margin: '0 2px' }} />
+                                    {/* docs/45：渠道篩選只影響主表格（瀏覽/加購/購買數與比率），不影響
+                                        上方瀏覽成長比較與商品分類拆解，已在表頭 ⓘ 提示標注。三個下拉跟
+                                        到達頁分頁同一套邏輯：渠道值／自訂分組互斥，選了維度才顯示後兩個。 */}
+                                    <select
+                                        value={itemsChannelDimension}
+                                        onChange={(event) => {
+                                            const nextDimension = event.target.value;
+                                            setItemsChannelDimension(nextDimension);
+                                            setItemsChannelValue('');
+                                            setItemsChannelGroup('');
+                                            loadItemsChannelValues(propertyId, itemsDays, nextDimension);
+                                            loadItemsChannelGroups(propertyId, nextDimension);
+                                            if (itemsChannelGroupRulesOpen) loadItemsChannelGroupRules(propertyId, nextDimension);
+                                            loadItems(propertyId, itemsDays, nextDimension, '', '');
+                                        }}
+                                        style={{ ...inputStyle, width: 'auto', padding: '8px 10px' }}
+                                    >
+                                        <option value="">{t('No channel filter', '不篩選渠道')}</option>
+                                        {CHANNEL_DIMENSION_OPTIONS.map((option) => (
+                                            <option key={option.value} value={option.value}>{t(option.en, option.zh)}</option>
+                                        ))}
+                                    </select>
+                                    {itemsChannelDimension && (
+                                        <select
+                                            value={itemsChannelValue}
+                                            onChange={(event) => {
+                                                const nextValue = event.target.value;
+                                                setItemsChannelValue(nextValue);
+                                                setItemsChannelGroup('');
+                                                loadItems(propertyId, itemsDays, itemsChannelDimension, nextValue, '');
+                                            }}
+                                            disabled={itemsChannelValuesLoading}
+                                            style={{ ...inputStyle, width: 'auto', padding: '8px 10px', opacity: itemsChannelValuesLoading ? 0.6 : 1 }}
+                                        >
+                                            <option value="">{t('All channel values', '全部渠道')}</option>
+                                            {itemsChannelValues.map((value) => (
+                                                <option key={value} value={value}>{value}</option>
+                                            ))}
+                                        </select>
+                                    )}
+                                    {itemsChannelDimension && (
+                                        <select
+                                            value={itemsChannelGroup}
+                                            onChange={(event) => {
+                                                const nextGroup = event.target.value;
+                                                setItemsChannelGroup(nextGroup);
+                                                setItemsChannelValue('');
+                                                loadItems(propertyId, itemsDays, itemsChannelDimension, '', nextGroup);
+                                            }}
+                                            disabled={itemsChannelGroupsLoading}
+                                            style={{ ...inputStyle, width: 'auto', padding: '8px 10px', opacity: itemsChannelGroupsLoading ? 0.6 : 1 }}
+                                        >
+                                            <option value="">{t('No custom group', '不用自訂分組')}</option>
+                                            {itemsChannelGroups.map((group) => (
+                                                <option key={group.group_label} value={group.group_label}>
+                                                    {group.group_label} ({group.rule_count})
+                                                </option>
+                                            ))}
+                                        </select>
+                                    )}
+                                    {(itemsChannelValuesLoading || itemsChannelGroupsLoading) && (
+                                        <span style={{ color: 'var(--text-tertiary)', fontSize: '0.76rem' }}>{t('Loading channels…', '載入渠道清單中…')}</span>
+                                    )}
                                 </div>
                                 <div style={{ overflowX: 'auto' }}>
                                     <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.85rem' }}>
@@ -279,6 +372,110 @@ const ItemsTab = ({
                                     <div style={{ color: 'var(--text-tertiary)', fontSize: '0.78rem' }}>
                                         {t('You do not have permission to manage category rules.', '您沒有管理分類規則的權限。')}
                                     </div>
+                                )}
+                            </div>
+                        )}
+                    </section>
+
+                    {/* docs/45：渠道分組規則管理面板，複用到達頁分頁同一套規則（綁維度
+                        不綁分頁），沿用上方篩選列已選的「維度」，未選維度時提示先選維度。 */}
+                    <section style={baseCardStyle}>
+                        <button
+                            type="button"
+                            onClick={() => {
+                                const next = !itemsChannelGroupRulesOpen;
+                                setItemsChannelGroupRulesOpen(next);
+                                if (next && itemsChannelDimension) {
+                                    loadItemsChannelGroupRules(propertyId, itemsChannelDimension);
+                                }
+                            }}
+                            style={{ ...secondaryButtonStyle, width: '100%', textAlign: 'left', display: 'flex', justifyContent: 'space-between' }}
+                        >
+                            <span>{t('Channel group rules', '渠道分組規則')}</span>
+                            <span>{itemsChannelGroupRulesOpen ? '▲' : '▼'}</span>
+                        </button>
+                        {itemsChannelGroupRulesOpen && (
+                            <div style={{ marginTop: '14px', display: 'grid', gap: '14px' }}>
+                                {!itemsChannelDimension ? (
+                                    <div style={{ color: 'var(--text-tertiary)', fontSize: '0.82rem' }}>
+                                        {t('Select a channel dimension above first to manage its group rules.', '請先在上方篩選列選擇一個渠道維度，才能管理該維度的分組規則。')}
+                                    </div>
+                                ) : (
+                                    <>
+                                        <div style={{ color: 'var(--text-tertiary)', fontSize: '0.78rem' }}>
+                                            {t(
+                                                'Rules are shared with the Landing pages tab (bound to the dimension, not the tab).',
+                                                '規則跟「到達頁分析」分頁共用（綁定維度，不綁分頁）。'
+                                            )}
+                                        </div>
+                                        {itemsChannelGroupRulesError && <div style={{ color: '#fca5a5', fontSize: '0.85rem' }}>{itemsChannelGroupRulesError}</div>}
+                                        {itemsChannelGroupRulesLoading && !itemsChannelGroupRules ? (
+                                            emptyState(t('Loading rules…', '載入規則中…'))
+                                        ) : itemsChannelGroupRules && itemsChannelGroupRules.length === 0 ? (
+                                            <div style={{ color: 'var(--text-tertiary)', fontSize: '0.82rem' }}>
+                                                {t('No custom group rules yet for this dimension.', '這個維度目前沒有自訂分組規則。')}
+                                            </div>
+                                        ) : (
+                                            <div style={{ display: 'grid', gap: '8px' }}>
+                                                {(itemsChannelGroupRules || []).map((rule) => (
+                                                    <div key={rule.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', border: '1px solid var(--glass-border)', borderRadius: '10px', padding: '10px 12px', gap: '8px', flexWrap: 'wrap' }}>
+                                                        <div style={{ display: 'flex', gap: '10px', alignItems: 'center', flexWrap: 'wrap' }}>
+                                                            <span style={badgeStyle('product')}>{rule.group_label}</span>
+                                                            <span style={{ color: 'var(--text-secondary)', fontSize: '0.82rem' }}>
+                                                                {tr(language, CHANNEL_GROUP_MATCH_TYPE_OPTIONS.find((m) => m.value === rule.match_type)?.en, CHANNEL_GROUP_MATCH_TYPE_OPTIONS.find((m) => m.value === rule.match_type)?.zh)}
+                                                            </span>
+                                                            <code style={{ color: 'var(--text-primary)', fontSize: '0.82rem' }}>{rule.pattern}</code>
+                                                            <span style={{ color: 'var(--text-tertiary)', fontSize: '0.76rem' }}>{t('priority', '優先序')} {rule.priority}</span>
+                                                        </div>
+                                                        {canManageGa4InsightsRules && (
+                                                            <button type="button" style={{ ...secondaryButtonStyle, padding: '4px 10px', fontSize: '0.78rem' }} onClick={() => handleDeleteItemsChannelGroupRule(rule.id)}>
+                                                                {t('Delete', '刪除')}
+                                                            </button>
+                                                        )}
+                                                    </div>
+                                                ))}
+                                            </div>
+                                        )}
+
+                                        {canManageGa4InsightsRules ? (
+                                            <form onSubmit={handleCreateItemsChannelGroupRule} style={{ display: 'grid', gap: '10px', gridTemplateColumns: isMobile ? '1fr' : 'repeat(5, minmax(0, 1fr))' }}>
+                                                <input
+                                                    type="text"
+                                                    value={itemsChannelGroupRuleForm.group_label}
+                                                    onChange={(event) => setItemsChannelGroupRuleForm((prev) => ({ ...prev, group_label: event.target.value }))}
+                                                    placeholder={t('Group name (e.g. Facebook Ads)', '分組名稱（例：Facebook 付費廣告）')}
+                                                    style={inputStyle}
+                                                />
+                                                <select value={itemsChannelGroupRuleForm.match_type} onChange={(event) => setItemsChannelGroupRuleForm((prev) => ({ ...prev, match_type: event.target.value }))} style={inputStyle}>
+                                                    {CHANNEL_GROUP_MATCH_TYPE_OPTIONS.map((option) => (
+                                                        <option key={option.value} value={option.value}>{t(option.en, option.zh)}</option>
+                                                    ))}
+                                                </select>
+                                                <input
+                                                    type="text"
+                                                    value={itemsChannelGroupRuleForm.pattern}
+                                                    onChange={(event) => setItemsChannelGroupRuleForm((prev) => ({ ...prev, pattern: event.target.value }))}
+                                                    placeholder={t('Pattern (e.g. facebook / cpc)', '比對字串（例：facebook / cpc）')}
+                                                    style={inputStyle}
+                                                />
+                                                <input
+                                                    type="number"
+                                                    min="0"
+                                                    value={itemsChannelGroupRuleForm.priority}
+                                                    onChange={(event) => setItemsChannelGroupRuleForm((prev) => ({ ...prev, priority: event.target.value }))}
+                                                    placeholder={t('Priority', '優先序')}
+                                                    style={inputStyle}
+                                                />
+                                                <button type="submit" style={buttonStyle} disabled={itemsChannelGroupRuleSaving || !itemsChannelGroupRuleForm.group_label.trim() || !itemsChannelGroupRuleForm.pattern.trim()}>
+                                                    {itemsChannelGroupRuleSaving ? t('Saving…', '儲存中…') : t('Add rule', '新增規則')}
+                                                </button>
+                                            </form>
+                                        ) : (
+                                            <div style={{ color: 'var(--text-tertiary)', fontSize: '0.78rem' }}>
+                                                {t('You do not have permission to manage classification rules.', '您沒有管理分類規則的權限。')}
+                                            </div>
+                                        )}
+                                    </>
                                 )}
                             </div>
                         )}

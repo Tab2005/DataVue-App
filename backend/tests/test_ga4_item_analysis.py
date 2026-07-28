@@ -9,6 +9,8 @@ GA4 商品分析篩選＋購買轉換率＋口徑對齊驗證（docs/22 第 6 �
 - `views_recent_7d`/`views_prior_7d` 進 payload 且與成長率一致
 - 向後相容欄位檢查
 """
+from unittest.mock import MagicMock
+
 import pytest
 
 from modules.ga4.dependencies import (
@@ -286,6 +288,186 @@ def test_get_items_includes_raw_view_counts_for_growth_rate(mocker, db, sample_u
     assert row["views_growth_rate"] == pytest.approx((40 - 10) / 10)
 
 
+# ─── docs/45：商品渠道篩選（比照到達頁 42+44，僅套用在主查詢） ────────
+@pytest.mark.unit
+def test_get_items_with_channel_filter_applies_dimension_filter_to_main_query_only(mocker, db, sample_user):
+    from modules.ga4.insights_service import GA4InsightsService
+
+    captured_calls = []
+    main_rows = [{
+        "itemName": "P1", "itemsViewed": 100, "itemsAddedToCart": 20, "itemsPurchased": 5,
+        "itemRevenue": 500.0, "cartToViewRate": 0.2, "purchaseToViewRate": 0.05,
+    }]
+
+    def fake_get_analytics(*, user, property_id, start_date, end_date, metrics, dimensions, db=None, dimension_filter=None, **_):
+        captured_calls.append({"metrics": metrics, "dimensions": dimensions, "dimension_filter": dimension_filter})
+        if dimensions == ["itemName", "itemCategory"]:
+            return {"rows": []}, None
+        if metrics == ["itemsViewed"] and dimensions == ["itemName"]:
+            return {"rows": []}, None
+        return {"rows": main_rows}, None
+
+    mocker.patch("modules.ga4.insights_service.GA4Service.get_analytics", side_effect=fake_get_analytics)
+
+    snapshot = GA4InsightsService.get_items(
+        db, user=sample_user, property_id="123456", days=7,
+        channel_dimension="source_medium", channel_value="google / organic",
+    )
+    db.commit()
+
+    main_calls = [c for c in captured_calls if c["dimensions"] == ["itemName"] and c["metrics"] != ["itemsViewed"]]
+    growth_calls = [c for c in captured_calls if c["metrics"] == ["itemsViewed"] and c["dimensions"] == ["itemName"]]
+    breakdown_calls = [c for c in captured_calls if c["dimensions"] == ["itemName", "itemCategory"]]
+
+    # 主查詢有套渠道篩選；瀏覽成長比較（近7天/前7天）與分類拆解維持全渠道
+    # 不受篩選影響（跟使用者確認過的範圍，避免全渠道成長被誤讀成該渠道表現）。
+    assert main_calls and all(c["dimension_filter"] == ("sessionSourceMedium", "google / organic") for c in main_calls)
+    assert growth_calls and all(c["dimension_filter"] is None for c in growth_calls)
+    assert breakdown_calls and all(c["dimension_filter"] is None for c in breakdown_calls)
+    assert snapshot.payload["channel_dimension"] == "source_medium"
+    assert snapshot.payload["channel_value"] == "google / organic"
+    assert snapshot.kind.startswith("item:ch_")
+
+
+@pytest.mark.unit
+def test_get_items_channel_filter_requires_both_params():
+    from modules.ga4.insights_service import GA4InsightsService
+
+    with pytest.raises(ValueError):
+        GA4InsightsService.get_items(
+            db=None, user=MagicMock(), property_id="123456", days=7,
+            channel_dimension="source_medium", channel_value=None,
+        )
+    with pytest.raises(ValueError):
+        GA4InsightsService.get_items(
+            db=None, user=MagicMock(), property_id="123456", days=7,
+            channel_dimension=None, channel_value="google / organic",
+        )
+
+
+@pytest.mark.unit
+def test_get_items_rejects_unsupported_channel_dimension():
+    from modules.ga4.insights_service import GA4InsightsService
+
+    with pytest.raises(ValueError):
+        GA4InsightsService.get_items(
+            db=None, user=MagicMock(), property_id="123456", days=7,
+            channel_dimension="not_a_real_dimension", channel_value="x",
+        )
+
+
+@pytest.mark.unit
+def test_get_items_with_channel_group_applies_or_filter(mocker, db, sample_user):
+    from modules.ga4.insights_service import GA4InsightsService
+
+    GA4InsightsService.upsert_channel_group_rule(
+        db, rule_id=None, user_id=sample_user.id, property_id="123456",
+        channel_dimension="source_medium", group_label="Facebook Ads",
+        match_type="contains", pattern="facebook / cpc", priority=0,
+    )
+    GA4InsightsService.upsert_channel_group_rule(
+        db, rule_id=None, user_id=sample_user.id, property_id="123456",
+        channel_dimension="source_medium", group_label="Facebook Ads",
+        match_type="prefix", pattern="facebook / post", priority=1,
+    )
+    db.commit()
+
+    captured_main_filters = []
+    main_rows = [{
+        "itemName": "P1", "itemsViewed": 100, "itemsAddedToCart": 20, "itemsPurchased": 5,
+        "itemRevenue": 500.0, "cartToViewRate": 0.2, "purchaseToViewRate": 0.05,
+    }]
+
+    def fake_get_analytics(*, user, property_id, start_date, end_date, metrics, dimensions, db=None, dimension_filter=None, **_):
+        if dimensions == ["itemName", "itemCategory"]:
+            return {"rows": []}, None
+        if metrics == ["itemsViewed"] and dimensions == ["itemName"]:
+            return {"rows": []}, None
+        captured_main_filters.append(dimension_filter)
+        return {"rows": main_rows}, None
+
+    mocker.patch("modules.ga4.insights_service.GA4Service.get_analytics", side_effect=fake_get_analytics)
+
+    snapshot = GA4InsightsService.get_items(
+        db, user=sample_user, property_id="123456", days=7,
+        channel_dimension="source_medium", channel_group="Facebook Ads",
+    )
+    db.commit()
+
+    expected_filter = [
+        ("sessionSourceMedium", "contains", "facebook / cpc"),
+        ("sessionSourceMedium", "prefix", "facebook / post"),
+    ]
+    assert captured_main_filters and all(f == expected_filter for f in captured_main_filters)
+    assert snapshot.payload["channel_group"] == "Facebook Ads"
+    assert snapshot.payload["channel_value"] is None
+    assert snapshot.kind.startswith("item:chg_")
+
+
+@pytest.mark.unit
+def test_get_items_channel_group_and_value_are_mutually_exclusive():
+    from modules.ga4.insights_service import GA4InsightsService
+
+    with pytest.raises(ValueError):
+        GA4InsightsService.get_items(
+            db=None, user=MagicMock(), property_id="123456", days=7,
+            channel_dimension="source_medium", channel_value="google / organic", channel_group="Facebook Ads",
+        )
+
+
+@pytest.mark.unit
+def test_get_items_rejects_unknown_channel_group(db, sample_user):
+    from modules.ga4.insights_service import GA4InsightsService
+
+    with pytest.raises(ValueError):
+        GA4InsightsService.get_items(
+            db=db, user=sample_user, property_id="123456", days=7,
+            channel_dimension="source_medium", channel_group="Does Not Exist",
+        )
+
+
+@pytest.mark.unit
+def test_get_items_channel_group_and_value_snapshots_are_independent(mocker, db, sample_user):
+    """精確值篩選（ch_ 前綴）跟自訂分組篩選（chg_ 前綴）各自存成獨立快照。"""
+    from modules.ga4.insights_service import GA4InsightsService
+
+    GA4InsightsService.upsert_channel_group_rule(
+        db, rule_id=None, user_id=sample_user.id, property_id="123456",
+        channel_dimension="source_medium", group_label="Facebook Ads",
+        match_type="contains", pattern="facebook", priority=0,
+    )
+    db.commit()
+
+    main_rows = [{
+        "itemName": "P1", "itemsViewed": 100, "itemsAddedToCart": 20, "itemsPurchased": 5,
+        "itemRevenue": 500.0, "cartToViewRate": 0.2, "purchaseToViewRate": 0.05,
+    }]
+
+    def fake_get_analytics(*, user, property_id, start_date, end_date, metrics, dimensions, db=None, **_):
+        if dimensions == ["itemName", "itemCategory"]:
+            return {"rows": []}, None
+        if metrics == ["itemsViewed"] and dimensions == ["itemName"]:
+            return {"rows": []}, None
+        return {"rows": main_rows}, None
+
+    mocker.patch("modules.ga4.insights_service.GA4Service.get_analytics", side_effect=fake_get_analytics)
+
+    value_snapshot = GA4InsightsService.get_items(
+        db, user=sample_user, property_id="123456", days=7,
+        channel_dimension="source_medium", channel_value="facebook / cpc",
+    )
+    db.commit()
+    group_snapshot = GA4InsightsService.get_items(
+        db, user=sample_user, property_id="123456", days=7,
+        channel_dimension="source_medium", channel_group="Facebook Ads",
+    )
+    db.commit()
+
+    assert value_snapshot.id != group_snapshot.id
+    assert value_snapshot.kind.startswith("item:ch_")
+    assert group_snapshot.kind.startswith("item:chg_")
+
+
 # ─── router：端點行為與序列化契約 ───────────────────────────────────
 @pytest.mark.integration
 def test_items_endpoint_response_includes_new_fields(client, db, sample_user, mocker):
@@ -312,3 +494,66 @@ def test_items_endpoint_response_includes_new_fields(client, db, sample_user, mo
     assert payload["items"][0]["cart_to_view_rate"] == 0.2
     assert payload["category_counts"] == {"Apparel": 1}
     assert payload["used_fallback_conversion_metrics"] is False
+
+
+@pytest.mark.integration
+def test_items_endpoint_accepts_channel_value_and_channel_group(client, db, sample_user, mocker):
+    _override_dependencies(client.app, sample_user, db)
+    from modules.ga4.insights_service import GA4InsightsService
+
+    GA4InsightsService.upsert_channel_group_rule(
+        db, rule_id=None, user_id=sample_user.id, property_id="123456",
+        channel_dimension="source_medium", group_label="Facebook Ads",
+        match_type="contains", pattern="facebook", priority=0,
+    )
+    db.commit()
+
+    main_rows = [{
+        "itemName": "P1", "itemsViewed": 100, "itemsAddedToCart": 20, "itemsPurchased": 5,
+        "itemRevenue": 500.0, "cartToViewRate": 0.2, "purchaseToViewRate": 0.05,
+    }]
+
+    def fake_get_analytics(*, user, property_id, start_date, end_date, metrics, dimensions, db=None, **_):
+        if dimensions == ["itemName", "itemCategory"]:
+            return {"rows": []}, None
+        if metrics == ["itemsViewed"] and dimensions == ["itemName"]:
+            return {"rows": []}, None
+        return {"rows": main_rows}, None
+
+    mocker.patch("modules.ga4.insights_service.GA4Service.get_analytics", side_effect=fake_get_analytics)
+
+    resp = client.get("/api/ga4/insights/items", params={
+        "property_id": "123456", "days": 7,
+        "channel_dimension": "source_medium", "channel_value": "facebook / cpc",
+    })
+    assert resp.status_code == 200
+    assert resp.json()["payload"]["channel_value"] == "facebook / cpc"
+
+    resp = client.get("/api/ga4/insights/items", params={
+        "property_id": "123456", "days": 7,
+        "channel_dimension": "source_medium", "channel_group": "Facebook Ads",
+    })
+    assert resp.status_code == 200
+    assert resp.json()["payload"]["channel_group"] == "Facebook Ads"
+
+
+@pytest.mark.integration
+def test_items_endpoint_rejects_value_and_group_together_with_400(client, db, sample_user):
+    _override_dependencies(client.app, sample_user, db)
+
+    resp = client.get("/api/ga4/insights/items", params={
+        "property_id": "123456", "days": 7, "channel_dimension": "source_medium",
+        "channel_value": "google / organic", "channel_group": "Facebook Ads",
+    })
+    assert resp.status_code == 400
+
+
+@pytest.mark.integration
+def test_items_endpoint_rejects_unknown_channel_dimension_with_422(client, db, sample_user):
+    _override_dependencies(client.app, sample_user, db)
+
+    resp = client.get("/api/ga4/insights/items", params={
+        "property_id": "123456", "days": 7,
+        "channel_dimension": "not_a_real_dimension", "channel_value": "x",
+    })
+    assert resp.status_code == 422

@@ -47,8 +47,16 @@ export const ga4InsightsService = {
                 : '')
         ),
 
-    getItems: async (propertyId, days = 7) =>
-        apiClient.get(`/api/ga4/insights/items?property_id=${encodeURIComponent(propertyId)}&days=${days}`),
+    getItems: async (propertyId, days = 7, channelDimension = null, channelValue = null, channelGroup = null) =>
+        apiClient.get(
+            `/api/ga4/insights/items?property_id=${encodeURIComponent(propertyId)}&days=${days}`
+            + (channelDimension && channelValue
+                ? `&channel_dimension=${encodeURIComponent(channelDimension)}&channel_value=${encodeURIComponent(channelValue)}`
+                : '')
+            + (channelDimension && channelGroup
+                ? `&channel_dimension=${encodeURIComponent(channelDimension)}&channel_group=${encodeURIComponent(channelGroup)}`
+                : '')
+        ),
 
     // ─── 第 2 波任務 2.4：AI 白話解讀持久化 ─────────────────────────
     saveAiSummary: async (snapshotId, aiSummary) =>

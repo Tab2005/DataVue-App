@@ -2,15 +2,52 @@
 
 from __future__ import annotations
 
+import hashlib
+
 from ._shared import *
+from .channel_groups import get_channel_group_match_conditions
 
 
-def get_items(db, *, user: User, property_id: str, days: int = 7):
+def get_items(
+    db, *, user: User, property_id: str, days: int = 7,
+    channel_dimension: str | None = None, channel_value: str | None = None,
+    channel_group: str | None = None,
+):
+    # docs/45：商品渠道篩選，比照到達頁（42+44）同一套驗證/OR 篩選邏輯。
+    # 刻意只套用在主查詢（瀏覽/加購/購買數與比率），近7天/前7天瀏覽成長
+    # 比較與 itemCategory 分類拆解維持全渠道不受篩選影響（跟使用者確認過：
+    # 成長比較本來就已經是「固定期間、與上方期間選擇無關」的獨立指標，
+    # 分類拆解也只是給「商品該分到哪一類」用的靜態依據，非渠道相關指標）。
+    if channel_value and channel_group:
+        raise ValueError("channel_value and channel_group are mutually exclusive")
+    if (channel_value or channel_group) and not channel_dimension:
+        raise ValueError("channel_dimension is required when channel_value or channel_group is provided")
+    if channel_dimension and not channel_value and not channel_group:
+        raise ValueError("channel_dimension requires channel_value or channel_group")
+    if channel_dimension and channel_dimension not in CHANNEL_DIMENSION_MAP:
+        raise ValueError(f"Unsupported channel_dimension: {channel_dimension}")
+
+    ga4_channel_dimension = CHANNEL_DIMENSION_MAP[channel_dimension][0] if channel_dimension else None
+    if channel_group:
+        conditions = get_channel_group_match_conditions(
+            db, property_id=property_id, channel_dimension=channel_dimension, group_label=channel_group,
+        )
+        if not conditions:
+            raise ValueError(f"Unknown channel_group: {channel_group}")
+        dimension_filter = [
+            (ga4_channel_dimension, match_type, pattern) for match_type, pattern in conditions
+        ]
+    elif channel_value:
+        dimension_filter = (ga4_channel_dimension, channel_value)
+    else:
+        dimension_filter = None
+
     start_date, end_date = _service_attr("_trailing_period", _trailing_period)(days)
 
     data, error = GA4Service.get_analytics(
         user=user, property_id=property_id, start_date=start_date, end_date=end_date,
         metrics=ITEM_METRICS_WITH_OFFICIAL_RATES, dimensions=["itemName"], db=db,
+        dimension_filter=dimension_filter,
     )
     used_fallback_conversion_metrics = False
     if error:
@@ -21,6 +58,7 @@ def get_items(db, *, user: User, property_id: str, days: int = 7):
         data, error = GA4Service.get_analytics(
             user=user, property_id=property_id, start_date=start_date, end_date=end_date,
             metrics=ITEM_METRICS_FALLBACK, dimensions=["itemName"], db=db,
+            dimension_filter=dimension_filter,
         )
         if error:
             raise RuntimeError(error)
@@ -129,6 +167,9 @@ def get_items(db, *, user: User, property_id: str, days: int = 7):
         "start_date": start_date,
         "end_date": end_date,
         "days": days,
+        "channel_dimension": channel_dimension,
+        "channel_value": channel_value,
+        "channel_group": channel_group,
         "items": enriched,
         "category_counts": category_counts,
         "used_fallback_conversion_metrics": used_fallback_conversion_metrics,
@@ -136,8 +177,17 @@ def get_items(db, *, user: User, property_id: str, days: int = 7):
         "cart_to_view_rate_definition": ITEM_CART_TO_VIEW_RATE_DEFINITION,
         "purchase_to_view_rate_definition": ITEM_PURCHASE_TO_VIEW_RATE_DEFINITION,
     }
+    # kind 命名比照到達頁（42+44）：channel_group 用 "chg_" 前綴、精確值篩選
+    # 用 "ch_" 前綴的雜湊，避免自由文字撐爆欄位長度或截斷後誤判成同一筆快照。
+    kind = "item"
+    if channel_group:
+        filter_digest = hashlib.md5(f"{channel_dimension}:group:{channel_group}".encode()).hexdigest()[:10]
+        kind += f":chg_{filter_digest}"
+    elif channel_dimension:
+        filter_digest = hashlib.md5(f"{channel_dimension}:{channel_value}".encode()).hexdigest()[:10]
+        kind += f":ch_{filter_digest}"
     return repository.upsert_snapshot(
-        db, property_id=property_id, kind="item", date=end_date, payload=payload, fetched_by=user.id,
+        db, property_id=property_id, kind=kind, date=end_date, payload=payload, fetched_by=user.id,
     )
 
 
