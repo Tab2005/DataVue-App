@@ -11,6 +11,7 @@ import {
     badgeStyle,
     baseCardStyle,
     buttonStyle,
+    channelDimensionLabel,
     dayButtonStyle,
     emptyState,
     fmtNumber,
@@ -21,6 +22,22 @@ import {
 } from './GA4InsightsShared';
 
 const LANDING_PAGE_SIZE = 25;
+
+// docs/46：把目前的渠道篩選狀態轉成一句話，塞進 AI 解讀的 contextLabel，
+// 讓 AI 知道這份 payload 已經是篩選過某個渠道的子集，不是全站/全渠道的
+// 到達頁表現（否則模型容易誤用「整體」語氣下結論）。沒篩選時回傳 null，
+// 不影響原本的全域解讀文字。
+const channelScopeLabel = (payload, language, t) => {
+    if (!payload?.channel_dimension) return null;
+    const dimLabel = channelDimensionLabel(payload.channel_dimension, language);
+    if (payload.channel_group) {
+        return t(`channel filter: ${dimLabel} = custom group "${payload.channel_group}"`, `渠道篩選：${dimLabel} = 自訂分組「${payload.channel_group}」`);
+    }
+    if (payload.channel_value) {
+        return t(`channel filter: ${dimLabel} = "${payload.channel_value}"`, `渠道篩選：${dimLabel} = 「${payload.channel_value}」`);
+    }
+    return null;
+};
 
 const LandingPagesTab = ({
     language,
@@ -455,12 +472,18 @@ const LandingPagesTab = ({
                         language={language}
                         snapshot={landingSnapshot}
                         kind="landing_page"
-                        contextLabel={t(
-                            `Property ${propertyId}; key event ${landingSnapshot?.payload?.key_event || 'all'}; period ${landingSnapshot?.payload?.start_date || ''} ~ ${landingSnapshot?.payload?.end_date || ''}`,
-                            `屬性 ${propertyId}；關鍵事件 ${landingSnapshot?.payload?.key_event || '全部'}；期間 ${landingSnapshot?.payload?.start_date || ''} ~ ${landingSnapshot?.payload?.end_date || ''}`
-                        )}
+                        contextLabel={[
+                            t(
+                                `Property ${propertyId}; key event ${landingSnapshot?.payload?.key_event || 'all'}; period ${landingSnapshot?.payload?.start_date || ''} ~ ${landingSnapshot?.payload?.end_date || ''}`,
+                                `屬性 ${propertyId}；關鍵事件 ${landingSnapshot?.payload?.key_event || '全部'}；期間 ${landingSnapshot?.payload?.start_date || ''} ~ ${landingSnapshot?.payload?.end_date || ''}`
+                            ),
+                            channelScopeLabel(landingSnapshot?.payload, language, t),
+                        ].filter(Boolean).join('；')}
                         buildPayload={() => ({
                             key_event: landingSnapshot?.payload?.key_event || null,
+                            channel_dimension: landingSnapshot?.payload?.channel_dimension || null,
+                            channel_value: landingSnapshot?.payload?.channel_value || null,
+                            channel_group: landingSnapshot?.payload?.channel_group || null,
                             landing_pages: landingSnapshot?.payload?.landing_pages || [],
                             category_counts: landingSnapshot?.payload?.category_counts || {},
                         })}

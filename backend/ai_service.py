@@ -190,6 +190,41 @@ class AIService:
                 "data_driven": "主攻渠道是系統判斷在整趟購物旅程中貢獻比較大的（不是只看最後一次點擊）",
                 "last_click": "主攻渠道是客人結帳前最後一次點擊進來的",
             }.get(attribution_model, "主攻渠道是系統判斷對這次購買貢獻比較大的（不一定是最後一次點擊）")
+
+            # docs/46：渠道篩選範圍要明確告訴 AI，否則模型不知道 payload 裡的
+            # 到達頁/商品列表已經是篩選過某個渠道的子集，容易誤用「整體/全店」
+            # 的語氣下結論（例如把某渠道的轉換率當成全站轉換率描述）。跟
+            # attribution_model 同一套做法：從 payload 讀欄位、轉成白話備註後
+            # 塞進硬性規則，而不是只靠前端 context 字串（避免被模型忽略）。
+            channel_dimension_labels = {
+                "default_channel_group": "工作階段主要管道群組",
+                "source_medium": "工作階段來源/媒介",
+                "source": "工作階段來源",
+                "medium": "工作階段媒介",
+                "campaign": "工作階段廣告活動",
+            }
+            channel_scope_note = None
+            if kind in ("landing_page", "item") and data.get("channel_dimension"):
+                dimension_label = channel_dimension_labels.get(data.get("channel_dimension"), data.get("channel_dimension"))
+                if data.get("channel_group"):
+                    channel_scope_note = (
+                        f"這份 payload 已經用「{dimension_label}」篩選成自訂分組「{data.get('channel_group')}」，"
+                        "只代表這個分組的表現，不是全店/全渠道的數字。"
+                    )
+                elif data.get("channel_value"):
+                    channel_scope_note = (
+                        f"這份 payload 已經用「{dimension_label}」篩選成「{data.get('channel_value')}」，"
+                        "只代表這個渠道值的表現，不是全店/全渠道的數字。"
+                    )
+                # docs/45：商品渠道篩選刻意只套用在瀏覽/加購/購買主指標，
+                # views_growth_rate（成長率）與潛力標記維持全渠道口徑，兩者
+                # 混在同一列容易讓 AI 誤以為成長率也是該渠道的表現，要點破。
+                if channel_scope_note and kind == "item":
+                    channel_scope_note += (
+                        "但 views_growth_rate（瀏覽成長）與 is_potential（潛力商品）"
+                        "維持全渠道口徑、不受此篩選影響，不要把成長率當成這個渠道自己的成長。"
+                    )
+
             kind_focus = {
                 "intraday_hourly": (
                     "今天到目前為止的數字跟平常同時段比起來正不正常、需不需要緊張。"
@@ -232,6 +267,7 @@ class AIService:
                並附上預期區間（若 payload 有 baseline/expected 區間），**不要下絕對結論**
                （例如不要說「這代表廣告一定出問題了」，而是「可能跟…有關，建議檢查看看」）。
             4. **本頁重點**：{kind_focus}
+            {f"4-1. **渠道篩選範圍（務必在「一句話總結」開頭先講清楚）**：{channel_scope_note}" if channel_scope_note else ""}
             5. **結尾固定 1–2 個「今天可以做的一件事」行動建議**，具體且可執行。
                若本頁是渠道對照（daily_channel），結尾額外補一句：「想知道各渠道的真實增量貢獻，
                可以到貢獻分析頁看更深入的分析」。

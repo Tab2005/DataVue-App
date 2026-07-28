@@ -18,6 +18,13 @@ export const aiService = {
     },
 
     /**
+     * Get the current user's saved AI provider/model settings.
+     * Used to show which model actually produced an analysis (e.g. in disclaimers),
+     * so switching models later doesn't require a code change to relabel anything.
+     */
+    getSettings: async () => apiClient.get('/api/ai/settings'),
+
+    /**
      * Analyze Data Stream
      * 使用原生 fetch 以支援 SSE / ReadableStream 串流讀取。
      * @param {Object} data - The data to analyze

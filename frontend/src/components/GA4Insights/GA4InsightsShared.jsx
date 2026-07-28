@@ -374,6 +374,21 @@ export const AIInsightNote = ({ language, snapshot, kind, buildPayload, contextL
     const [isSharing, setIsSharing] = useState(false);
     const [shareError, setShareError] = useState(null);
     const [linkCopied, setLinkCopied] = useState(false);
+    // docs/46：免責聲明動態顯示目前實際使用的模型，之後在 AI 設定頁換模型
+    // 不用改任何程式碼——直接讀使用者目前存的 ai_model（跟 handleGenerate
+    // 呼叫 analyzeDataStream 時 provider/model 都傳 null、讓後端用同一份
+    // user_settings 決定要用的模型是同一個來源，兩邊不會對不起來）。
+    const [aiModel, setAiModel] = useState('');
+
+    useEffect(() => {
+        let cancelled = false;
+        aiService.getSettings()
+            .then((settings) => {
+                if (!cancelled) setAiModel(settings?.ai_model || '');
+            })
+            .catch(() => {});
+        return () => { cancelled = true; };
+    }, []);
 
     useEffect(() => {
         setAiContent(existing);
@@ -550,7 +565,12 @@ export const AIInsightNote = ({ language, snapshot, kind, buildPayload, contextL
             </div>
 
             <div style={{ marginTop: '10px', fontSize: '0.74rem', color: 'var(--text-tertiary)', lineHeight: 1.5 }}>
-                {t('Disclaimer: AI insights are for reference only. The numbers above are the source of truth.', '免責聲明：AI 解讀僅供參考，數字以上方圖表為準。')}
+                {aiModel
+                    ? t(
+                        `Disclaimer: AI insights are for reference only (model: ${aiModel}). The numbers above are the source of truth.`,
+                        `免責聲明：AI 解讀僅供參考（目前使用模型：${aiModel}），數字以上方圖表為準。`
+                    )
+                    : t('Disclaimer: AI insights are for reference only. The numbers above are the source of truth.', '免責聲明：AI 解讀僅供參考，數字以上方圖表為準。')}
             </div>
         </div>
     );

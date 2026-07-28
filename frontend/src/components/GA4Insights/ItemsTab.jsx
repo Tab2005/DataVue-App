@@ -10,6 +10,7 @@ import {
     badgeStyle,
     baseCardStyle,
     buttonStyle,
+    channelDimensionLabel,
     emptyState,
     fmtNumber,
     fmtPct,
@@ -19,6 +20,20 @@ import {
 } from './GA4InsightsShared';
 
 const ITEMS_PAGE_SIZE = 25;
+
+// docs/46：同到達頁分頁，把目前的渠道篩選狀態轉成一句話塞進 AI 解讀的
+// contextLabel，避免 AI 把篩選後的商品表現誤當成全店表現來描述。
+const channelScopeLabel = (payload, language, t) => {
+    if (!payload?.channel_dimension) return null;
+    const dimLabel = channelDimensionLabel(payload.channel_dimension, language);
+    if (payload.channel_group) {
+        return t(`channel filter: ${dimLabel} = custom group "${payload.channel_group}"`, `渠道篩選：${dimLabel} = 自訂分組「${payload.channel_group}」`);
+    }
+    if (payload.channel_value) {
+        return t(`channel filter: ${dimLabel} = "${payload.channel_value}"`, `渠道篩選：${dimLabel} = 「${payload.channel_value}」`);
+    }
+    return null;
+};
 
 const ItemsTab = ({
     language,
@@ -485,11 +500,17 @@ const ItemsTab = ({
                         language={language}
                         snapshot={itemsSnapshot}
                         kind="item"
-                        contextLabel={t(
-                            `Property ${propertyId}; period ${itemsSnapshot?.payload?.start_date || ''} ~ ${itemsSnapshot?.payload?.end_date || ''}`,
-                            `屬性 ${propertyId}；期間 ${itemsSnapshot?.payload?.start_date || ''} ~ ${itemsSnapshot?.payload?.end_date || ''}`
-                        )}
+                        contextLabel={[
+                            t(
+                                `Property ${propertyId}; period ${itemsSnapshot?.payload?.start_date || ''} ~ ${itemsSnapshot?.payload?.end_date || ''}`,
+                                `屬性 ${propertyId}；期間 ${itemsSnapshot?.payload?.start_date || ''} ~ ${itemsSnapshot?.payload?.end_date || ''}`
+                            ),
+                            channelScopeLabel(itemsSnapshot?.payload, language, t),
+                        ].filter(Boolean).join('；')}
                         buildPayload={() => ({
+                            channel_dimension: itemsSnapshot?.payload?.channel_dimension || null,
+                            channel_value: itemsSnapshot?.payload?.channel_value || null,
+                            channel_group: itemsSnapshot?.payload?.channel_group || null,
                             items: itemsSnapshot?.payload?.items || [],
                             category_counts: itemsSnapshot?.payload?.category_counts || {},
                         })}
