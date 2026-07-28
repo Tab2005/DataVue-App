@@ -26,12 +26,14 @@ const KIND_LABELS = {
     daily_channel: { en: 'Channel Comparison', zh: '渠道對照' },
     landing_page: { en: 'Landing Pages', zh: '到達頁' },
     item: { en: 'Items', zh: '商品' },
+    item_landing_cross: { en: 'Item x Landing Page', zh: '商品頁面比對' },
 };
 
 const kindGroup = (kind) => {
     if (!kind) return null;
+    if (kind === 'item_landing_cross') return 'item_landing_cross';
     if (kind.startsWith('landing_page')) return 'landing_page';
-    if (kind === 'item') return 'item';
+    if (kind.startsWith('item')) return 'item';
     if (kind === 'daily_channel') return 'daily_channel';
     return null;
 };
@@ -145,6 +147,48 @@ const ItemsTable = ({ t, payload }) => {
     );
 };
 
+const ItemLandingCrossTable = ({ t, payload }) => {
+    const rows = payload?.items || [];
+    if (!rows.length) return emptyState(t('No data.', '暫無資料。'));
+    return (
+        <div style={{ overflowX: 'auto' }}>
+            <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.85rem' }}>
+                <thead>
+                    <tr style={{ color: 'var(--text-secondary)', textAlign: 'left' }}>
+                        <th style={{ padding: '6px' }}>{t('Item', '商品')}</th>
+                        <th style={{ padding: '6px' }}>{t('Primary landing page', '主要到達頁')}</th>
+                        <th style={{ padding: '6px' }}>{t('Item purchase rate', '商品瀏覽後購買率')}</th>
+                        <th style={{ padding: '6px' }}>{t('Page conversion rate', '到達頁轉換率')}</th>
+                        <th style={{ padding: '6px' }}>{t('Page sessions', '到達頁工作階段')}</th>
+                        <th style={{ padding: '6px' }}>{t('Flag', '標記')}</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {rows.map((row) => (
+                        <tr key={row.itemName} style={{ borderTop: '1px solid var(--glass-border)' }}>
+                            <td style={{ padding: '6px', color: 'var(--text-primary)' }}>{row.itemName}</td>
+                            <td
+                                style={{ padding: '6px', color: 'var(--text-secondary)', maxWidth: '220px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}
+                                title={row.primary_landing_page || ''}
+                            >
+                                {row.primary_landing_page || t('No matched page', '無對應到達頁')}
+                            </td>
+                            <td style={{ padding: '6px', color: 'var(--text-secondary)' }}>{fmtPct(row.purchase_to_view_rate)}</td>
+                            <td style={{ padding: '6px', color: 'var(--text-secondary)' }}>{fmtPct(row.page_session_key_event_rate)}</td>
+                            <td style={{ padding: '6px', color: 'var(--text-secondary)' }}>{fmtNumber(row.page_sessions)}</td>
+                            <td style={{ padding: '6px' }}>
+                                {row.page_underperforms_item && (
+                                    <span style={badgeStyle('flagged')}>{t('Page may be the issue', '頁面可能拖累')}</span>
+                                )}
+                            </td>
+                        </tr>
+                    ))}
+                </tbody>
+            </table>
+        </div>
+    );
+};
+
 const SharedGA4Insight = () => {
     const { token } = useParams();
     const [snapshot, setSnapshot] = useState(null);
@@ -250,6 +294,7 @@ const SharedGA4Insight = () => {
                     {group === 'daily_channel' && <ChannelsTable language={language} t={t} payload={payload} />}
                     {group === 'landing_page' && <LandingPagesTable t={t} payload={payload} />}
                     {group === 'item' && <ItemsTable t={t} payload={payload} />}
+                    {group === 'item_landing_cross' && <ItemLandingCrossTable t={t} payload={payload} />}
                     {!group && emptyState(t('Unsupported content type.', '不支援的內容類型。'))}
                 </section>
 

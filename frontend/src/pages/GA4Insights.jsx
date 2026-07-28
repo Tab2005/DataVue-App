@@ -836,8 +836,10 @@ const GA4Insights = () => {
                     title={t('Custom day count (1-90)', '自訂天數（1-90）')}
                     style={{
                         ...inputStyle,
-                        width: '58px',
-                        padding: '6px 8px',
+                        // 「自訂」佔兩個中文字寬度，加上 type="number" 的原生
+                        // 增減按鈕，58px 會把 placeholder 文字切掉，加寬到 76px。
+                        width: '76px',
+                        padding: '6px 6px',
                         textAlign: 'center',
                         ...(!DAY_PRESETS.includes(value) ? { borderColor: 'var(--accent-primary, #3987e5)' } : {}),
                     }}
