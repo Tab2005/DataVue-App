@@ -46,7 +46,7 @@ def test_create_share_link_404_for_missing_snapshot(client, db, sample_user):
     assert resp.status_code == 404
 
 
-def test_get_shared_snapshot_is_public_and_omits_property_id(client, db, sample_user):
+def test_get_shared_snapshot_is_public_and_includes_property_id(client, db, sample_user):
     _override_dependencies(client.app, sample_user, db)
     snapshot = _make_snapshot(db)
     created = client.post(f"/api/ga4/insights/snapshots/{snapshot.id}/share")
@@ -65,7 +65,9 @@ def test_get_shared_snapshot_is_public_and_omits_property_id(client, db, sample_
     assert body["date"] == "2026-07-20"
     assert body["ai_summary"] == "## 一句話總結\n測試摘要"
     assert body["payload"]["channels"][0]["channel"] == "Direct"
-    assert "property_id" not in body
+    # docs/47 追加：property_id 改回傳，讓分享頁面能顯示是哪個 GA4 屬性的資料
+    # （這個值本身不算內部隱私資訊，只有 fetched_by 這類使用者身份資訊才要排除）。
+    assert body["property_id"] == "123456"
     assert "fetched_by" not in body
 
 

@@ -713,8 +713,11 @@ def serialize_snapshot(row):
 
 
 def serialize_shared_snapshot(row):
-    """公開分享端點專用序列化：不回傳 property_id / fetched_by 等內部識別資訊。"""
+    """公開分享端點專用序列化：不回傳 fetched_by 等內部使用者資訊。
+    docs/47 追加：property_id 改回傳（比照 docs/39 原計劃），讓分享連結能顯示
+    是哪個 GA4 屬性的資料——這個值本來就存在快照列上，不用額外查 GA4 API。"""
     return {
+        "property_id": row.property_id,
         "kind": row.kind,
         "date": row.date,
         "payload": row.payload,

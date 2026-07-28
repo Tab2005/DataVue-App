@@ -257,9 +257,16 @@ const SharedGA4Insight = () => {
                         </div>
                         <span style={{ fontSize: '1.2rem', fontWeight: 'bold', color: 'var(--text-primary)', letterSpacing: '1px' }}>DATAVUE</span>
                     </div>
-                    <span style={{ color: 'var(--text-secondary)', fontSize: '0.9rem', marginLeft: 'auto' }}>
-                        {t('GA4 Conversion Insights', 'GA4 轉換洞察')}
-                    </span>
+                    <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: '2px', marginLeft: 'auto' }}>
+                        <span style={{ color: 'var(--text-secondary)', fontSize: '0.9rem' }}>
+                            {t('GA4 Conversion Insights', 'GA4 轉換洞察')}
+                        </span>
+                        {snapshot.property_id && (
+                            <span style={{ color: 'var(--text-tertiary)', fontSize: '0.76rem' }}>
+                                {t(`GA4 property ${snapshot.property_id}`, `GA4 屬性 ${snapshot.property_id}`)}
+                            </span>
+                        )}
+                    </div>
                 </div>
 
                 <div style={{ marginBottom: '24px' }}>
