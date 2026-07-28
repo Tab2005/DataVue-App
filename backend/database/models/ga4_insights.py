@@ -113,6 +113,31 @@ class GA4ItemCategoryRule(Base):
     creator = relationship("User")
 
 
+class GA4ChannelGroupRule(Base):
+    """渠道值自訂分組規則（docs/44）：把到達頁渠道篩選的原始渠道值（例如
+    `facebook / post-ads`、`facebook / cpc`）依 pattern 比對歸到同一個
+    `group_label`，篩選時把同一分組底下所有規則的比對條件 OR 在一起查詢。
+    規則綁定單一 `channel_dimension`（不跨維度共用，見 docs/43 定案），
+    priority 小者先比——但這裡 priority 是用來決定「同一原始值符合多條規則
+    時算哪一組」，不影響同一分組內多條規則要不要一起生效（OR 篩選時，同分組
+    的規則全部都會生效，不是只取第一條）。"""
+
+    __tablename__ = "ga4_channel_group_rules"
+
+    id = Column(String, primary_key=True, default=lambda: f"gcgr_{uuid.uuid4().hex[:12]}")
+    property_id = Column(String(50), nullable=False, index=True)
+    channel_dimension = Column(String(30), nullable=False)  # default_channel_group | source_medium | source | medium | campaign
+    group_label = Column(String(100), nullable=False)
+    match_type = Column(String(10), nullable=False)  # exact | prefix | contains（不開放 regex，避免 ReDoS）
+    pattern = Column(String(200), nullable=False)
+    priority = Column(Integer, nullable=False, default=0)
+    created_by = Column(String, ForeignKey("users.id"), nullable=False)
+    created_at = Column(DateTime, nullable=False, server_default=text("CURRENT_TIMESTAMP"))
+    updated_at = Column(DateTime, nullable=False, server_default=text("CURRENT_TIMESTAMP"))
+
+    creator = relationship("User")
+
+
 class GA4AnomalyEvent(Base):
     __tablename__ = "ga4_anomaly_events"
 

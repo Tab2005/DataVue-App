@@ -5,19 +5,27 @@ from __future__ import annotations
 import hashlib
 
 from ._shared import *
+from .channel_groups import get_channel_group_match_conditions
 
 
 def get_landing_pages(
     db, *, user: User, property_id: str, days: int = 7, key_event: str | None = None,
     channel_dimension: str | None = None, channel_value: str | None = None,
+    channel_group: str | None = None,
 ):
     if key_event and not LANDING_PAGE_KEY_EVENT_PATTERN.match(key_event):
         raise ValueError(f"Invalid key_event: {key_event}")
 
-    # docs/42：到達頁渠道篩選。兩個參數必須同時有值或同時沒有，避免「只給
-    # 維度沒給值」這種篩選條件不完整的狀態被誤當成「有篩選」處理。
-    if bool(channel_dimension) != bool(channel_value):
-        raise ValueError("channel_dimension and channel_value must be provided together")
+    # docs/42+44：到達頁渠道篩選。channel_value（單一精確值）與 channel_group
+    # （docs/43 自訂分組，多條規則 OR 組合）互斥，兩者都需要搭配
+    # channel_dimension 一起提供，避免「只給維度」這種篩選條件不完整的狀態
+    # 被誤當成「有篩選」處理。
+    if channel_value and channel_group:
+        raise ValueError("channel_value and channel_group are mutually exclusive")
+    if (channel_value or channel_group) and not channel_dimension:
+        raise ValueError("channel_dimension is required when channel_value or channel_group is provided")
+    if channel_dimension and not channel_value and not channel_group:
+        raise ValueError("channel_dimension requires channel_value or channel_group")
     if channel_dimension and channel_dimension not in CHANNEL_DIMENSION_MAP:
         raise ValueError(f"Unsupported channel_dimension: {channel_dimension}")
 
@@ -27,7 +35,23 @@ def get_landing_pages(
     # dimensions（group by）之外的篩選條件，不需要把這個維度也放進
     # dimensions 才能篩，回傳列的形狀（一個到達頁一列）完全不受影響。
     ga4_channel_dimension = CHANNEL_DIMENSION_MAP[channel_dimension][0] if channel_dimension else None
-    dimension_filter = (ga4_channel_dimension, channel_value) if ga4_channel_dimension else None
+    if channel_group:
+        # docs/44：自訂分組——把該分組底下「全部」規則的比對條件轉成 OR
+        # 篩選（同分組的規則都要一起生效，不是只取第一條）。分組不存在
+        # （例如規則已被刪除）時，比對條件會是空 list，視為錯誤而非「查
+        # 不到資料」，避免使用者誤以為這個分組本來就沒資料。
+        conditions = get_channel_group_match_conditions(
+            db, property_id=property_id, channel_dimension=channel_dimension, group_label=channel_group,
+        )
+        if not conditions:
+            raise ValueError(f"Unknown channel_group: {channel_group}")
+        dimension_filter = [
+            (ga4_channel_dimension, match_type, pattern) for match_type, pattern in conditions
+        ]
+    elif channel_value:
+        dimension_filter = (ga4_channel_dimension, channel_value)
+    else:
+        dimension_filter = None
 
     start_date, end_date = _service_attr("_trailing_period", _trailing_period)(days)
 
@@ -117,13 +141,18 @@ def get_landing_pages(
 
     # snapshot kind：全部事件維持 "landing_page"；指定事件加後綴各自獨立
     # 存放、AI 解讀互不覆寫（同第 4 波渠道維度切換前例）。渠道篩選比照同一
-    # 套規則疊加後綴，但 channel_value 是自由文字（例如完整 UTM campaign
-    # 名稱），直接串進 kind 可能撐爆 String(80) 欄位、也可能因為截斷而讓
-    # 兩個不同篩選值誤判成同一筆快照，所以改用短雜湊代表這組篩選條件。
+    # 套規則疊加後綴，但 channel_value/channel_group 是自由文字（例如完整
+    # UTM campaign 名稱），直接串進 kind 可能撐爆 String(80) 欄位、也可能
+    # 因為截斷而讓兩個不同篩選值誤判成同一筆快照，所以改用短雜湊代表這組
+    # 篩選條件。自訂分組用 "chg_" 前綴、精確值篩選用 "ch_" 前綴區分兩種篩
+    # 選來源，方便排查（雖然雜湊碰撞機率極低，前綴區分讓意圖更清楚）。
     kind = "landing_page"
     if key_event:
         kind += f":{key_event}"
-    if channel_dimension:
+    if channel_group:
+        filter_digest = hashlib.md5(f"{channel_dimension}:group:{channel_group}".encode()).hexdigest()[:10]
+        kind += f":chg_{filter_digest}"
+    elif channel_dimension:
         filter_digest = hashlib.md5(f"{channel_dimension}:{channel_value}".encode()).hexdigest()[:10]
         kind += f":ch_{filter_digest}"
 
@@ -134,6 +163,7 @@ def get_landing_pages(
         "key_event": key_event,
         "channel_dimension": channel_dimension,
         "channel_value": channel_value,
+        "channel_group": channel_group,
         "landing_pages": enriched,
         "category_counts": category_counts,
         "available_key_events": sorted(available_key_events),

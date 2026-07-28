@@ -10,6 +10,7 @@ from sqlalchemy import desc
 from database.models.ga4_insights import (
     GA4AnomalyEvent,
     GA4AnomalyRule,
+    GA4ChannelGroupRule,
     GA4InsightsSnapshot,
     GA4ItemCategoryRule,
     GA4KpiTarget,
@@ -249,6 +250,29 @@ class GA4InsightsRepository:
 
     def delete_item_category_rule(self, db, rule_id: str) -> bool:
         row = self.get_item_category_rule(db, rule_id)
+        if not row:
+            return False
+        db.delete(row)
+        return True
+
+    # ─── docs/44：渠道值自訂分組規則 ──────────────────────────────────
+    def create_channel_group_rule(self, db, **payload):
+        row = GA4ChannelGroupRule(**payload)
+        db.add(row)
+        db.flush()
+        return row
+
+    def list_channel_group_rules(self, db, *, property_id: str, channel_dimension: str | None = None):
+        query = db.query(GA4ChannelGroupRule).filter(GA4ChannelGroupRule.property_id == property_id)
+        if channel_dimension:
+            query = query.filter(GA4ChannelGroupRule.channel_dimension == channel_dimension)
+        return query.order_by(GA4ChannelGroupRule.priority.asc()).all()
+
+    def get_channel_group_rule(self, db, rule_id: str):
+        return db.query(GA4ChannelGroupRule).filter(GA4ChannelGroupRule.id == rule_id).first()
+
+    def delete_channel_group_rule(self, db, rule_id: str) -> bool:
+        row = self.get_channel_group_rule(db, rule_id)
         if not row:
             return False
         db.delete(row)

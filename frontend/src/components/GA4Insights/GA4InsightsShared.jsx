@@ -332,6 +332,14 @@ export const LANDING_MATCH_TYPE_OPTIONS = [
     { value: 'contains', en: 'Contains', zh: '包含' },
 ];
 
+// docs/44：渠道值自訂分組規則比對方式，比到達頁規則多一個 exact——自訂
+// 分組常見情境是先精確排除幾個已知例外值。
+export const CHANNEL_GROUP_MATCH_TYPE_OPTIONS = [
+    { value: 'exact', en: 'Exact', zh: '精確' },
+    { value: 'prefix', en: 'Prefix', zh: '前綴' },
+    { value: 'contains', en: 'Contains', zh: '包含' },
+];
+
 // 第 7 波：商品分類來源標示（GA4 權威 vs 自訂規則補充 vs 未分類）
 export const ITEM_CATEGORY_SOURCE_LABELS = {
     ga4: { en: 'from GA4', zh: '來自 GA4' },

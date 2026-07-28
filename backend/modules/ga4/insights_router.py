@@ -100,6 +100,24 @@ class ItemCategoryRulePayload(BaseModel):
     priority: int = Field(0, ge=0)
 
 
+# docs/44：渠道值自訂分組規則。group_label 是自由文字（比照商品分類，不像
+# 到達頁固定 4 類），match_type 比到達頁/商品規則多一個 exact——自訂分組
+# 常見情境是先精確排除幾個已知例外值，不像分類規則通常用 prefix/contains
+# 就夠。channel_dimension 沿用渠道對照既有的白名單，規則綁定單一維度
+# （docs/43 定案，不跨維度共用）。
+ChannelGroupMatchType = Literal["exact", "prefix", "contains"]
+
+
+class ChannelGroupRulePayload(BaseModel):
+    id: str | None = None
+    property_id: str = Field(..., min_length=1)
+    channel_dimension: ChannelDimension
+    group_label: str = Field(..., min_length=1, max_length=100)
+    match_type: ChannelGroupMatchType
+    pattern: str = Field(..., min_length=1, max_length=200)
+    priority: int = Field(0, ge=0)
+
+
 # ─── 第 2 波：當日儀表板／Realtime／渠道／到達頁／商品（docs/22 3.5 節） ───
 @router.get("/dashboard")
 def get_dashboard(
@@ -175,10 +193,13 @@ def get_landing_pages(
     property_id: str = Query(...),
     days: int = Query(7, ge=1, le=90),
     key_event: str | None = Query(None, pattern=r"^[A-Za-z0-9_]{1,40}$"),
-    # docs/42：到達頁渠道篩選。兩者是否成對提供由 service 層驗證（ValueError
-    # 統一在下面轉成 400），這裡只負責型別/白名單/長度層級的基本驗證。
+    # docs/42+44：到達頁渠道篩選。channel_value（單一精確值）與 channel_group
+    # （docs/43 自訂分組）互斥，是否成對/互斥提供由 service 層驗證
+    # （ValueError 統一在下面轉成 400），這裡只負責型別/白名單/長度層級的
+    # 基本驗證。
     channel_dimension: ChannelDimension | None = Query(None),
     channel_value: str | None = Query(None, max_length=100),
+    channel_group: str | None = Query(None, max_length=100),
     user=Depends(get_current_user),
     _module: bool = Depends(require_ga4_module),
     _perm: bool = Depends(require_ga4_insights_view),
@@ -188,6 +209,7 @@ def get_landing_pages(
         snapshot = GA4InsightsService.get_landing_pages(
             db, user=user, property_id=property_id, days=days, key_event=key_event,
             channel_dimension=channel_dimension, channel_value=channel_value,
+            channel_group=channel_group,
         )
     except (RuntimeError, ValueError) as exc:
         raise HTTPException(status_code=400, detail=str(exc))
@@ -247,6 +269,83 @@ def delete_landing_page_rule(
         raise HTTPException(status_code=404, detail="Landing page rule not found")
     db.commit()
     return {"status": "deleted", "rule_id": rule_id}
+
+
+# ─── docs/44：渠道值自訂分組規則 ────────────────────────────────────
+@router.get("/channel-group-rules")
+def list_channel_group_rules(
+    property_id: str = Query(...),
+    channel_dimension: ChannelDimension | None = Query(None),
+    user=Depends(get_current_user),
+    _module: bool = Depends(require_ga4_module),
+    _perm: bool = Depends(require_ga4_insights_view),
+    db=Depends(get_db),
+):
+    rows = GA4InsightsService.list_channel_group_rules(
+        db, property_id=property_id, channel_dimension=channel_dimension
+    )
+    return {"rules": [serialize_channel_group_rule(row) for row in rows]}
+
+
+@router.put("/channel-group-rules")
+def upsert_channel_group_rule(
+    payload: ChannelGroupRulePayload,
+    user=Depends(get_current_user),
+    _module: bool = Depends(require_ga4_module),
+    _perm: bool = Depends(require_ga4_insights_manage_alerts),
+    db=Depends(get_db),
+):
+    try:
+        row = GA4InsightsService.upsert_channel_group_rule(
+            db,
+            rule_id=payload.id,
+            user_id=user.id,
+            property_id=payload.property_id,
+            channel_dimension=payload.channel_dimension,
+            group_label=payload.group_label,
+            match_type=payload.match_type,
+            pattern=payload.pattern,
+            priority=payload.priority,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+    if not row:
+        raise HTTPException(status_code=404, detail="Channel group rule not found")
+    db.commit()
+    db.refresh(row)
+    return serialize_channel_group_rule(row)
+
+
+@router.delete("/channel-group-rules/{rule_id}")
+def delete_channel_group_rule(
+    rule_id: str,
+    user=Depends(get_current_user),
+    _module: bool = Depends(require_ga4_module),
+    _perm: bool = Depends(require_ga4_insights_manage_alerts),
+    db=Depends(get_db),
+):
+    deleted = GA4InsightsService.delete_channel_group_rule(db, rule_id=rule_id)
+    if not deleted:
+        raise HTTPException(status_code=404, detail="Channel group rule not found")
+    db.commit()
+    return {"status": "deleted", "rule_id": rule_id}
+
+
+@router.get("/channel-groups")
+def list_channel_groups(
+    property_id: str = Query(...),
+    channel_dimension: ChannelDimension = Query(...),
+    user=Depends(get_current_user),
+    _module: bool = Depends(require_ga4_module),
+    _perm: bool = Depends(require_ga4_insights_view),
+    db=Depends(get_db),
+):
+    """依 group_label 去重列出某維度底下已定義的分組，供前端「自訂分組」
+    下拉選單使用（docs/43：新增規則後自動出現在下拉裡，不用另外維護選單）。"""
+    groups = GA4InsightsService.list_channel_groups(
+        db, property_id=property_id, channel_dimension=channel_dimension
+    )
+    return {"groups": groups}
 
 
 @router.get("/items")
@@ -548,6 +647,21 @@ def serialize_item_category_rule(row):
         "id": row.id,
         "property_id": row.property_id,
         "category": row.category,
+        "match_type": row.match_type,
+        "pattern": row.pattern,
+        "priority": row.priority,
+        "created_by": row.created_by,
+        "created_at": row.created_at,
+        "updated_at": row.updated_at,
+    }
+
+
+def serialize_channel_group_rule(row):
+    return {
+        "id": row.id,
+        "property_id": row.property_id,
+        "channel_dimension": row.channel_dimension,
+        "group_label": row.group_label,
         "match_type": row.match_type,
         "pattern": row.pattern,
         "priority": row.priority,

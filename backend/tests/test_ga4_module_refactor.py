@@ -272,6 +272,49 @@ def test_get_analytics_without_dimension_filter_omits_filter_field(mocker):
 
 
 @pytest.mark.unit
+def test_get_analytics_applies_or_group_dimension_filter_for_list_form(mocker):
+    """docs/44：渠道值自訂分組——list 形狀的 dimension_filter 要組成 or_group，
+    每個條件各自轉成正確的 StringFilter match_type。"""
+    from google.analytics.data_v1beta.types import Filter
+    from modules.ga4.service import GA4AnalyticsService
+
+    mocker.patch("modules.ga4.service.GA4Client.get_credentials", return_value=MagicMock())
+
+    fake_data_client = MagicMock()
+    fake_data_client.run_report.return_value = _FakeReportResponse(
+        [_FakeRow(["/products/foo"], ["10"])]
+    )
+    mocker.patch(
+        "modules.ga4.service.GA4Client.build_data_client", return_value=fake_data_client
+    )
+    mocker.patch("modules.ga4.service.cache_get", return_value=None)
+    mocker.patch("modules.ga4.service.cache_set")
+
+    result, error = GA4AnalyticsService.get_analytics(
+        user=MagicMock(),
+        property_id="123456",
+        start_date="2026-07-01",
+        end_date="2026-07-02",
+        metrics=["sessions"],
+        dimensions=["landingPage"],
+        dimension_filter=[
+            ("sessionSourceMedium", "contains", "facebook / cpc"),
+            ("sessionSourceMedium", "prefix", "facebook / post"),
+        ],
+    )
+
+    assert error is None
+    sent_request = fake_data_client.run_report.call_args[0][0]
+    sub_filters = sent_request.dimension_filter.or_group.expressions
+    assert len(sub_filters) == 2
+    assert sub_filters[0].filter.field_name == "sessionSourceMedium"
+    assert sub_filters[0].filter.string_filter.value == "facebook / cpc"
+    assert sub_filters[0].filter.string_filter.match_type == Filter.StringFilter.MatchType.CONTAINS
+    assert sub_filters[1].filter.string_filter.value == "facebook / post"
+    assert sub_filters[1].filter.string_filter.match_type == Filter.StringFilter.MatchType.BEGINS_WITH
+
+
+@pytest.mark.unit
 def test_get_analytics_returns_cached_result_without_calling_api(mocker):
     from modules.ga4.service import GA4AnalyticsService
 

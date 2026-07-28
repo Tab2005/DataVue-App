@@ -14,6 +14,13 @@ from .anomaly_rules import (
     list_rules,
     update_rule,
 )
+from .channel_groups import (
+    delete_channel_group_rule,
+    get_channel_group_match_conditions,
+    list_channel_group_rules,
+    list_channel_groups,
+    upsert_channel_group_rule,
+)
 from .channels import _get_attribution_model, get_channels
 from .dashboard import (
     _fetch_intraday_dashboard_payload,
@@ -73,6 +80,12 @@ class GA4InsightsService:
     list_landing_page_rules = staticmethod(list_landing_page_rules)
     upsert_landing_page_rule = staticmethod(upsert_landing_page_rule)
     delete_landing_page_rule = staticmethod(delete_landing_page_rule)
+
+    list_channel_group_rules = staticmethod(list_channel_group_rules)
+    upsert_channel_group_rule = staticmethod(upsert_channel_group_rule)
+    delete_channel_group_rule = staticmethod(delete_channel_group_rule)
+    list_channel_groups = staticmethod(list_channel_groups)
+    get_channel_group_match_conditions = staticmethod(get_channel_group_match_conditions)
 
     get_items = staticmethod(get_items)
     list_item_category_rules = staticmethod(list_item_category_rules)

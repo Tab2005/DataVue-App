@@ -104,6 +104,18 @@ const GA4Insights = () => {
     const [landingRuleSaving, setLandingRuleSaving] = useState(false);
     const [landingRuleForm, setLandingRuleForm] = useState({ category: 'product', match_type: 'prefix', pattern: '', priority: 0 });
 
+    // docs/44：渠道值自訂分組——第三個下拉（跟渠道值互斥），選了維度後才
+    // 抓對應的分組清單；規則管理面板另外維護該維度底下的規則列表。
+    const [landingChannelGroup, setLandingChannelGroup] = useState('');
+    const [landingChannelGroups, setLandingChannelGroups] = useState([]);
+    const [landingChannelGroupsLoading, setLandingChannelGroupsLoading] = useState(false);
+    const [landingChannelGroupRulesOpen, setLandingChannelGroupRulesOpen] = useState(false);
+    const [landingChannelGroupRules, setLandingChannelGroupRules] = useState(null);
+    const [landingChannelGroupRulesLoading, setLandingChannelGroupRulesLoading] = useState(false);
+    const [landingChannelGroupRulesError, setLandingChannelGroupRulesError] = useState('');
+    const [landingChannelGroupRuleSaving, setLandingChannelGroupRuleSaving] = useState(false);
+    const [landingChannelGroupRuleForm, setLandingChannelGroupRuleForm] = useState({ group_label: '', match_type: 'contains', pattern: '', priority: 0 });
+
     // 第 2/6 波：商品
     const [itemsDays, setItemsDays] = useState(7);
     const [itemsSnapshot, setItemsSnapshot] = useState(null);
@@ -230,13 +242,16 @@ const GA4Insights = () => {
         keyEvent = landingKeyEvent,
         channelDimension = landingChannelDimension,
         channelValue = landingChannelValue,
+        channelGroup = landingChannelGroup,
     ) => {
         if (!pid) return;
         setLandingLoading(true);
         setLandingError('');
         try {
             setLandingSnapshot(
-                await ga4InsightsService.getLandingPages(pid, days, keyEvent || null, channelDimension || null, channelValue || null)
+                await ga4InsightsService.getLandingPages(
+                    pid, days, keyEvent || null, channelDimension || null, channelValue || null, channelGroup || null
+                )
             );
         } catch (err) {
             setLandingError(err.message || t('Failed to load landing pages.', '載入到達頁分析失敗。'));
@@ -260,6 +275,76 @@ const GA4Insights = () => {
             setLandingError(err.message || t('Failed to load channel values.', '載入渠道清單失敗。'));
         } finally {
             setLandingChannelValuesLoading(false);
+        }
+    };
+
+    // docs/44：渠道值自訂分組清單——跟渠道值清單不同，這是直接從資料庫的
+    // 規則列表 derive 出來的（不用打 GA4 API），不需要帶 days 參數。
+    const loadLandingChannelGroups = async (pid, dimension) => {
+        if (!pid || !dimension) {
+            setLandingChannelGroups([]);
+            return;
+        }
+        setLandingChannelGroupsLoading(true);
+        try {
+            const res = await ga4InsightsService.listChannelGroups(pid, dimension);
+            setLandingChannelGroups(res.groups || []);
+        } catch (err) {
+            setLandingError(err.message || t('Failed to load channel groups.', '載入自訂分組失敗。'));
+        } finally {
+            setLandingChannelGroupsLoading(false);
+        }
+    };
+
+    const loadLandingChannelGroupRules = async (pid, dimension) => {
+        if (!pid || !dimension) {
+            setLandingChannelGroupRules([]);
+            return;
+        }
+        setLandingChannelGroupRulesLoading(true);
+        setLandingChannelGroupRulesError('');
+        try {
+            const res = await ga4InsightsService.listChannelGroupRules(pid, dimension);
+            setLandingChannelGroupRules(res.rules || []);
+        } catch (err) {
+            setLandingChannelGroupRulesError(err.message || t('Failed to load channel group rules.', '載入渠道分組規則失敗。'));
+        } finally {
+            setLandingChannelGroupRulesLoading(false);
+        }
+    };
+
+    const handleCreateChannelGroupRule = async (event) => {
+        event.preventDefault();
+        if (!propertyId || !landingChannelDimension || !landingChannelGroupRuleForm.group_label.trim() || !landingChannelGroupRuleForm.pattern.trim()) return;
+        setLandingChannelGroupRuleSaving(true);
+        setLandingChannelGroupRulesError('');
+        try {
+            await ga4InsightsService.upsertChannelGroupRule({
+                property_id: propertyId,
+                channel_dimension: landingChannelDimension,
+                group_label: landingChannelGroupRuleForm.group_label.trim(),
+                match_type: landingChannelGroupRuleForm.match_type,
+                pattern: landingChannelGroupRuleForm.pattern.trim(),
+                priority: Number(landingChannelGroupRuleForm.priority) || 0,
+            });
+            setLandingChannelGroupRuleForm((prev) => ({ ...prev, group_label: '', pattern: '' }));
+            await loadLandingChannelGroupRules(propertyId, landingChannelDimension);
+            await loadLandingChannelGroups(propertyId, landingChannelDimension);
+        } catch (err) {
+            setLandingChannelGroupRulesError(err.message || t('Failed to save rule.', '儲存規則失敗。'));
+        } finally {
+            setLandingChannelGroupRuleSaving(false);
+        }
+    };
+
+    const handleDeleteChannelGroupRule = async (ruleId) => {
+        if (!window.confirm(t('Delete this channel group rule?', '要刪除此渠道分組規則嗎？'))) return;
+        try {
+            await ga4InsightsService.deleteChannelGroupRule(ruleId);
+            await loadLandingChannelGroupRules(propertyId, landingChannelDimension);
+            await loadLandingChannelGroups(propertyId, landingChannelDimension);
+        } catch (err) {
+            setLandingChannelGroupRulesError(err.message || t('Failed to delete rule.', '刪除規則失敗。'));
         }
     };
 
@@ -732,6 +817,22 @@ const GA4Insights = () => {
                     landingChannelValues={landingChannelValues}
                     landingChannelValuesLoading={landingChannelValuesLoading}
                     loadLandingChannelValues={loadLandingChannelValues}
+                    landingChannelGroup={landingChannelGroup}
+                    setLandingChannelGroup={setLandingChannelGroup}
+                    landingChannelGroups={landingChannelGroups}
+                    landingChannelGroupsLoading={landingChannelGroupsLoading}
+                    loadLandingChannelGroups={loadLandingChannelGroups}
+                    landingChannelGroupRulesOpen={landingChannelGroupRulesOpen}
+                    setLandingChannelGroupRulesOpen={setLandingChannelGroupRulesOpen}
+                    landingChannelGroupRules={landingChannelGroupRules}
+                    landingChannelGroupRulesLoading={landingChannelGroupRulesLoading}
+                    landingChannelGroupRulesError={landingChannelGroupRulesError}
+                    loadLandingChannelGroupRules={loadLandingChannelGroupRules}
+                    handleCreateChannelGroupRule={handleCreateChannelGroupRule}
+                    handleDeleteChannelGroupRule={handleDeleteChannelGroupRule}
+                    landingChannelGroupRuleForm={landingChannelGroupRuleForm}
+                    setLandingChannelGroupRuleForm={setLandingChannelGroupRuleForm}
+                    landingChannelGroupRuleSaving={landingChannelGroupRuleSaving}
                     DaySelector={DaySelector}
                     landingRulesOpen={landingRulesOpen}
                     setLandingRulesOpen={setLandingRulesOpen}

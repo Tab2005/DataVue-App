@@ -3,6 +3,7 @@ import React, { useEffect, useMemo, useState } from 'react';
 import {
     AIInsightNote,
     CHANNEL_DIMENSION_OPTIONS,
+    CHANNEL_GROUP_MATCH_TYPE_OPTIONS,
     LANDING_CATEGORY_LABELS,
     LANDING_CATEGORY_ORDER,
     LANDING_MATCH_TYPE_OPTIONS,
@@ -43,6 +44,22 @@ const LandingPagesTab = ({
     landingChannelValues,
     landingChannelValuesLoading,
     loadLandingChannelValues,
+    landingChannelGroup,
+    setLandingChannelGroup,
+    landingChannelGroups,
+    landingChannelGroupsLoading,
+    loadLandingChannelGroups,
+    landingChannelGroupRulesOpen,
+    setLandingChannelGroupRulesOpen,
+    landingChannelGroupRules,
+    landingChannelGroupRulesLoading,
+    landingChannelGroupRulesError,
+    loadLandingChannelGroupRules,
+    handleCreateChannelGroupRule,
+    handleDeleteChannelGroupRule,
+    landingChannelGroupRuleForm,
+    setLandingChannelGroupRuleForm,
+    landingChannelGroupRuleSaving,
     DaySelector,
     landingRulesOpen,
     setLandingRulesOpen,
@@ -118,8 +135,11 @@ const LandingPagesTab = ({
                                             const nextDimension = event.target.value;
                                             setLandingChannelDimension(nextDimension);
                                             setLandingChannelValue('');
+                                            setLandingChannelGroup('');
                                             loadLandingChannelValues(propertyId, landingDays, nextDimension);
-                                            loadLandingPages(propertyId, landingDays, landingKeyEvent, nextDimension, '');
+                                            loadLandingChannelGroups(propertyId, nextDimension);
+                                            if (landingChannelGroupRulesOpen) loadLandingChannelGroupRules(propertyId, nextDimension);
+                                            loadLandingPages(propertyId, landingDays, landingKeyEvent, nextDimension, '', '');
                                         }}
                                         style={{ ...inputStyle, width: 'auto', padding: '8px 10px' }}
                                     >
@@ -134,7 +154,8 @@ const LandingPagesTab = ({
                                             onChange={(event) => {
                                                 const nextValue = event.target.value;
                                                 setLandingChannelValue(nextValue);
-                                                loadLandingPages(propertyId, landingDays, landingKeyEvent, landingChannelDimension, nextValue);
+                                                setLandingChannelGroup('');
+                                                loadLandingPages(propertyId, landingDays, landingKeyEvent, landingChannelDimension, nextValue, '');
                                             }}
                                             disabled={landingChannelValuesLoading}
                                             style={{ ...inputStyle, width: 'auto', padding: '8px 10px', opacity: landingChannelValuesLoading ? 0.6 : 1 }}
@@ -145,7 +166,28 @@ const LandingPagesTab = ({
                                             ))}
                                         </select>
                                     )}
-                                    {landingChannelValuesLoading && (
+                                    {landingChannelDimension && (
+                                        // docs/44：自訂分組——跟「渠道值」互斥，選了分組要清空渠道值，反之亦然。
+                                        <select
+                                            value={landingChannelGroup}
+                                            onChange={(event) => {
+                                                const nextGroup = event.target.value;
+                                                setLandingChannelGroup(nextGroup);
+                                                setLandingChannelValue('');
+                                                loadLandingPages(propertyId, landingDays, landingKeyEvent, landingChannelDimension, '', nextGroup);
+                                            }}
+                                            disabled={landingChannelGroupsLoading}
+                                            style={{ ...inputStyle, width: 'auto', padding: '8px 10px', opacity: landingChannelGroupsLoading ? 0.6 : 1 }}
+                                        >
+                                            <option value="">{t('No custom group', '不用自訂分組')}</option>
+                                            {landingChannelGroups.map((group) => (
+                                                <option key={group.group_label} value={group.group_label}>
+                                                    {group.group_label} ({group.rule_count})
+                                                </option>
+                                            ))}
+                                        </select>
+                                    )}
+                                    {(landingChannelValuesLoading || landingChannelGroupsLoading) && (
                                         <span style={{ color: 'var(--text-tertiary)', fontSize: '0.76rem' }}>{t('Loading channels…', '載入渠道清單中…')}</span>
                                     )}
                                     <span style={{ width: '1px', alignSelf: 'stretch', background: 'var(--glass-border)', margin: '0 2px' }} />
@@ -306,6 +348,104 @@ const LandingPagesTab = ({
                                     <div style={{ color: 'var(--text-tertiary)', fontSize: '0.78rem' }}>
                                         {t('You do not have permission to manage classification rules.', '您沒有管理分類規則的權限。')}
                                     </div>
+                                )}
+                            </div>
+                        )}
+                    </section>
+
+                    {/* docs/44：渠道值自訂分組規則管理——規則綁定單一維度，直接沿用
+                        上方篩選列已選的「維度」，未選維度時提示先選維度再管理規則。 */}
+                    <section style={baseCardStyle}>
+                        <button
+                            type="button"
+                            onClick={() => {
+                                const next = !landingChannelGroupRulesOpen;
+                                setLandingChannelGroupRulesOpen(next);
+                                if (next && landingChannelDimension) {
+                                    loadLandingChannelGroupRules(propertyId, landingChannelDimension);
+                                }
+                            }}
+                            style={{ ...secondaryButtonStyle, width: '100%', textAlign: 'left', display: 'flex', justifyContent: 'space-between' }}
+                        >
+                            <span>{t('Channel group rules', '渠道分組規則')}</span>
+                            <span>{landingChannelGroupRulesOpen ? '▲' : '▼'}</span>
+                        </button>
+                        {landingChannelGroupRulesOpen && (
+                            <div style={{ marginTop: '14px', display: 'grid', gap: '14px' }}>
+                                {!landingChannelDimension ? (
+                                    <div style={{ color: 'var(--text-tertiary)', fontSize: '0.82rem' }}>
+                                        {t('Select a channel dimension above first to manage its group rules.', '請先在上方篩選列選擇一個渠道維度，才能管理該維度的分組規則。')}
+                                    </div>
+                                ) : (
+                                    <>
+                                        {landingChannelGroupRulesError && <div style={{ color: '#fca5a5', fontSize: '0.85rem' }}>{landingChannelGroupRulesError}</div>}
+                                        {landingChannelGroupRulesLoading && !landingChannelGroupRules ? (
+                                            emptyState(t('Loading rules…', '載入規則中…'))
+                                        ) : landingChannelGroupRules && landingChannelGroupRules.length === 0 ? (
+                                            <div style={{ color: 'var(--text-tertiary)', fontSize: '0.82rem' }}>
+                                                {t('No custom group rules yet for this dimension.', '這個維度目前沒有自訂分組規則。')}
+                                            </div>
+                                        ) : (
+                                            <div style={{ display: 'grid', gap: '8px' }}>
+                                                {(landingChannelGroupRules || []).map((rule) => (
+                                                    <div key={rule.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', border: '1px solid var(--glass-border)', borderRadius: '10px', padding: '10px 12px', gap: '8px', flexWrap: 'wrap' }}>
+                                                        <div style={{ display: 'flex', gap: '10px', alignItems: 'center', flexWrap: 'wrap' }}>
+                                                            <span style={badgeStyle('product')}>{rule.group_label}</span>
+                                                            <span style={{ color: 'var(--text-secondary)', fontSize: '0.82rem' }}>
+                                                                {tr(language, CHANNEL_GROUP_MATCH_TYPE_OPTIONS.find((m) => m.value === rule.match_type)?.en, CHANNEL_GROUP_MATCH_TYPE_OPTIONS.find((m) => m.value === rule.match_type)?.zh)}
+                                                            </span>
+                                                            <code style={{ color: 'var(--text-primary)', fontSize: '0.82rem' }}>{rule.pattern}</code>
+                                                            <span style={{ color: 'var(--text-tertiary)', fontSize: '0.76rem' }}>{t('priority', '優先序')} {rule.priority}</span>
+                                                        </div>
+                                                        {canManageGa4InsightsRules && (
+                                                            <button type="button" style={{ ...secondaryButtonStyle, padding: '4px 10px', fontSize: '0.78rem' }} onClick={() => handleDeleteChannelGroupRule(rule.id)}>
+                                                                {t('Delete', '刪除')}
+                                                            </button>
+                                                        )}
+                                                    </div>
+                                                ))}
+                                            </div>
+                                        )}
+
+                                        {canManageGa4InsightsRules ? (
+                                            <form onSubmit={handleCreateChannelGroupRule} style={{ display: 'grid', gap: '10px', gridTemplateColumns: isMobile ? '1fr' : 'repeat(5, minmax(0, 1fr))' }}>
+                                                <input
+                                                    type="text"
+                                                    value={landingChannelGroupRuleForm.group_label}
+                                                    onChange={(event) => setLandingChannelGroupRuleForm((prev) => ({ ...prev, group_label: event.target.value }))}
+                                                    placeholder={t('Group name (e.g. Facebook Ads)', '分組名稱（例：Facebook 付費廣告）')}
+                                                    style={inputStyle}
+                                                />
+                                                <select value={landingChannelGroupRuleForm.match_type} onChange={(event) => setLandingChannelGroupRuleForm((prev) => ({ ...prev, match_type: event.target.value }))} style={inputStyle}>
+                                                    {CHANNEL_GROUP_MATCH_TYPE_OPTIONS.map((option) => (
+                                                        <option key={option.value} value={option.value}>{t(option.en, option.zh)}</option>
+                                                    ))}
+                                                </select>
+                                                <input
+                                                    type="text"
+                                                    value={landingChannelGroupRuleForm.pattern}
+                                                    onChange={(event) => setLandingChannelGroupRuleForm((prev) => ({ ...prev, pattern: event.target.value }))}
+                                                    placeholder={t('Pattern (e.g. facebook / cpc)', '比對字串（例：facebook / cpc）')}
+                                                    style={inputStyle}
+                                                />
+                                                <input
+                                                    type="number"
+                                                    min="0"
+                                                    value={landingChannelGroupRuleForm.priority}
+                                                    onChange={(event) => setLandingChannelGroupRuleForm((prev) => ({ ...prev, priority: event.target.value }))}
+                                                    placeholder={t('Priority', '優先序')}
+                                                    style={inputStyle}
+                                                />
+                                                <button type="submit" style={buttonStyle} disabled={landingChannelGroupRuleSaving || !landingChannelGroupRuleForm.group_label.trim() || !landingChannelGroupRuleForm.pattern.trim()}>
+                                                    {landingChannelGroupRuleSaving ? t('Saving…', '儲存中…') : t('Add rule', '新增規則')}
+                                                </button>
+                                            </form>
+                                        ) : (
+                                            <div style={{ color: 'var(--text-tertiary)', fontSize: '0.78rem' }}>
+                                                {t('You do not have permission to manage classification rules.', '您沒有管理分類規則的權限。')}
+                                            </div>
+                                        )}
+                                    </>
                                 )}
                             </div>
                         )}

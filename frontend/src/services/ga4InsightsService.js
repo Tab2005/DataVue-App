@@ -35,12 +35,15 @@ export const ga4InsightsService = {
             `/api/ga4/insights/channels?property_id=${encodeURIComponent(propertyId)}&days=${days}&dimension=${encodeURIComponent(dimension)}`
         ),
 
-    getLandingPages: async (propertyId, days = 7, keyEvent = null, channelDimension = null, channelValue = null) =>
+    getLandingPages: async (propertyId, days = 7, keyEvent = null, channelDimension = null, channelValue = null, channelGroup = null) =>
         apiClient.get(
             `/api/ga4/insights/landing-pages?property_id=${encodeURIComponent(propertyId)}&days=${days}`
             + (keyEvent ? `&key_event=${encodeURIComponent(keyEvent)}` : '')
             + (channelDimension && channelValue
                 ? `&channel_dimension=${encodeURIComponent(channelDimension)}&channel_value=${encodeURIComponent(channelValue)}`
+                : '')
+            + (channelDimension && channelGroup
+                ? `&channel_dimension=${encodeURIComponent(channelDimension)}&channel_group=${encodeURIComponent(channelGroup)}`
                 : '')
         ),
 
@@ -81,4 +84,20 @@ export const ga4InsightsService = {
     upsertItemCategoryRule: async (payload) => apiClient.put('/api/ga4/insights/item-category-rules', payload),
 
     deleteItemCategoryRule: async (ruleId) => apiClient.delete(`/api/ga4/insights/item-category-rules/${ruleId}`),
+
+    // ─── docs/44：渠道值自訂分組規則（追加） ─────────────────────────
+    listChannelGroupRules: async (propertyId, channelDimension = null) =>
+        apiClient.get(
+            `/api/ga4/insights/channel-group-rules?property_id=${encodeURIComponent(propertyId)}`
+            + (channelDimension ? `&channel_dimension=${encodeURIComponent(channelDimension)}` : '')
+        ),
+
+    upsertChannelGroupRule: async (payload) => apiClient.put('/api/ga4/insights/channel-group-rules', payload),
+
+    deleteChannelGroupRule: async (ruleId) => apiClient.delete(`/api/ga4/insights/channel-group-rules/${ruleId}`),
+
+    listChannelGroups: async (propertyId, channelDimension) =>
+        apiClient.get(
+            `/api/ga4/insights/channel-groups?property_id=${encodeURIComponent(propertyId)}&channel_dimension=${encodeURIComponent(channelDimension)}`
+        ),
 };

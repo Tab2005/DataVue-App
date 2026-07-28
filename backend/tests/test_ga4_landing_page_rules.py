@@ -366,6 +366,128 @@ def test_get_landing_pages_channel_filter_snapshots_are_independent(mocker, db, 
     assert reloaded_unfiltered.id == unfiltered.id
 
 
+# ─── docs/44：渠道值自訂分組篩選 ────────────────────────────────────────
+@pytest.mark.unit
+def test_get_landing_pages_with_channel_group_applies_or_filter(mocker, db, sample_user):
+    from modules.ga4.insights_service import GA4InsightsService
+
+    GA4InsightsService.upsert_channel_group_rule(
+        db, rule_id=None, user_id=sample_user.id, property_id="123456",
+        channel_dimension="source_medium", group_label="Facebook Ads",
+        match_type="contains", pattern="facebook / cpc", priority=0,
+    )
+    GA4InsightsService.upsert_channel_group_rule(
+        db, rule_id=None, user_id=sample_user.id, property_id="123456",
+        channel_dimension="source_medium", group_label="Facebook Ads",
+        match_type="prefix", pattern="facebook / post", priority=1,
+    )
+    db.commit()
+
+    captured_calls = []
+
+    def fake_get_analytics(*, user, property_id, start_date, end_date, metrics, dimensions, db=None, dimension_filter=None, **_):
+        captured_calls.append(dimension_filter)
+        if dimensions == ["landingPage", "eventName"]:
+            return {"rows": []}, None
+        return {
+            "rows": [{
+                "landingPage": "/products/a", "sessions": 40, "engagementRate": 0.5,
+                "keyEvents": 2, "bounceRate": 0.3, "sessionKeyEventRate": 0.05,
+            }]
+        }, None
+
+    mocker.patch("modules.ga4.insights_service.GA4Service.get_analytics", side_effect=fake_get_analytics)
+
+    snapshot = GA4InsightsService.get_landing_pages(
+        db, user=sample_user, property_id="123456", days=7,
+        channel_dimension="source_medium", channel_group="Facebook Ads",
+    )
+    db.commit()
+
+    expected_filter = [
+        ("sessionSourceMedium", "contains", "facebook / cpc"),
+        ("sessionSourceMedium", "prefix", "facebook / post"),
+    ]
+    assert captured_calls[0] == expected_filter
+    assert captured_calls[1] == expected_filter
+    assert snapshot.payload["channel_group"] == "Facebook Ads"
+    assert snapshot.payload["channel_value"] is None
+    assert snapshot.kind.startswith("landing_page:chg_")
+
+
+@pytest.mark.unit
+def test_get_landing_pages_channel_group_and_value_are_mutually_exclusive():
+    from modules.ga4.insights_service import GA4InsightsService
+
+    with pytest.raises(ValueError):
+        GA4InsightsService.get_landing_pages(
+            db=None, user=MagicMock(), property_id="123456", days=7,
+            channel_dimension="source_medium", channel_value="google / organic", channel_group="Facebook Ads",
+        )
+
+
+@pytest.mark.unit
+def test_get_landing_pages_channel_group_requires_dimension():
+    from modules.ga4.insights_service import GA4InsightsService
+
+    with pytest.raises(ValueError):
+        GA4InsightsService.get_landing_pages(
+            db=None, user=MagicMock(), property_id="123456", days=7,
+            channel_group="Facebook Ads",
+        )
+
+
+@pytest.mark.unit
+def test_get_landing_pages_rejects_unknown_channel_group(db, sample_user):
+    from modules.ga4.insights_service import GA4InsightsService
+
+    with pytest.raises(ValueError):
+        GA4InsightsService.get_landing_pages(
+            db=db, user=sample_user, property_id="123456", days=7,
+            channel_dimension="source_medium", channel_group="Does Not Exist",
+        )
+
+
+@pytest.mark.unit
+def test_get_landing_pages_channel_group_and_value_snapshots_are_independent(mocker, db, sample_user):
+    """精確值篩選（ch_ 前綴）跟自訂分組篩選（chg_ 前綴）各自存成獨立快照。"""
+    from modules.ga4.insights_service import GA4InsightsService
+
+    GA4InsightsService.upsert_channel_group_rule(
+        db, rule_id=None, user_id=sample_user.id, property_id="123456",
+        channel_dimension="source_medium", group_label="Facebook Ads",
+        match_type="contains", pattern="facebook", priority=0,
+    )
+    db.commit()
+
+    def fake_get_analytics(*, user, property_id, start_date, end_date, metrics, dimensions, db=None, dimension_filter=None, **_):
+        if dimensions == ["landingPage", "eventName"]:
+            return {"rows": []}, None
+        return {
+            "rows": [{
+                "landingPage": "/products/a", "sessions": 10, "engagementRate": 0.5,
+                "keyEvents": 1, "bounceRate": 0.3, "sessionKeyEventRate": 0.1,
+            }]
+        }, None
+
+    mocker.patch("modules.ga4.insights_service.GA4Service.get_analytics", side_effect=fake_get_analytics)
+
+    value_snapshot = GA4InsightsService.get_landing_pages(
+        db, user=sample_user, property_id="123456", days=7,
+        channel_dimension="source_medium", channel_value="facebook / cpc",
+    )
+    db.commit()
+    group_snapshot = GA4InsightsService.get_landing_pages(
+        db, user=sample_user, property_id="123456", days=7,
+        channel_dimension="source_medium", channel_group="Facebook Ads",
+    )
+    db.commit()
+
+    assert value_snapshot.id != group_snapshot.id
+    assert value_snapshot.kind.startswith("landing_page:ch_")
+    assert group_snapshot.kind.startswith("landing_page:chg_")
+
+
 # ─── repository + service：upsert 語意 ──────────────────────────────
 @pytest.mark.unit
 def test_repository_list_landing_page_rules_ordered_by_priority(db, sample_user):
@@ -536,3 +658,134 @@ def test_landing_pages_endpoint_rejects_unpaired_channel_filter_with_400(client,
         params={"property_id": "123456", "days": 7, "channel_dimension": "source_medium"},
     )
     assert resp.status_code == 400
+
+
+# ─── docs/44：渠道值自訂分組規則端點 ──────────────────────────────────
+@pytest.mark.integration
+def test_landing_pages_endpoint_accepts_channel_group(client, db, sample_user, mocker):
+    _override_dependencies(client.app, sample_user, db)
+    from modules.ga4.insights_service import GA4InsightsService
+
+    GA4InsightsService.upsert_channel_group_rule(
+        db, rule_id=None, user_id=sample_user.id, property_id="123456",
+        channel_dimension="source_medium", group_label="Facebook Ads",
+        match_type="contains", pattern="facebook", priority=0,
+    )
+    db.commit()
+    mocker.patch(
+        "modules.ga4.insights_service.GA4Service.get_analytics",
+        return_value=({"rows": [{"landingPage": "/products/x", "sessions": 5, "engagementRate": 0.5, "keyEvents": 1, "bounceRate": 0.2, "sessionKeyEventRate": 0.2}]}, None),
+    )
+
+    resp = client.get(
+        "/api/ga4/insights/landing-pages",
+        params={
+            "property_id": "123456", "days": 7,
+            "channel_dimension": "source_medium", "channel_group": "Facebook Ads",
+        },
+    )
+    assert resp.status_code == 200
+    payload = resp.json()["payload"]
+    assert payload["channel_group"] == "Facebook Ads"
+    assert resp.json()["kind"].startswith("landing_page:chg_")
+
+
+@pytest.mark.integration
+def test_landing_pages_endpoint_rejects_both_value_and_group_with_400(client, db, sample_user):
+    _override_dependencies(client.app, sample_user, db)
+
+    resp = client.get(
+        "/api/ga4/insights/landing-pages",
+        params={
+            "property_id": "123456", "days": 7, "channel_dimension": "source_medium",
+            "channel_value": "google / organic", "channel_group": "Facebook Ads",
+        },
+    )
+    assert resp.status_code == 400
+
+
+@pytest.mark.integration
+def test_channel_group_rule_crud_endpoints(client, db, sample_user):
+    _override_dependencies(client.app, sample_user, db)
+
+    created = client.put(
+        "/api/ga4/insights/channel-group-rules",
+        json={
+            "property_id": "123456", "channel_dimension": "source_medium",
+            "group_label": "Facebook Ads", "match_type": "contains",
+            "pattern": "facebook / cpc", "priority": 0,
+        },
+    )
+    assert created.status_code == 200
+    rule_id = created.json()["id"]
+    assert created.json()["group_label"] == "Facebook Ads"
+
+    listed = client.get(
+        "/api/ga4/insights/channel-group-rules",
+        params={"property_id": "123456", "channel_dimension": "source_medium"},
+    )
+    assert listed.status_code == 200
+    assert listed.json()["rules"][0]["id"] == rule_id
+
+    updated = client.put(
+        "/api/ga4/insights/channel-group-rules",
+        json={
+            "id": rule_id, "property_id": "123456", "channel_dimension": "source_medium",
+            "group_label": "Facebook Ads (paid)", "match_type": "prefix",
+            "pattern": "facebook / post", "priority": 1,
+        },
+    )
+    assert updated.status_code == 200
+    assert updated.json()["group_label"] == "Facebook Ads (paid)"
+
+    deleted = client.delete(f"/api/ga4/insights/channel-group-rules/{rule_id}")
+    assert deleted.status_code == 200
+    assert deleted.json()["status"] == "deleted"
+
+
+@pytest.mark.integration
+def test_channel_group_rule_payload_rejects_invalid_dimension_and_match_type(client, db, sample_user):
+    _override_dependencies(client.app, sample_user, db)
+
+    bad_dimension = client.put(
+        "/api/ga4/insights/channel-group-rules",
+        json={
+            "property_id": "123456", "channel_dimension": "not_a_real_dimension",
+            "group_label": "x", "match_type": "contains", "pattern": "x", "priority": 0,
+        },
+    )
+    assert bad_dimension.status_code == 422
+
+    bad_match_type = client.put(
+        "/api/ga4/insights/channel-group-rules",
+        json={
+            "property_id": "123456", "channel_dimension": "source_medium",
+            "group_label": "x", "match_type": "regex", "pattern": "x", "priority": 0,
+        },
+    )
+    assert bad_match_type.status_code == 422
+
+
+@pytest.mark.integration
+def test_list_channel_groups_endpoint(client, db, sample_user):
+    _override_dependencies(client.app, sample_user, db)
+    from modules.ga4.insights_service import GA4InsightsService
+
+    GA4InsightsService.upsert_channel_group_rule(
+        db, rule_id=None, user_id=sample_user.id, property_id="123456",
+        channel_dimension="source_medium", group_label="Facebook Ads",
+        match_type="contains", pattern="facebook / cpc", priority=0,
+    )
+    GA4InsightsService.upsert_channel_group_rule(
+        db, rule_id=None, user_id=sample_user.id, property_id="123456",
+        channel_dimension="source_medium", group_label="Facebook Ads",
+        match_type="contains", pattern="facebook / post-ads", priority=1,
+    )
+    db.commit()
+
+    resp = client.get(
+        "/api/ga4/insights/channel-groups",
+        params={"property_id": "123456", "channel_dimension": "source_medium"},
+    )
+    assert resp.status_code == 200
+    assert resp.json()["groups"] == [{"group_label": "Facebook Ads", "rule_count": 2}]

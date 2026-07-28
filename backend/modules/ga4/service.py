@@ -9,13 +9,14 @@ Summary/Comparison/Trends 資料組裝。低階 OAuth / RunReport 呼叫見 clie
 from datetime import datetime, timedelta
 import json
 import os
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Optional, Tuple, Union
 
 from google.analytics.data_v1beta.types import (
     DateRange,
     Dimension,
     Filter,
     FilterExpression,
+    FilterExpressionList,
     RunReportRequest,
 )
 from sqlalchemy.orm import Session
@@ -23,6 +24,14 @@ from sqlalchemy.orm import Session
 from database import User
 from cache import generate_cache_key, cache_get, cache_set, analytics_cache
 from .client import GA4Client
+
+# docs/44：渠道值自訂分組——把規則的 match_type 字串對應到 GA4 Data API 的
+# StringFilter 比對方式。
+_STRING_FILTER_MATCH_TYPES = {
+    "exact": Filter.StringFilter.MatchType.EXACT,
+    "prefix": Filter.StringFilter.MatchType.BEGINS_WITH,
+    "contains": Filter.StringFilter.MatchType.CONTAINS,
+}
 
 
 class GA4AnalyticsService:
@@ -39,7 +48,7 @@ class GA4AnalyticsService:
         limit: Optional[int] = None,
         offset: int = 0,
         db: Session = None,
-        dimension_filter: Optional[Tuple[str, str]] = None
+        dimension_filter: Optional[Union[Tuple[str, str], List[Tuple[str, str, str]]]] = None
     ) -> Tuple[Optional[Dict[str, Any]], Optional[str]]:
         """
         取得 GA4 分析資料
@@ -53,8 +62,15 @@ class GA4AnalyticsService:
             metrics: 指標列表，預設使用常見指標
             dimensions: 維度列表，預設使用日期
             db: 資料庫 session（可選，用於更新 token）
-            dimension_filter: (維度名, 篩選值) 的 tuple，對該維度做精確比對篩選
-                （docs/42：到達頁渠道篩選用），None 表示不篩選
+            dimension_filter: 兩種形狀擇一，None 表示不篩選：
+                - (維度名, 篩選值) 的 2-tuple：對該維度做單一精確比對篩選
+                  （docs/42：到達頁渠道篩選用）
+                - [(維度名, match_type, pattern), ...] 的 list：把每個條件各自
+                  轉成 StringFilter 後用 OR 組合起來（docs/44：渠道值自訂分組，
+                  同一分組底下多條規則要一起生效）。match_type 是
+                  "exact"/"prefix"/"contains"，同一個 list 裡的維度名理論上都
+                  一樣（規則綁定單一維度，見 docs/43 定案），但這裡不強制檢查，
+                  由呼叫端保證。
 
         Returns:
             tuple: (analytics_data, error_message)
@@ -270,9 +286,25 @@ class GA4AnalyticsService:
 
             # docs/42：到達頁渠道篩選——把 (維度名, 篩選值) 轉成 GA4 Data API 的
             # FilterExpression（精確比對，非 contains，避免模糊匹配到非預期的渠道值）。
+            # docs/44：渠道值自訂分組——list 形狀時，把每個條件各自轉成一個
+            # StringFilter 再用 or_group 組合，讓同一分組底下所有規則一起生效。
             def _build_dimension_filter_expression():
                 if not dimension_filter:
                     return None
+                if isinstance(dimension_filter, list):
+                    sub_expressions = [
+                        FilterExpression(
+                            filter=Filter(
+                                field_name=filter_dimension,
+                                string_filter=Filter.StringFilter(
+                                    value=pattern,
+                                    match_type=_STRING_FILTER_MATCH_TYPES[match_type],
+                                ),
+                            )
+                        )
+                        for filter_dimension, match_type, pattern in dimension_filter
+                    ]
+                    return FilterExpression(or_group=FilterExpressionList(expressions=sub_expressions))
                 filter_dimension, filter_value = dimension_filter
                 return FilterExpression(
                     filter=Filter(
