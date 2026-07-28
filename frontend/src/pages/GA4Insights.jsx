@@ -8,6 +8,7 @@ import OverviewTab from '../components/GA4Insights/OverviewTab';
 import ChannelsTab from '../components/GA4Insights/ChannelsTab';
 import LandingPagesTab from '../components/GA4Insights/LandingPagesTab';
 import ItemsTab from '../components/GA4Insights/ItemsTab';
+import ItemLandingCrossTab from '../components/GA4Insights/ItemLandingCrossTab';
 import KpiTab from '../components/GA4Insights/KpiTab';
 import AlertsTab from '../components/GA4Insights/AlertsTab';
 import {
@@ -149,6 +150,12 @@ const GA4Insights = () => {
     const [itemCategoryRulesError, setItemCategoryRulesError] = useState('');
     const [itemCategoryRuleSaving, setItemCategoryRuleSaving] = useState(false);
     const [itemCategoryRuleForm, setItemCategoryRuleForm] = useState({ category: '', match_type: 'prefix', pattern: '', priority: 0 });
+
+    // docs/47：商品頁面與商品轉換率交叉對照（獨立新分頁）
+    const [itemLandingDays, setItemLandingDays] = useState(7);
+    const [itemLandingSnapshot, setItemLandingSnapshot] = useState(null);
+    const [itemLandingLoading, setItemLandingLoading] = useState(false);
+    const [itemLandingError, setItemLandingError] = useState('');
 
     // 第 3 波：KPI 目標追蹤
     const [kpiTargets, setKpiTargets] = useState(null);
@@ -570,6 +577,20 @@ const GA4Insights = () => {
         }
     };
 
+    // docs/47：商品頁面與商品轉換率交叉對照
+    const loadItemLandingCross = async (pid, days) => {
+        if (!pid) return;
+        setItemLandingLoading(true);
+        setItemLandingError('');
+        try {
+            setItemLandingSnapshot(await ga4InsightsService.getItemLandingCross(pid, days));
+        } catch (err) {
+            setItemLandingError(err.message || t('Failed to load item x landing page comparison.', '載入商品頁面比對失敗。'));
+        } finally {
+            setItemLandingLoading(false);
+        }
+    };
+
     const handleItemsSort = (key) => {
         if (itemsSortKey === key) {
             setItemsSortDirection((prev) => (prev === 'asc' ? 'desc' : 'asc'));
@@ -665,6 +686,7 @@ const GA4Insights = () => {
         if (activeTab === 'landing' && !landingRules) loadLandingPageRules(propertyId);
         if (activeTab === 'items' && !itemsSnapshot) loadItems(propertyId, itemsDays);
         if (activeTab === 'items' && !itemCategoryRules) loadItemCategoryRules(propertyId);
+        if (activeTab === 'itemLandingCross' && !itemLandingSnapshot) loadItemLandingCross(propertyId, itemLandingDays);
         if (activeTab === 'kpi' && !kpiTargets) loadKpiTargets(propertyId);
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [activeTab, propertyId]);
@@ -762,6 +784,7 @@ const GA4Insights = () => {
         { key: 'channels', en: 'Channels', zh: '渠道對照' },
         { key: 'landing', en: 'Landing Pages', zh: '到達頁' },
         { key: 'items', en: 'Items', zh: '商品' },
+        { key: 'itemLandingCross', en: 'Item x Landing Page', zh: '商品頁面比對' },
         { key: 'kpi', en: 'KPI', zh: 'KPI 目標' },
         { key: 'alerts', en: 'Alerts', zh: '告警設定' },
     ];
@@ -1061,6 +1084,21 @@ const GA4Insights = () => {
                     itemCategoryRuleForm={itemCategoryRuleForm}
                     setItemCategoryRuleForm={setItemCategoryRuleForm}
                     itemCategoryRuleSaving={itemCategoryRuleSaving}
+                />
+            )}
+
+            {propertyId && activeTab === 'itemLandingCross' && (
+                <ItemLandingCrossTab
+                    language={language}
+                    t={t}
+                    propertyId={propertyId}
+                    itemLandingDays={itemLandingDays}
+                    setItemLandingDays={setItemLandingDays}
+                    loadItemLandingCross={loadItemLandingCross}
+                    itemLandingError={itemLandingError}
+                    itemLandingLoading={itemLandingLoading}
+                    itemLandingSnapshot={itemLandingSnapshot}
+                    DaySelector={DaySelector}
                 />
             )}
 

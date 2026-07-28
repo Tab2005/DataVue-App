@@ -375,6 +375,25 @@ def get_items(
     return serialize_snapshot(snapshot)
 
 
+# ─── docs/47：商品頁面與商品轉換率交叉對照 ──────────────────────────
+@router.get("/item-landing-cross")
+def get_item_landing_cross(
+    property_id: str = Query(...),
+    days: int = Query(7, ge=1, le=90),
+    user=Depends(get_current_user),
+    _module: bool = Depends(require_ga4_module),
+    _perm: bool = Depends(require_ga4_insights_view),
+    db=Depends(get_db),
+):
+    try:
+        snapshot = GA4InsightsService.get_item_landing_cross(db, user=user, property_id=property_id, days=days)
+    except RuntimeError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+    db.commit()
+    db.refresh(snapshot)
+    return serialize_snapshot(snapshot)
+
+
 # ─── 第 7 波：商品分類補充規則（docs/22 5 節，追加） ────────────────
 @router.get("/item-category-rules")
 def list_item_category_rules(

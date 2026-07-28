@@ -29,6 +29,7 @@ from .dashboard import (
     get_realtime,
     refresh_dashboard,
 )
+from .item_landing_cross import get_item_landing_cross
 from .items import (
     delete_item_category_rule,
     get_items,
@@ -91,6 +92,8 @@ class GA4InsightsService:
     list_item_category_rules = staticmethod(list_item_category_rules)
     upsert_item_category_rule = staticmethod(upsert_item_category_rule)
     delete_item_category_rule = staticmethod(delete_item_category_rule)
+
+    get_item_landing_cross = staticmethod(get_item_landing_cross)
 
     save_ai_summary = staticmethod(save_ai_summary)
     create_share_link = staticmethod(create_share_link)

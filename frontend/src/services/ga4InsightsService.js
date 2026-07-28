@@ -58,6 +58,10 @@ export const ga4InsightsService = {
                 : '')
         ),
 
+    // ─── docs/47：商品頁面與商品轉換率交叉對照（追加） ───────────────
+    getItemLandingCross: async (propertyId, days = 7) =>
+        apiClient.get(`/api/ga4/insights/item-landing-cross?property_id=${encodeURIComponent(propertyId)}&days=${days}`),
+
     // ─── 第 2 波任務 2.4：AI 白話解讀持久化 ─────────────────────────
     saveAiSummary: async (snapshotId, aiSummary) =>
         apiClient.put(`/api/ga4/insights/snapshots/${snapshotId}/ai-summary`, { ai_summary: aiSummary }),
