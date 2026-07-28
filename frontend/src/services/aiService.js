@@ -69,7 +69,11 @@ export const aiService = {
                 const { done, value } = await reader.read();
                 if (done) break;
 
-                const chunk = decoder.decode(value);
+                // { stream: true } 讓 decoder 記住跨 chunk 未解完的多位元組
+                // UTF-8 字元（中文常見），沒有這個選項時，只要一個中文字被切
+                // 在兩個網路封包之間，兩邊各自解碼都會產生殘缺位元組，變成
+                // 顯示成「�」（使用者回報的「???」）。
+                const chunk = decoder.decode(value, { stream: true });
                 onChunk(chunk);
             }
 
