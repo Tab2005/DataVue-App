@@ -766,15 +766,62 @@ const GA4Insights = () => {
         { key: 'alerts', en: 'Alerts', zh: '告警設定' },
     ];
 
-    const DaySelector = ({ value, onChange }) => (
-        <div style={{ display: 'flex', gap: '6px' }}>
-            {[7, 14, 30].map((d) => (
-                <button key={d} type="button" style={dayButtonStyle(value === d)} onClick={() => onChange(d)}>
-                    {d}{t('d', '天')}
-                </button>
-            ))}
-        </div>
-    );
+    // docs/46：自訂天數——後端 days query 參數本來就接受 1-90（不只
+    // 7/14/30），這裡加一個文字輸入框直接補齊；輸入框跟三個預設按鈕共用
+    // 同一個 value/onChange，外部切換到 7/14/30 時輸入框自動清空回placeholder，
+    // 輸入自訂值時視覺上不特別標記某個預設按鈕為 active。
+    const DAY_PRESETS = [7, 14, 30];
+    const DaySelector = ({ value, onChange }) => {
+        const [customText, setCustomText] = useState(DAY_PRESETS.includes(value) ? '' : String(value));
+
+        useEffect(() => {
+            setCustomText(DAY_PRESETS.includes(value) ? '' : String(value));
+        }, [value]);
+
+        const applyCustom = () => {
+            const n = parseInt(customText, 10);
+            if (Number.isFinite(n) && n >= 1 && n <= 90) {
+                if (n !== value) onChange(n);
+            } else {
+                // 輸入無效（空白/超出範圍）時還原顯示，避免卡在一個不會生效的值
+                setCustomText(DAY_PRESETS.includes(value) ? '' : String(value));
+            }
+        };
+
+        return (
+            <div style={{ display: 'flex', gap: '6px', alignItems: 'center' }}>
+                {DAY_PRESETS.map((d) => (
+                    <button key={d} type="button" style={dayButtonStyle(value === d)} onClick={() => onChange(d)}>
+                        {d}{t('d', '天')}
+                    </button>
+                ))}
+                <input
+                    type="number"
+                    min="1"
+                    max="90"
+                    value={customText}
+                    onChange={(event) => setCustomText(event.target.value)}
+                    onBlur={applyCustom}
+                    onKeyDown={(event) => {
+                        if (event.key === 'Enter') {
+                            event.preventDefault();
+                            applyCustom();
+                            event.target.blur();
+                        }
+                    }}
+                    placeholder={t('Custom', '自訂')}
+                    title={t('Custom day count (1-90)', '自訂天數（1-90）')}
+                    style={{
+                        ...inputStyle,
+                        width: '58px',
+                        padding: '6px 8px',
+                        textAlign: 'center',
+                        ...(!DAY_PRESETS.includes(value) ? { borderColor: 'var(--accent-primary, #3987e5)' } : {}),
+                    }}
+                />
+            </div>
+        );
+    };
 
     // 商品分析表格的可排序表頭（點擊切換欄位/方向）。
     const renderItemsSortHeader = (key, label, tooltip) => {
