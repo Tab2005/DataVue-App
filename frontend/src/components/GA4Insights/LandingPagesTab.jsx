@@ -39,6 +39,16 @@ const channelScopeLabel = (payload, language, t) => {
     return null;
 };
 
+// docs/53：分類篩選（商品/文章/功能/其他按鈕）是純前端二次篩選，本來完全
+// 不會反映在 AI 解讀的 contextLabel 裡，容易讓 AI 誤以為在分析全部分類。
+const categoryScopeLabel = (categoryFilter, language, t) => {
+    if (!categoryFilter || categoryFilter === 'all') return null;
+    const label = LANDING_CATEGORY_LABELS[categoryFilter]
+        ? tr(language, LANDING_CATEGORY_LABELS[categoryFilter].en, LANDING_CATEGORY_LABELS[categoryFilter].zh)
+        : categoryFilter;
+    return t(`category filter: ${label}`, `分類篩選：${label}`);
+};
+
 const LandingPagesTab = ({
     language,
     t,
@@ -478,13 +488,18 @@ const LandingPagesTab = ({
                                 `屬性 ${propertyId}；關鍵事件 ${landingSnapshot?.payload?.key_event || '全部'}；期間 ${landingSnapshot?.payload?.start_date || ''} ~ ${landingSnapshot?.payload?.end_date || ''}`
                             ),
                             channelScopeLabel(landingSnapshot?.payload, language, t),
+                            categoryScopeLabel(landingCategoryFilter, language, t),
                         ].filter(Boolean).join('；')}
+                        shareUrlParams={landingCategoryFilter !== 'all' ? { category: landingCategoryFilter } : {}}
                         buildPayload={() => ({
                             key_event: landingSnapshot?.payload?.key_event || null,
                             channel_dimension: landingSnapshot?.payload?.channel_dimension || null,
                             channel_value: landingSnapshot?.payload?.channel_value || null,
                             channel_group: landingSnapshot?.payload?.channel_group || null,
-                            landing_pages: landingSnapshot?.payload?.landing_pages || [],
+                            // docs/53：改用畫面上已經套用分類篩選後的清單，AI 分析的內容才會
+                            // 跟目前選的分類（全部/商品/文章/功能/其他）一致；category_counts
+                            // 仍傳完整版，讓 AI 知道這個屬性整體的分類分布。
+                            landing_pages: filteredSortedLandingPages,
                             category_counts: landingSnapshot?.payload?.category_counts || {},
                         })}
                     />

@@ -1,6 +1,6 @@
 // frontend/src/pages/SharedGA4Insight.jsx (docs/39)
 import React, { useState, useEffect } from 'react';
-import { useParams } from 'react-router-dom';
+import { useParams, useSearchParams } from 'react-router-dom';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import rehypeRaw from 'rehype-raw';
@@ -10,7 +10,9 @@ import { ga4InsightsService } from '../services/ga4InsightsService';
 import PageLoading from '../components/PageLoading';
 import {
     badgeStyle,
+    dayButtonStyle,
     emptyState,
+    inputStyle,
     tr,
     fmtNumber,
     fmtPct,
@@ -19,6 +21,7 @@ import {
     channelClosingLabel,
     channelDimensionLabel,
     LANDING_CATEGORY_LABELS,
+    LANDING_CATEGORY_ORDER,
     ITEM_CATEGORY_SOURCE_LABELS,
 } from '../components/GA4Insights/GA4InsightsShared';
 
@@ -73,76 +76,135 @@ const ChannelsTable = ({ language, t, payload }) => {
     );
 };
 
-const LandingPagesTable = ({ t, payload }) => {
-    const rows = payload?.landing_pages || [];
-    if (!rows.length) return emptyState(t('No landing page data.', '暫無到達頁資料。'));
+// docs/53：分類篩選預設值來自分享網址的 ?category= 參數（由分享當下畫面
+// 選的分類帶過來），但收件人仍可自由點其他分類按鈕切換，不是唯讀的凍結畫面。
+const LandingPagesTable = ({ t, payload, initialCategory }) => {
+    const allRows = payload?.landing_pages || [];
+    const [category, setCategory] = useState(
+        LANDING_CATEGORY_ORDER.includes(initialCategory) ? initialCategory : 'all'
+    );
+    const rows = category === 'all' ? allRows : allRows.filter((row) => row.category === category);
+
+    if (!allRows.length) return emptyState(t('No landing page data.', '暫無到達頁資料。'));
+
     return (
-        <div style={{ overflowX: 'auto' }}>
-            <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.85rem' }}>
-                <thead>
-                    <tr style={{ color: 'var(--text-secondary)', textAlign: 'left' }}>
-                        <th style={{ padding: '6px' }}>{t('Landing Page', '到達頁')}</th>
-                        <th style={{ padding: '6px' }}>{t('Category', '分類')}</th>
-                        <th style={{ padding: '6px' }}>{t('Sessions', '工作階段')}</th>
-                        <th style={{ padding: '6px' }}>{t('Conversions', '轉換')}</th>
-                        <th style={{ padding: '6px' }}>{t('Key Event Rate', '轉換率')}</th>
-                        <th style={{ padding: '6px' }}>{t('Bounce Rate', '跳出率')}</th>
-                    </tr>
-                </thead>
-                <tbody>
-                    {rows.map((row) => (
-                        <tr key={row.landingPage} style={{ borderTop: '1px solid var(--glass-border)' }}>
-                            <td style={{ padding: '6px', color: 'var(--text-primary)', maxWidth: '260px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={row.landingPage}>
-                                {row.landingPage}
-                            </td>
-                            <td style={{ padding: '6px' }}>
-                                <span style={badgeStyle(row.category)}>
-                                    {tr('zh', LANDING_CATEGORY_LABELS[row.category]?.en, LANDING_CATEGORY_LABELS[row.category]?.zh) || row.category}
-                                </span>
-                            </td>
-                            <td style={{ padding: '6px', color: 'var(--text-secondary)' }}>{fmtNumber(row.sessions)}</td>
-                            <td style={{ padding: '6px', color: 'var(--text-secondary)' }}>{fmtNumber(row.conversions)}</td>
-                            <td style={{ padding: '6px', color: 'var(--text-secondary)' }}>{fmtPct(row.session_key_event_rate)}</td>
-                            <td style={{ padding: '6px', color: 'var(--text-secondary)' }}>{fmtPct(row.bounceRate)}</td>
-                        </tr>
-                    ))}
-                </tbody>
-            </table>
+        <div>
+            <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', marginBottom: '12px' }}>
+                {['all', ...LANDING_CATEGORY_ORDER].map((cat) => {
+                    const count = cat === 'all' ? allRows.length : (payload.category_counts?.[cat] || 0);
+                    const label = cat === 'all'
+                        ? t('All', '全部')
+                        : tr('zh', LANDING_CATEGORY_LABELS[cat].en, LANDING_CATEGORY_LABELS[cat].zh);
+                    return (
+                        <button
+                            key={cat}
+                            type="button"
+                            style={dayButtonStyle(category === cat)}
+                            onClick={() => setCategory(cat)}
+                        >
+                            {label} ({count})
+                        </button>
+                    );
+                })}
+            </div>
+            {rows.length === 0 ? emptyState(t('No landing page data.', '暫無到達頁資料。')) : (
+                <div style={{ overflowX: 'auto' }}>
+                    <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.85rem' }}>
+                        <thead>
+                            <tr style={{ color: 'var(--text-secondary)', textAlign: 'left' }}>
+                                <th style={{ padding: '6px' }}>{t('Landing Page', '到達頁')}</th>
+                                <th style={{ padding: '6px' }}>{t('Category', '分類')}</th>
+                                <th style={{ padding: '6px' }}>{t('Sessions', '工作階段')}</th>
+                                <th style={{ padding: '6px' }}>{t('Conversions', '轉換')}</th>
+                                <th style={{ padding: '6px' }}>{t('Key Event Rate', '轉換率')}</th>
+                                <th style={{ padding: '6px' }}>{t('Bounce Rate', '跳出率')}</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {rows.map((row) => (
+                                <tr key={row.landingPage} style={{ borderTop: '1px solid var(--glass-border)' }}>
+                                    <td style={{ padding: '6px', color: 'var(--text-primary)', maxWidth: '260px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={row.landingPage}>
+                                        {row.landingPage}
+                                    </td>
+                                    <td style={{ padding: '6px' }}>
+                                        <span style={badgeStyle(row.category)}>
+                                            {tr('zh', LANDING_CATEGORY_LABELS[row.category]?.en, LANDING_CATEGORY_LABELS[row.category]?.zh) || row.category}
+                                        </span>
+                                    </td>
+                                    <td style={{ padding: '6px', color: 'var(--text-secondary)' }}>{fmtNumber(row.sessions)}</td>
+                                    <td style={{ padding: '6px', color: 'var(--text-secondary)' }}>{fmtNumber(row.conversions)}</td>
+                                    <td style={{ padding: '6px', color: 'var(--text-secondary)' }}>{fmtPct(row.session_key_event_rate)}</td>
+                                    <td style={{ padding: '6px', color: 'var(--text-secondary)' }}>{fmtPct(row.bounceRate)}</td>
+                                </tr>
+                            ))}
+                        </tbody>
+                    </table>
+                </div>
+            )}
         </div>
     );
 };
 
-const ItemsTable = ({ t, payload }) => {
-    const rows = payload?.items || [];
-    if (!rows.length) return emptyState(t('No item data.', '暫無商品資料。'));
+// docs/53：商品分類是依 GA4 實際分類/自訂規則動態產生的清單（不像到達頁固定
+// 4 種），選單選項直接從 payload.category_counts 的 key 產生；預設值來自分享
+// 網址的 ?category= 參數，收件人仍可自由切換看其他分類。
+const ItemsTable = ({ t, payload, initialCategory }) => {
+    const allRows = payload?.items || [];
+    const categoryCounts = payload?.category_counts || {};
+    const categoryKeys = Object.keys(categoryCounts);
+    const [category, setCategory] = useState(
+        categoryKeys.includes(initialCategory) ? initialCategory : 'all'
+    );
+    const rows = category === 'all' ? allRows : allRows.filter((row) => row.item_category === category);
+
+    if (!allRows.length) return emptyState(t('No item data.', '暫無商品資料。'));
+
     return (
-        <div style={{ overflowX: 'auto' }}>
-            <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.85rem' }}>
-                <thead>
-                    <tr style={{ color: 'var(--text-secondary)', textAlign: 'left' }}>
-                        <th style={{ padding: '6px' }}>{t('Item', '商品')}</th>
-                        <th style={{ padding: '6px' }}>{t('Category', '分類')}</th>
-                        <th style={{ padding: '6px' }}>{t('Views', '瀏覽數')}</th>
-                        <th style={{ padding: '6px' }}>{t('Add-to-cart Rate', '瀏覽後加購率')}</th>
-                        <th style={{ padding: '6px' }}>{t('Purchase Rate', '瀏覽後購買率')}</th>
-                        <th style={{ padding: '6px' }}>{t('Revenue', '營收')}</th>
-                    </tr>
-                </thead>
-                <tbody>
-                    {rows.map((row) => (
-                        <tr key={row.itemName} style={{ borderTop: '1px solid var(--glass-border)' }}>
-                            <td style={{ padding: '6px', color: 'var(--text-primary)' }}>{row.itemName}</td>
-                            <td style={{ padding: '6px', color: 'var(--text-secondary)' }} title={tr('zh', ITEM_CATEGORY_SOURCE_LABELS[row.item_category_source]?.en, ITEM_CATEGORY_SOURCE_LABELS[row.item_category_source]?.zh)}>
-                                {row.item_category === '(not set)' ? t('Uncategorized', '未分類') : row.item_category}
-                            </td>
-                            <td style={{ padding: '6px', color: 'var(--text-secondary)' }}>{fmtNumber(row.itemsViewed)}</td>
-                            <td style={{ padding: '6px', color: 'var(--text-secondary)' }}>{fmtPct(row.cart_to_view_rate)}</td>
-                            <td style={{ padding: '6px', color: 'var(--text-secondary)' }}>{fmtPct(row.purchase_to_view_rate)}</td>
-                            <td style={{ padding: '6px', color: 'var(--text-secondary)' }}>{fmtNumber(row.itemRevenue)}</td>
-                        </tr>
+        <div>
+            <div style={{ marginBottom: '12px' }}>
+                <select
+                    value={category}
+                    onChange={(event) => setCategory(event.target.value)}
+                    style={{ ...inputStyle, width: 'auto', padding: '8px 10px' }}
+                >
+                    <option value="all">{t('All categories', '全部分類')} ({allRows.length})</option>
+                    {categoryKeys.map((cat) => (
+                        <option key={cat} value={cat}>
+                            {cat === '(not set)' ? t('Uncategorized', '未分類') : cat} ({categoryCounts[cat]})
+                        </option>
                     ))}
-                </tbody>
-            </table>
+                </select>
+            </div>
+            {rows.length === 0 ? emptyState(t('No item data.', '暫無商品資料。')) : (
+                <div style={{ overflowX: 'auto' }}>
+                    <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.85rem' }}>
+                        <thead>
+                            <tr style={{ color: 'var(--text-secondary)', textAlign: 'left' }}>
+                                <th style={{ padding: '6px' }}>{t('Item', '商品')}</th>
+                                <th style={{ padding: '6px' }}>{t('Category', '分類')}</th>
+                                <th style={{ padding: '6px' }}>{t('Views', '瀏覽數')}</th>
+                                <th style={{ padding: '6px' }}>{t('Add-to-cart Rate', '瀏覽後加購率')}</th>
+                                <th style={{ padding: '6px' }}>{t('Purchase Rate', '瀏覽後購買率')}</th>
+                                <th style={{ padding: '6px' }}>{t('Revenue', '營收')}</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {rows.map((row) => (
+                                <tr key={row.itemName} style={{ borderTop: '1px solid var(--glass-border)' }}>
+                                    <td style={{ padding: '6px', color: 'var(--text-primary)' }}>{row.itemName}</td>
+                                    <td style={{ padding: '6px', color: 'var(--text-secondary)' }} title={tr('zh', ITEM_CATEGORY_SOURCE_LABELS[row.item_category_source]?.en, ITEM_CATEGORY_SOURCE_LABELS[row.item_category_source]?.zh)}>
+                                        {row.item_category === '(not set)' ? t('Uncategorized', '未分類') : row.item_category}
+                                    </td>
+                                    <td style={{ padding: '6px', color: 'var(--text-secondary)' }}>{fmtNumber(row.itemsViewed)}</td>
+                                    <td style={{ padding: '6px', color: 'var(--text-secondary)' }}>{fmtPct(row.cart_to_view_rate)}</td>
+                                    <td style={{ padding: '6px', color: 'var(--text-secondary)' }}>{fmtPct(row.purchase_to_view_rate)}</td>
+                                    <td style={{ padding: '6px', color: 'var(--text-secondary)' }}>{fmtNumber(row.itemRevenue)}</td>
+                                </tr>
+                            ))}
+                        </tbody>
+                    </table>
+                </div>
+            )}
         </div>
     );
 };
@@ -191,6 +253,10 @@ const ItemLandingCrossTable = ({ t, payload }) => {
 
 const SharedGA4Insight = () => {
     const { token } = useParams();
+    // docs/53：分享網址可能帶 ?category= 參數（產生連結當下畫面選的分類），
+    // 當作到達頁/商品表格的預設篩選值；表格元件自己驗證合法性，這裡只負責讀取。
+    const [searchParams] = useSearchParams();
+    const initialCategory = searchParams.get('category') || 'all';
     const [snapshot, setSnapshot] = useState(null);
     const [loading, setLoading] = useState(true);
     const [error, setError] = useState(null);
@@ -299,8 +365,8 @@ const SharedGA4Insight = () => {
                     padding: '20px',
                 }}>
                     {group === 'daily_channel' && <ChannelsTable language={language} t={t} payload={payload} />}
-                    {group === 'landing_page' && <LandingPagesTable t={t} payload={payload} />}
-                    {group === 'item' && <ItemsTable t={t} payload={payload} />}
+                    {group === 'landing_page' && <LandingPagesTable t={t} payload={payload} initialCategory={initialCategory} />}
+                    {group === 'item' && <ItemsTable t={t} payload={payload} initialCategory={initialCategory} />}
                     {group === 'item_landing_cross' && <ItemLandingCrossTable t={t} payload={payload} />}
                     {!group && emptyState(t('Unsupported content type.', '不支援的內容類型。'))}
                 </section>

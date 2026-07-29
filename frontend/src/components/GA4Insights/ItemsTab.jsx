@@ -35,6 +35,16 @@ const channelScopeLabel = (payload, language, t) => {
     return null;
 };
 
+// docs/53：分類篩選（下拉選單）是純前端二次篩選，本來完全不會反映在 AI
+// 解讀的 contextLabel 裡，容易讓 AI 誤以為在分析全部分類的商品。商品分類
+// 是依 GA4 實際分類/自訂規則動態產生的清單，不像到達頁有固定 4 種，直接
+// 顯示原始分類字串即可，(not set) 顯示成「未分類」跟表格既有慣例一致。
+const categoryScopeLabel = (categoryFilter, t) => {
+    if (!categoryFilter || categoryFilter === 'all') return null;
+    const label = categoryFilter === '(not set)' ? t('Uncategorized', '未分類') : categoryFilter;
+    return t(`category filter: ${label}`, `分類篩選：${label}`);
+};
+
 const ItemsTab = ({
     language,
     t,
@@ -506,12 +516,17 @@ const ItemsTab = ({
                                 `屬性 ${propertyId}；期間 ${itemsSnapshot?.payload?.start_date || ''} ~ ${itemsSnapshot?.payload?.end_date || ''}`
                             ),
                             channelScopeLabel(itemsSnapshot?.payload, language, t),
+                            categoryScopeLabel(itemsCategoryFilter, t),
                         ].filter(Boolean).join('；')}
+                        shareUrlParams={itemsCategoryFilter !== 'all' ? { category: itemsCategoryFilter } : {}}
                         buildPayload={() => ({
                             channel_dimension: itemsSnapshot?.payload?.channel_dimension || null,
                             channel_value: itemsSnapshot?.payload?.channel_value || null,
                             channel_group: itemsSnapshot?.payload?.channel_group || null,
-                            items: itemsSnapshot?.payload?.items || [],
+                            // docs/53：改用畫面上已經套用分類篩選後的清單，AI 分析的內容才會
+                            // 跟目前選的分類一致；category_counts 仍傳完整版，讓 AI 知道這個
+                            // 屬性整體的分類分布。
+                            items: filteredSortedItems,
                             category_counts: itemsSnapshot?.payload?.category_counts || {},
                         })}
                     />

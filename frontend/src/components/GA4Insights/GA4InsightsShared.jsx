@@ -362,7 +362,7 @@ export const ITEMS_SORT_COLUMNS = {
 };
 
 // ── AI 白話解讀共用卡（同週報 / 貢獻分析頁的模式，docs/22 任務 2.4） ──
-export const AIInsightNote = ({ language, snapshot, kind, buildPayload, contextLabel }) => {
+export const AIInsightNote = ({ language, snapshot, kind, buildPayload, contextLabel, shareUrlParams = {} }) => {
     const t = (en, zh) => tr(language, en, zh);
     const existing = snapshot?.ai_summary || '';
     const [aiContent, setAiContent] = useState(existing);
@@ -454,8 +454,21 @@ export const AIInsightNote = ({ language, snapshot, kind, buildPayload, contextL
         }
     };
 
+    // docs/53：分享連結網址帶上目前的分類篩選（例如 ?category=product）當作
+    // 分享頁的預設顯示值；shareUrlParams 是可選 prop，只有到達頁/商品分頁會
+    // 傳非空物件，其餘分頁維持現況網址（不帶任何 query）。
+    const buildShareUrl = (token) => {
+        const base = `${window.location.origin}/ga4-insights/share/${token}`;
+        const params = new URLSearchParams();
+        Object.entries(shareUrlParams || {}).forEach(([key, value]) => {
+            if (value) params.set(key, value);
+        });
+        const query = params.toString();
+        return query ? `${base}?${query}` : base;
+    };
+
     const handleCopyLink = async () => {
-        const url = `${window.location.origin}/ga4-insights/share/${shareToken}`;
+        const url = buildShareUrl(shareToken);
         try {
             await navigator.clipboard.writeText(url);
             setLinkCopied(true);
@@ -467,7 +480,7 @@ export const AIInsightNote = ({ language, snapshot, kind, buildPayload, contextL
 
     const hasContent = aiContent && aiContent.length > 0;
     const buttonLabel = hasContent ? t('Regenerate', '重新解讀') : t('Generate Insights', '開始 AI 解讀');
-    const shareUrl = shareToken ? `${window.location.origin}/ga4-insights/share/${shareToken}` : null;
+    const shareUrl = shareToken ? buildShareUrl(shareToken) : null;
 
     return (
         <div style={{ ...baseCardStyle, marginTop: '14px' }}>
