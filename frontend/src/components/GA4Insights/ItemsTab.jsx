@@ -45,6 +45,38 @@ const categoryScopeLabel = (categoryFilter, t) => {
     return t(`category filter: ${label}`, `分類篩選：${label}`);
 };
 
+// docs/54：跟上一期比較開啟時，告訴 AI 現在看到的數字已經有比較資訊可以提。
+const compareScopeLabel = (payload, t) => {
+    if (!payload?.compare_enabled) return null;
+    if (payload.compare_query_error) return null;
+    return t(
+        `compared to prior period (${payload.compare_start_date} ~ ${payload.compare_end_date})`,
+        `已啟用上一期比較（${payload.compare_start_date} ~ ${payload.compare_end_date}）`
+    );
+};
+
+// docs/54：次數/金額類指標（瀏覽數/營收）用相對成長率；比率類指標（加購率/
+// 購買率）改用百分點差異，避免「5%→6%」被講成「成長20%」造成誤解。pp 是
+// percentage point（百分點）的縮寫，加 title 滑鼠提示說明清楚。
+const GrowthBadge = ({ value, isPercentagePoint = false, t }) => {
+    if (value == null) return null;
+    const arrow = value > 0 ? '▲' : value < 0 ? '▼' : '';
+    const color = value > 0 ? '#34d399' : value < 0 ? '#f87171' : 'var(--text-tertiary)';
+    const magnitude = Math.abs(value);
+    const text = isPercentagePoint ? `${magnitude.toFixed(1)}pp` : `${(magnitude * 100).toFixed(0)}%`;
+    const title = isPercentagePoint
+        ? t(
+            'pp = percentage point, the absolute gap vs. the prior period (e.g. a rate going from 5% to 6% is +1.0pp, not a 20% increase).',
+            'pp＝百分點，是跟上一期的絕對差距（例如比率從 5% 變 6% 是 +1.0pp，不是成長 20%）。'
+        )
+        : undefined;
+    return (
+        <span style={{ fontSize: '0.72rem', marginLeft: '4px', color, whiteSpace: 'nowrap', cursor: isPercentagePoint ? 'help' : 'default' }} title={title}>
+            {arrow}{text}
+        </span>
+    );
+};
+
 const ItemsTab = ({
     language,
     t,
@@ -60,6 +92,8 @@ const ItemsTab = ({
     setItemsCategoryFilter,
     itemsSearchQuery,
     setItemsSearchQuery,
+    itemsCompareEnabled,
+    setItemsCompareEnabled,
     itemsChannelDimension,
     setItemsChannelDimension,
     itemsChannelValue,
@@ -136,13 +170,38 @@ const ItemsTab = ({
                                     {t('View growth compares the last 7 days vs. the prior 7 days (all channels).', '瀏覽成長比較固定用近 7 天 vs 前 7 天（全渠道，不受下方篩選影響）。')} ⓘ
                                 </div>
                             </div>
-                            <DaySelector value={itemsDays} onChange={(d) => {
-                                setItemsDays(d);
-                                loadItems(propertyId, d);
-                                if (itemsChannelDimension) loadItemsChannelValues(propertyId, d, itemsChannelDimension);
-                            }} />
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '12px', flexWrap: 'wrap' }}>
+                                {/* docs/54：跟上一期比較開關，預設關閉；跟固定的「近7天/前7天瀏覽
+                                    成長」是兩件獨立並存的事，這個開關比較的是「跟著上方期間走」的
+                                    另一組資料。 */}
+                                <label style={{ display: 'flex', alignItems: 'center', gap: '6px', color: 'var(--text-secondary)', fontSize: '0.85rem', cursor: 'pointer' }}>
+                                    <input
+                                        type="checkbox"
+                                        checked={itemsCompareEnabled}
+                                        onChange={(event) => {
+                                            const next = event.target.checked;
+                                            setItemsCompareEnabled(next);
+                                            loadItems(propertyId, itemsDays, itemsChannelDimension, itemsChannelValue, itemsChannelGroup, next);
+                                        }}
+                                    />
+                                    {t('Compare to prior period', '比較上一期')}
+                                </label>
+                                <DaySelector value={itemsDays} onChange={(d) => {
+                                    setItemsDays(d);
+                                    loadItems(propertyId, d);
+                                    if (itemsChannelDimension) loadItemsChannelValues(propertyId, d, itemsChannelDimension);
+                                }} />
+                            </div>
                         </div>
                         {itemsError && <div style={{ color: '#fca5a5', fontSize: '0.85rem', marginBottom: '10px' }}>{itemsError}</div>}
+                        {itemsSnapshot?.payload?.compare_enabled && itemsSnapshot?.payload?.compare_query_error && (
+                            <div style={{ color: '#fbbf24', fontSize: '0.78rem', marginBottom: '10px' }}>
+                                {t(
+                                    'Could not fetch the prior period for comparison (temporary); showing this period only.',
+                                    '暫時無法取得上一期資料做比較，以下僅顯示本期數字。'
+                                )}
+                            </div>
+                        )}
                         {itemsSnapshot?.payload?.used_fallback_conversion_metrics && (
                             <div style={{ color: '#fbbf24', fontSize: '0.78rem', marginBottom: '10px' }}>
                                 {t(
@@ -266,6 +325,8 @@ const ItemsTab = ({
                                             {pagedItems
                                                 .map((row) => {
                                                     const isNewEntry = row.views_prior_7d === 0 && row.views_recent_7d > 0;
+                                                    const showCompare = itemsSnapshot.payload.compare_enabled && !itemsSnapshot.payload.compare_query_error;
+                                                    const showGrowth = showCompare && !row.is_new;
                                                     return (
                                                         <tr key={row.itemName} style={{ borderTop: '1px solid var(--glass-border)' }}>
                                                             <td style={{ padding: '6px', color: 'var(--text-primary)' }}>{row.itemName}</td>
@@ -276,9 +337,18 @@ const ItemsTab = ({
                                                                 {row.item_category === '(not set)' ? t('Uncategorized', '未分類') : row.item_category}
                                                                 {row.item_category_source === 'custom_rule' && ' ✎'}
                                                             </td>
-                                                            <td style={{ padding: '6px', color: 'var(--text-secondary)' }}>{fmtNumber(row.itemsViewed)}</td>
-                                                            <td style={{ padding: '6px', color: 'var(--text-secondary)' }}>{fmtPct(row.cart_to_view_rate)}</td>
-                                                            <td style={{ padding: '6px', color: 'var(--text-secondary)' }}>{fmtPct(row.purchase_to_view_rate)}</td>
+                                                            <td style={{ padding: '6px', color: 'var(--text-secondary)', whiteSpace: 'nowrap' }}>
+                                                                {fmtNumber(row.itemsViewed)}
+                                                                {showGrowth && <GrowthBadge value={row.views_compare_growth_rate} />}
+                                                            </td>
+                                                            <td style={{ padding: '6px', color: 'var(--text-secondary)', whiteSpace: 'nowrap' }}>
+                                                                {fmtPct(row.cart_to_view_rate)}
+                                                                {showGrowth && <GrowthBadge value={row.cart_to_view_rate_delta_pp} isPercentagePoint t={t} />}
+                                                            </td>
+                                                            <td style={{ padding: '6px', color: 'var(--text-secondary)', whiteSpace: 'nowrap' }}>
+                                                                {fmtPct(row.purchase_to_view_rate)}
+                                                                {showGrowth && <GrowthBadge value={row.purchase_to_view_rate_delta_pp} isPercentagePoint t={t} />}
+                                                            </td>
                                                             <td
                                                                 style={{ padding: '6px', color: 'var(--text-secondary)', cursor: 'help' }}
                                                                 title={t(
@@ -292,9 +362,19 @@ const ItemsTab = ({
                                                                     fmtPct(row.views_growth_rate)
                                                                 )}
                                                             </td>
-                                                            <td style={{ padding: '6px', color: 'var(--text-secondary)' }}>{fmtNumber(row.itemRevenue)}</td>
+                                                            <td style={{ padding: '6px', color: 'var(--text-secondary)', whiteSpace: 'nowrap' }}>
+                                                                {fmtNumber(row.itemRevenue)}
+                                                                {showGrowth && <GrowthBadge value={row.revenue_growth_rate} />}
+                                                            </td>
                                                             <td style={{ padding: '6px' }}>
-                                                                {row.is_potential && <span style={badgeStyle('potential')}>{t('Potential', '潛力商品')}</span>}
+                                                                <div style={{ display: 'flex', gap: '4px', flexWrap: 'wrap' }}>
+                                                                    {row.is_potential && <span style={badgeStyle('potential')}>{t('Potential', '潛力商品')}</span>}
+                                                                    {showCompare && row.is_new && (
+                                                                        <span style={badgeStyle('flagged')} title={t('No data in the prior period', '上一期沒有這個商品的資料')}>
+                                                                            🆕 {t('New', '新')}
+                                                                        </span>
+                                                                    )}
+                                                                </div>
                                                             </td>
                                                         </tr>
                                                     );
@@ -517,6 +597,7 @@ const ItemsTab = ({
                             ),
                             channelScopeLabel(itemsSnapshot?.payload, language, t),
                             categoryScopeLabel(itemsCategoryFilter, t),
+                            compareScopeLabel(itemsSnapshot?.payload, t),
                         ].filter(Boolean).join('；')}
                         shareUrlParams={itemsCategoryFilter !== 'all' ? { category: itemsCategoryFilter } : {}}
                         buildPayload={() => ({
@@ -528,6 +609,11 @@ const ItemsTab = ({
                             // 屬性整體的分類分布。
                             items: filteredSortedItems,
                             category_counts: itemsSnapshot?.payload?.category_counts || {},
+                            // docs/54：跟上一期比較——每列已經帶有 *_growth_rate/*_delta_pp/is_new
+                            // 欄位，這裡額外補上比較期間，AI 才知道「上一期」具體是哪段日期。
+                            compare_enabled: itemsSnapshot?.payload?.compare_enabled || false,
+                            compare_start_date: itemsSnapshot?.payload?.compare_start_date || null,
+                            compare_end_date: itemsSnapshot?.payload?.compare_end_date || null,
                         })}
                     />
     </>

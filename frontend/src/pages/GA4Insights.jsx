@@ -131,6 +131,8 @@ const GA4Insights = () => {
     const [itemsError, setItemsError] = useState('');
     const [itemsCategoryFilter, setItemsCategoryFilter] = useState('all');
     const [itemsSearchQuery, setItemsSearchQuery] = useState('');
+    // docs/54：跟上一期比較開關，預設關閉（不多打一次 GA4 查詢）。
+    const [itemsCompareEnabled, setItemsCompareEnabled] = useState(false);
     const [itemsSortKey, setItemsSortKey] = useState(null);
     const [itemsSortDirection, setItemsSortDirection] = useState('desc');
 
@@ -432,6 +434,7 @@ const GA4Insights = () => {
         channelDimension = itemsChannelDimension,
         channelValue = itemsChannelValue,
         channelGroup = itemsChannelGroup,
+        compare = itemsCompareEnabled,
     ) => {
         if (!pid) return;
         setItemsLoading(true);
@@ -439,7 +442,7 @@ const GA4Insights = () => {
         try {
             setItemsSnapshot(
                 await ga4InsightsService.getItems(
-                    pid, days, channelDimension || null, channelValue || null, channelGroup || null
+                    pid, days, channelDimension || null, channelValue || null, channelGroup || null, compare
                 )
             );
         } catch (err) {
@@ -726,6 +729,7 @@ const GA4Insights = () => {
         setItemsSnapshot(null);
         setItemsCategoryFilter('all');
         setItemsSearchQuery('');
+        setItemsCompareEnabled(false);
         setItemCategoryRules(null);
         setKpiTargets(null);
         setRefreshNotice('');
@@ -1088,6 +1092,8 @@ const GA4Insights = () => {
                     setItemsCategoryFilter={setItemsCategoryFilter}
                     itemsSearchQuery={itemsSearchQuery}
                     setItemsSearchQuery={setItemsSearchQuery}
+                    itemsCompareEnabled={itemsCompareEnabled}
+                    setItemsCompareEnabled={setItemsCompareEnabled}
                     itemsChannelDimension={itemsChannelDimension}
                     setItemsChannelDimension={setItemsChannelDimension}
                     itemsChannelValue={itemsChannelValue}

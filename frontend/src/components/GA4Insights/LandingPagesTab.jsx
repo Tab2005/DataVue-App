@@ -61,15 +61,23 @@ const compareScopeLabel = (payload, t) => {
 };
 
 // docs/54：次數類指標（工作階段/轉換次數）用相對成長率；比率類指標（轉換率/
-// 跳出率）改用百分點差異，避免「5%→6%」被講成「成長20%」造成誤解。
-const GrowthBadge = ({ value, isPercentagePoint = false }) => {
+// 跳出率）改用百分點差異，避免「5%→6%」被講成「成長20%」造成誤解。pp 是
+// percentage point（百分點）的縮寫，不是每個使用者都認得，加 title 滑鼠提示
+// 說明清楚，跟畫面上其他 ⓘ 提示同一套「用 cursor: help 提示可以看說明」慣例。
+const GrowthBadge = ({ value, isPercentagePoint = false, t }) => {
     if (value == null) return null;
     const arrow = value > 0 ? '▲' : value < 0 ? '▼' : '';
     const color = value > 0 ? '#34d399' : value < 0 ? '#f87171' : 'var(--text-tertiary)';
     const magnitude = Math.abs(value);
     const text = isPercentagePoint ? `${magnitude.toFixed(1)}pp` : `${(magnitude * 100).toFixed(0)}%`;
+    const title = isPercentagePoint
+        ? t(
+            'pp = percentage point, the absolute gap vs. the prior period (e.g. a rate going from 5% to 6% is +1.0pp, not a 20% increase).',
+            'pp＝百分點，是跟上一期的絕對差距（例如比率從 5% 變 6% 是 +1.0pp，不是成長 20%）。'
+        )
+        : undefined;
     return (
-        <span style={{ fontSize: '0.72rem', marginLeft: '4px', color, whiteSpace: 'nowrap' }}>
+        <span style={{ fontSize: '0.72rem', marginLeft: '4px', color, whiteSpace: 'nowrap', cursor: isPercentagePoint ? 'help' : 'default' }} title={title}>
             {arrow}{text}
         </span>
     );
@@ -337,11 +345,11 @@ const LandingPagesTab = ({
                                                         </td>
                                                         <td style={{ padding: '6px', color: 'var(--text-secondary)', whiteSpace: 'nowrap' }}>
                                                             {fmtPct(row.session_key_event_rate)}
-                                                            {showGrowth && <GrowthBadge value={row.session_key_event_rate_delta_pp} isPercentagePoint />}
+                                                            {showGrowth && <GrowthBadge value={row.session_key_event_rate_delta_pp} isPercentagePoint t={t} />}
                                                         </td>
                                                         <td style={{ padding: '6px', color: 'var(--text-secondary)', whiteSpace: 'nowrap' }}>
                                                             {fmtPct(row.bounceRate)}
-                                                            {showGrowth && <GrowthBadge value={row.bounce_rate_delta_pp} isPercentagePoint />}
+                                                            {showGrowth && <GrowthBadge value={row.bounce_rate_delta_pp} isPercentagePoint t={t} />}
                                                         </td>
                                                         <td style={{ padding: '6px' }}>
                                                             <div style={{ display: 'flex', gap: '4px', flexWrap: 'wrap' }}>

@@ -76,10 +76,32 @@ const ChannelsTable = ({ language, t, payload }) => {
     );
 };
 
+// docs/54：跟到達頁/商品分頁同一套成長標示邏輯——次數/金額類指標用相對成長
+// 率，比率類指標用百分點差異（pp），滑鼠提示說明 pp 的意思。
+const GrowthBadge = ({ value, isPercentagePoint = false, t }) => {
+    if (value == null) return null;
+    const arrow = value > 0 ? '▲' : value < 0 ? '▼' : '';
+    const color = value > 0 ? '#34d399' : value < 0 ? '#f87171' : 'var(--text-tertiary)';
+    const magnitude = Math.abs(value);
+    const text = isPercentagePoint ? `${magnitude.toFixed(1)}pp` : `${(magnitude * 100).toFixed(0)}%`;
+    const title = isPercentagePoint
+        ? t(
+            'pp = percentage point, the absolute gap vs. the prior period (e.g. a rate going from 5% to 6% is +1.0pp, not a 20% increase).',
+            'pp＝百分點，是跟上一期的絕對差距（例如比率從 5% 變 6% 是 +1.0pp，不是成長 20%）。'
+        )
+        : undefined;
+    return (
+        <span style={{ fontSize: '0.72rem', marginLeft: '4px', color, whiteSpace: 'nowrap', cursor: isPercentagePoint ? 'help' : 'default' }} title={title}>
+            {arrow}{text}
+        </span>
+    );
+};
+
 // docs/53：分類篩選預設值來自分享網址的 ?category= 參數（由分享當下畫面
 // 選的分類帶過來），但收件人仍可自由點其他分類按鈕切換，不是唯讀的凍結畫面。
 const LandingPagesTable = ({ t, payload, initialCategory }) => {
     const allRows = payload?.landing_pages || [];
+    const showCompare = payload?.compare_enabled && !payload?.compare_query_error;
     const [category, setCategory] = useState(
         LANDING_CATEGORY_ORDER.includes(initialCategory) ? initialCategory : 'all'
     );
@@ -107,6 +129,14 @@ const LandingPagesTable = ({ t, payload, initialCategory }) => {
                     );
                 })}
             </div>
+            {payload?.compare_enabled && payload?.compare_query_error && (
+                <div style={{ color: '#fbbf24', fontSize: '0.78rem', marginBottom: '10px' }}>
+                    {t(
+                        'Could not fetch the prior period for comparison (temporary); showing this period only.',
+                        '暫時無法取得上一期資料做比較，以下僅顯示本期數字。'
+                    )}
+                </div>
+            )}
             {rows.length === 0 ? emptyState(t('No landing page data.', '暫無到達頁資料。')) : (
                 <div style={{ overflowX: 'auto' }}>
                     <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.85rem' }}>
@@ -118,10 +148,13 @@ const LandingPagesTable = ({ t, payload, initialCategory }) => {
                                 <th style={{ padding: '6px' }}>{t('Conversions', '轉換')}</th>
                                 <th style={{ padding: '6px' }}>{t('Key Event Rate', '轉換率')}</th>
                                 <th style={{ padding: '6px' }}>{t('Bounce Rate', '跳出率')}</th>
+                                <th style={{ padding: '6px' }}>{t('Flag', '標記')}</th>
                             </tr>
                         </thead>
                         <tbody>
-                            {rows.map((row) => (
+                            {rows.map((row) => {
+                                const showGrowth = showCompare && !row.is_new;
+                                return (
                                 <tr key={row.landingPage} style={{ borderTop: '1px solid var(--glass-border)' }}>
                                     <td style={{ padding: '6px', color: 'var(--text-primary)', maxWidth: '260px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={row.landingPage}>
                                         {row.landingPage}
@@ -131,12 +164,37 @@ const LandingPagesTable = ({ t, payload, initialCategory }) => {
                                             {tr('zh', LANDING_CATEGORY_LABELS[row.category]?.en, LANDING_CATEGORY_LABELS[row.category]?.zh) || row.category}
                                         </span>
                                     </td>
-                                    <td style={{ padding: '6px', color: 'var(--text-secondary)' }}>{fmtNumber(row.sessions)}</td>
-                                    <td style={{ padding: '6px', color: 'var(--text-secondary)' }}>{fmtNumber(row.conversions)}</td>
-                                    <td style={{ padding: '6px', color: 'var(--text-secondary)' }}>{fmtPct(row.session_key_event_rate)}</td>
-                                    <td style={{ padding: '6px', color: 'var(--text-secondary)' }}>{fmtPct(row.bounceRate)}</td>
+                                    <td style={{ padding: '6px', color: 'var(--text-secondary)', whiteSpace: 'nowrap' }}>
+                                        {fmtNumber(row.sessions)}
+                                        {showGrowth && <GrowthBadge value={row.sessions_growth_rate} t={t} />}
+                                    </td>
+                                    <td style={{ padding: '6px', color: 'var(--text-secondary)', whiteSpace: 'nowrap' }}>
+                                        {fmtNumber(row.conversions)}
+                                        {showGrowth && <GrowthBadge value={row.conversions_growth_rate} t={t} />}
+                                    </td>
+                                    <td style={{ padding: '6px', color: 'var(--text-secondary)', whiteSpace: 'nowrap' }}>
+                                        {fmtPct(row.session_key_event_rate)}
+                                        {showGrowth && <GrowthBadge value={row.session_key_event_rate_delta_pp} isPercentagePoint t={t} />}
+                                    </td>
+                                    <td style={{ padding: '6px', color: 'var(--text-secondary)', whiteSpace: 'nowrap' }}>
+                                        {fmtPct(row.bounceRate)}
+                                        {showGrowth && <GrowthBadge value={row.bounce_rate_delta_pp} isPercentagePoint t={t} />}
+                                    </td>
+                                    <td style={{ padding: '6px' }}>
+                                        <div style={{ display: 'flex', gap: '4px', flexWrap: 'wrap' }}>
+                                            {row.is_high_traffic_low_conversion && (
+                                                <span style={badgeStyle('flagged')}>{t('High traffic, low conversion', '高流量低轉換')}</span>
+                                            )}
+                                            {showCompare && row.is_new && (
+                                                <span style={badgeStyle('flagged')} title={t('No data in the prior period', '上一期沒有這個頁面的資料')}>
+                                                    🆕 {t('New', '新')}
+                                                </span>
+                                            )}
+                                        </div>
+                                    </td>
                                 </tr>
-                            ))}
+                                );
+                            })}
                         </tbody>
                     </table>
                 </div>
@@ -156,6 +214,7 @@ const ItemsTable = ({ t, payload, initialCategory }) => {
         categoryKeys.includes(initialCategory) ? initialCategory : 'all'
     );
     const rows = category === 'all' ? allRows : allRows.filter((row) => row.item_category === category);
+    const showCompare = payload?.compare_enabled && !payload?.compare_query_error;
 
     if (!allRows.length) return emptyState(t('No item data.', '暫無商品資料。'));
 
@@ -175,6 +234,14 @@ const ItemsTable = ({ t, payload, initialCategory }) => {
                     ))}
                 </select>
             </div>
+            {payload?.compare_enabled && payload?.compare_query_error && (
+                <div style={{ color: '#fbbf24', fontSize: '0.78rem', marginBottom: '10px' }}>
+                    {t(
+                        'Could not fetch the prior period for comparison (temporary); showing this period only.',
+                        '暫時無法取得上一期資料做比較，以下僅顯示本期數字。'
+                    )}
+                </div>
+            )}
             {rows.length === 0 ? emptyState(t('No item data.', '暫無商品資料。')) : (
                 <div style={{ overflowX: 'auto' }}>
                     <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.85rem' }}>
@@ -186,21 +253,47 @@ const ItemsTable = ({ t, payload, initialCategory }) => {
                                 <th style={{ padding: '6px' }}>{t('Add-to-cart Rate', '瀏覽後加購率')}</th>
                                 <th style={{ padding: '6px' }}>{t('Purchase Rate', '瀏覽後購買率')}</th>
                                 <th style={{ padding: '6px' }}>{t('Revenue', '營收')}</th>
+                                <th style={{ padding: '6px' }}>{t('Flag', '標記')}</th>
                             </tr>
                         </thead>
                         <tbody>
-                            {rows.map((row) => (
+                            {rows.map((row) => {
+                                const showGrowth = showCompare && !row.is_new;
+                                return (
                                 <tr key={row.itemName} style={{ borderTop: '1px solid var(--glass-border)' }}>
                                     <td style={{ padding: '6px', color: 'var(--text-primary)' }}>{row.itemName}</td>
                                     <td style={{ padding: '6px', color: 'var(--text-secondary)' }} title={tr('zh', ITEM_CATEGORY_SOURCE_LABELS[row.item_category_source]?.en, ITEM_CATEGORY_SOURCE_LABELS[row.item_category_source]?.zh)}>
                                         {row.item_category === '(not set)' ? t('Uncategorized', '未分類') : row.item_category}
                                     </td>
-                                    <td style={{ padding: '6px', color: 'var(--text-secondary)' }}>{fmtNumber(row.itemsViewed)}</td>
-                                    <td style={{ padding: '6px', color: 'var(--text-secondary)' }}>{fmtPct(row.cart_to_view_rate)}</td>
-                                    <td style={{ padding: '6px', color: 'var(--text-secondary)' }}>{fmtPct(row.purchase_to_view_rate)}</td>
-                                    <td style={{ padding: '6px', color: 'var(--text-secondary)' }}>{fmtNumber(row.itemRevenue)}</td>
+                                    <td style={{ padding: '6px', color: 'var(--text-secondary)', whiteSpace: 'nowrap' }}>
+                                        {fmtNumber(row.itemsViewed)}
+                                        {showGrowth && <GrowthBadge value={row.views_compare_growth_rate} t={t} />}
+                                    </td>
+                                    <td style={{ padding: '6px', color: 'var(--text-secondary)', whiteSpace: 'nowrap' }}>
+                                        {fmtPct(row.cart_to_view_rate)}
+                                        {showGrowth && <GrowthBadge value={row.cart_to_view_rate_delta_pp} isPercentagePoint t={t} />}
+                                    </td>
+                                    <td style={{ padding: '6px', color: 'var(--text-secondary)', whiteSpace: 'nowrap' }}>
+                                        {fmtPct(row.purchase_to_view_rate)}
+                                        {showGrowth && <GrowthBadge value={row.purchase_to_view_rate_delta_pp} isPercentagePoint t={t} />}
+                                    </td>
+                                    <td style={{ padding: '6px', color: 'var(--text-secondary)', whiteSpace: 'nowrap' }}>
+                                        {fmtNumber(row.itemRevenue)}
+                                        {showGrowth && <GrowthBadge value={row.revenue_growth_rate} t={t} />}
+                                    </td>
+                                    <td style={{ padding: '6px' }}>
+                                        <div style={{ display: 'flex', gap: '4px', flexWrap: 'wrap' }}>
+                                            {row.is_potential && <span style={badgeStyle('potential')}>{t('Potential', '潛力商品')}</span>}
+                                            {showCompare && row.is_new && (
+                                                <span style={badgeStyle('flagged')} title={t('No data in the prior period', '上一期沒有這個商品的資料')}>
+                                                    🆕 {t('New', '新')}
+                                                </span>
+                                            )}
+                                        </div>
+                                    </td>
                                 </tr>
-                            ))}
+                                );
+                            })}
                         </tbody>
                     </table>
                 </div>
