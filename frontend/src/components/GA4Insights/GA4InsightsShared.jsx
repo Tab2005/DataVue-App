@@ -577,40 +577,80 @@ export const AIInsightNote = ({ language, snapshot, kind, buildPayload, contextL
 };
 
 // ── 當日總覽：單一指標的小圖（實際柱狀 + 灰帶預期區間 + 中位數虛線） ──
-export const IntradayMetricCard = ({ language, metricKey, hourlyTotals, baseline, cumulativeValue, isAnomaly }) => {
+// docs/50：「轉換」卡片額外支援 conversionEvents/conversionsByEvent —— 下拉選單
+// 純粹是前端本地狀態切換要顯示 payload 裡的哪個事件，不重新呼叫後端 API。
+export const IntradayMetricCard = ({
+    language, metricKey, hourlyTotals, baseline, cumulativeValue, isAnomaly,
+    conversionEvents, conversionsByEvent,
+}) => {
     const t = (en, zh) => tr(language, en, zh);
     const label = METRIC_LABELS[metricKey] ? tr(language, METRIC_LABELS[metricKey].en, METRIC_LABELS[metricKey].zh) : metricKey;
-    const data = (hourlyTotals || []).map((row) => ({ hour: row.hour, value: row[metricKey] || 0 }));
-    const low = baseline?.low;
-    const high = baseline?.high;
-    const median = baseline?.median;
+    const [selectedEventKey, setSelectedEventKey] = useState('__all__');
+
+    const isConversions = metricKey === 'conversions';
+    const hasEventBreakdown = isConversions && Array.isArray(conversionEvents) && conversionEvents.length > 1;
+    const selectedEvent = isConversions
+        ? (conversionsByEvent?.[selectedEventKey] || conversionsByEvent?.__all__)
+        : null;
+
+    const data = selectedEvent
+        ? (selectedEvent.hourly_totals || []).map((row) => ({ hour: row.hour, value: row.value || 0 }))
+        : (hourlyTotals || []).map((row) => ({ hour: row.hour, value: row[metricKey] || 0 }));
+    const effectiveCumulativeValue = selectedEvent ? selectedEvent.cumulative_value : cumulativeValue;
+    const effectiveBaseline = selectedEvent ? selectedEvent.baseline : baseline;
+    const effectiveIsAnomaly = selectedEvent ? selectedEvent.is_anomaly : isAnomaly;
+    const low = effectiveBaseline?.low;
+    const high = effectiveBaseline?.high;
+    const median = effectiveBaseline?.median;
 
     return (
         <div className="ga4-insights-chart-root" style={baseCardStyle}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline', marginBottom: '4px' }}>
-                <div style={{ fontWeight: 700, color: 'var(--text-primary)' }}>
-                    {label}
-                    {/* docs/48：GA4 官方 conversions 是「所有被標記為關鍵事件的事件」總和
-                        （在 GA4 後台設定，不是我們系統決定的），常見情境是加入購物車也被
-                        標成關鍵事件、跟購買混在一起算，容易被誤以為這裡只算購買轉換。 */}
-                    {metricKey === 'conversions' && (
-                        <span
-                            style={{ cursor: 'help', marginLeft: '4px', color: 'var(--text-tertiary)', fontSize: '0.8rem', fontWeight: 400 }}
-                            title={t(
-                                'GA4 "Conversions" sums every event marked as a key event in this property\'s GA4 settings — it may include add-to-cart, sign-up, etc., not just purchases.',
-                                '此為 GA4「關鍵事件」總和，加總的是你在 GA4 後台標記為關鍵事件的所有事件，可能包含加入購物車、註冊等，不一定只是購買轉換。'
-                            )}
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '4px', flexWrap: 'wrap', gap: '6px' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '6px', flexWrap: 'wrap' }}>
+                    <div style={{ fontWeight: 700, color: 'var(--text-primary)' }}>
+                        {label}
+                        {/* docs/48：GA4 官方 conversions 是「所有被標記為關鍵事件的事件」總和
+                            （在 GA4 後台設定，不是我們系統決定的），常見情境是加入購物車也被
+                            標成關鍵事件、跟購買混在一起算，容易被誤以為這裡只算購買轉換。 */}
+                        {isConversions && (
+                            <span
+                                style={{ cursor: 'help', marginLeft: '4px', color: 'var(--text-tertiary)', fontSize: '0.8rem', fontWeight: 400 }}
+                                title={t(
+                                    'GA4 "Conversions" sums every event marked as a key event in this property\'s GA4 settings — it may include add-to-cart, sign-up, etc., not just purchases.',
+                                    '此為 GA4「關鍵事件」總和，加總的是你在 GA4 後台標記為關鍵事件的所有事件，可能包含加入購物車、註冊等，不一定只是購買轉換。'
+                                )}
+                            >
+                                ⓘ
+                            </span>
+                        )}
+                    </div>
+                    {hasEventBreakdown && (
+                        <select
+                            value={selectedEventKey}
+                            onChange={(event) => setSelectedEventKey(event.target.value)}
+                            style={{
+                                fontSize: '0.72rem',
+                                padding: '2px 6px',
+                                borderRadius: '6px',
+                                border: '1px solid var(--border-secondary, rgba(255,255,255,0.15))',
+                                background: 'var(--bg-secondary, transparent)',
+                                color: 'var(--text-secondary)',
+                            }}
                         >
-                            ⓘ
-                        </span>
+                            {conversionEvents.map((event) => (
+                                <option key={event.key} value={event.key}>
+                                    {event.key === '__all__' ? t('All key events', '全部關鍵事件') : event.label}
+                                </option>
+                            ))}
+                        </select>
                     )}
                 </div>
-                {isAnomaly && (
+                {effectiveIsAnomaly && (
                     <span style={badgeStyle('flagged')}>{t('Unusual', '異常')}</span>
                 )}
             </div>
-            <div style={{ fontSize: '1.6rem', fontWeight: 800, color: isAnomaly ? '#f87171' : 'var(--text-primary)' }}>
-                {fmtNumber(cumulativeValue, metricKey === 'purchaseRevenue' ? 0 : 0)}
+            <div style={{ fontSize: '1.6rem', fontWeight: 800, color: effectiveIsAnomaly ? '#f87171' : 'var(--text-primary)' }}>
+                {fmtNumber(effectiveCumulativeValue, metricKey === 'purchaseRevenue' ? 0 : 0)}
             </div>
             <div style={{ fontSize: '0.78rem', color: 'var(--text-secondary)', marginBottom: '8px', minHeight: '1.1em' }}>
                 {median != null
@@ -627,7 +667,7 @@ export const IntradayMetricCard = ({ language, metricKey, hourlyTotals, baseline
                         <ReferenceArea y1={Math.max(low, 0)} y2={high} fill="var(--viz-series-muted)" fillOpacity={0.18} strokeOpacity={0} />
                     )}
                     {median != null && <ReferenceLine y={median} stroke="var(--viz-series-muted)" strokeDasharray="4 4" />}
-                    <Bar dataKey="value" radius={[4, 4, 0, 0]} fill={isAnomaly ? '#f87171' : 'var(--viz-series-1)'} />
+                    <Bar dataKey="value" radius={[4, 4, 0, 0]} fill={effectiveIsAnomaly ? '#f87171' : 'var(--viz-series-1)'} />
                 </BarChart>
             </ResponsiveContainer>
         </div>

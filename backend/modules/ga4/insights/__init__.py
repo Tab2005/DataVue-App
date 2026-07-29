@@ -23,6 +23,8 @@ from .channel_groups import (
 )
 from .channels import _get_attribution_model, get_channels
 from .dashboard import (
+    MAX_CONVERSION_EVENTS,
+    _compute_metric_baseline,
     _fetch_intraday_dashboard_payload,
     _refresh_dashboard_snapshot,
     get_dashboard,
@@ -68,6 +70,7 @@ class GA4InsightsService:
     evaluate_rule = staticmethod(evaluate_rule)
 
     _fetch_intraday_dashboard_payload = staticmethod(_fetch_intraday_dashboard_payload)
+    _compute_metric_baseline = staticmethod(_compute_metric_baseline)
     _refresh_dashboard_snapshot = staticmethod(_refresh_dashboard_snapshot)
     get_dashboard = staticmethod(get_dashboard)
     refresh_dashboard = staticmethod(refresh_dashboard)

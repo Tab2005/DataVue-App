@@ -4,6 +4,35 @@ from __future__ import annotations
 
 from ._shared import *
 
+# docs/50：「轉換」卡片個別關鍵事件拆分，下拉選單最多列出（「全部關鍵事件」以外）
+# 這麼多個依當日次數排序的個別事件，避免關鍵事件數量不可預期地把基線查詢量推高。
+MAX_CONVERSION_EVENTS = 5
+
+
+def _compute_metric_baseline(
+    *, user: User, property_id: str, api_metric: str, now_local: datetime, current_hour: int, db, observed: float,
+) -> tuple[dict | None, bool]:
+    """依 8 週歷史同星期幾抓 `api_metric` 的基線區間，並判斷 `observed` 是否異常。"""
+    samples: list[float] = []
+    for sample_date in _service_attr("_historical_dates", _historical_dates)(now_local):
+        try:
+            sample_total, _ = _service_attr("_fetch_metric_total", _fetch_metric_total)(
+                user=user,
+                property_id=property_id,
+                date_value=sample_date,
+                api_metric=api_metric,
+                db=db,
+                by_hour=True,
+                current_hour=current_hour,
+            )
+        except Exception:
+            logger.warning("[GA4Insights] dashboard baseline sample failed %s %s", property_id, sample_date)
+            continue
+        samples.append(sample_total)
+    expected = build_expected_range(samples, "medium")
+    is_anomaly = bool(expected and (observed < expected["low"] or observed > expected["high"]))
+    return expected, is_anomaly
+
 
 def _fetch_intraday_dashboard_payload(*, user: User, property_id: str, db, now_local: datetime | None = None) -> dict:
     now_local = now_local or datetime.utcnow() + timedelta(hours=8)
@@ -38,29 +67,94 @@ def _fetch_intraday_dashboard_payload(*, user: User, property_id: str, db, now_l
         {"hour": f"{hour:02d}", **values} for hour, values in sorted(hourly_totals.items())
     ]
 
+    # docs/50 步驟 1：另開一支 hour × eventName 查詢，抓出當日實際出現的關鍵
+    # 事件，依當日次數排序取前 N 大做「全部關鍵事件」以外的個別下拉選項。
+    # 查詢失敗時只保留「全部關鍵事件」，不擋主要的 cumulative_totals/baseline 邏輯。
+    event_hourly_totals: dict[str, dict[int, float]] = {}
+    breakdown_data, breakdown_error = GA4Service.get_analytics(
+        user=user,
+        property_id=property_id,
+        start_date=today,
+        end_date=today,
+        metrics=["keyEvents"],
+        dimensions=["hour", "eventName"],
+        db=db,
+    )
+    if breakdown_error:
+        logger.warning("[GA4Insights] dashboard event breakdown failed %s: %s", property_id, breakdown_error)
+    else:
+        for row in (breakdown_data or {}).get("rows", []):
+            event_name = row.get("eventName", "")
+            if not event_name:
+                continue
+            hour_value = int(row.get("hour", 0))
+            value = float(row.get("keyEvents", 0) or 0)
+            bucket = event_hourly_totals.setdefault(event_name, {})
+            bucket[hour_value] = bucket.get(hour_value, 0.0) + value
+
+    event_cumulative = {
+        event_name: sum(value for hour_value, value in hours.items() if hour_value <= current_hour)
+        for event_name, hours in event_hourly_totals.items()
+    }
+    top_events = sorted(
+        event_cumulative, key=lambda name: event_cumulative[name], reverse=True
+    )[:MAX_CONVERSION_EVENTS]
+
+    compute_baseline = _service_attr("_compute_metric_baseline", _compute_metric_baseline)
+
+    conversion_events = [{"key": "__all__", "label": "全部關鍵事件"}]
+    all_baseline, all_is_anomaly = compute_baseline(
+        user=user, property_id=property_id, api_metric="keyEvents",
+        now_local=now_local, current_hour=current_hour, db=db,
+        observed=cumulative_totals["conversions"],
+    )
+    conversions_by_event: dict[str, dict] = {
+        "__all__": {
+            "cumulative_value": cumulative_totals["conversions"],
+            "baseline": all_baseline,
+            "is_anomaly": all_is_anomaly,
+            "hourly_totals": [
+                {"hour": entry["hour"], "value": entry.get("conversions", 0.0)} for entry in hourly_totals_list
+            ],
+        }
+    }
+
+    for event_name in top_events:
+        conversion_events.append({"key": event_name, "label": event_name})
+        observed = event_cumulative[event_name]
+        event_baseline, event_is_anomaly = compute_baseline(
+            user=user, property_id=property_id, api_metric=f"keyEvents:{event_name}",
+            now_local=now_local, current_hour=current_hour, db=db,
+            observed=observed,
+        )
+        conversions_by_event[event_name] = {
+            "cumulative_value": observed,
+            "baseline": event_baseline,
+            "is_anomaly": event_is_anomaly,
+            "hourly_totals": [
+                {"hour": f"{hour_value:02d}", "value": value}
+                for hour_value, value in sorted(event_hourly_totals[event_name].items())
+            ],
+        }
+
     baseline: dict[str, dict | None] = {}
     is_anomaly: dict[str, bool] = {}
     for metric in DASHBOARD_METRICS:
-        samples: list[float] = []
-        for sample_date in _service_attr("_historical_dates", _historical_dates)(now_local):
-            try:
-                sample_total, _ = _service_attr("_fetch_metric_total", _fetch_metric_total)(
-                    user=user,
-                    property_id=property_id,
-                    date_value=sample_date,
-                    api_metric=metric,
-                    db=db,
-                    by_hour=True,
-                    current_hour=current_hour,
-                )
-            except Exception:
-                logger.warning("[GA4Insights] dashboard baseline sample failed %s %s", property_id, sample_date)
-                continue
-            samples.append(sample_total)
-        expected = build_expected_range(samples, "medium")
-        baseline[metric] = expected
+        if metric == "conversions":
+            # 向下相容：既有欄位維持與 conversions_by_event["__all__"] 數字一致，
+            # 改用 keyEvents 指標算基線（語意等同 conversions，但跟個別事件的
+            # keyEvents:{event} 動態指標共用同一套查詢邏輯，避免重複打兩次 API）。
+            baseline[metric] = conversions_by_event["__all__"]["baseline"]
+            is_anomaly[metric] = conversions_by_event["__all__"]["is_anomaly"]
+            continue
         observed = cumulative_totals[metric]
-        is_anomaly[metric] = bool(expected and (observed < expected["low"] or observed > expected["high"]))
+        expected, flagged = compute_baseline(
+            user=user, property_id=property_id, api_metric=metric,
+            now_local=now_local, current_hour=current_hour, db=db,
+            observed=observed,
+        )
+        baseline[metric] = expected
+        is_anomaly[metric] = flagged
 
     return {
         "date": today,
@@ -70,6 +164,8 @@ def _fetch_intraday_dashboard_payload(*, user: User, property_id: str, db, now_l
         "cumulative_totals": cumulative_totals,
         "baseline": baseline,
         "is_anomaly": is_anomaly,
+        "conversion_events": conversion_events,
+        "conversions_by_event": conversions_by_event,
     }
 
 

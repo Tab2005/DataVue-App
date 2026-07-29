@@ -157,6 +157,132 @@ def test_refresh_dashboard_respects_cooldown_then_refreshes(mocker, db, sample_u
     assert snapshot.payload["stage"] == "second"
 
 
+# ─── 當日儀表板：轉換卡片個別關鍵事件拆分（docs/50）───────────────────
+@pytest.mark.unit
+def test_fetch_intraday_dashboard_payload_splits_conversion_events(mocker):
+    """docs/50 步驟 1：conversion_events 依當日次數排序取前 N 大，
+    conversions_by_event 各自獨立算基線／異常，且 __all__ 與既有
+    cumulative_totals/baseline/is_anomaly["conversions"] 數字一致。"""
+    from modules.ga4.insights_service import GA4InsightsService
+
+    def fake_get_analytics(*, user, property_id, start_date, end_date, metrics, dimensions, db=None, **_):
+        if dimensions == ["hour", "sessionDefaultChannelGroup"]:
+            return {
+                "rows": [
+                    {"hour": "09", "sessionDefaultChannelGroup": "Organic Search", "sessions": 10, "conversions": 8, "purchaseRevenue": 100.0},
+                    {"hour": "10", "sessionDefaultChannelGroup": "Paid Search", "sessions": 20, "conversions": 4, "purchaseRevenue": 200.0},
+                ]
+            }, None
+        if dimensions == ["hour", "eventName"]:
+            return {
+                "rows": [
+                    {"hour": "09", "eventName": "purchase", "keyEvents": 5},
+                    {"hour": "10", "eventName": "purchase", "keyEvents": 3},
+                    {"hour": "09", "eventName": "add_to_cart", "keyEvents": 3},
+                    {"hour": "10", "eventName": "add_to_cart", "keyEvents": 1},
+                ]
+            }, None
+        if dimensions == ["hour"]:
+            metric = metrics[0]
+            # 讓 purchase 基線明顯偏低（觀測值遠高於基線 -> 異常），add_to_cart 基線持平。
+            if metric == "keyEvents:purchase":
+                return {"rows": [{"hour": "09", metric: 1}, {"hour": "10", metric: 1}]}, None
+            if metric == "keyEvents:add_to_cart":
+                return {"rows": [{"hour": "09", metric: 2}, {"hour": "10", metric: 2}]}, None
+            if metric == "keyEvents":
+                return {"rows": [{"hour": "09", metric: 6}, {"hour": "10", metric: 6}]}, None
+            return {"rows": [{"hour": "09", metric: 5}, {"hour": "10", metric: 5}]}, None
+        return {"rows": []}, None
+
+    mocker.patch("modules.ga4.insights_service.GA4Service.get_analytics", side_effect=fake_get_analytics)
+
+    payload = GA4InsightsService._fetch_intraday_dashboard_payload(
+        user=MagicMock(), property_id="123456", db=None, now_local=datetime(2026, 7, 10, 10, 30)
+    )
+
+    # 事件依當日次數排序：purchase(8) > add_to_cart(4)
+    assert payload["conversion_events"] == [
+        {"key": "__all__", "label": "全部關鍵事件"},
+        {"key": "purchase", "label": "purchase"},
+        {"key": "add_to_cart", "label": "add_to_cart"},
+    ]
+
+    by_event = payload["conversions_by_event"]
+    assert by_event["purchase"]["cumulative_value"] == 8
+    assert by_event["add_to_cart"]["cumulative_value"] == 4
+
+    # 向下相容：既有欄位維持不變，且與 __all__ 一致
+    assert payload["cumulative_totals"]["conversions"] == 12
+    assert by_event["__all__"]["cumulative_value"] == 12
+    assert payload["baseline"]["conversions"] == by_event["__all__"]["baseline"]
+    assert payload["is_anomaly"]["conversions"] == by_event["__all__"]["is_anomaly"]
+
+    # 各事件各自獨立判斷異常：purchase 基線(2) << 觀測(8) -> 異常；add_to_cart 基線(4) 貼近觀測(4) -> 不異常
+    assert by_event["purchase"]["is_anomaly"] is True
+    assert by_event["add_to_cart"]["is_anomaly"] is False
+
+
+@pytest.mark.unit
+def test_fetch_intraday_dashboard_payload_caps_top_events(mocker):
+    """事件數超過上限時只取前 MAX_CONVERSION_EVENTS 大，其餘不出現在下拉清單。"""
+    from modules.ga4.insights_service import MAX_CONVERSION_EVENTS, GA4InsightsService
+
+    event_names = [f"event_{i}" for i in range(8)]
+
+    def fake_get_analytics(*, user, property_id, start_date, end_date, metrics, dimensions, db=None, **_):
+        if dimensions == ["hour", "sessionDefaultChannelGroup"]:
+            return {"rows": [{"hour": "09", "sessionDefaultChannelGroup": "Direct", "sessions": 1, "conversions": 1, "purchaseRevenue": 1.0}]}, None
+        if dimensions == ["hour", "eventName"]:
+            # 次數遞減，event_0 最大
+            rows = [
+                {"hour": "09", "eventName": name, "keyEvents": len(event_names) - idx}
+                for idx, name in enumerate(event_names)
+            ]
+            return {"rows": rows}, None
+        if dimensions == ["hour"]:
+            metric = metrics[0]
+            return {"rows": [{"hour": "09", metric: 1}]}, None
+        return {"rows": []}, None
+
+    mocker.patch("modules.ga4.insights_service.GA4Service.get_analytics", side_effect=fake_get_analytics)
+
+    payload = GA4InsightsService._fetch_intraday_dashboard_payload(
+        user=MagicMock(), property_id="123456", db=None, now_local=datetime(2026, 7, 10, 9, 30)
+    )
+
+    listed_keys = [entry["key"] for entry in payload["conversion_events"]]
+    assert listed_keys[0] == "__all__"
+    assert len(listed_keys) == 1 + MAX_CONVERSION_EVENTS
+    assert listed_keys[1:] == event_names[:MAX_CONVERSION_EVENTS]
+
+
+@pytest.mark.unit
+def test_fetch_intraday_dashboard_payload_event_breakdown_query_failure_falls_back(mocker):
+    """新的 hour×eventName 查詢失敗時，conversion_events 只保留 __all__，
+    不影響主要的 cumulative_totals/baseline 邏輯。"""
+    from modules.ga4.insights_service import GA4InsightsService
+
+    def fake_get_analytics(*, user, property_id, start_date, end_date, metrics, dimensions, db=None, **_):
+        if dimensions == ["hour", "sessionDefaultChannelGroup"]:
+            return {"rows": [{"hour": "09", "sessionDefaultChannelGroup": "Direct", "sessions": 10, "conversions": 2, "purchaseRevenue": 20.0}]}, None
+        if dimensions == ["hour", "eventName"]:
+            return None, "GA4 quota exceeded"
+        if dimensions == ["hour"]:
+            metric = metrics[0]
+            return {"rows": [{"hour": "09", metric: 1}]}, None
+        return {"rows": []}, None
+
+    mocker.patch("modules.ga4.insights_service.GA4Service.get_analytics", side_effect=fake_get_analytics)
+
+    payload = GA4InsightsService._fetch_intraday_dashboard_payload(
+        user=MagicMock(), property_id="123456", db=None, now_local=datetime(2026, 7, 10, 9, 30)
+    )
+
+    assert payload["conversion_events"] == [{"key": "__all__", "label": "全部關鍵事件"}]
+    assert payload["conversions_by_event"]["__all__"]["cumulative_value"] == 2
+    assert payload["cumulative_totals"]["conversions"] == 2
+
+
 # ─── Realtime 心跳 ──────────────────────────────────────────────────
 @pytest.mark.unit
 def test_get_realtime_aggregates_total_and_breakdown(mocker):

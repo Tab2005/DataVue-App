@@ -71,6 +71,8 @@ const OverviewTab = ({
                                     baseline={dashboard.payload.baseline?.[metricKey]}
                                     cumulativeValue={dashboard.payload.cumulative_totals?.[metricKey]}
                                     isAnomaly={dashboard.payload.is_anomaly?.[metricKey]}
+                                    conversionEvents={dashboard.payload.conversion_events}
+                                    conversionsByEvent={dashboard.payload.conversions_by_event}
                                 />
                             ))
                         ) : (
