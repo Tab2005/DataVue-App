@@ -11,7 +11,7 @@ from .channel_groups import get_channel_group_match_conditions
 def get_landing_pages(
     db, *, user: User, property_id: str, days: int = 7, key_event: str | None = None,
     channel_dimension: str | None = None, channel_value: str | None = None,
-    channel_group: str | None = None,
+    channel_group: str | None = None, compare: bool = False,
 ):
     if key_event and not LANDING_PAGE_KEY_EVENT_PATTERN.match(key_event):
         raise ValueError(f"Invalid key_event: {key_event}")
@@ -99,18 +99,71 @@ def get_landing_pages(
         for r in rule_rows
     ]
 
+    # docs/54：跟上一期比較（開關預設關閉，只有 compare=True 才多查一次）。
+    # 往前推同樣天數的前一段期間，沿用主查詢當下的指標/維度/渠道篩選，
+    # 確保比較的是同一組篩選條件下的兩期。查詢失敗只記警告、不擋主表格，
+    # 每列的比較欄位維持 None，並在 payload 標示 compare_query_error 讓前端
+    # 呈現提示（不會把「查詢失敗」誤標成「這是新頁面」）。
+    compare_start_date = compare_end_date = None
+    compare_map: dict[str, dict] = {}
+    compare_query_error = None
+    if compare:
+        end_date_obj = datetime.strptime(start_date, "%Y-%m-%d") - timedelta(days=1)
+        start_date_obj = end_date_obj - timedelta(days=days - 1)
+        compare_start_date = start_date_obj.strftime("%Y-%m-%d")
+        compare_end_date = end_date_obj.strftime("%Y-%m-%d")
+
+        compare_data, compare_error = GA4Service.get_analytics(
+            user=user, property_id=property_id, start_date=compare_start_date, end_date=compare_end_date,
+            metrics=["sessions", "bounceRate", key_events_metric, key_event_rate_metric],
+            dimensions=["landingPage"], db=db,
+            dimension_filter=dimension_filter,
+        )
+        if compare_error:
+            logger.warning("[GA4Insights] landing page compare query failed %s: %s", property_id, compare_error)
+            compare_query_error = compare_error
+        else:
+            compare_map = {row.get("landingPage", ""): row for row in (compare_data or {}).get("rows", [])}
+
+    def _growth_rate(current: float, prior: float) -> float:
+        return ((current - prior) / prior) if prior else (1.0 if current > 0 else 0.0)
+
     enriched = []
     for row in rows:
         landing_page = row.get("landingPage", "")
         sessions = row.get("sessions", 0)
         key_events_count = row.get(key_events_metric, 0)
         session_key_event_rate = row.get(key_event_rate_metric, 0.0)
+        bounce_rate = row.get("bounceRate", 0.0)
         category = _facade_attr("classify_landing_page", classify_landing_page)(landing_page, rules)
+
+        # 比較模式：is_new 只有在「查詢成功、且這個頁面在上一期完全沒出現」
+        # 時才成立；查詢失敗時所有列都不標記新頁面，避免誤導。
+        is_new = False
+        sessions_prior = conversions_prior = session_key_event_rate_prior = bounce_rate_prior = None
+        sessions_growth_rate = conversions_growth_rate = None
+        session_key_event_rate_delta_pp = bounce_rate_delta_pp = None
+        if compare and not compare_query_error:
+            prior_row = compare_map.get(landing_page)
+            if prior_row is None:
+                is_new = True
+            else:
+                sessions_prior = prior_row.get("sessions", 0)
+                conversions_prior = prior_row.get(key_events_metric, 0)
+                session_key_event_rate_prior = prior_row.get(key_event_rate_metric, 0.0)
+                bounce_rate_prior = prior_row.get("bounceRate", 0.0)
+                sessions_growth_rate = _growth_rate(sessions, sessions_prior)
+                conversions_growth_rate = _growth_rate(key_events_count, conversions_prior)
+                # 比率型指標（轉換率/跳出率）改用百分點差異，不是相對成長率，
+                # 避免「轉換率 5%→6%」被講成「成長 20%」造成誤解（docs/54）。
+                session_key_event_rate_delta_pp = (session_key_event_rate - session_key_event_rate_prior) * 100
+                bounce_rate_delta_pp = (bounce_rate - bounce_rate_prior) * 100
+
         enriched.append({
             "landingPage": landing_page,
             "sessions": sessions,
             "engagementRate": row.get("engagementRate", 0.0),
-            "bounceRate": row.get("bounceRate", 0.0),
+            "bounceRate": bounce_rate,
             "conversions": key_events_count,
             # 舊「次數比」口徑保留供回溯相容；前端不再以此欄顯示「轉換率」，
             # 主顯示改用下面的 session_key_event_rate（去重占比，見 5 節）。
@@ -119,6 +172,15 @@ def get_landing_pages(
             "category": category,
             "key_events_breakdown": key_events_breakdown.get(landing_page, {}),
             "is_high_traffic_low_conversion": False,
+            "is_new": is_new,
+            "sessions_prior": sessions_prior,
+            "sessions_growth_rate": sessions_growth_rate,
+            "conversions_prior": conversions_prior,
+            "conversions_growth_rate": conversions_growth_rate,
+            "session_key_event_rate_prior": session_key_event_rate_prior,
+            "session_key_event_rate_delta_pp": session_key_event_rate_delta_pp,
+            "bounce_rate_prior": bounce_rate_prior,
+            "bounce_rate_delta_pp": bounce_rate_delta_pp,
         })
 
     # 「高流量低轉換」改在同分類內計算（第 5 波刻意的語意變更），且改依
@@ -155,6 +217,10 @@ def get_landing_pages(
     elif channel_dimension:
         filter_digest = hashlib.md5(f"{channel_dimension}:{channel_value}".encode()).hexdigest()[:10]
         kind += f":ch_{filter_digest}"
+    # docs/54：跟上一期比較是完全獨立的一份 payload（每列多了一組比較欄位），
+    # 用 ":cmp" 後綴分開存快照，AI 解讀不會跟「沒開比較」的那份互相覆寫。
+    if compare:
+        kind += ":cmp"
 
     payload = {
         "start_date": start_date,
@@ -169,6 +235,10 @@ def get_landing_pages(
         "available_key_events": sorted(available_key_events),
         "session_key_event_rate_definition": LANDING_PAGE_SESSION_KEY_EVENT_RATE_DEFINITION,
         "key_events_count_definition": LANDING_PAGE_KEY_EVENTS_COUNT_DEFINITION,
+        "compare_enabled": compare,
+        "compare_start_date": compare_start_date,
+        "compare_end_date": compare_end_date,
+        "compare_query_error": compare_query_error,
     }
     return repository.upsert_snapshot(
         db, property_id=property_id, kind=kind, date=end_date, payload=payload, fetched_by=user.id,

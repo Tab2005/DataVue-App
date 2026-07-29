@@ -97,6 +97,8 @@ const GA4Insights = () => {
     const [landingError, setLandingError] = useState('');
     const [landingCategoryFilter, setLandingCategoryFilter] = useState('all');
     const [landingKeyEvent, setLandingKeyEvent] = useState('');
+    // docs/54：跟上一期比較開關，預設關閉（不多打一次 GA4 查詢）。
+    const [landingCompareEnabled, setLandingCompareEnabled] = useState(false);
     // docs/42：到達頁渠道篩選——維度＋渠道值兩層下拉，渠道值清單複用
     // getChannels 既有回應，不用另外開一支「列出渠道值」的端點。
     const [landingChannelDimension, setLandingChannelDimension] = useState('');
@@ -271,6 +273,7 @@ const GA4Insights = () => {
         channelDimension = landingChannelDimension,
         channelValue = landingChannelValue,
         channelGroup = landingChannelGroup,
+        compare = landingCompareEnabled,
     ) => {
         if (!pid) return;
         setLandingLoading(true);
@@ -278,7 +281,7 @@ const GA4Insights = () => {
         try {
             setLandingSnapshot(
                 await ga4InsightsService.getLandingPages(
-                    pid, days, keyEvent || null, channelDimension || null, channelValue || null, channelGroup || null
+                    pid, days, keyEvent || null, channelDimension || null, channelValue || null, channelGroup || null, compare
                 )
             );
         } catch (err) {
@@ -719,6 +722,7 @@ const GA4Insights = () => {
         setLandingRules(null);
         setLandingCategoryFilter('all');
         setLandingKeyEvent('');
+        setLandingCompareEnabled(false);
         setItemsSnapshot(null);
         setItemsCategoryFilter('all');
         setItemsSearchQuery('');
@@ -1028,6 +1032,8 @@ const GA4Insights = () => {
                     setLandingCategoryFilter={setLandingCategoryFilter}
                     landingKeyEvent={landingKeyEvent}
                     setLandingKeyEvent={setLandingKeyEvent}
+                    landingCompareEnabled={landingCompareEnabled}
+                    setLandingCompareEnabled={setLandingCompareEnabled}
                     landingChannelDimension={landingChannelDimension}
                     setLandingChannelDimension={setLandingChannelDimension}
                     landingChannelValue={landingChannelValue}

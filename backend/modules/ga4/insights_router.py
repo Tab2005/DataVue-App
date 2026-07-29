@@ -214,6 +214,7 @@ def get_landing_pages(
     channel_dimension: ChannelDimension | None = Query(None),
     channel_value: str | None = Query(None, max_length=100),
     channel_group: str | None = Query(None, max_length=100),
+    compare: bool = Query(False),
     user=Depends(get_current_user),
     _module: bool = Depends(require_ga4_module),
     _perm: bool = Depends(require_ga4_insights_view),
@@ -223,7 +224,7 @@ def get_landing_pages(
         snapshot = GA4InsightsService.get_landing_pages(
             db, user=user, property_id=property_id, days=days, key_event=key_event,
             channel_dimension=channel_dimension, channel_value=channel_value,
-            channel_group=channel_group,
+            channel_group=channel_group, compare=compare,
         )
     except (RuntimeError, ValueError) as exc:
         raise HTTPException(status_code=400, detail=str(exc))
@@ -371,6 +372,7 @@ def get_items(
     channel_dimension: ChannelDimension | None = Query(None),
     channel_value: str | None = Query(None, max_length=100),
     channel_group: str | None = Query(None, max_length=100),
+    compare: bool = Query(False),
     user=Depends(get_current_user),
     _module: bool = Depends(require_ga4_module),
     _perm: bool = Depends(require_ga4_insights_view),
@@ -380,7 +382,7 @@ def get_items(
         snapshot = GA4InsightsService.get_items(
             db, user=user, property_id=property_id, days=days,
             channel_dimension=channel_dimension, channel_value=channel_value,
-            channel_group=channel_group,
+            channel_group=channel_group, compare=compare,
         )
     except (RuntimeError, ValueError) as exc:
         raise HTTPException(status_code=400, detail=str(exc))

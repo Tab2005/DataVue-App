@@ -39,7 +39,9 @@ export const ga4InsightsService = {
             `/api/ga4/insights/channels?property_id=${encodeURIComponent(propertyId)}&days=${days}&dimension=${encodeURIComponent(dimension)}`
         ),
 
-    getLandingPages: async (propertyId, days = 7, keyEvent = null, channelDimension = null, channelValue = null, channelGroup = null) =>
+    // docs/54：compare=true 時多回傳一組「跟上一期比較」欄位，預設 false
+    // 維持現況行為不變。
+    getLandingPages: async (propertyId, days = 7, keyEvent = null, channelDimension = null, channelValue = null, channelGroup = null, compare = false) =>
         apiClient.get(
             `/api/ga4/insights/landing-pages?property_id=${encodeURIComponent(propertyId)}&days=${days}`
             + (keyEvent ? `&key_event=${encodeURIComponent(keyEvent)}` : '')
@@ -49,9 +51,10 @@ export const ga4InsightsService = {
             + (channelDimension && channelGroup
                 ? `&channel_dimension=${encodeURIComponent(channelDimension)}&channel_group=${encodeURIComponent(channelGroup)}`
                 : '')
+            + (compare ? '&compare=true' : '')
         ),
 
-    getItems: async (propertyId, days = 7, channelDimension = null, channelValue = null, channelGroup = null) =>
+    getItems: async (propertyId, days = 7, channelDimension = null, channelValue = null, channelGroup = null, compare = false) =>
         apiClient.get(
             `/api/ga4/insights/items?property_id=${encodeURIComponent(propertyId)}&days=${days}`
             + (channelDimension && channelValue
@@ -60,6 +63,7 @@ export const ga4InsightsService = {
             + (channelDimension && channelGroup
                 ? `&channel_dimension=${encodeURIComponent(channelDimension)}&channel_group=${encodeURIComponent(channelGroup)}`
                 : '')
+            + (compare ? '&compare=true' : '')
         ),
 
     // ─── docs/47：商品頁面與商品轉換率交叉對照（追加） ───────────────

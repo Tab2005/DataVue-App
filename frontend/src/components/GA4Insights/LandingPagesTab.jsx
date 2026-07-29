@@ -49,6 +49,32 @@ const categoryScopeLabel = (categoryFilter, language, t) => {
     return t(`category filter: ${label}`, `分類篩選：${label}`);
 };
 
+// docs/54：跟上一期比較開啟時，告訴 AI 現在看到的數字已經有比較資訊可以提，
+// 避免 AI 白話解讀完全沒提到「相較上一期」的變化。
+const compareScopeLabel = (payload, t) => {
+    if (!payload?.compare_enabled) return null;
+    if (payload.compare_query_error) return null;
+    return t(
+        `compared to prior period (${payload.compare_start_date} ~ ${payload.compare_end_date})`,
+        `已啟用上一期比較（${payload.compare_start_date} ~ ${payload.compare_end_date}）`
+    );
+};
+
+// docs/54：次數類指標（工作階段/轉換次數）用相對成長率；比率類指標（轉換率/
+// 跳出率）改用百分點差異，避免「5%→6%」被講成「成長20%」造成誤解。
+const GrowthBadge = ({ value, isPercentagePoint = false }) => {
+    if (value == null) return null;
+    const arrow = value > 0 ? '▲' : value < 0 ? '▼' : '';
+    const color = value > 0 ? '#34d399' : value < 0 ? '#f87171' : 'var(--text-tertiary)';
+    const magnitude = Math.abs(value);
+    const text = isPercentagePoint ? `${magnitude.toFixed(1)}pp` : `${(magnitude * 100).toFixed(0)}%`;
+    return (
+        <span style={{ fontSize: '0.72rem', marginLeft: '4px', color, whiteSpace: 'nowrap' }}>
+            {arrow}{text}
+        </span>
+    );
+};
+
 const LandingPagesTab = ({
     language,
     t,
@@ -64,6 +90,8 @@ const LandingPagesTab = ({
     setLandingCategoryFilter,
     landingKeyEvent,
     setLandingKeyEvent,
+    landingCompareEnabled,
+    setLandingCompareEnabled,
     landingChannelDimension,
     setLandingChannelDimension,
     landingChannelValue,
@@ -125,13 +153,37 @@ const LandingPagesTab = ({
                     <section style={baseCardStyle}>
                         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px', flexWrap: 'wrap', gap: '8px' }}>
                             <div style={{ color: 'var(--text-primary)', fontWeight: 700 }}>{t('Landing pages', '到達頁分析')}</div>
-                            <DaySelector value={landingDays} onChange={(d) => {
-                                setLandingDays(d);
-                                loadLandingPages(propertyId, d);
-                                if (landingChannelDimension) loadLandingChannelValues(propertyId, d, landingChannelDimension);
-                            }} />
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '12px', flexWrap: 'wrap' }}>
+                                {/* docs/54：跟上一期比較開關，預設關閉；開啟時重新請求資料（往前推
+                                    同樣天數的前一段期間，沿用目前的渠道/關鍵事件篩選）。 */}
+                                <label style={{ display: 'flex', alignItems: 'center', gap: '6px', color: 'var(--text-secondary)', fontSize: '0.85rem', cursor: 'pointer' }}>
+                                    <input
+                                        type="checkbox"
+                                        checked={landingCompareEnabled}
+                                        onChange={(event) => {
+                                            const next = event.target.checked;
+                                            setLandingCompareEnabled(next);
+                                            loadLandingPages(propertyId, landingDays, landingKeyEvent, landingChannelDimension, landingChannelValue, landingChannelGroup, next);
+                                        }}
+                                    />
+                                    {t('Compare to prior period', '比較上一期')}
+                                </label>
+                                <DaySelector value={landingDays} onChange={(d) => {
+                                    setLandingDays(d);
+                                    loadLandingPages(propertyId, d);
+                                    if (landingChannelDimension) loadLandingChannelValues(propertyId, d, landingChannelDimension);
+                                }} />
+                            </div>
                         </div>
                         {landingError && <div style={{ color: '#fca5a5', fontSize: '0.85rem', marginBottom: '10px' }}>{landingError}</div>}
+                        {landingSnapshot?.payload?.compare_enabled && landingSnapshot?.payload?.compare_query_error && (
+                            <div style={{ color: '#fbbf24', fontSize: '0.78rem', marginBottom: '10px' }}>
+                                {t(
+                                    'Could not fetch the prior period for comparison (temporary); showing this period only.',
+                                    '暫時無法取得上一期資料做比較，以下僅顯示本期數字。'
+                                )}
+                            </div>
+                        )}
                         {landingLoading && !landingSnapshot ? (
                             emptyState(t('Loading landing pages…', '載入到達頁資料中…'))
                         ) : landingSnapshot?.payload?.landing_pages?.length ? (
@@ -262,7 +314,10 @@ const LandingPagesTab = ({
                                         </thead>
                                         <tbody>
                                             {pagedLandingPages
-                                                .map((row) => (
+                                                .map((row) => {
+                                                    const showCompare = landingSnapshot.payload.compare_enabled && !landingSnapshot.payload.compare_query_error;
+                                                    const showGrowth = showCompare && !row.is_new;
+                                                    return (
                                                     <tr key={row.landingPage} style={{ borderTop: '1px solid var(--glass-border)' }}>
                                                         <td style={{ padding: '6px', color: 'var(--text-primary)', maxWidth: '260px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={row.landingPage}>
                                                             {row.landingPage}
@@ -272,17 +327,37 @@ const LandingPagesTab = ({
                                                                 {tr(language, LANDING_CATEGORY_LABELS[row.category]?.en, LANDING_CATEGORY_LABELS[row.category]?.zh) || row.category}
                                                             </span>
                                                         </td>
-                                                        <td style={{ padding: '6px', color: 'var(--text-secondary)' }}>{fmtNumber(row.sessions)}</td>
-                                                        <td style={{ padding: '6px', color: 'var(--text-secondary)' }}>{fmtNumber(row.conversions)}</td>
-                                                        <td style={{ padding: '6px', color: 'var(--text-secondary)' }}>{fmtPct(row.session_key_event_rate)}</td>
-                                                        <td style={{ padding: '6px', color: 'var(--text-secondary)' }}>{fmtPct(row.bounceRate)}</td>
+                                                        <td style={{ padding: '6px', color: 'var(--text-secondary)', whiteSpace: 'nowrap' }}>
+                                                            {fmtNumber(row.sessions)}
+                                                            {showGrowth && <GrowthBadge value={row.sessions_growth_rate} />}
+                                                        </td>
+                                                        <td style={{ padding: '6px', color: 'var(--text-secondary)', whiteSpace: 'nowrap' }}>
+                                                            {fmtNumber(row.conversions)}
+                                                            {showGrowth && <GrowthBadge value={row.conversions_growth_rate} />}
+                                                        </td>
+                                                        <td style={{ padding: '6px', color: 'var(--text-secondary)', whiteSpace: 'nowrap' }}>
+                                                            {fmtPct(row.session_key_event_rate)}
+                                                            {showGrowth && <GrowthBadge value={row.session_key_event_rate_delta_pp} isPercentagePoint />}
+                                                        </td>
+                                                        <td style={{ padding: '6px', color: 'var(--text-secondary)', whiteSpace: 'nowrap' }}>
+                                                            {fmtPct(row.bounceRate)}
+                                                            {showGrowth && <GrowthBadge value={row.bounce_rate_delta_pp} isPercentagePoint />}
+                                                        </td>
                                                         <td style={{ padding: '6px' }}>
-                                                            {row.is_high_traffic_low_conversion && (
-                                                                <span style={badgeStyle('flagged')}>{t('High traffic, low conversion', '高流量低轉換')}</span>
-                                                            )}
+                                                            <div style={{ display: 'flex', gap: '4px', flexWrap: 'wrap' }}>
+                                                                {row.is_high_traffic_low_conversion && (
+                                                                    <span style={badgeStyle('flagged')}>{t('High traffic, low conversion', '高流量低轉換')}</span>
+                                                                )}
+                                                                {showCompare && row.is_new && (
+                                                                    <span style={badgeStyle('flagged')} title={t('No data in the prior period', '上一期沒有這個頁面的資料')}>
+                                                                        🆕 {t('New', '新')}
+                                                                    </span>
+                                                                )}
+                                                            </div>
                                                         </td>
                                                     </tr>
-                                                ))}
+                                                    );
+                                                })}
                                         </tbody>
                                     </table>
                                 </div>
@@ -489,6 +564,7 @@ const LandingPagesTab = ({
                             ),
                             channelScopeLabel(landingSnapshot?.payload, language, t),
                             categoryScopeLabel(landingCategoryFilter, language, t),
+                            compareScopeLabel(landingSnapshot?.payload, t),
                         ].filter(Boolean).join('；')}
                         shareUrlParams={landingCategoryFilter !== 'all' ? { category: landingCategoryFilter } : {}}
                         buildPayload={() => ({
@@ -501,6 +577,11 @@ const LandingPagesTab = ({
                             // 仍傳完整版，讓 AI 知道這個屬性整體的分類分布。
                             landing_pages: filteredSortedLandingPages,
                             category_counts: landingSnapshot?.payload?.category_counts || {},
+                            // docs/54：跟上一期比較——每列已經帶有 *_growth_rate/*_delta_pp/is_new
+                            // 欄位，這裡額外補上比較期間，AI 才知道「上一期」具體是哪段日期。
+                            compare_enabled: landingSnapshot?.payload?.compare_enabled || false,
+                            compare_start_date: landingSnapshot?.payload?.compare_start_date || null,
+                            compare_end_date: landingSnapshot?.payload?.compare_end_date || null,
                         })}
                     />
     </>

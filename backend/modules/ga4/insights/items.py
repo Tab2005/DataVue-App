@@ -11,7 +11,7 @@ from .channel_groups import get_channel_group_match_conditions
 def get_items(
     db, *, user: User, property_id: str, days: int = 7,
     channel_dimension: str | None = None, channel_value: str | None = None,
-    channel_group: str | None = None,
+    channel_group: str | None = None, compare: bool = False,
 ):
     # docs/45：商品渠道篩選，比照到達頁（42+44）同一套驗證/OR 篩選邏輯。
     # 刻意只套用在主查詢（瀏覽/加購/購買數與比率），近7天/前7天瀏覽成長
@@ -81,6 +81,35 @@ def get_items(
     recent_views = {row["itemName"]: row.get("itemsViewed", 0) for row in (recent_data or {}).get("rows", [])}
     prior_views = {row["itemName"]: row.get("itemsViewed", 0) for row in (prior_data or {}).get("rows", [])}
 
+    # docs/54：跟上一期比較（開關預設關閉），跟上面「固定近7天/前7天瀏覽
+    # 成長」是兩件獨立並存的事——這裡跟著使用者選的天數（days）走，也沿用
+    # 主查詢當下的渠道篩選，確保比較的是同一組篩選條件下的兩期；用跟主查詢
+    # 同一組指標（官方比率或本地 fallback，取決於上面 used_fallback_
+    # conversion_metrics 的結果）避免兩期口徑不一致。
+    compare_start_date = compare_end_date = None
+    compare_item_map: dict[str, dict] = {}
+    compare_query_error = None
+    if compare:
+        compare_end_obj = datetime.strptime(start_date, "%Y-%m-%d") - timedelta(days=1)
+        compare_start_obj = compare_end_obj - timedelta(days=days - 1)
+        compare_start_date = compare_start_obj.strftime("%Y-%m-%d")
+        compare_end_date = compare_end_obj.strftime("%Y-%m-%d")
+
+        compare_metrics = ITEM_METRICS_FALLBACK if used_fallback_conversion_metrics else ITEM_METRICS_WITH_OFFICIAL_RATES
+        compare_data, compare_error = GA4Service.get_analytics(
+            user=user, property_id=property_id, start_date=compare_start_date, end_date=compare_end_date,
+            metrics=compare_metrics, dimensions=["itemName"], db=db,
+            dimension_filter=dimension_filter,
+        )
+        if compare_error:
+            logger.warning("[GA4Insights] items compare query failed %s: %s", property_id, compare_error)
+            compare_query_error = compare_error
+        else:
+            compare_item_map = {row.get("itemName", ""): row for row in (compare_data or {}).get("rows", [])}
+
+    def _growth_rate(current: float, prior: float) -> float:
+        return ((current - prior) / prior) if prior else (1.0 if current > 0 else 0.0)
+
     # 商品主要分類：itemName × itemCategory，同商品多分類時取瀏覽量最高者
     # （查詢失敗只記警告、不中斷主表格，同第 5 波分項查詢容錯慣例）。
     # `category_breakdown_error` 進 payload：讓前端能分辨「查詢真的失敗」
@@ -132,6 +161,35 @@ def get_items(
         item_category, item_category_source = _facade_attr("classify_item_category", classify_item_category)(
             item_name, category_by_item.get(item_name), item_category_rules
         )
+
+        # docs/54：is_new 只有在「查詢成功、且這個商品在上一期完全沒出現」
+        # 時才成立；查詢失敗時不誤標新商品，比較欄位維持 None。
+        is_new = False
+        views_prior = revenue_prior = cart_to_view_rate_prior = purchase_to_view_rate_prior = None
+        views_compare_growth_rate = revenue_growth_rate = None
+        cart_to_view_rate_delta_pp = purchase_to_view_rate_delta_pp = None
+        if compare and not compare_query_error:
+            prior_item_row = compare_item_map.get(item_name)
+            if prior_item_row is None:
+                is_new = True
+            else:
+                views_prior = prior_item_row.get("itemsViewed", 0)
+                revenue_prior = prior_item_row.get("itemRevenue", 0.0)
+                if used_fallback_conversion_metrics:
+                    prior_cart = prior_item_row.get("itemsAddedToCart", 0)
+                    prior_purchased = prior_item_row.get("itemsPurchased", 0)
+                    cart_to_view_rate_prior = (prior_cart / views_prior) if views_prior else 0.0
+                    purchase_to_view_rate_prior = (prior_purchased / views_prior) if views_prior else 0.0
+                else:
+                    cart_to_view_rate_prior = prior_item_row.get("cartToViewRate", 0.0)
+                    purchase_to_view_rate_prior = prior_item_row.get("purchaseToViewRate", 0.0)
+                views_compare_growth_rate = _growth_rate(views, views_prior)
+                revenue_growth_rate = _growth_rate(row.get("itemRevenue", 0.0), revenue_prior)
+                # 比率型指標（加購率/購買率）改用百分點差異，不是相對成長率，
+                # 跟到達頁「轉換率/跳出率」同一套判斷（docs/54）。
+                cart_to_view_rate_delta_pp = (cart_to_view_rate - cart_to_view_rate_prior) * 100
+                purchase_to_view_rate_delta_pp = (purchase_to_view_rate - purchase_to_view_rate_prior) * 100
+
         enriched.append({
             **row,
             "add_to_cart_rate": add_to_cart_rate,
@@ -143,6 +201,15 @@ def get_items(
             "item_category": item_category,
             "item_category_source": item_category_source,
             "is_potential": False,
+            "is_new": is_new,
+            "views_prior": views_prior,
+            "views_compare_growth_rate": views_compare_growth_rate,
+            "revenue_prior": revenue_prior,
+            "revenue_growth_rate": revenue_growth_rate,
+            "cart_to_view_rate_prior": cart_to_view_rate_prior,
+            "cart_to_view_rate_delta_pp": cart_to_view_rate_delta_pp,
+            "purchase_to_view_rate_prior": purchase_to_view_rate_prior,
+            "purchase_to_view_rate_delta_pp": purchase_to_view_rate_delta_pp,
         })
 
     category_counts: dict[str, int] = {}
@@ -176,6 +243,10 @@ def get_items(
         "category_breakdown_error": breakdown_error,
         "cart_to_view_rate_definition": ITEM_CART_TO_VIEW_RATE_DEFINITION,
         "purchase_to_view_rate_definition": ITEM_PURCHASE_TO_VIEW_RATE_DEFINITION,
+        "compare_enabled": compare,
+        "compare_start_date": compare_start_date,
+        "compare_end_date": compare_end_date,
+        "compare_query_error": compare_query_error,
     }
     # kind 命名比照到達頁（42+44）：channel_group 用 "chg_" 前綴、精確值篩選
     # 用 "ch_" 前綴的雜湊，避免自由文字撐爆欄位長度或截斷後誤判成同一筆快照。
@@ -186,6 +257,10 @@ def get_items(
     elif channel_dimension:
         filter_digest = hashlib.md5(f"{channel_dimension}:{channel_value}".encode()).hexdigest()[:10]
         kind += f":ch_{filter_digest}"
+    # docs/54：跟上一期比較是完全獨立的一份 payload，用 ":cmp" 後綴分開存
+    # 快照，AI 解讀不會跟「沒開比較」的那份互相覆寫。
+    if compare:
+        kind += ":cmp"
     return repository.upsert_snapshot(
         db, property_id=property_id, kind=kind, date=end_date, payload=payload, fetched_by=user.id,
     )
