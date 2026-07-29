@@ -62,6 +62,7 @@ const GA4Insights = () => {
     const [saving, setSaving] = useState(false);
     const [form, setForm] = useState({
         metric_key: 'conversions',
+        key_event: null,
         sensitivity: 'medium',
         check_frequency: 'hourly',
         is_enabled: true,
@@ -70,6 +71,10 @@ const GA4Insights = () => {
         cooldown_hours: 6,
     });
     const [editingRuleId, setEditingRuleId] = useState('');
+    // docs/52：告警規則「轉換」的關鍵事件下拉選單，開表單選到「轉換」時才查一次，
+    // 查詢失敗只是少了個別事件選項，不擋整個表單。
+    const [availableKeyEvents, setAvailableKeyEvents] = useState([]);
+    const [availableKeyEventsLoading, setAvailableKeyEventsLoading] = useState(false);
 
     // 第 2 波：當日總覽
     const [dashboard, setDashboard] = useState(null);
@@ -691,9 +696,22 @@ const GA4Insights = () => {
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [activeTab, propertyId]);
 
+    // docs/52：告警規則表單選到「轉換」時才查一次關鍵事件下拉清單，離開這個
+    // 分頁籤或切換到別的指標不用查；同一屬性已經查過就不重查。
+    useEffect(() => {
+        if (
+            activeTab === 'alerts' && propertyId && form.metric_key === 'conversions' &&
+            availableKeyEvents.length === 0 && !availableKeyEventsLoading
+        ) {
+            loadAvailableKeyEvents(propertyId);
+        }
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [activeTab, propertyId, form.metric_key]);
+
     const handlePropertyChange = async (event) => {
         const next = event.target.value;
         setPropertyId(next);
+        setAvailableKeyEvents([]);
         setDashboard(null);
         setRealtime(null);
         setChannelsSnapshot(null);
@@ -713,6 +731,7 @@ const GA4Insights = () => {
     const resetForm = () => {
         setForm({
             metric_key: 'conversions',
+            key_event: null,
             sensitivity: 'medium',
             check_frequency: 'hourly',
             is_enabled: true,
@@ -721,6 +740,19 @@ const GA4Insights = () => {
             cooldown_hours: 6,
         });
         setEditingRuleId('');
+    };
+
+    const loadAvailableKeyEvents = async (targetPropertyId) => {
+        setAvailableKeyEventsLoading(true);
+        try {
+            const res = await ga4InsightsService.getRuleAvailableKeyEvents(targetPropertyId);
+            setAvailableKeyEvents(res.events || []);
+        } catch (err) {
+            // docs/52：查詢失敗只是少了個別事件選項，不擋建立規則表單其他操作。
+            setAvailableKeyEvents([]);
+        } finally {
+            setAvailableKeyEventsLoading(false);
+        }
     };
 
     const handleSubmit = async (event) => {
@@ -748,6 +780,7 @@ const GA4Insights = () => {
         setEditingRuleId(rule.id);
         setForm({
             metric_key: rule.metric_key,
+            key_event: rule.key_event ?? null,
             sensitivity: rule.sensitivity,
             check_frequency: rule.check_frequency,
             is_enabled: rule.is_enabled,
@@ -1129,6 +1162,8 @@ const GA4Insights = () => {
                     editingRuleId={editingRuleId}
                     form={form}
                     setForm={setForm}
+                    availableKeyEvents={availableKeyEvents}
+                    availableKeyEventsLoading={availableKeyEventsLoading}
                     saving={saving}
                     resetForm={resetForm}
                     handleSubmit={handleSubmit}

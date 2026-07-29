@@ -16,7 +16,7 @@ from .dependencies import (
     require_ga4_insights_view,
     require_ga4_module,
 )
-from .insights_service import GA4InsightsService
+from .insights_service import LANDING_PAGE_KEY_EVENT_PATTERN, GA4InsightsService
 
 router = APIRouter()
 
@@ -24,12 +24,26 @@ router = APIRouter()
 class RulePayload(BaseModel):
     property_id: str = Field(..., min_length=1)
     metric_key: str = Field(..., min_length=1)
+    # docs/52：只有 metric_key=="conversions" 時才有意義，None＝全部關鍵事件
+    # （現況）。格式沿用到達頁既有的關鍵事件白名單（LANDING_PAGE_KEY_EVENT_PATTERN）。
+    key_event: str | None = None
     sensitivity: str = "medium"
     check_frequency: str = "hourly"
     is_enabled: bool = True
     notify_line: bool = True
     notify_email: bool = False
     cooldown_hours: int = 6
+
+    @field_validator("key_event")
+    @classmethod
+    def _validate_key_event(cls, value: str | None, info):
+        if value is None:
+            return value
+        if not LANDING_PAGE_KEY_EVENT_PATTERN.match(value):
+            raise ValueError(f"Invalid key_event: {value}")
+        if info.data.get("metric_key") != "conversions":
+            raise ValueError("key_event is only supported when metric_key is 'conversions'")
+        return value
 
 
 class EventAckPayload(BaseModel):
@@ -553,6 +567,23 @@ def list_anomaly_rules(
     return {"rules": [serialize_rule(row) for row in rows]}
 
 
+# docs/52：告警規則「轉換」的關鍵事件下拉選單來源，近 7 天、使用者開表單時
+# 才呼叫一次，不進排程，跟規則本身的 check_frequency 無關。
+@router.get("/anomaly-rules/available-key-events")
+def list_anomaly_rule_available_key_events(
+    property_id: str = Query(...),
+    user=Depends(get_current_user),
+    _module: bool = Depends(require_ga4_module),
+    _perm: bool = Depends(require_ga4_insights_view),
+    db=Depends(get_db),
+):
+    try:
+        events = GA4InsightsService.list_available_key_events(db, user=user, property_id=property_id)
+    except RuntimeError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+    return {"events": events}
+
+
 @router.post("/anomaly-rules", status_code=status.HTTP_201_CREATED)
 def create_anomaly_rule(
     payload: RulePayload,
@@ -731,6 +762,7 @@ def serialize_rule(row):
         "id": row.id,
         "property_id": row.property_id,
         "metric_key": row.metric_key,
+        "key_event": row.key_event,
         "sensitivity": row.sensitivity,
         "check_frequency": row.check_frequency,
         "is_enabled": row.is_enabled,
@@ -749,6 +781,7 @@ def serialize_event(row):
         "rule_id": row.rule_id,
         "property_id": row.rule.property_id if row.rule else None,
         "metric_key": row.rule.metric_key if row.rule else None,
+        "key_event": row.rule.key_event if row.rule else None,
         "severity": row.severity,
         "direction": row.direction,
         "observed_value": row.observed_value,

@@ -49,8 +49,25 @@ def acknowledge_event(db, *, event_id: str, user_id: str):
     return repository.acknowledge_event(db, event_id=event_id, user_id=user_id)
 
 
-def build_alert_message(*, property_label: str, metric_key: str, observed: float, expected_low: float, expected_high: float) -> str:
+def list_available_key_events(db, *, user: User, property_id: str) -> list[str]:
+    """docs/52：告警規則建立表單用的關鍵事件下拉清單，近 7 天、跟規則的
+    check_frequency（hourly/daily）無關，純粹讓清單不受抓取當下時間點影響。"""
+    start_date, end_date = _service_attr("_trailing_period", _trailing_period)(7)
+    data, error = GA4Service.get_analytics(
+        user=user, property_id=property_id, start_date=start_date, end_date=end_date,
+        metrics=["keyEvents"], dimensions=["eventName"], db=db,
+    )
+    if error:
+        raise RuntimeError(error)
+    events = {row.get("eventName", "") for row in (data or {}).get("rows", [])}
+    events.discard("")
+    return sorted(events)
+
+
+def build_alert_message(*, property_label: str, metric_key: str, observed: float, expected_low: float, expected_high: float, key_event: str | None = None) -> str:
     metric_label = METRIC_LABELS.get(metric_key, metric_key)
+    if key_event:
+        metric_label = f"{metric_label}（{key_event}）"
     return (
         f"⚠️ GA4 異常（{property_label}）\n"
         f"{metric_label} 今日累計 {_service_attr('_format_metric_value', _format_metric_value)(metric_key, observed)}，"
@@ -99,6 +116,10 @@ async def evaluate_rule(db, rule, *, now_local: datetime | None = None):
     api_metric = SUPPORTED_METRICS.get(rule.metric_key)
     if not api_metric:
         return {"status": "skipped", "reason": "unsupported_metric"}
+    # docs/52：只有「轉換」規則能拆分成單一關鍵事件，key_event 有值時改用
+    # keyEvents:{event} 動態指標，其餘查詢/基線/異常判斷邏輯完全不變。
+    if rule.metric_key == "conversions" and getattr(rule, "key_event", None):
+        api_metric = f"keyEvents:{rule.key_event}"
 
     target_date = now_local.date().isoformat() if rule.check_frequency == "hourly" else (now_local.date() - timedelta(days=1)).isoformat()
     current_hour = now_local.hour if rule.check_frequency == "hourly" else None
@@ -158,6 +179,7 @@ async def evaluate_rule(db, rule, *, now_local: datetime | None = None):
         observed=observed,
         expected_low=result["low"],
         expected_high=result["high"],
+        key_event=getattr(rule, "key_event", None),
     )
     notified_channels = {}
     if rule.notify_line and user.line_user_id:

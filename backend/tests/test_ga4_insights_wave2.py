@@ -637,3 +637,143 @@ def test_ai_service_ga4_insights_prompt_keeps_last_click_metaphor_for_last_click
     ))
 
     assert "最後一次點擊進來的" in captured["system_prompt"]
+
+
+# ─── docs/52：告警規則關鍵事件拆分 ──────────────────────────────────
+@pytest.mark.unit
+async def test_evaluate_rule_uses_key_event_dynamic_metric_when_set(mocker, db, sample_user):
+    from database.models.ga4_insights import GA4AnomalyRule
+    from modules.ga4.insights_service import GA4InsightsService
+
+    rule = GA4AnomalyRule(
+        property_id="123456", metric_key="conversions", key_event="purchase",
+        sensitivity="medium", check_frequency="hourly", created_by=sample_user.id,
+    )
+    db.add(rule)
+    db.commit()
+    db.refresh(rule)
+
+    captured_metrics = []
+
+    def fake_get_analytics(*, user, property_id, start_date, end_date, metrics, dimensions, db=None, **_):
+        captured_metrics.append(metrics[0])
+        return {"rows": [{"hour": "09", metrics[0]: 5}]}, None
+
+    mocker.patch("modules.ga4.insights_service.GA4Service.get_analytics", side_effect=fake_get_analytics)
+
+    result = await GA4InsightsService.evaluate_rule(db, rule, now_local=datetime(2026, 7, 10, 10, 30))
+
+    assert result["status"] in ("ok", "alerted", "cooled_down")
+    # 1 次觀測 + 8 週基線，全部都應該用 keyEvents:purchase，不是官方 conversions。
+    assert len(captured_metrics) == 9
+    assert all(metric == "keyEvents:purchase" for metric in captured_metrics)
+
+
+@pytest.mark.unit
+async def test_evaluate_rule_uses_plain_conversions_metric_when_key_event_unset(mocker, db, sample_user):
+    """向下相容回歸測試：既有規則沒有 key_event，指標維持官方 conversions 不變。"""
+    from database.models.ga4_insights import GA4AnomalyRule
+    from modules.ga4.insights_service import GA4InsightsService
+
+    rule = GA4AnomalyRule(
+        property_id="123456", metric_key="conversions", key_event=None,
+        sensitivity="medium", check_frequency="hourly", created_by=sample_user.id,
+    )
+    db.add(rule)
+    db.commit()
+    db.refresh(rule)
+
+    captured_metrics = []
+
+    def fake_get_analytics(*, user, property_id, start_date, end_date, metrics, dimensions, db=None, **_):
+        captured_metrics.append(metrics[0])
+        return {"rows": [{"hour": "09", metrics[0]: 5}]}, None
+
+    mocker.patch("modules.ga4.insights_service.GA4Service.get_analytics", side_effect=fake_get_analytics)
+
+    await GA4InsightsService.evaluate_rule(db, rule, now_local=datetime(2026, 7, 10, 10, 30))
+
+    assert len(captured_metrics) == 9
+    assert all(metric == "conversions" for metric in captured_metrics)
+
+
+@pytest.mark.unit
+async def test_evaluate_rule_ignores_key_event_for_non_conversions_metric(mocker, db, sample_user):
+    """key_event 只對 conversions 規則有意義；即便資料庫裡有殘留值，其他指標一律忽略。"""
+    from database.models.ga4_insights import GA4AnomalyRule
+    from modules.ga4.insights_service import GA4InsightsService
+
+    rule = GA4AnomalyRule(
+        property_id="123456", metric_key="sessions", key_event="purchase",
+        sensitivity="medium", check_frequency="hourly", created_by=sample_user.id,
+    )
+    db.add(rule)
+    db.commit()
+    db.refresh(rule)
+
+    captured_metrics = []
+
+    def fake_get_analytics(*, user, property_id, start_date, end_date, metrics, dimensions, db=None, **_):
+        captured_metrics.append(metrics[0])
+        return {"rows": [{"hour": "09", metrics[0]: 5}]}, None
+
+    mocker.patch("modules.ga4.insights_service.GA4Service.get_analytics", side_effect=fake_get_analytics)
+
+    await GA4InsightsService.evaluate_rule(db, rule, now_local=datetime(2026, 7, 10, 10, 30))
+
+    assert all(metric == "sessions" for metric in captured_metrics)
+
+
+@pytest.mark.unit
+def test_build_alert_message_includes_key_event_label():
+    from modules.ga4.insights_service import GA4InsightsService
+
+    message = GA4InsightsService.build_alert_message(
+        property_label="123456", metric_key="conversions", observed=10,
+        expected_low=50, expected_high=80, key_event="purchase",
+    )
+    assert "轉換（purchase）" in message
+
+
+@pytest.mark.unit
+def test_build_alert_message_without_key_event_unchanged():
+    from modules.ga4.insights_service import GA4InsightsService
+
+    message = GA4InsightsService.build_alert_message(
+        property_label="123456", metric_key="conversions", observed=10,
+        expected_low=50, expected_high=80,
+    )
+    assert "轉換（" not in message
+    assert "轉換" in message
+
+
+@pytest.mark.unit
+def test_list_available_key_events_dedupes_and_sorts(mocker):
+    from modules.ga4.insights_service import GA4InsightsService
+
+    mocker.patch(
+        "modules.ga4.insights_service.GA4Service.get_analytics",
+        return_value=({"rows": [
+            {"eventName": "purchase", "keyEvents": 5},
+            {"eventName": "add_to_cart", "keyEvents": 3},
+            {"eventName": "purchase", "keyEvents": 2},
+            {"eventName": "", "keyEvents": 1},
+        ]}, None),
+    )
+
+    events = GA4InsightsService.list_available_key_events(None, user=MagicMock(), property_id="123456")
+
+    assert events == ["add_to_cart", "purchase"]
+
+
+@pytest.mark.unit
+def test_list_available_key_events_raises_on_ga4_error(mocker):
+    from modules.ga4.insights_service import GA4InsightsService
+
+    mocker.patch(
+        "modules.ga4.insights_service.GA4Service.get_analytics",
+        return_value=(None, "GA4 quota exceeded"),
+    )
+
+    with pytest.raises(RuntimeError):
+        GA4InsightsService.list_available_key_events(None, user=MagicMock(), property_id="123456")

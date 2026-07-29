@@ -38,6 +38,9 @@ class GA4AnomalyRule(Base):
     id = Column(String, primary_key=True, default=lambda: f"gar_{uuid.uuid4().hex[:12]}")
     property_id = Column(String(50), nullable=False, index=True)
     metric_key = Column(String(50), nullable=False)
+    # docs/52：NULL＝全部關鍵事件（現況、預設值）；只有 metric_key=="conversions"
+    # 時才有意義，才能用 keyEvents:{key_event} 動態指標拆分單一事件的異常判斷。
+    key_event = Column(String(80), nullable=True)
     sensitivity = Column(String(10), nullable=False, default="medium")
     check_frequency = Column(String(20), nullable=False, default="hourly")
     is_enabled = Column(Boolean, nullable=False, default=True)

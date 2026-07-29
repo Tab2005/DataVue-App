@@ -10,6 +10,7 @@ from .anomaly_rules import (
     create_rule,
     delete_rule,
     evaluate_rule,
+    list_available_key_events,
     list_events,
     list_rules,
     update_rule,
@@ -62,6 +63,7 @@ class GA4InsightsService:
     delete_rule = staticmethod(delete_rule)
     list_events = staticmethod(list_events)
     acknowledge_event = staticmethod(acknowledge_event)
+    list_available_key_events = staticmethod(list_available_key_events)
     _format_metric_value = staticmethod(_format_metric_value)
     build_alert_message = staticmethod(build_alert_message)
     _fetch_metric_total = staticmethod(_fetch_metric_total)

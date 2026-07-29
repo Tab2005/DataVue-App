@@ -17,6 +17,8 @@ const AlertsTab = ({
     editingRuleId,
     form,
     setForm,
+    availableKeyEvents,
+    availableKeyEventsLoading,
     saving,
     resetForm,
     handleSubmit,
@@ -38,11 +40,46 @@ const AlertsTab = ({
                             {editingRuleId ? t('Edit alert rule', '編輯告警規則') : t('Create alert rule', '建立告警規則')}
                         </div>
                         <form onSubmit={handleSubmit} style={{ display: 'grid', gap: '12px', gridTemplateColumns: isMobile ? '1fr' : 'repeat(3, minmax(0, 1fr))' }}>
-                            <select value={form.metric_key} onChange={(event) => setForm((prev) => ({ ...prev, metric_key: event.target.value }))} style={inputStyle}>
-                                <option value="conversions">{t('Conversions', '轉換')}</option>
-                                <option value="sessions">{t('Sessions', '工作階段')}</option>
-                                <option value="purchase_revenue">{t('Revenue', '營收')}</option>
-                            </select>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                                <select
+                                    value={form.metric_key}
+                                    onChange={(event) => {
+                                        const value = event.target.value;
+                                        setForm((prev) => ({ ...prev, metric_key: value, key_event: value === 'conversions' ? prev.key_event : null }));
+                                    }}
+                                    style={{ ...inputStyle, flex: 1 }}
+                                >
+                                    <option value="conversions">{t('Conversions', '轉換')}</option>
+                                    <option value="sessions">{t('Sessions', '工作階段')}</option>
+                                    <option value="purchase_revenue">{t('Revenue', '營收')}</option>
+                                </select>
+                                {/* docs/48/52：GA4 官方 conversions 是全部關鍵事件總和，這裡的下拉可以
+                                    挑單一事件；沒挑（全部關鍵事件）時提示口徑，避免誤以為只算購買。 */}
+                                {form.metric_key === 'conversions' && (
+                                    <span
+                                        style={{ cursor: 'help', color: 'var(--text-tertiary)', fontSize: '0.8rem' }}
+                                        title={t(
+                                            'GA4 "Conversions" sums every event marked as a key event in this property\'s GA4 settings. Pick "All key events" (default) to keep that aggregate, or pick a specific event to watch it alone.',
+                                            '此為 GA4「關鍵事件」總和；選「全部關鍵事件」（預設）維持現況加總，或挑單一事件只監控該事件的異常。'
+                                        )}
+                                    >
+                                        ⓘ
+                                    </span>
+                                )}
+                            </div>
+                            {form.metric_key === 'conversions' && (
+                                <select
+                                    value={form.key_event || ''}
+                                    onChange={(event) => setForm((prev) => ({ ...prev, key_event: event.target.value || null }))}
+                                    style={inputStyle}
+                                    disabled={availableKeyEventsLoading}
+                                >
+                                    <option value="">{t('All key events', '全部關鍵事件')}</option>
+                                    {(availableKeyEvents || []).map((eventName) => (
+                                        <option key={eventName} value={eventName}>{eventName}</option>
+                                    ))}
+                                </select>
+                            )}
                             <select value={form.sensitivity} onChange={(event) => setForm((prev) => ({ ...prev, sensitivity: event.target.value }))} style={inputStyle}>
                                 <option value="high">{t('High sensitivity', '高敏感')}</option>
                                 <option value="medium">{t('Medium sensitivity', '中敏感')}</option>
@@ -96,7 +133,18 @@ const AlertsTab = ({
                                         <div style={{ display: 'flex', justifyContent: 'space-between', gap: '12px', flexWrap: 'wrap' }}>
                                             <div>
                                                 <div style={{ color: 'var(--text-primary)', fontWeight: 700 }}>
-                                                    {rule.metric_key} · {rule.check_frequency}
+                                                    {rule.metric_key}{rule.key_event ? `（${rule.key_event}）` : ''} · {rule.check_frequency}
+                                                    {rule.metric_key === 'conversions' && !rule.key_event && (
+                                                        <span
+                                                            style={{ cursor: 'help', marginLeft: '4px', color: 'var(--text-tertiary)', fontSize: '0.8rem', fontWeight: 400 }}
+                                                            title={t(
+                                                                'This rule aggregates every GA4 key event — it may include add-to-cart, sign-up, etc., not just purchases.',
+                                                                '此規則加總全部關鍵事件，可能包含加入購物車、註冊等，不一定只是購買轉換。'
+                                                            )}
+                                                        >
+                                                            ⓘ
+                                                        </span>
+                                                    )}
                                                 </div>
                                                 <div style={{ color: 'var(--text-secondary)', fontSize: '0.85rem' }}>
                                                     {rule.sensitivity} · cooldown {rule.cooldown_hours}h · {rule.is_enabled ? t('enabled', '啟用中') : t('disabled', '已停用')}
@@ -129,7 +177,7 @@ const AlertsTab = ({
                                             <div style={{ display: 'flex', justifyContent: 'space-between', gap: '12px', flexWrap: 'wrap' }}>
                                                 <div style={{ display: 'grid', gap: '6px' }}>
                                                     <div style={{ color: 'var(--text-primary)', fontWeight: 700 }}>
-                                                        {eventRow.metric_key} · {eventRow.direction} · {eventRow.severity}
+                                                        {eventRow.metric_key}{eventRow.key_event ? `（${eventRow.key_event}）` : ''} · {eventRow.direction} · {eventRow.severity}
                                                     </div>
                                                     <div style={{ color: 'var(--text-secondary)', fontSize: '0.85rem' }}>{eventRow.message}</div>
                                                     <div style={{ color: 'var(--text-tertiary)', fontSize: '0.8rem' }}>

@@ -20,6 +20,10 @@ export const ga4InsightsService = {
 
     acknowledgeEvent: async (eventId) => apiClient.patch(`/api/ga4/insights/anomaly-events/${eventId}/ack`, { acknowledged: true }),
 
+    // docs/52：告警規則「轉換」的關鍵事件下拉選單來源（近 7 天，使用者開表單時查一次）
+    getRuleAvailableKeyEvents: async (propertyId) =>
+        apiClient.get(`/api/ga4/insights/anomaly-rules/available-key-events?property_id=${encodeURIComponent(propertyId)}`),
+
     // ─── 第 2 波：當日儀表板 / Realtime / 渠道 / 到達頁 / 商品 ──────────
     getDashboard: async (propertyId) =>
         apiClient.get(`/api/ga4/insights/dashboard?property_id=${encodeURIComponent(propertyId)}`),
