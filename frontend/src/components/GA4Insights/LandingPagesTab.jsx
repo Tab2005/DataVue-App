@@ -23,6 +23,14 @@ import {
 
 const LANDING_PAGE_SIZE = 25;
 
+// docs/55：跟上一期比較開啟時，讓使用者依「單一指標」的漲跌篩選表格列。
+const LANDING_GROWTH_METRIC_OPTIONS = [
+    { value: 'sessions', field: 'sessions_growth_rate', labelEn: 'Sessions', labelZh: '工作階段' },
+    { value: 'conversions', field: 'conversions_growth_rate', labelEn: 'Conversions', labelZh: '轉換次數' },
+    { value: 'session_key_event_rate', field: 'session_key_event_rate_delta_pp', labelEn: 'Conversion rate', labelZh: '轉換率' },
+    { value: 'bounce_rate', field: 'bounce_rate_delta_pp', labelEn: 'Bounce rate', labelZh: '跳出率' },
+];
+
 // docs/46：把目前的渠道篩選狀態轉成一句話，塞進 AI 解讀的 contextLabel，
 // 讓 AI 知道這份 payload 已經是篩選過某個渠道的子集，不是全站/全渠道的
 // 到達頁表現（否則模型容易誤用「整體」語氣下結論）。沒篩選時回傳 null，
@@ -137,12 +145,24 @@ const LandingPagesTab = ({
     landingRuleSaving,
 }) => {
     const [landingPage, setLandingPage] = useState(1);
+    // docs/55：指標＋方向兩個下拉，只有 landingCompareEnabled 時才顯示/生效。
+    const [landingGrowthMetric, setLandingGrowthMetric] = useState('');
+    const [landingGrowthDirection, setLandingGrowthDirection] = useState('all');
 
-    const filteredSortedLandingPages = useMemo(() => (
-        (landingSnapshot?.payload?.landing_pages || [])
+    const filteredSortedLandingPages = useMemo(() => {
+        const growthField = LANDING_GROWTH_METRIC_OPTIONS.find((m) => m.value === landingGrowthMetric)?.field;
+        return (landingSnapshot?.payload?.landing_pages || [])
             .filter((row) => landingCategoryFilter === 'all' || row.category === landingCategoryFilter)
-            .sort((a, b) => (b.sessions || 0) - (a.sessions || 0))
-    ), [landingSnapshot, landingCategoryFilter]);
+            .filter((row) => {
+                if (!landingCompareEnabled || !growthField || landingGrowthDirection === 'all') return true;
+                // 新頁面沒有比較數值，方向篩選（上升/持平/下降）下一律篩掉，選「全部」時不受影響。
+                if (row.is_new || row[growthField] == null) return false;
+                if (landingGrowthDirection === 'up') return row[growthField] > 0;
+                if (landingGrowthDirection === 'down') return row[growthField] < 0;
+                return row[growthField] === 0;
+            })
+            .sort((a, b) => (b.sessions || 0) - (a.sessions || 0));
+    }, [landingSnapshot, landingCategoryFilter, landingCompareEnabled, landingGrowthMetric, landingGrowthDirection]);
 
     const landingTotalPages = Math.max(1, Math.ceil(filteredSortedLandingPages.length / LANDING_PAGE_SIZE));
     const landingPageClamped = Math.min(landingPage, landingTotalPages);
@@ -154,7 +174,7 @@ const LandingPagesTab = ({
     // 篩選條件或資料快照變動時重置回第一頁，避免停在一個已經不存在的頁碼。
     useEffect(() => {
         setLandingPage(1);
-    }, [landingCategoryFilter, landingSnapshot?.snapshot_id]);
+    }, [landingCategoryFilter, landingGrowthMetric, landingGrowthDirection, landingSnapshot?.snapshot_id]);
 
     return (
     <>
@@ -171,6 +191,11 @@ const LandingPagesTab = ({
                                         onChange={(event) => {
                                             const next = event.target.checked;
                                             setLandingCompareEnabled(next);
+                                            if (!next) {
+                                                // docs/55：關閉比較時重置篩選條件，避免下拉隱藏但殘留舊篩選。
+                                                setLandingGrowthMetric('');
+                                                setLandingGrowthDirection('all');
+                                            }
                                             loadLandingPages(propertyId, landingDays, landingKeyEvent, landingChannelDimension, landingChannelValue, landingChannelGroup, next);
                                         }}
                                     />
@@ -296,6 +321,34 @@ const LandingPagesTab = ({
                                             </button>
                                         );
                                     })}
+                                    {/* docs/55：指標＋方向篩選只有比較上一期開啟時才顯示，選了「全部」
+                                        以外的方向會篩掉沒有比較數值的新頁面。 */}
+                                    {landingCompareEnabled && (
+                                        <>
+                                            <span style={{ width: '1px', alignSelf: 'stretch', background: 'var(--glass-border)', margin: '0 2px' }} />
+                                            <select
+                                                value={landingGrowthMetric}
+                                                onChange={(event) => setLandingGrowthMetric(event.target.value)}
+                                                style={{ ...inputStyle, width: 'auto', padding: '8px 10px' }}
+                                            >
+                                                <option value="">{t('Growth metric…', '選擇成長指標…')}</option>
+                                                {LANDING_GROWTH_METRIC_OPTIONS.map((option) => (
+                                                    <option key={option.value} value={option.value}>{t(option.labelEn, option.labelZh)}</option>
+                                                ))}
+                                            </select>
+                                            <select
+                                                value={landingGrowthDirection}
+                                                onChange={(event) => setLandingGrowthDirection(event.target.value)}
+                                                disabled={!landingGrowthMetric}
+                                                style={{ ...inputStyle, width: 'auto', padding: '8px 10px', opacity: landingGrowthMetric ? 1 : 0.6 }}
+                                            >
+                                                <option value="all">{t('All', '全部')}</option>
+                                                <option value="up">{t('Up', '上升')}</option>
+                                                <option value="flat">{t('Flat', '持平')}</option>
+                                                <option value="down">{t('Down', '下降')}</option>
+                                            </select>
+                                        </>
+                                    )}
                                 </div>
                                 <div style={{ overflowX: 'auto' }}>
                                     <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.85rem' }}>

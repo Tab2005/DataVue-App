@@ -21,6 +21,14 @@ import {
 
 const ITEMS_PAGE_SIZE = 25;
 
+// docs/55：跟上一期比較開啟時，讓使用者依「單一指標」的漲跌篩選表格列。
+const ITEMS_GROWTH_METRIC_OPTIONS = [
+    { value: 'views', field: 'views_compare_growth_rate', labelEn: 'Views', labelZh: '瀏覽數' },
+    { value: 'cart_to_view_rate', field: 'cart_to_view_rate_delta_pp', labelEn: 'Add-to-cart rate', labelZh: '加購率' },
+    { value: 'purchase_to_view_rate', field: 'purchase_to_view_rate_delta_pp', labelEn: 'Purchase rate', labelZh: '購買率' },
+    { value: 'revenue', field: 'revenue_growth_rate', labelEn: 'Revenue', labelZh: '營收' },
+];
+
 // docs/46：同到達頁分頁，把目前的渠道篩選狀態轉成一句話塞進 AI 解讀的
 // contextLabel，避免 AI 把篩選後的商品表現誤當成全店表現來描述。
 const channelScopeLabel = (payload, language, t) => {
@@ -133,14 +141,26 @@ const ItemsTab = ({
     itemCategoryRuleSaving,
 }) => {
     const [itemsPage, setItemsPage] = useState(1);
+    // docs/55：指標＋方向兩個下拉，只有 itemsCompareEnabled 時才顯示/生效。
+    const [itemsGrowthMetric, setItemsGrowthMetric] = useState('');
+    const [itemsGrowthDirection, setItemsGrowthDirection] = useState('all');
 
-    const filteredSortedItems = useMemo(() => (
-        sortedItemsRows(
+    const filteredSortedItems = useMemo(() => {
+        const growthField = ITEMS_GROWTH_METRIC_OPTIONS.find((m) => m.value === itemsGrowthMetric)?.field;
+        return sortedItemsRows(
             (itemsSnapshot?.payload?.items || [])
                 .filter((row) => itemsCategoryFilter === 'all' || row.item_category === itemsCategoryFilter)
                 .filter((row) => !itemsSearchQuery.trim() || row.itemName?.toLowerCase().includes(itemsSearchQuery.trim().toLowerCase()))
-        )
-    ), [itemsSnapshot, itemsCategoryFilter, itemsSearchQuery, sortedItemsRows]);
+                .filter((row) => {
+                    if (!itemsCompareEnabled || !growthField || itemsGrowthDirection === 'all') return true;
+                    // 新商品沒有比較數值，方向篩選（上升/持平/下降）下一律篩掉，選「全部」時不受影響。
+                    if (row.is_new || row[growthField] == null) return false;
+                    if (itemsGrowthDirection === 'up') return row[growthField] > 0;
+                    if (itemsGrowthDirection === 'down') return row[growthField] < 0;
+                    return row[growthField] === 0;
+                })
+        );
+    }, [itemsSnapshot, itemsCategoryFilter, itemsSearchQuery, sortedItemsRows, itemsCompareEnabled, itemsGrowthMetric, itemsGrowthDirection]);
 
     const itemsTotalPages = Math.max(1, Math.ceil(filteredSortedItems.length / ITEMS_PAGE_SIZE));
     const itemsPageClamped = Math.min(itemsPage, itemsTotalPages);
@@ -152,7 +172,7 @@ const ItemsTab = ({
     // 篩選/搜尋條件或資料快照變動時重置回第一頁，避免停在一個已經不存在的頁碼。
     useEffect(() => {
         setItemsPage(1);
-    }, [itemsCategoryFilter, itemsSearchQuery, itemsSnapshot?.snapshot_id]);
+    }, [itemsCategoryFilter, itemsSearchQuery, itemsGrowthMetric, itemsGrowthDirection, itemsSnapshot?.snapshot_id]);
 
     return (
     <>
@@ -181,6 +201,11 @@ const ItemsTab = ({
                                         onChange={(event) => {
                                             const next = event.target.checked;
                                             setItemsCompareEnabled(next);
+                                            if (!next) {
+                                                // docs/55：關閉比較時重置篩選條件，避免下拉隱藏但殘留舊篩選。
+                                                setItemsGrowthMetric('');
+                                                setItemsGrowthDirection('all');
+                                            }
                                             loadItems(propertyId, itemsDays, itemsChannelDimension, itemsChannelValue, itemsChannelGroup, next);
                                         }}
                                     />
@@ -305,6 +330,34 @@ const ItemsTab = ({
                                     )}
                                     {(itemsChannelValuesLoading || itemsChannelGroupsLoading) && (
                                         <span style={{ color: 'var(--text-tertiary)', fontSize: '0.76rem' }}>{t('Loading channels…', '載入渠道清單中…')}</span>
+                                    )}
+                                    {/* docs/55：指標＋方向篩選只有比較上一期開啟時才顯示，選了「全部」
+                                        以外的方向會篩掉沒有比較數值的新商品。 */}
+                                    {itemsCompareEnabled && (
+                                        <>
+                                            <span style={{ width: '1px', alignSelf: 'stretch', background: 'var(--glass-border)', margin: '0 2px' }} />
+                                            <select
+                                                value={itemsGrowthMetric}
+                                                onChange={(event) => setItemsGrowthMetric(event.target.value)}
+                                                style={{ ...inputStyle, width: 'auto', padding: '8px 10px' }}
+                                            >
+                                                <option value="">{t('Growth metric…', '選擇成長指標…')}</option>
+                                                {ITEMS_GROWTH_METRIC_OPTIONS.map((option) => (
+                                                    <option key={option.value} value={option.value}>{t(option.labelEn, option.labelZh)}</option>
+                                                ))}
+                                            </select>
+                                            <select
+                                                value={itemsGrowthDirection}
+                                                onChange={(event) => setItemsGrowthDirection(event.target.value)}
+                                                disabled={!itemsGrowthMetric}
+                                                style={{ ...inputStyle, width: 'auto', padding: '8px 10px', opacity: itemsGrowthMetric ? 1 : 0.6 }}
+                                            >
+                                                <option value="all">{t('All', '全部')}</option>
+                                                <option value="up">{t('Up', '上升')}</option>
+                                                <option value="flat">{t('Flat', '持平')}</option>
+                                                <option value="down">{t('Down', '下降')}</option>
+                                            </select>
+                                        </>
                                     )}
                                 </div>
                                 <div style={{ overflowX: 'auto' }}>
