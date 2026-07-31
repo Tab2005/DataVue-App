@@ -8,9 +8,18 @@ import {
     emptyState,
     fmtNumber,
     fmtPct,
+    inputStyle,
 } from './GA4InsightsShared';
 
 const ITEM_LANDING_PAGE_SIZE = 25;
+
+// docs/57：跟上一期比較開啟時，讓使用者依「單一指標」的漲跌篩選表格列，
+// 比照到達頁/商品分頁（docs/55）同一套邏輯。
+const ITEM_LANDING_GROWTH_METRIC_OPTIONS = [
+    { value: 'purchase_to_view_rate', field: 'purchase_to_view_rate_delta_pp', labelEn: 'Item purchase rate', labelZh: '商品購買率' },
+    { value: 'page_session_key_event_rate', field: 'page_session_key_event_rate_delta_pp', labelEn: 'Page conversion rate', labelZh: '到達頁轉換率' },
+    { value: 'page_sessions', field: 'page_sessions_growth_rate', labelEn: 'Page sessions', labelZh: '到達頁工作階段' },
+];
 
 // docs/56：跟上一期比較開啟時，告訴 AI 現在看到的數字已經有比較資訊可以提。
 const compareScopeLabel = (payload, t) => {
@@ -58,10 +67,23 @@ const ItemLandingCrossTab = ({
     DaySelector,
 }) => {
     const [page, setPage] = useState(1);
+    // docs/57：指標＋方向兩個下拉，只有 itemLandingCompareEnabled 時才顯示/生效。
+    const [itemLandingGrowthMetric, setItemLandingGrowthMetric] = useState('');
+    const [itemLandingGrowthDirection, setItemLandingGrowthDirection] = useState('all');
 
-    const rows = useMemo(() => (
-        [...(itemLandingSnapshot?.payload?.items || [])].sort((a, b) => (b.itemsViewed || 0) - (a.itemsViewed || 0))
-    ), [itemLandingSnapshot]);
+    const rows = useMemo(() => {
+        const growthField = ITEM_LANDING_GROWTH_METRIC_OPTIONS.find((m) => m.value === itemLandingGrowthMetric)?.field;
+        return [...(itemLandingSnapshot?.payload?.items || [])]
+            .filter((row) => {
+                if (!itemLandingCompareEnabled || !growthField || itemLandingGrowthDirection === 'all') return true;
+                // 商品購買率的新商品、或到達頁欄位缺上一期資料時，該指標值是 null，方向篩選下一律排除。
+                if (row[growthField] == null) return false;
+                if (itemLandingGrowthDirection === 'up') return row[growthField] > 0;
+                if (itemLandingGrowthDirection === 'down') return row[growthField] < 0;
+                return row[growthField] === 0;
+            })
+            .sort((a, b) => (b.itemsViewed || 0) - (a.itemsViewed || 0));
+    }, [itemLandingSnapshot, itemLandingCompareEnabled, itemLandingGrowthMetric, itemLandingGrowthDirection]);
 
     const totalPages = Math.max(1, Math.ceil(rows.length / ITEM_LANDING_PAGE_SIZE));
     const pageClamped = Math.min(page, totalPages);
@@ -69,7 +91,7 @@ const ItemLandingCrossTab = ({
 
     useEffect(() => {
         setPage(1);
-    }, [itemLandingSnapshot?.snapshot_id]);
+    }, [itemLandingGrowthMetric, itemLandingGrowthDirection, itemLandingSnapshot?.snapshot_id]);
 
     return (
     <>
@@ -94,6 +116,11 @@ const ItemLandingCrossTab = ({
                                         onChange={(event) => {
                                             const next = event.target.checked;
                                             setItemLandingCompareEnabled(next);
+                                            if (!next) {
+                                                // docs/57：關閉比較時重置篩選條件，避免下拉隱藏但殘留舊篩選。
+                                                setItemLandingGrowthMetric('');
+                                                setItemLandingGrowthDirection('all');
+                                            }
                                             loadItemLandingCross(propertyId, itemLandingDays, next);
                                         }}
                                     />
@@ -102,6 +129,33 @@ const ItemLandingCrossTab = ({
                                 <DaySelector value={itemLandingDays} onChange={(d) => { setItemLandingDays(d); loadItemLandingCross(propertyId, d); }} />
                             </div>
                         </div>
+                        {/* docs/57：指標＋方向篩選只有比較上一期開啟時才顯示，選了「全部」
+                            以外的方向會篩掉沒有比較數值的列。 */}
+                        {itemLandingCompareEnabled && (
+                            <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', alignItems: 'center', marginBottom: '12px' }}>
+                                <select
+                                    value={itemLandingGrowthMetric}
+                                    onChange={(event) => setItemLandingGrowthMetric(event.target.value)}
+                                    style={{ ...inputStyle, width: 'auto', padding: '8px 10px' }}
+                                >
+                                    <option value="">{t('Growth metric…', '選擇成長指標…')}</option>
+                                    {ITEM_LANDING_GROWTH_METRIC_OPTIONS.map((option) => (
+                                        <option key={option.value} value={option.value}>{t(option.labelEn, option.labelZh)}</option>
+                                    ))}
+                                </select>
+                                <select
+                                    value={itemLandingGrowthDirection}
+                                    onChange={(event) => setItemLandingGrowthDirection(event.target.value)}
+                                    disabled={!itemLandingGrowthMetric}
+                                    style={{ ...inputStyle, width: 'auto', padding: '8px 10px', opacity: itemLandingGrowthMetric ? 1 : 0.6 }}
+                                >
+                                    <option value="all">{t('All', '全部')}</option>
+                                    <option value="up">{t('Up', '上升')}</option>
+                                    <option value="flat">{t('Flat', '持平')}</option>
+                                    <option value="down">{t('Down', '下降')}</option>
+                                </select>
+                            </div>
+                        )}
                         {itemLandingError && <div style={{ color: '#fca5a5', fontSize: '0.85rem', marginBottom: '10px' }}>{itemLandingError}</div>}
                         {itemLandingSnapshot?.payload?.compare_enabled && itemLandingSnapshot?.payload?.item_compare_query_error && (
                             <div style={{ color: '#fbbf24', fontSize: '0.78rem', marginBottom: '10px' }}>
