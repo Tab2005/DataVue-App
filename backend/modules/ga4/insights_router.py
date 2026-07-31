@@ -15,6 +15,8 @@ from .dependencies import (
     require_ga4_insights_manage_alerts,
     require_ga4_insights_view,
     require_ga4_module,
+    require_ga4_resource_access_or_404,
+    verify_ga4_property_access_or_403,
 )
 from .insights_service import LANDING_PAGE_KEY_EVENT_PATTERN, GA4InsightsService
 
@@ -132,6 +134,28 @@ class ChannelGroupRulePayload(BaseModel):
     priority: int = Field(0, ge=0)
 
 
+def _verify_rule_not_moved_across_properties(
+    db, *, user, resource: str, rule_id: str, property_id: str,
+):
+    """規則類 PUT（upsert-by-id）的既有列檢查（docs/60）。
+
+    兩件事一起做：
+    1. 既有列的 property 必須對呼叫者可存取，否則回 404（與「規則不存在」
+       同訊息，見 `require_ga4_resource_access_or_404`）。
+    2. 既有列的 property 必須與請求帶的 property_id 相同。原本的 upsert 會
+       直接覆寫 `row.property_id`，等於允許把一條規則搬到另一個 property
+       底下——即使兩邊都有權限，這也不是「更新規則」該有的語意，一律視為
+       錯誤（docs/59 P0-3）。
+    """
+    row = require_ga4_resource_access_or_404(db, user=user, resource=resource, resource_id=rule_id)
+    if row.property_id != property_id:
+        raise HTTPException(
+            status_code=400,
+            detail="Cannot move an existing rule to a different property",
+        )
+    return row
+
+
 # ─── 第 2 波：當日儀表板／Realtime／渠道／到達頁／商品（docs/22 3.5 節） ───
 @router.get("/dashboard")
 def get_dashboard(
@@ -242,6 +266,7 @@ def list_landing_page_rules(
     _perm: bool = Depends(require_ga4_insights_view),
     db=Depends(get_db),
 ):
+    verify_ga4_property_access_or_403(db, user=user, property_id=property_id)
     rows = GA4InsightsService.list_landing_page_rules(db, property_id=property_id)
     return {"rules": [serialize_landing_page_rule(row) for row in rows]}
 
@@ -254,6 +279,12 @@ def upsert_landing_page_rule(
     _perm: bool = Depends(require_ga4_insights_manage_alerts),
     db=Depends(get_db),
 ):
+    verify_ga4_property_access_or_403(db, user=user, property_id=payload.property_id)
+    if payload.id:
+        _verify_rule_not_moved_across_properties(
+            db, user=user, resource="landing_page_rule",
+            rule_id=payload.id, property_id=payload.property_id,
+        )
     row = GA4InsightsService.upsert_landing_page_rule(
         db,
         rule_id=payload.id,
@@ -279,6 +310,7 @@ def delete_landing_page_rule(
     _perm: bool = Depends(require_ga4_insights_manage_alerts),
     db=Depends(get_db),
 ):
+    require_ga4_resource_access_or_404(db, user=user, resource="landing_page_rule", resource_id=rule_id)
     deleted = GA4InsightsService.delete_landing_page_rule(db, rule_id=rule_id)
     if not deleted:
         raise HTTPException(status_code=404, detail="Landing page rule not found")
@@ -296,6 +328,7 @@ def list_channel_group_rules(
     _perm: bool = Depends(require_ga4_insights_view),
     db=Depends(get_db),
 ):
+    verify_ga4_property_access_or_403(db, user=user, property_id=property_id)
     rows = GA4InsightsService.list_channel_group_rules(
         db, property_id=property_id, channel_dimension=channel_dimension
     )
@@ -310,6 +343,12 @@ def upsert_channel_group_rule(
     _perm: bool = Depends(require_ga4_insights_manage_alerts),
     db=Depends(get_db),
 ):
+    verify_ga4_property_access_or_403(db, user=user, property_id=payload.property_id)
+    if payload.id:
+        _verify_rule_not_moved_across_properties(
+            db, user=user, resource="channel_group_rule",
+            rule_id=payload.id, property_id=payload.property_id,
+        )
     try:
         row = GA4InsightsService.upsert_channel_group_rule(
             db,
@@ -339,6 +378,7 @@ def delete_channel_group_rule(
     _perm: bool = Depends(require_ga4_insights_manage_alerts),
     db=Depends(get_db),
 ):
+    require_ga4_resource_access_or_404(db, user=user, resource="channel_group_rule", resource_id=rule_id)
     deleted = GA4InsightsService.delete_channel_group_rule(db, rule_id=rule_id)
     if not deleted:
         raise HTTPException(status_code=404, detail="Channel group rule not found")
@@ -357,6 +397,7 @@ def list_channel_groups(
 ):
     """依 group_label 去重列出某維度底下已定義的分組，供前端「自訂分組」
     下拉選單使用（docs/43：新增規則後自動出現在下拉裡，不用另外維護選單）。"""
+    verify_ga4_property_access_or_403(db, user=user, property_id=property_id)
     groups = GA4InsightsService.list_channel_groups(
         db, property_id=property_id, channel_dimension=channel_dimension
     )
@@ -420,6 +461,7 @@ def list_item_category_rules(
     _perm: bool = Depends(require_ga4_insights_view),
     db=Depends(get_db),
 ):
+    verify_ga4_property_access_or_403(db, user=user, property_id=property_id)
     rows = GA4InsightsService.list_item_category_rules(db, property_id=property_id)
     return {"rules": [serialize_item_category_rule(row) for row in rows]}
 
@@ -432,6 +474,12 @@ def upsert_item_category_rule(
     _perm: bool = Depends(require_ga4_insights_manage_alerts),
     db=Depends(get_db),
 ):
+    verify_ga4_property_access_or_403(db, user=user, property_id=payload.property_id)
+    if payload.id:
+        _verify_rule_not_moved_across_properties(
+            db, user=user, resource="item_category_rule",
+            rule_id=payload.id, property_id=payload.property_id,
+        )
     row = GA4InsightsService.upsert_item_category_rule(
         db,
         rule_id=payload.id,
@@ -457,6 +505,7 @@ def delete_item_category_rule(
     _perm: bool = Depends(require_ga4_insights_manage_alerts),
     db=Depends(get_db),
 ):
+    require_ga4_resource_access_or_404(db, user=user, resource="item_category_rule", resource_id=rule_id)
     deleted = GA4InsightsService.delete_item_category_rule(db, rule_id=rule_id)
     if not deleted:
         raise HTTPException(status_code=404, detail="Item category rule not found")
@@ -474,6 +523,7 @@ def save_ai_summary(
     _perm: bool = Depends(require_ga4_insights_view),
     db=Depends(get_db),
 ):
+    require_ga4_resource_access_or_404(db, user=user, resource="snapshot", resource_id=snapshot_id)
     row = GA4InsightsService.save_ai_summary(db, snapshot_id=snapshot_id, ai_summary=payload.ai_summary)
     if not row:
         raise HTTPException(status_code=404, detail="Snapshot not found")
@@ -491,6 +541,7 @@ def create_snapshot_share_link(
     _perm: bool = Depends(require_ga4_insights_view),
     db=Depends(get_db),
 ):
+    require_ga4_resource_access_or_404(db, user=user, resource="snapshot", resource_id=snapshot_id)
     row = GA4InsightsService.create_share_link(db, snapshot_id=snapshot_id)
     if not row:
         raise HTTPException(status_code=404, detail="Snapshot not found")
@@ -517,6 +568,7 @@ def list_kpi_targets(
     _perm: bool = Depends(require_ga4_insights_view),
     db=Depends(get_db),
 ):
+    verify_ga4_property_access_or_403(db, user=user, property_id=property_id)
     targets = GA4InsightsService.get_kpi_targets_with_pacing(db, user=user, property_id=property_id)
     return {"targets": targets}
 
@@ -529,6 +581,7 @@ def upsert_kpi_target(
     _perm: bool = Depends(require_ga4_insights_manage_alerts),
     db=Depends(get_db),
 ):
+    verify_ga4_property_access_or_403(db, user=user, property_id=payload.property_id)
     row = GA4InsightsService.upsert_kpi_target(
         db,
         user_id=user.id,
@@ -551,6 +604,7 @@ def delete_kpi_target(
     _perm: bool = Depends(require_ga4_insights_manage_alerts),
     db=Depends(get_db),
 ):
+    require_ga4_resource_access_or_404(db, user=user, resource="kpi_target", resource_id=target_id)
     deleted = GA4InsightsService.delete_kpi_target(db, target_id=target_id)
     if not deleted:
         raise HTTPException(status_code=404, detail="KPI target not found")

@@ -208,7 +208,7 @@ def test_service_upsert_item_category_rule_create_then_update(db, sample_user):
 
 # ─── router ───────────────────────────────────────────────────────────
 @pytest.mark.integration
-def test_item_category_rules_crud_endpoints(client, db, sample_user):
+def test_item_category_rules_crud_endpoints(client, db, sample_user, ga4_property_access):
     _override_dependencies(client.app, sample_user, db)
 
     created = client.put(
@@ -248,7 +248,7 @@ def test_item_category_rule_payload_rejects_invalid_match_type(client, db, sampl
 
 
 @pytest.mark.integration
-def test_item_category_rule_payload_accepts_free_text_category(client, db, sample_user):
+def test_item_category_rule_payload_accepts_free_text_category(client, db, sample_user, ga4_property_access):
     """商品分類是自由文字，不像到達頁受 4 類枚舉限制。"""
     _override_dependencies(client.app, sample_user, db)
 

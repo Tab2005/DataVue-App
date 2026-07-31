@@ -541,7 +541,7 @@ def test_service_upsert_landing_page_rule_create_then_update(db, sample_user):
 
 # ─── router ───────────────────────────────────────────────────────────
 @pytest.mark.integration
-def test_landing_page_rules_crud_endpoints(client, db, sample_user):
+def test_landing_page_rules_crud_endpoints(client, db, sample_user, ga4_property_access):
     _override_dependencies(client.app, sample_user, db)
 
     created = client.put(
@@ -705,7 +705,7 @@ def test_landing_pages_endpoint_rejects_both_value_and_group_with_400(client, db
 
 
 @pytest.mark.integration
-def test_channel_group_rule_crud_endpoints(client, db, sample_user):
+def test_channel_group_rule_crud_endpoints(client, db, sample_user, ga4_property_access):
     _override_dependencies(client.app, sample_user, db)
 
     created = client.put(
@@ -767,7 +767,7 @@ def test_channel_group_rule_payload_rejects_invalid_dimension_and_match_type(cli
 
 
 @pytest.mark.integration
-def test_list_channel_groups_endpoint(client, db, sample_user):
+def test_list_channel_groups_endpoint(client, db, sample_user, ga4_property_access):
     _override_dependencies(client.app, sample_user, db)
     from modules.ga4.insights_service import GA4InsightsService
 

@@ -61,6 +61,25 @@ class GA4InsightsRepository:
     def get_snapshot_by_id(self, db, snapshot_id: str):
         return db.query(GA4InsightsSnapshot).filter(GA4InsightsSnapshot.id == snapshot_id).first()
 
+    def user_has_fetched_property(self, db, *, user_id: str, property_id: str) -> bool:
+        """這個使用者是否曾經親自抓過這個 property 的快照（docs/60 授權檢查用）。
+
+        快照列只會在 `GA4Service.get_analytics` 成功回傳後才寫入（見
+        `insights/landing_pages.py` 等各查詢的 `if error: raise` 前置），
+        而 GA4 憑證是 per-user OAuth（`user.ga4_access_token`），所以
+        「有一筆 fetched_by == 我的快照」等同「我自己的 Google 帳號讀得到
+        這個 property」——可以直接當授權判斷的快取，不必每次都打 Admin API。
+        """
+        row = (
+            db.query(GA4InsightsSnapshot.id)
+            .filter(
+                GA4InsightsSnapshot.property_id == property_id,
+                GA4InsightsSnapshot.fetched_by == user_id,
+            )
+            .first()
+        )
+        return row is not None
+
     def update_ai_summary(self, db, *, snapshot_id: str, ai_summary: str):
         row = self.get_snapshot_by_id(db, snapshot_id)
         if not row:

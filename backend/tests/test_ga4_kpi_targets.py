@@ -206,7 +206,7 @@ def test_repository_upsert_kpi_target_updates_same_key_instead_of_duplicating(db
 
 # ─── router ───────────────────────────────────────────────────────────
 @pytest.mark.integration
-def test_kpi_targets_crud_endpoints(client, db, sample_user, mocker):
+def test_kpi_targets_crud_endpoints(client, db, sample_user, mocker, ga4_property_access):
     _override_dependencies(client.app, sample_user, db)
     mocker.patch(
         "modules.ga4.insights_service.GA4Service.get_analytics",

@@ -26,7 +26,7 @@ def _make_snapshot(db, **overrides):
     return row
 
 
-def test_create_share_link_is_idempotent(client, db, sample_user):
+def test_create_share_link_is_idempotent(client, db, sample_user, ga4_property_access):
     _override_dependencies(client.app, sample_user, db)
     snapshot = _make_snapshot(db)
 
@@ -46,7 +46,7 @@ def test_create_share_link_404_for_missing_snapshot(client, db, sample_user):
     assert resp.status_code == 404
 
 
-def test_get_shared_snapshot_is_public_and_includes_property_id(client, db, sample_user):
+def test_get_shared_snapshot_is_public_and_includes_property_id(client, db, sample_user, ga4_property_access):
     _override_dependencies(client.app, sample_user, db)
     snapshot = _make_snapshot(db)
     created = client.post(f"/api/ga4/insights/snapshots/{snapshot.id}/share")

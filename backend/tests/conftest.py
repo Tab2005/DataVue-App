@@ -105,6 +105,25 @@ def mock_redis():
         yield mock_client
 
 
+@pytest.fixture
+def ga4_property_access():
+    """讓測試使用者可存取 GA4 property "123456"（GA4 測試通用的 property id）。
+
+    docs/60 的屬性層級授權有兩條路徑：先查本地快照表有沒有「這個使用者自己
+    抓過這個 property」的紀錄，查無才回退問 GA4 Admin API 的屬性清單。測試
+    沒有真實 OAuth 憑證，Admin API 一律失敗（保守拒絕），所以這裡把慢路徑
+    換成固定清單。
+
+    只授予 "123456"：其餘 property id 仍會被拒絕，跨屬性（IDOR）的測試可以
+    直接沿用這個 fixture 當「攻擊者的身分」。快路徑（快照表）另有專門測試。
+    """
+    with patch(
+        "modules.ga4.dependencies.GA4Client.list_properties",
+        return_value=([{"property_id": "123456"}], None),
+    ) as mocked:
+        yield mocked
+
+
 # ─── 測試資料 Factories ──────────────────────────────────────────
 @pytest.fixture
 def sample_user(db):
