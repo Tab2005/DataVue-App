@@ -547,7 +547,13 @@ def create_snapshot_share_link(
         raise HTTPException(status_code=404, detail="Snapshot not found")
     db.commit()
     db.refresh(row)
-    return {"snapshot_id": row.id, "share_token": row.share_token}
+    # docs/61：`row` 現在是凍結副本而非來源快照。`snapshot_id` 仍回傳「被分享
+    # 的那筆工作快照」（欄位語意不變，前端沿用），副本自己的 id 另立欄位。
+    return {
+        "snapshot_id": snapshot_id,
+        "share_token": row.share_token,
+        "shared_snapshot_id": row.id,
+    }
 
 
 @router.get("/share/{token}")

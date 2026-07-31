@@ -33,6 +33,7 @@ from database.models.contribution import (
 )
 from database.models.ga4_insights import (
     GA4InsightsSnapshot,
+    GA4SharedSnapshot,
     GA4AnomalyRule,
     GA4AnomalyEvent,
     GA4KpiTarget,
@@ -63,6 +64,7 @@ __all__ = [
     "ContributionCampaignGroup",
     "ContributionSnapshot",
     "GA4InsightsSnapshot",
+    "GA4SharedSnapshot",
     "GA4AnomalyRule",
     "GA4AnomalyEvent",
     "GA4KpiTarget",

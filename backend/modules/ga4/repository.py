@@ -15,6 +15,7 @@ from database.models.ga4_insights import (
     GA4ItemCategoryRule,
     GA4KpiTarget,
     GA4LandingPageRule,
+    GA4SharedSnapshot,
 )
 
 
@@ -89,19 +90,34 @@ class GA4InsightsRepository:
         db.add(row)
         return row
 
-    # ─── docs/39：快照分享連結 ─────────────────────────────────────────
-    def get_or_create_share_token(self, db, *, snapshot_id: str):
-        row = self.get_snapshot_by_id(db, snapshot_id)
-        if not row:
-            return None
-        if not row.share_token:
-            row.share_token = uuid.uuid4().hex
-            db.add(row)
-            db.flush()
+    # ─── docs/39 + docs/61：快照分享連結（不可變副本） ─────────────────
+    def create_shared_snapshot(self, db, *, source):
+        """把來源工作快照複製成一筆凍結副本，token 掛在副本上（docs/61）。"""
+        row = GA4SharedSnapshot(
+            source_snapshot_id=source.id,
+            property_id=source.property_id,
+            kind=source.kind,
+            date=source.date,
+            payload=source.payload,
+            ai_summary=source.ai_summary,
+            ai_summary_generated_at=source.ai_summary_generated_at,
+            share_token=uuid.uuid4().hex,
+            created_by=source.fetched_by,
+        )
+        db.add(row)
+        db.flush()
         return row
 
-    def get_snapshot_by_share_token(self, db, token: str):
-        return db.query(GA4InsightsSnapshot).filter(GA4InsightsSnapshot.share_token == token).first()
+    def get_latest_shared_snapshot_for_source(self, db, *, source_snapshot_id: str):
+        return (
+            db.query(GA4SharedSnapshot)
+            .filter(GA4SharedSnapshot.source_snapshot_id == source_snapshot_id)
+            .order_by(desc(GA4SharedSnapshot.created_at), desc(GA4SharedSnapshot.id))
+            .first()
+        )
+
+    def get_shared_snapshot_by_token(self, db, token: str):
+        return db.query(GA4SharedSnapshot).filter(GA4SharedSnapshot.share_token == token).first()
 
     def create_rule(self, db, **payload):
         row = GA4AnomalyRule(**payload)

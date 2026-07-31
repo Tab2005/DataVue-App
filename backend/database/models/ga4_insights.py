@@ -23,13 +23,53 @@ class GA4InsightsSnapshot(Base):
     payload = Column(JSON, nullable=False, default=dict)
     ai_summary = Column(Text, nullable=True)
     ai_summary_generated_at = Column(DateTime, nullable=True)
-    # 分享連結 token（docs/39）：null 表示尚未產生過分享連結，第一次點擊
-    # 「產生分享連結」才會補上，之後重複點擊回傳同一組 token。
+    # ⚠️ 已停用（docs/61）：分享連結改掛在 `GA4SharedSnapshot` 的不可變副本上。
+    # 這個欄位當初（docs/39）把 token 掛在會被 upsert 覆寫的工作快照上，導致
+    # 已分享的連結內容靜默變動、AI 解讀消失（docs/59 P0-1）。欄位保留只為了
+    # 可回滾與不破壞既有資料，migration 已把值搬進新表；**新程式碼不要再讀寫
+    # 它**，要分享請走 `insights/sharing.py::create_share_link`。
     share_token = Column(String(64), nullable=True, unique=True, index=True)
     fetched_by = Column(String, ForeignKey("users.id"), nullable=True)
     fetched_at = Column(DateTime, nullable=False, server_default=text("CURRENT_TIMESTAMP"))
 
     fetcher = relationship("User")
+
+
+class GA4SharedSnapshot(Base):
+    """分享連結的**不可變副本**（docs/61；修 docs/59 P0-1）。
+
+    `GA4InsightsSnapshot` 是「工作快照」：key 是 (property_id, kind, date)，
+    每次 GET 報表都會 upsert 覆寫 payload、並把 ai_summary 重設為 None。
+    docs/39 當初把 `share_token` 直接掛在那張表上，於是分享出去的連結內容會
+    跟著使用者重新載入分頁而靜默變動、AI 解讀還會消失——分享出去的「快照」
+    其實不是快照，而是一個會跟著動的即時視圖。
+
+    這張表把「分享出去的東西」獨立出來：按下「產生分享連結」的當下，把來源
+    快照的 payload / ai_summary **複製**成這裡的一列，token 掛在副本上。副本
+    寫入後永不更新，因此連結內容永久凍結在分享當下的樣子。語意與 docs/58
+    成效分析頁的 `fb_ads_analytics_ai_snapshots`（每次解讀建新快照、分享即
+    凍結）一致，兩個模組不再各說各話。
+
+    `source_snapshot_id` 只用來判斷「來源自上次分享後有沒有變」，以決定重複
+    點擊要沿用舊副本還是凍結一份新的；刻意不設外鍵級聯刪除——副本的存在
+    意義就是不受來源後續變動影響。
+    """
+
+    __tablename__ = "ga4_shared_snapshots"
+
+    id = Column(String, primary_key=True, default=lambda: f"gss_{uuid.uuid4().hex[:12]}")
+    source_snapshot_id = Column(String, nullable=True, index=True)
+    property_id = Column(String(50), nullable=False, index=True)
+    kind = Column(String(80), nullable=False)
+    date = Column(String(10), nullable=False)
+    payload = Column(JSON, nullable=False, default=dict)
+    ai_summary = Column(Text, nullable=True)
+    ai_summary_generated_at = Column(DateTime, nullable=True)
+    share_token = Column(String(64), nullable=False, unique=True, index=True)
+    created_by = Column(String, ForeignKey("users.id"), nullable=True)
+    created_at = Column(DateTime, nullable=False, server_default=text("CURRENT_TIMESTAMP"))
+
+    creator = relationship("User")
 
 
 class GA4AnomalyRule(Base):
