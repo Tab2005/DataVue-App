@@ -61,6 +61,7 @@ from database.models.ga4_insights import (
     GA4LandingPageRule,
     GA4ItemCategoryRule,
 )
+from database.models.fb_ads import FbAdsAnalyticsAiSnapshot
 
 logger = logging.getLogger(__name__)
 
@@ -93,6 +94,7 @@ __all__ = [
     "GA4KpiTarget",
     "GA4LandingPageRule",
     "GA4ItemCategoryRule",
+    "FbAdsAnalyticsAiSnapshot",
     "init_db",
 ]
 

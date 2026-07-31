@@ -10,7 +10,7 @@ import AnalyticsDataTable from '../components/Analytics/AnalyticsDataTable';
 import MetaAndromedaImportActions from '../components/Analytics/MetaAndromedaImportActions';
 import AnalyticsFiltersPanel from '../components/Analytics/AnalyticsFiltersPanel';
 import AnalyticsKpiSection from '../components/Analytics/AnalyticsKpiSection';
-import AnalyticsAiPanel from '../components/Analytics/AnalyticsAiPanel';
+import AnalyticsAiInsightCard from '../components/Analytics/AnalyticsAiInsightCard';
 // Import Metrics Registry for extended metrics support
 import { useModuleAccess, usePermission } from '../hooks/usePermission';
 import useAnalyticsData from '../hooks/useAnalyticsData';
@@ -336,77 +336,6 @@ const Analytics = () => {
         comparePreset,
         compareDateRange,
     });
-
-    // AI Analyst State
-    const [showAiPanel, setShowAiPanel] = useState(false);
-    const [isAnalyzing, setIsAnalyzing] = useState(false);
-    const [analysisResult, setAnalysisResult] = useState('');
-    const [aiError, setAiError] = useState(null);
-
-    const handleStartAnalysis = async () => {
-        setIsAnalyzing(true);
-        setAnalysisResult('');
-        setAiError(null);
-
-        try {
-            // 1. Prepare Data context
-            // Truncate table data to avoid token limits (Top 20 rows?)
-            const topRows = filteredData.slice(0, 20); // Top 20 by current sort
-
-            const contextData = {
-                period: `${dateRange.since} to ${dateRange.until}`,
-                level: level,
-                metrics_summary: {
-                    total_spend: currentSummaryData?.spend,
-                    total_roas: currentSummaryData?.roas,
-                    total_purchases: currentSummaryData?.purchases,
-                },
-                rows: topRows
-            };
-
-            const token = localStorage.getItem('google_token');
-            const localKey = localStorage.getItem('ai_api_key');
-            const apiUrl = import.meta.env.VITE_API_URL || 'http://localhost:8000';
-
-            const payload = {
-                data: contextData,
-                context: `Analyzing ${level} performance for period: ${dateRange.since} to ${dateRange.until}. Language: ${language}`,
-                api_key: localKey || null // Send local key if exists (Dual Mode)
-            };
-
-            const response = await fetch(`${apiUrl}/api/ai/analyze`, {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                    'Authorization': `Bearer ${token}`
-                },
-                body: JSON.stringify(payload)
-            });
-
-            if (!response.ok) {
-                const err = await response.json();
-                throw new Error(err.detail || 'Analysis Failed');
-            }
-
-            // Stream Reader
-            const reader = response.body.getReader();
-            const decoder = new TextDecoder();
-
-            while (true) {
-                const { done, value } = await reader.read();
-                if (done) break;
-                const chunk = decoder.decode(value, { stream: true });
-                setAnalysisResult(prev => prev + chunk);
-            }
-
-        } catch (err) {
-            console.error("AI Analysis Error", err);
-            setAiError(err.message);
-        } finally {
-            setIsAnalyzing(false);
-        }
-    };
-
 
     // 3.1 Toggle Metric (Checkbox)
     // 3.1 Toggle Metric (Checkbox)
@@ -768,6 +697,47 @@ const Analytics = () => {
         return sortableItems;
     }, [filteredData, sortConfig]);
 
+    // docs/58：AI 廣告分析卡片的 payload——只送使用者實際勾選的指標
+    // （activeCols），rows 用 sortedData（跟畫面排序一致，不是 filteredData）
+    // 取前 20 筆，summary 從既有的 currentSummaryData 篩出勾選的指標。
+    const buildAnalyticsAiPayload = () => {
+        if (!sortedData || sortedData.length === 0 || activeCols.length === 0) return null;
+
+        const selected_metrics = activeCols.map((col) => ({
+            key: col.key,
+            label: language === 'zh' ? col.label_zh : col.label_en,
+            format: col.format,
+        }));
+
+        const summary = {};
+        selected_metrics.forEach((m) => {
+            if (currentSummaryData && currentSummaryData[m.key] !== undefined) {
+                summary[m.key] = currentSummaryData[m.key];
+            }
+        });
+
+        const rows = sortedData.slice(0, 20).map((row) => {
+            const r = { name: row.name };
+            selected_metrics.forEach((m) => { r[m.key] = row[m.key]; });
+            return r;
+        });
+
+        return {
+            accountId: selectedAccountId,
+            teamId: selectedTeamId,
+            level,
+            dateSince: dateRange.since,
+            dateUntil: dateRange.until,
+            payload: {
+                selected_metrics,
+                summary,
+                rows,
+                level,
+                date_since: dateRange.since,
+                date_until: dateRange.until,
+            },
+        };
+    };
 
     // 6. Basic UI Components
     const { isMobile } = useOutletContext(); // Destructure isMobile
@@ -817,7 +787,6 @@ const Analytics = () => {
                 setIsCompareMode={setIsCompareMode}
                 setLevel={setLevel}
                 setSelectedMetrics={setSelectedMetrics}
-                setShowAiPanel={setShowAiPanel}
                 setShowMetricPanel={setShowMetricPanel}
                 setShowReportModal={setShowReportModal}
                 showMetricPanel={showMetricPanel}
@@ -895,15 +864,11 @@ const Analytics = () => {
                 getScoreStatusText={getScoreStatusText}
             />
 
-            <AnalyticsAiPanel
-                aiError={aiError}
-                analysisResult={analysisResult}
-                handleStartAnalysis={handleStartAnalysis}
-                isAnalyzing={isAnalyzing}
-                isMobile={isMobile}
+            <AnalyticsAiInsightCard
                 language={language}
-                setShowAiPanel={setShowAiPanel}
-                showAiPanel={showAiPanel}
+                buildPayload={buildAnalyticsAiPayload}
+                contextLabel={`${txt.levels[level]}; ${dateRange.since} ~ ${dateRange.until}`}
+                disabled={activeCols.length === 0 || !sortedData || sortedData.length === 0}
             />
 
             <ReportModal

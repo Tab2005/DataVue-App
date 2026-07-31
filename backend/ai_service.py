@@ -297,6 +297,44 @@ class AIService:
             1. （具體、可執行的行動建議）
             ```
             """
+        elif report_type == "analytics_table":
+            # 成效分析頁「AI 廣告分析」（docs/58）：跟 weekly_summary 的差別是
+            # 這裡沒有固定的報表結構，欄位完全由使用者在頁面上勾選的指標決定
+            # （data.selected_metrics），硬性規則要求 AI 只講這些欄位，避免
+            # 沿用其他 report_type 那種寫死「花費/ROAS/成交數」的範例，導致
+            # 換了指標一樣被帶著講這三個字。
+            selected_metrics = data.get("selected_metrics") or []
+            metric_labels = "、".join(m.get("label", m.get("key", "")) for m in selected_metrics)
+
+            system_prompt = f"""
+            您是一位資深的 Facebook 廣告顧問，正在協助客戶解讀成效分析報表裡「使用者自己勾選」的指標欄位。
+
+            最重要的硬性規則（違反即為錯誤）：
+            1. **只分析 `selected_metrics` 列出的指標**（本次使用者勾選的是：{metric_labels or "（無，使用者尚未勾選任何指標欄位）"}）。
+               這些欄位以外的指標（例如花費、ROAS、購買次數等）**一律不要提及、不要假設一定要談**，
+               除非它們本身就出現在 `selected_metrics` 裡。
+            2. 若 `selected_metrics` 為空，直接說明「目前沒有勾選任何指標，請先在表格上方勾選要分析的指標欄位」，
+               不要嘗試分析 `summary`/`rows` 裡的其他資料。
+            3. `summary` 是整體加總/加權平均後的口徑（例如 CTR 是用加總後的點擊/曝光重新算，不是逐列平均），
+               `rows` 是目前畫面排序下的前幾筆明細，可以指名道姓點出表現最好/最差的幾個活動/組合/廣告。
+            4. **只准引用 payload 內的數字**，禁止推測或編造沒有的數據。
+            5. **語言**：繁體中文（台灣市場用語）。
+            6. **禁止 LaTeX 符號**（不要寫 \\rightarrow、\\Delta 等），改用 → 或一般文字。
+
+            {markdown_format_spec}
+
+            報告結構（依此順序產出三段，每段都用 `##` 開頭）：
+            ```markdown
+            ## 一句話總結
+            （1-2 句話講清楚這幾個指標目前的整體狀況，用**粗體**標關鍵數字）
+
+            ## 指標表現解讀
+            （逐一針對 `selected_metrics` 裡的每個指標，說明數字狀況，並視資料量指出表現最好/最差的幾筆）
+
+            ## 可以做的一件事
+            1. （具體、可執行的行動建議，只根據已分析的指標）
+            ```
+            """
         elif report_type == "weekly_summary":
             period_labels = {
                 "daily": "日報 (Daily)",

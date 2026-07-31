@@ -35,7 +35,6 @@ const AnalyticsFiltersPanel = ({
     setIsCompareMode,
     setLevel,
     setSelectedMetrics,
-    setShowAiPanel,
     setShowMetricPanel,
     setShowReportModal,
     showMetricPanel,
@@ -143,24 +142,6 @@ const AnalyticsFiltersPanel = ({
                                     {language === 'zh' ? preset.label_zh : preset.label_en}
                                 </button>
                             ))}
-
-                            {/* AI Analyst Button - Placed right after Custom tab */}
-                            <button
-                                onClick={() => setShowAiPanel(true)}
-                                style={{
-                                    display: 'flex', alignItems: 'center', gap: '6px',
-                                    padding: '6px 16px', borderRadius: '20px',
-                                    background: 'linear-gradient(135deg, #6366f1, #a855f7)', // Indigo to Purple
-                                    border: 'none', color: 'white',
-                                    fontSize: '0.9rem', fontWeight: 'bold', cursor: 'pointer',
-                                    boxShadow: '0 4px 12px rgba(99, 102, 241, 0.3)',
-                                    transition: 'transform 0.2s',
-                                }}
-                                onMouseEnter={e => e.currentTarget.style.transform = 'translateY(-2px)'}
-                                onMouseLeave={e => e.currentTarget.style.transform = 'translateY(0)'}
-                            >
-                                🤖 {language === 'zh' ? 'AI 廣告分析' : 'AI Analyst'}
-                            </button>
 
                             {/* Saved Views from MetricsLab */}
                             {savedViews.length > 0 && (
