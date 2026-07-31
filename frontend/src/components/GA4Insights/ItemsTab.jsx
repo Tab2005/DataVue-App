@@ -440,6 +440,7 @@ const ItemsTab = ({
                                     totalPages={itemsTotalPages}
                                     onPageChange={setItemsPage}
                                     language={language}
+                                    totalItems={filteredSortedItems.length}
                                 />
                             </>
                         ) : (

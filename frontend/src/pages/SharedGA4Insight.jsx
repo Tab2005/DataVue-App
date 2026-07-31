@@ -305,41 +305,80 @@ const ItemsTable = ({ t, payload, initialCategory }) => {
 const ItemLandingCrossTable = ({ t, payload }) => {
     const rows = payload?.items || [];
     if (!rows.length) return emptyState(t('No data.', '暫無資料。'));
+    const showItemGrowthBase = payload?.compare_enabled && !payload?.item_compare_query_error;
+    const showPageGrowth = payload?.compare_enabled && !payload?.landing_compare_query_error;
     return (
-        <div style={{ overflowX: 'auto' }}>
-            <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.85rem' }}>
-                <thead>
-                    <tr style={{ color: 'var(--text-secondary)', textAlign: 'left' }}>
-                        <th style={{ padding: '6px' }}>{t('Item', '商品')}</th>
-                        <th style={{ padding: '6px' }}>{t('Primary landing page', '主要到達頁')}</th>
-                        <th style={{ padding: '6px' }}>{t('Item purchase rate', '商品瀏覽後購買率')}</th>
-                        <th style={{ padding: '6px' }}>{t('Page conversion rate', '到達頁轉換率')}</th>
-                        <th style={{ padding: '6px' }}>{t('Page sessions', '到達頁工作階段')}</th>
-                        <th style={{ padding: '6px' }}>{t('Flag', '標記')}</th>
-                    </tr>
-                </thead>
-                <tbody>
-                    {rows.map((row) => (
-                        <tr key={row.itemName} style={{ borderTop: '1px solid var(--glass-border)' }}>
-                            <td style={{ padding: '6px', color: 'var(--text-primary)' }}>{row.itemName}</td>
-                            <td
-                                style={{ padding: '6px', color: 'var(--text-secondary)', maxWidth: '220px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}
-                                title={row.primary_landing_page || ''}
-                            >
-                                {row.primary_landing_page || t('No matched page', '無對應到達頁')}
-                            </td>
-                            <td style={{ padding: '6px', color: 'var(--text-secondary)' }}>{fmtPct(row.purchase_to_view_rate)}</td>
-                            <td style={{ padding: '6px', color: 'var(--text-secondary)' }}>{fmtPct(row.page_session_key_event_rate)}</td>
-                            <td style={{ padding: '6px', color: 'var(--text-secondary)' }}>{fmtNumber(row.page_sessions)}</td>
-                            <td style={{ padding: '6px' }}>
-                                {row.page_underperforms_item && (
-                                    <span style={badgeStyle('flagged')}>{t('Page may be the issue', '頁面可能拖累')}</span>
-                                )}
-                            </td>
+        <div>
+            {payload?.compare_enabled && payload?.item_compare_query_error && (
+                <div style={{ color: '#fbbf24', fontSize: '0.78rem', marginBottom: '10px' }}>
+                    {t(
+                        'Could not fetch the prior period for item comparison (temporary); item purchase rate comparison unavailable.',
+                        '暫時無法取得上一期商品資料做比較，商品購買率比較暫缺。'
+                    )}
+                </div>
+            )}
+            {payload?.compare_enabled && payload?.landing_compare_query_error && (
+                <div style={{ color: '#fbbf24', fontSize: '0.78rem', marginBottom: '10px' }}>
+                    {t(
+                        'Could not fetch the prior period for landing page comparison (temporary); page comparison unavailable.',
+                        '暫時無法取得上一期到達頁資料做比較，到達頁比較暫缺。'
+                    )}
+                </div>
+            )}
+            <div style={{ overflowX: 'auto' }}>
+                <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.85rem' }}>
+                    <thead>
+                        <tr style={{ color: 'var(--text-secondary)', textAlign: 'left' }}>
+                            <th style={{ padding: '6px' }}>{t('Item', '商品')}</th>
+                            <th style={{ padding: '6px' }}>{t('Primary landing page', '主要到達頁')}</th>
+                            <th style={{ padding: '6px' }}>{t('Item purchase rate', '商品瀏覽後購買率')}</th>
+                            <th style={{ padding: '6px' }}>{t('Page conversion rate', '到達頁轉換率')}</th>
+                            <th style={{ padding: '6px' }}>{t('Page sessions', '到達頁工作階段')}</th>
+                            <th style={{ padding: '6px' }}>{t('Flag', '標記')}</th>
                         </tr>
-                    ))}
-                </tbody>
-            </table>
+                    </thead>
+                    <tbody>
+                        {rows.map((row) => {
+                            const showItemGrowth = showItemGrowthBase && !row.item_is_new;
+                            return (
+                            <tr key={row.itemName} style={{ borderTop: '1px solid var(--glass-border)' }}>
+                                <td style={{ padding: '6px', color: 'var(--text-primary)' }}>{row.itemName}</td>
+                                <td
+                                    style={{ padding: '6px', color: 'var(--text-secondary)', maxWidth: '220px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}
+                                    title={row.primary_landing_page || ''}
+                                >
+                                    {row.primary_landing_page || t('No matched page', '無對應到達頁')}
+                                </td>
+                                <td style={{ padding: '6px', color: 'var(--text-secondary)', whiteSpace: 'nowrap' }}>
+                                    {fmtPct(row.purchase_to_view_rate)}
+                                    {showItemGrowth && <GrowthBadge value={row.purchase_to_view_rate_delta_pp} isPercentagePoint t={t} />}
+                                </td>
+                                <td style={{ padding: '6px', color: 'var(--text-secondary)', whiteSpace: 'nowrap' }}>
+                                    {fmtPct(row.page_session_key_event_rate)}
+                                    {showPageGrowth && <GrowthBadge value={row.page_session_key_event_rate_delta_pp} isPercentagePoint t={t} />}
+                                </td>
+                                <td style={{ padding: '6px', color: 'var(--text-secondary)', whiteSpace: 'nowrap' }}>
+                                    {fmtNumber(row.page_sessions)}
+                                    {showPageGrowth && <GrowthBadge value={row.page_sessions_growth_rate} t={t} />}
+                                </td>
+                                <td style={{ padding: '6px' }}>
+                                    <div style={{ display: 'flex', gap: '4px', flexWrap: 'wrap' }}>
+                                        {row.page_underperforms_item && (
+                                            <span style={badgeStyle('flagged')}>{t('Page may be the issue', '頁面可能拖累')}</span>
+                                        )}
+                                        {payload?.compare_enabled && row.item_is_new && (
+                                            <span style={badgeStyle('flagged')} title={t('No data in the prior period for this item', '上一期沒有這個商品的資料')}>
+                                                🆕 {t('New', '新')}
+                                            </span>
+                                        )}
+                                    </div>
+                                </td>
+                            </tr>
+                            );
+                        })}
+                    </tbody>
+                </table>
+            </div>
         </div>
     );
 };

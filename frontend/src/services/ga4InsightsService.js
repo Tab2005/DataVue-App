@@ -67,8 +67,12 @@ export const ga4InsightsService = {
         ),
 
     // ─── docs/47：商品頁面與商品轉換率交叉對照（追加） ───────────────
-    getItemLandingCross: async (propertyId, days = 7) =>
-        apiClient.get(`/api/ga4/insights/item-landing-cross?property_id=${encodeURIComponent(propertyId)}&days=${days}`),
+    // docs/56：compare=true 時多回傳一組「跟上一期比較」欄位，預設 false 維持現況行為不變。
+    getItemLandingCross: async (propertyId, days = 7, compare = false) =>
+        apiClient.get(
+            `/api/ga4/insights/item-landing-cross?property_id=${encodeURIComponent(propertyId)}&days=${days}`
+            + (compare ? '&compare=true' : '')
+        ),
 
     // ─── 第 2 波任務 2.4：AI 白話解讀持久化 ─────────────────────────
     saveAiSummary: async (snapshotId, aiSummary) =>

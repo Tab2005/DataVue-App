@@ -396,13 +396,14 @@ def get_items(
 def get_item_landing_cross(
     property_id: str = Query(...),
     days: int = Query(7, ge=1, le=90),
+    compare: bool = Query(False),
     user=Depends(get_current_user),
     _module: bool = Depends(require_ga4_module),
     _perm: bool = Depends(require_ga4_insights_view),
     db=Depends(get_db),
 ):
     try:
-        snapshot = GA4InsightsService.get_item_landing_cross(db, user=user, property_id=property_id, days=days)
+        snapshot = GA4InsightsService.get_item_landing_cross(db, user=user, property_id=property_id, days=days, compare=compare)
     except RuntimeError as exc:
         raise HTTPException(status_code=400, detail=str(exc))
     db.commit()

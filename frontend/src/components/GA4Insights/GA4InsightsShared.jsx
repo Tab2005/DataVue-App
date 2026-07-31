@@ -173,7 +173,9 @@ const pagerButtonStyle = {
     minWidth: '32px',
 };
 
-export const TablePager = ({ page, totalPages, onPageChange, language }) => {
+// docs/56：totalItems 是可選 prop（篩選後的實際筆數，不是原始總筆數），
+// 有傳才顯示「共 N 筆」；沒傳維持現況只顯示「第 X / Y 頁」，向下相容。
+export const TablePager = ({ page, totalPages, onPageChange, language, totalItems }) => {
     if (totalPages <= 1) return null;
 
     const pages = [];
@@ -217,7 +219,9 @@ export const TablePager = ({ page, totalPages, onPageChange, language }) => {
                 style={{ ...pagerButtonStyle, opacity: page >= totalPages ? 0.35 : 1 }}
             >›</button>
             <span style={{ color: 'var(--text-secondary)', fontSize: '0.75rem', marginLeft: '8px' }}>
-                {tr(language, `Page ${page} / ${totalPages}`, `第 ${page} / ${totalPages} 頁`)}
+                {totalItems != null
+                    ? tr(language, `${totalItems} total · Page ${page} / ${totalPages}`, `共 ${totalItems} 筆・第 ${page} / ${totalPages} 頁`)
+                    : tr(language, `Page ${page} / ${totalPages}`, `第 ${page} / ${totalPages} 頁`)}
             </span>
         </div>
     );

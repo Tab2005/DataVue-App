@@ -54,6 +54,8 @@ const GA4Insights = () => {
     const [events, setEvents] = useState([]);
     const [eventsPage, setEventsPage] = useState(1);
     const [eventsTotalPages, setEventsTotalPages] = useState(1);
+    // docs/56：分頁元件補「共 N 筆」用，跟 eventsTotalPages 分開存（後者是頁數）。
+    const [eventsTotal, setEventsTotal] = useState(0);
     const [eventsLoading, setEventsLoading] = useState(false);
     // 未讀總數獨立於分頁抓取（docs/39 追加）：分頁只影響 events 顯示哪一頁，
     // 未讀提示卡永遠顯示「全部歷史」的未讀數，不會因為使用者切頁而跳動。
@@ -165,6 +167,8 @@ const GA4Insights = () => {
     const [itemLandingSnapshot, setItemLandingSnapshot] = useState(null);
     const [itemLandingLoading, setItemLandingLoading] = useState(false);
     const [itemLandingError, setItemLandingError] = useState('');
+    // docs/56：跟上一期比較開關，預設關閉（不多打一次 GA4 查詢）。
+    const [itemLandingCompareEnabled, setItemLandingCompareEnabled] = useState(false);
 
     // 第 3 波：KPI 目標追蹤
     const [kpiTargets, setKpiTargets] = useState(null);
@@ -187,6 +191,7 @@ const GA4Insights = () => {
             setEvents(eventsRes.events || []);
             setEventsPage(eventsRes.page || page);
             setEventsTotalPages(Math.max(1, Math.ceil((eventsRes.total || 0) / EVENTS_PAGE_SIZE)));
+            setEventsTotal(eventsRes.total || 0);
             setUnacknowledgedTotal(eventsRes.unacknowledged_total || 0);
         } catch (err) {
             setError(err.message || t('Failed to load alert history.', '載入告警歷史失敗。'));
@@ -589,12 +594,12 @@ const GA4Insights = () => {
     };
 
     // docs/47：商品頁面與商品轉換率交叉對照
-    const loadItemLandingCross = async (pid, days) => {
+    const loadItemLandingCross = async (pid, days, compare = itemLandingCompareEnabled) => {
         if (!pid) return;
         setItemLandingLoading(true);
         setItemLandingError('');
         try {
-            setItemLandingSnapshot(await ga4InsightsService.getItemLandingCross(pid, days));
+            setItemLandingSnapshot(await ga4InsightsService.getItemLandingCross(pid, days, compare));
         } catch (err) {
             setItemLandingError(err.message || t('Failed to load item x landing page comparison.', '載入商品頁面比對失敗。'));
         } finally {
@@ -1145,6 +1150,8 @@ const GA4Insights = () => {
                     itemLandingError={itemLandingError}
                     itemLandingLoading={itemLandingLoading}
                     itemLandingSnapshot={itemLandingSnapshot}
+                    itemLandingCompareEnabled={itemLandingCompareEnabled}
+                    setItemLandingCompareEnabled={setItemLandingCompareEnabled}
                     DaySelector={DaySelector}
                 />
             )}
@@ -1187,6 +1194,7 @@ const GA4Insights = () => {
                     eventsLoading={eventsLoading}
                     eventsPage={eventsPage}
                     eventsTotalPages={eventsTotalPages}
+                    eventsTotal={eventsTotal}
                     onEventsPageChange={(page) => loadEvents(propertyId, page)}
                     handleAck={handleAck}
                 />

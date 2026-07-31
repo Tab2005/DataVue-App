@@ -30,6 +30,7 @@ const AlertsTab = ({
     eventsLoading,
     eventsPage,
     eventsTotalPages,
+    eventsTotal,
     onEventsPageChange,
     handleAck,
 }) => {
@@ -202,6 +203,7 @@ const AlertsTab = ({
                                     totalPages={eventsTotalPages}
                                     onPageChange={onEventsPageChange}
                                     language={language}
+                                    totalItems={eventsTotal}
                                 />
                             </>
                         )}

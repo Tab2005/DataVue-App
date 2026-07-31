@@ -427,6 +427,7 @@ const LandingPagesTab = ({
                                     totalPages={landingTotalPages}
                                     onPageChange={setLandingPage}
                                     language={language}
+                                    totalItems={filteredSortedLandingPages.length}
                                 />
                             </>
                         ) : (

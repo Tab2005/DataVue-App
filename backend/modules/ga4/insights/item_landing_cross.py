@@ -5,7 +5,7 @@ from __future__ import annotations
 from ._shared import *
 
 
-def get_item_landing_cross(db, *, user: User, property_id: str, days: int = 7):
+def get_item_landing_cross(db, *, user: User, property_id: str, days: int = 7, compare: bool = False):
     start_date, end_date = _service_attr("_trailing_period", _trailing_period)(days)
 
     # 查詢 1：商品指標，直接複製 items.py 現有的官方/fallback 容錯邏輯
@@ -71,6 +71,58 @@ def get_item_landing_cross(db, *, user: User, property_id: str, days: int = 7):
     else:
         logger.warning("[GA4Insights] item-landing-cross landing page query failed %s: %s", property_id, landing_error)
 
+    # docs/56：跟上一期比較（開關預設關閉）。關鍵決策：固定用「本期」算出來
+    # 的 primary_landing_page_by_item 配對，不對上一期重新判定哪個頁面瀏覽量
+    # 最高——否則配對到的頁面可能跟本期不同，比較就會變成拿兩個不同頁面比。
+    compare_start_date = compare_end_date = None
+    prior_purchase_to_view_rate_by_item: dict[str, float] = {}
+    prior_landing_metrics_by_page: dict[str, dict] = {}
+    item_compare_error = None
+    landing_compare_error = None
+    if compare:
+        compare_end_obj = datetime.strptime(start_date, "%Y-%m-%d") - timedelta(days=1)
+        compare_start_obj = compare_end_obj - timedelta(days=days - 1)
+        compare_start_date = compare_start_obj.strftime("%Y-%m-%d")
+        compare_end_date = compare_end_obj.strftime("%Y-%m-%d")
+
+        item_compare_metrics = ITEM_METRICS_FALLBACK if used_fallback_conversion_metrics else ITEM_METRICS_WITH_OFFICIAL_RATES
+        item_compare_data, item_compare_error = GA4Service.get_analytics(
+            user=user, property_id=property_id, start_date=compare_start_date, end_date=compare_end_date,
+            metrics=item_compare_metrics, dimensions=["itemName"], db=db,
+        )
+        if item_compare_error:
+            logger.warning("[GA4Insights] item-landing-cross item compare query failed %s: %s", property_id, item_compare_error)
+        else:
+            for row in (item_compare_data or {}).get("rows", []):
+                item_name = row.get("itemName", "")
+                if not item_name:
+                    continue
+                prior_views = row.get("itemsViewed", 0)
+                if used_fallback_conversion_metrics:
+                    prior_rate = (row.get("itemsPurchased", 0) / prior_views) if prior_views else 0.0
+                else:
+                    prior_rate = row.get("purchaseToViewRate", 0.0)
+                prior_purchase_to_view_rate_by_item[item_name] = prior_rate
+
+        landing_compare_data, landing_compare_error = GA4Service.get_analytics(
+            user=user, property_id=property_id, start_date=compare_start_date, end_date=compare_end_date,
+            metrics=["sessions", "sessionKeyEventRate", "bounceRate"], dimensions=["landingPage"], db=db,
+        )
+        if landing_compare_error:
+            logger.warning("[GA4Insights] item-landing-cross landing compare query failed %s: %s", property_id, landing_compare_error)
+        else:
+            for row in (landing_compare_data or {}).get("rows", []):
+                page = row.get("landingPage", "")
+                if not page:
+                    continue
+                prior_landing_metrics_by_page[page] = {
+                    "sessions": row.get("sessions", 0),
+                    "session_key_event_rate": row.get("sessionKeyEventRate", 0.0),
+                }
+
+    def _growth_rate(current: float, prior: float) -> float:
+        return ((current - prior) / prior) if prior else (1.0 if current > 0 else 0.0)
+
     # 應用層合併：查不到對照到達頁（瀏覽量 0 或查詢失敗）該商品的頁面欄位
     # 留 None，不擋主表格（同 items.py 既有 category_breakdown_error 容錯慣例）。
     enriched = []
@@ -86,6 +138,29 @@ def get_item_landing_cross(db, *, user: User, property_id: str, days: int = 7):
         primary_landing_page = primary_landing_page_by_item.get(item_name)
         page_metrics = landing_metrics_by_page.get(primary_landing_page) if primary_landing_page else None
 
+        # docs/56：比較欄位——item_is_new 只看商品本身上一期有沒有資料；頁面
+        # 那兩欄各自看「本期配對到的那個頁面」在上一期有沒有資料，找不到就
+        # 留 None（不特別標記新頁面，跟商品的 is_new 語意不同，見文件說明）。
+        item_is_new = False
+        purchase_to_view_rate_prior = purchase_to_view_rate_delta_pp = None
+        page_sessions_prior = page_sessions_growth_rate = None
+        page_session_key_event_rate_prior = page_session_key_event_rate_delta_pp = None
+        if compare and not item_compare_error:
+            if item_name not in prior_purchase_to_view_rate_by_item:
+                item_is_new = True
+            else:
+                purchase_to_view_rate_prior = prior_purchase_to_view_rate_by_item[item_name]
+                purchase_to_view_rate_delta_pp = (purchase_to_view_rate - purchase_to_view_rate_prior) * 100
+        if compare and not landing_compare_error and primary_landing_page:
+            prior_page_metrics = prior_landing_metrics_by_page.get(primary_landing_page)
+            if prior_page_metrics is not None and page_metrics is not None:
+                page_sessions_prior = prior_page_metrics["sessions"]
+                page_sessions_growth_rate = _growth_rate(page_metrics["sessions"], page_sessions_prior)
+                page_session_key_event_rate_prior = prior_page_metrics["session_key_event_rate"]
+                page_session_key_event_rate_delta_pp = (
+                    page_metrics["session_key_event_rate"] - page_session_key_event_rate_prior
+                ) * 100
+
         enriched.append({
             "itemName": item_name,
             "itemsViewed": views,
@@ -95,6 +170,13 @@ def get_item_landing_cross(db, *, user: User, property_id: str, days: int = 7):
             "page_session_key_event_rate": page_metrics["session_key_event_rate"] if page_metrics else None,
             "page_bounce_rate": page_metrics["bounce_rate"] if page_metrics else None,
             "page_underperforms_item": False,
+            "item_is_new": item_is_new,
+            "purchase_to_view_rate_prior": purchase_to_view_rate_prior,
+            "purchase_to_view_rate_delta_pp": purchase_to_view_rate_delta_pp,
+            "page_sessions_prior": page_sessions_prior,
+            "page_sessions_growth_rate": page_sessions_growth_rate,
+            "page_session_key_event_rate_prior": page_session_key_event_rate_prior,
+            "page_session_key_event_rate_delta_pp": page_session_key_event_rate_delta_pp,
         })
 
     # 差異標記：到達頁轉換率落在後 25 百分位、但商品瀏覽後購買率不在後 25
@@ -119,7 +201,17 @@ def get_item_landing_cross(db, *, user: User, property_id: str, days: int = 7):
         "used_fallback_conversion_metrics": used_fallback_conversion_metrics,
         "mapping_query_error": mapping_error,
         "landing_query_error": landing_error,
+        "compare_enabled": compare,
+        "compare_start_date": compare_start_date,
+        "compare_end_date": compare_end_date,
+        "item_compare_query_error": item_compare_error,
+        "landing_compare_query_error": landing_compare_error,
     }
+    # docs/56：跟上一期比較是完全獨立的一份 payload，用 ":cmp" 後綴分開存
+    # 快照，AI 解讀不會跟「沒開比較」的那份互相覆寫。
+    kind = "item_landing_cross"
+    if compare:
+        kind += ":cmp"
     return repository.upsert_snapshot(
-        db, property_id=property_id, kind="item_landing_cross", date=end_date, payload=payload, fetched_by=user.id,
+        db, property_id=property_id, kind=kind, date=end_date, payload=payload, fetched_by=user.id,
     )
