@@ -82,6 +82,10 @@ export const ga4InsightsService = {
     createShareLink: async (snapshotId) =>
         apiClient.post(`/api/ga4/insights/snapshots/${snapshotId}/share`, {}),
 
+    // docs/63：撤銷這筆快照分享出去的全部連結（誤發後的補救手段）
+    revokeShareLinks: async (snapshotId) =>
+        apiClient.delete(`/api/ga4/insights/snapshots/${snapshotId}/share`),
+
     getSharedSnapshot: async (token) =>
         apiClient.get(`/api/ga4/insights/share/${token}`, { skipAuth: true }),
 

@@ -109,15 +109,50 @@ class GA4InsightsRepository:
         return row
 
     def get_latest_shared_snapshot_for_source(self, db, *, source_snapshot_id: str):
+        """最近一份**仍有效**的副本。已撤銷的不算——否則撤銷後再按分享會沿用
+        到那條已收回的 token，等於撤銷被悄悄還原（docs/63）。"""
         return (
             db.query(GA4SharedSnapshot)
-            .filter(GA4SharedSnapshot.source_snapshot_id == source_snapshot_id)
+            .filter(
+                GA4SharedSnapshot.source_snapshot_id == source_snapshot_id,
+                GA4SharedSnapshot.revoked_at.is_(None),
+            )
             .order_by(desc(GA4SharedSnapshot.created_at), desc(GA4SharedSnapshot.id))
             .first()
         )
 
     def get_shared_snapshot_by_token(self, db, token: str):
-        return db.query(GA4SharedSnapshot).filter(GA4SharedSnapshot.share_token == token).first()
+        """公開端點的查詢入口：已撤銷的副本一律視為不存在。"""
+        return (
+            db.query(GA4SharedSnapshot)
+            .filter(
+                GA4SharedSnapshot.share_token == token,
+                GA4SharedSnapshot.revoked_at.is_(None),
+            )
+            .first()
+        )
+
+    def revoke_shared_snapshots_for_source(self, db, *, source_snapshot_id: str) -> int:
+        """撤銷某筆工作快照分享出去的**全部**連結，回傳實際撤銷的條數。
+
+        以來源快照為單位而非單一 token：凍結模式下同一個分頁每次改動後再分享
+        都會多一條連結（docs/61），而 UI 沒有「我發過哪些連結」的清單，使用者
+        只看得到最後一條。要能真的「收回這個分頁分享出去的東西」，就必須是
+        整組撤銷。
+        """
+        rows = (
+            db.query(GA4SharedSnapshot)
+            .filter(
+                GA4SharedSnapshot.source_snapshot_id == source_snapshot_id,
+                GA4SharedSnapshot.revoked_at.is_(None),
+            )
+            .all()
+        )
+        now = datetime.utcnow()
+        for row in rows:
+            row.revoked_at = now
+            db.add(row)
+        return len(rows)
 
     def create_rule(self, db, **payload):
         row = GA4AnomalyRule(**payload)

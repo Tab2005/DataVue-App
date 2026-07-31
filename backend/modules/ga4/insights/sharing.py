@@ -32,5 +32,18 @@ def create_share_link(db, *, snapshot_id: str):
     return repository.create_shared_snapshot(db, source=source)
 
 
+def revoke_share_links(db, *, snapshot_id: str) -> int:
+    """撤銷這筆工作快照分享出去的全部連結，回傳撤銷條數（docs/63）。
+
+    誤發給錯的人之後要有補救手段（docs/59 P1-3）。撤銷是軟刪除：副本仍留在
+    資料表裡、payload 保留，只是公開端點一律當作不存在——「什麼內容曾經被公
+    開、何時收回」對安全治理來說本來就該留紀錄。
+
+    回傳 0 代表本來就沒有有效連結（含全部都已撤銷過），對呼叫端來說仍是成功：
+    這個操作要能安全重複執行，使用者連按兩次撤銷不該看到錯誤。
+    """
+    return repository.revoke_shared_snapshots_for_source(db, source_snapshot_id=snapshot_id)
+
+
 def get_snapshot_by_share_token(db, token: str):
     return repository.get_shared_snapshot_by_token(db, token)

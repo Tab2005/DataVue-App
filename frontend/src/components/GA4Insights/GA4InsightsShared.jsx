@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { FiCpu, FiRefreshCcw, FiShare2, FiCheck } from 'react-icons/fi';
+import { FiCpu, FiRefreshCcw, FiShare2, FiCheck, FiSlash } from 'react-icons/fi';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import rehypeRaw from 'rehype-raw';
@@ -378,6 +378,10 @@ export const AIInsightNote = ({ language, snapshot, kind, buildPayload, contextL
     const [isSharing, setIsSharing] = useState(false);
     const [shareError, setShareError] = useState(null);
     const [linkCopied, setLinkCopied] = useState(false);
+    // docs/63：撤銷分享連結。revokedNotice 是撤銷成功後的短暫提示——連結區塊
+    // 會同時消失，沒有提示的話畫面看起來像是「按鈕沒反應」。
+    const [isRevoking, setIsRevoking] = useState(false);
+    const [revokedNotice, setRevokedNotice] = useState('');
     // docs/46：免責聲明動態顯示目前實際使用的模型，之後在 AI 設定頁換模型
     // 不用改任何程式碼——直接讀使用者目前存的 ai_model（跟 handleGenerate
     // 呼叫 analyzeDataStream 時 provider/model 都傳 null、讓後端用同一份
@@ -401,6 +405,7 @@ export const AIInsightNote = ({ language, snapshot, kind, buildPayload, contextL
         setShareToken(null);
         setShareError(null);
         setLinkCopied(false);
+        setRevokedNotice('');
     }, [snapshot?.snapshot_id, existing]);
 
     if (!snapshot) return null;
@@ -448,6 +453,7 @@ export const AIInsightNote = ({ language, snapshot, kind, buildPayload, contextL
         setIsSharing(true);
         setShareError(null);
         setLinkCopied(false);
+        setRevokedNotice('');
         try {
             const res = await ga4InsightsService.createShareLink(snapshot.snapshot_id);
             setShareToken(res.share_token);
@@ -455,6 +461,33 @@ export const AIInsightNote = ({ language, snapshot, kind, buildPayload, contextL
             setShareError(err?.message || t('Failed to create share link.', '產生分享連結失敗，請重試。'));
         } finally {
             setIsSharing(false);
+        }
+    };
+
+    // docs/63：撤銷是不可逆的對外動作（連結會立刻失效），先跟使用者確認。
+    // 後端是以「這筆快照」為單位整組撤銷，文案要說清楚不是只收回眼前這一條。
+    const handleRevoke = async () => {
+        if (isRevoking) return;
+        const confirmed = window.confirm(t(
+            'Revoke all share links for this snapshot? Anyone holding a link will immediately lose access.',
+            '要撤銷這份快照分享出去的所有連結嗎？已經拿到連結的人會立刻無法開啟。',
+        ));
+        if (!confirmed) return;
+
+        setIsRevoking(true);
+        setShareError(null);
+        setLinkCopied(false);
+        try {
+            const res = await ga4InsightsService.revokeShareLinks(snapshot.snapshot_id);
+            setShareToken(null);
+            const count = res?.revoked_count ?? 0;
+            setRevokedNotice(count > 0
+                ? t(`Revoked ${count} share link(s).`, `已撤銷 ${count} 條分享連結。`)
+                : t('No active share links to revoke.', '目前沒有有效的分享連結可撤銷。'));
+        } catch (err) {
+            setShareError(err?.message || t('Failed to revoke share links.', '撤銷分享連結失敗，請重試。'));
+        } finally {
+            setIsRevoking(false);
         }
     };
 
@@ -507,6 +540,29 @@ export const AIInsightNote = ({ language, snapshot, kind, buildPayload, contextL
                             {isSharing ? t('Creating link…', '產生連結中…') : t('Share Link', '產生分享連結')}
                         </button>
                     )}
+                    {/* docs/63：撤銷按鈕跟「產生分享連結」放在一起，而不是只在連結
+                        區塊裡出現——真正需要撤銷的情境（誤發之後隔天回來收回）畫面
+                        上根本沒有連結可看，藏在連結區塊裡就等於用不到。 */}
+                    {hasContent && (
+                        <button
+                            type="button"
+                            onClick={handleRevoke}
+                            disabled={isRevoking}
+                            title={t(
+                                'Revokes every share link created from this snapshot, not just the one shown.',
+                                '會撤銷這份快照產生過的所有分享連結，不只畫面上這一條。',
+                            )}
+                            style={{
+                                ...secondaryButtonStyle,
+                                display: 'flex', alignItems: 'center', gap: '6px',
+                                color: '#fca5a5', borderColor: 'rgba(248, 113, 113, 0.35)',
+                                opacity: isRevoking ? 0.5 : 1,
+                            }}
+                        >
+                            {isRevoking ? <FiRefreshCcw className="spin" /> : <FiSlash />}
+                            {isRevoking ? t('Revoking…', '撤銷中…') : t('Revoke Links', '撤銷分享連結')}
+                        </button>
+                    )}
                     <button
                         type="button"
                         onClick={handleGenerate}
@@ -552,6 +608,12 @@ export const AIInsightNote = ({ language, snapshot, kind, buildPayload, contextL
                         {linkCopied ? <FiCheck /> : <FiShare2 />}
                         {linkCopied ? t('Copied', '已複製') : t('Copy', '複製')}
                     </button>
+                </div>
+            )}
+
+            {revokedNotice && (
+                <div style={{ color: 'var(--text-secondary)', fontSize: '0.85rem', marginBottom: '10px' }}>
+                    {revokedNotice}
                 </div>
             )}
 

@@ -556,6 +556,29 @@ def create_snapshot_share_link(
     }
 
 
+@router.delete("/snapshots/{snapshot_id}/share")
+def revoke_snapshot_share_links(
+    snapshot_id: str,
+    user=Depends(get_current_user),
+    _module: bool = Depends(require_ga4_module),
+    _perm: bool = Depends(require_ga4_insights_view),
+    db=Depends(get_db),
+):
+    """撤銷這筆快照分享出去的全部連結（docs/63；修 docs/59 P1-3）。
+
+    權限與「產生分享連結」相同（`require_ga4_insights_view`）——能把連結發
+    出去的人就該能收回來，否則誤發之後反而沒有補救手段。
+
+    刻意設計成可重複執行：本來就沒有有效連結時回 200 + `revoked_count: 0`，
+    不是 404。使用者連按兩次撤銷不該看到錯誤，而「這個快照有沒有分享過」也
+    不該從這裡洩漏出去。
+    """
+    require_ga4_resource_access_or_404(db, user=user, resource="snapshot", resource_id=snapshot_id)
+    revoked_count = GA4InsightsService.revoke_share_links(db, snapshot_id=snapshot_id)
+    db.commit()
+    return {"status": "revoked", "snapshot_id": snapshot_id, "revoked_count": revoked_count}
+
+
 @router.get("/share/{token}")
 def get_shared_snapshot(token: str, db=Depends(get_db)):
     """公開分享端點：無需登入即可取得快照數據與 AI 解讀。"""

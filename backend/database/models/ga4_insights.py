@@ -66,6 +66,11 @@ class GA4SharedSnapshot(Base):
     ai_summary = Column(Text, nullable=True)
     ai_summary_generated_at = Column(DateTime, nullable=True)
     share_token = Column(String(64), nullable=False, unique=True, index=True)
+    # 撤銷（docs/63；修 docs/59 P1-3）：非 null 代表這條連結已被收回，公開端點
+    # 一律當作不存在。刻意用軟刪除而非直接 DELETE——這是安全治理功能，「什麼
+    # 內容曾經被公開出去、何時收回」本身就是要留下來的紀錄；payload 也一併保
+    # 留，事後才查得出當初到底發了什麼。
+    revoked_at = Column(DateTime, nullable=True)
     created_by = Column(String, ForeignKey("users.id"), nullable=True)
     created_at = Column(DateTime, nullable=False, server_default=text("CURRENT_TIMESTAMP"))
 
