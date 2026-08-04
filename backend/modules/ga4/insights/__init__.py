@@ -111,4 +111,76 @@ class GA4InsightsService:
     delete_kpi_target = staticmethod(delete_kpi_target)
 
 
-__all__ = [name for name in globals() if not name.startswith("__")]
+# docs/59 P2-5：明列對外的 API。之前的 globals() 推導式會把 `os`、`smtplib`、
+# `datetime` 這些經由 `from ._shared import *` 帶進來的符號一起匯出，
+# `insights_service.py` 再 `from .insights import *`，一層一層放大。
+#
+# 注意：測試用 `mocker.patch("modules.ga4.insights.dashboard.X")` 這種子模組路徑
+# 不受 `__all__` 影響（那是模組屬性，不是星號匯出）；受影響的是
+# `modules.ga4.insights_service.GA4Service` 這種靠星號傳遞下來的名字。
+# docs/59 P2-5：明列對外的 API。之前的 globals() 推導式會把 `os`、`smtplib`、
+# `datetime`、`median` 這些經由 `from ._shared import *` 帶進來的符號一起匯出，
+# `insights_service.py` 再 `from .insights import *`，一層一層放大。
+#
+# 下半部那組是從 `_shared` 星號帶下來、但外部（insights_router / scheduler /
+# 測試）確實會用到的，不能漏——漏了會是 import 時就爆的 ImportError。
+#
+# 注意：`mocker.patch("modules.ga4.insights.dashboard.X")` 這種子模組路徑不受
+# `__all__` 影響（那是模組屬性，不是星號匯出）。
+__all__ = [
+    "ATTRIBUTION_SETTINGS_DATE",
+    "ATTRIBUTION_SETTINGS_KIND",
+    "CHANNEL_MIN_SAMPLE",
+    "DASHBOARD_KIND",
+    "GA4Client",
+    "GA4InsightsService",
+    "GA4Service",
+    "LANDING_PAGE_KEY_EVENT_PATTERN",
+    "MAX_CONVERSION_EVENTS",
+    "_compute_metric_baseline",
+    "_fetch_intraday_dashboard_payload",
+    "_get_attribution_model",
+    "_kpi_period_bounds",
+    "_percentile",
+    "_refresh_dashboard_snapshot",
+    "_send_email_if_possible",
+    "_trailing_period",
+    "acknowledge_event",
+    "build_alert_message",
+    "classify_item_category",
+    "classify_landing_page",
+    "compute_kpi_pacing",
+    "create_rule",
+    "create_share_link",
+    "delete_channel_group_rule",
+    "delete_item_category_rule",
+    "delete_kpi_target",
+    "delete_landing_page_rule",
+    "delete_rule",
+    "evaluate_rule",
+    "get_channel_group_match_conditions",
+    "get_channels",
+    "get_dashboard",
+    "get_item_landing_cross",
+    "get_items",
+    "get_kpi_targets_with_pacing",
+    "get_landing_pages",
+    "get_realtime",
+    "get_snapshot_by_share_token",
+    "list_available_key_events",
+    "list_channel_group_rules",
+    "list_channel_groups",
+    "list_events",
+    "list_item_category_rules",
+    "list_landing_page_rules",
+    "list_rules",
+    "refresh_dashboard",
+    "repository",
+    "revoke_share_links",
+    "save_ai_summary",
+    "update_rule",
+    "upsert_channel_group_rule",
+    "upsert_item_category_rule",
+    "upsert_kpi_target",
+    "upsert_landing_page_rule",
+]

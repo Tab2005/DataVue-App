@@ -237,7 +237,7 @@ def test_get_items_potential_flag_uses_store_wide_median_not_per_category(mocker
 
     mocker.patch("modules.ga4.insights_service.GA4Service.get_analytics", side_effect=fake_get_analytics)
     mocker.patch(
-        "modules.ga4.insights_service.GA4InsightsService._trailing_period",
+        "modules.ga4.insights.items._trailing_period",
         side_effect=lambda days, now_local=None: ("2026-07-03", "2026-07-09") if days == 7 else ("2026-06-26", "2026-07-09"),
     )
 
@@ -275,7 +275,7 @@ def test_get_items_includes_raw_view_counts_for_growth_rate(mocker, db, sample_u
 
     mocker.patch("modules.ga4.insights_service.GA4Service.get_analytics", side_effect=fake_get_analytics)
     mocker.patch(
-        "modules.ga4.insights_service.GA4InsightsService._trailing_period",
+        "modules.ga4.insights.items._trailing_period",
         side_effect=lambda days, now_local=None: ("2026-07-03", "2026-07-09") if days == 7 else ("2026-06-26", "2026-07-09"),
     )
 

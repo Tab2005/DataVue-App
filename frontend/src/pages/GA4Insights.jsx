@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { Suspense, lazy, useEffect, useState } from 'react';
 import { useOutletContext } from 'react-router-dom';
 import { ga4Service } from '../services/ga4Service';
 import { ga4InsightsService } from '../services/ga4InsightsService';
@@ -8,11 +8,14 @@ import useGA4LandingPagesTab from '../hooks/useGA4LandingPagesTab';
 import useGA4ItemsTab from '../hooks/useGA4ItemsTab';
 import OverviewTab from '../components/GA4Insights/OverviewTab';
 import ChannelsTab from '../components/GA4Insights/ChannelsTab';
-import LandingPagesTab from '../components/GA4Insights/LandingPagesTab';
-import ItemsTab from '../components/GA4Insights/ItemsTab';
-import ItemLandingCrossTab from '../components/GA4Insights/ItemLandingCrossTab';
 import KpiTab from '../components/GA4Insights/KpiTab';
 import AlertsTab from '../components/GA4Insights/AlertsTab';
+// docs/59 P2-6：體積最大、且不是每個使用者都會開的三個分頁改成 lazy（同
+// App.jsx 既有的做法）。這三個分頁共用的 GA4InsightsTables 本來就已經是另一個
+// chunk（docs/64），拆出去後只看當日總覽/告警的使用者就不用載這些。
+const LandingPagesTab = lazy(() => import('../components/GA4Insights/LandingPagesTab'));
+const ItemsTab = lazy(() => import('../components/GA4Insights/ItemsTab'));
+const ItemLandingCrossTab = lazy(() => import('../components/GA4Insights/ItemLandingCrossTab'));
 import {
     VIZ_TOKENS,
     baseCardStyle,
@@ -434,6 +437,11 @@ const GA4Insights = () => {
         { key: 'alerts', en: 'Alerts', zh: '告警設定' },
     ];
 
+    // docs/59 P2-6：lazy 分頁的載入中畫面。三個分頁共用同一個，不在 JSX 裡重複寫。
+    const tabLoadingFallback = (
+        <div style={{ ...baseCardStyle, color: 'var(--text-tertiary)' }}>{t('Loading…', '載入中…')}</div>
+    );
+
     return (
         <div style={{ padding: isMobile ? '16px' : '24px', display: 'grid', gap: '16px' }}>
             <style>{VIZ_TOKENS}</style>
@@ -533,41 +541,47 @@ const GA4Insights = () => {
             )}
 
             {propertyId && activeTab === 'landing' && (
-                <LandingPagesTab
-                    language={language}
-                    t={t}
-                    isMobile={isMobile}
-                    propertyId={propertyId}
-                    canManageGa4InsightsRules={canManageGa4InsightsRules}
-                    landing={landing}
-                />
+                <Suspense fallback={tabLoadingFallback}>
+                    <LandingPagesTab
+                        language={language}
+                        t={t}
+                        isMobile={isMobile}
+                        propertyId={propertyId}
+                        canManageGa4InsightsRules={canManageGa4InsightsRules}
+                        landing={landing}
+                    />
+                </Suspense>
             )}
 
             {propertyId && activeTab === 'items' && (
-                <ItemsTab
-                    language={language}
-                    t={t}
-                    isMobile={isMobile}
-                    propertyId={propertyId}
-                    canManageGa4InsightsRules={canManageGa4InsightsRules}
-                    items={items}
-                />
+                <Suspense fallback={tabLoadingFallback}>
+                    <ItemsTab
+                        language={language}
+                        t={t}
+                        isMobile={isMobile}
+                        propertyId={propertyId}
+                        canManageGa4InsightsRules={canManageGa4InsightsRules}
+                        items={items}
+                    />
+                </Suspense>
             )}
 
             {propertyId && activeTab === 'itemLandingCross' && (
-                <ItemLandingCrossTab
-                    language={language}
-                    t={t}
-                    propertyId={propertyId}
-                    itemLandingDays={itemLandingDays}
-                    setItemLandingDays={setItemLandingDays}
-                    loadItemLandingCross={loadItemLandingCross}
-                    itemLandingError={itemLandingError}
-                    itemLandingLoading={itemLandingLoading}
-                    itemLandingSnapshot={itemLandingSnapshot}
-                    itemLandingCompareEnabled={itemLandingCompareEnabled}
-                    setItemLandingCompareEnabled={setItemLandingCompareEnabled}
-                />
+                <Suspense fallback={tabLoadingFallback}>
+                    <ItemLandingCrossTab
+                        language={language}
+                        t={t}
+                        propertyId={propertyId}
+                        itemLandingDays={itemLandingDays}
+                        setItemLandingDays={setItemLandingDays}
+                        loadItemLandingCross={loadItemLandingCross}
+                        itemLandingError={itemLandingError}
+                        itemLandingLoading={itemLandingLoading}
+                        itemLandingSnapshot={itemLandingSnapshot}
+                        itemLandingCompareEnabled={itemLandingCompareEnabled}
+                        setItemLandingCompareEnabled={setItemLandingCompareEnabled}
+                    />
+                </Suspense>
             )}
 
             {propertyId && activeTab === 'kpi' && (

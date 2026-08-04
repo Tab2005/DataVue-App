@@ -254,7 +254,7 @@ def test_channels_parallel_queries_never_touch_the_request_session(mocker, db, s
 
     mocker.patch("modules.ga4.insights_service.GA4Service.get_analytics", side_effect=_stub)
     mocker.patch(
-        "modules.ga4.insights_service.GA4InsightsService._get_attribution_model",
+        "modules.ga4.insights.channels._get_attribution_model",
         return_value="last_click",
     )
     guarded = _ExplodingSession(db)
@@ -285,11 +285,11 @@ def test_dashboard_baseline_samples_run_in_parallel_and_keep_date_order(mocker):
         return float(date_value[-2:]), []
 
     mocker.patch(
-        "modules.ga4.insights_service.GA4InsightsService._fetch_metric_total",
+        "modules.ga4.insights.dashboard._fetch_metric_total",
         side_effect=fake_fetch,
     )
     mocker.patch(
-        "modules.ga4.insights_service.GA4InsightsService._historical_dates",
+        "modules.ga4.insights.dashboard._historical_dates",
         return_value=["2026-07-01", "2026-07-08", "2026-07-15", "2026-07-22"],
     )
     mocker.patch(
@@ -321,11 +321,11 @@ def test_dashboard_baseline_skips_failed_samples(mocker):
         return float(date_value[-2:]), []
 
     mocker.patch(
-        "modules.ga4.insights_service.GA4InsightsService._fetch_metric_total",
+        "modules.ga4.insights.dashboard._fetch_metric_total",
         side_effect=fake_fetch,
     )
     mocker.patch(
-        "modules.ga4.insights_service.GA4InsightsService._historical_dates",
+        "modules.ga4.insights.dashboard._historical_dates",
         return_value=["2026-07-01", "2026-07-08", "2026-07-15"],
     )
     mocker.patch(

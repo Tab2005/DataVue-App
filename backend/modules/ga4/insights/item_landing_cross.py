@@ -2,12 +2,14 @@
 
 from __future__ import annotations
 
+from datetime import datetime, timedelta
+
 from ._shared import *
 from ._parallel import resolve_ga4_credentials, run_parallel
 
 
 def get_item_landing_cross(db, *, user: User, property_id: str, days: int = 7, compare: bool = False):
-    start_date, end_date = _service_attr("_trailing_period", _trailing_period)(days)
+    start_date, end_date = _trailing_period(days)
 
     # docs/56：比較期間的日期先算好，下面的並行扇出才能一併發出去。
     compare_start_date = compare_end_date = None

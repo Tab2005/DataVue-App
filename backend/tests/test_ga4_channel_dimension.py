@@ -258,10 +258,13 @@ def test_get_channels_min_sample_respects_override(mocker, db, sample_user):
     這裡直接 patch 模組常數驗證行為，不用 importlib.reload——reload 會在同一
     程序內就地重建整個模組（其他檔案 import 時拿到的 GA4InsightsService 參照
     不會跟著換，且若在環境變數還原前就 reload 會把常數污染到其他測試），風險
-    遠高於直接 patch 這顆已知的模組級常數。"""
+    遠高於直接 patch 這顆已知的模組級常數。
+
+    docs/67：patch 目標從 facade 改成使用處本身。原本靠的是 `_get_channel_min_sample()`
+    這個在執行期反查 facade 的 helper，那層間接已隨 docs/59 P2-4 移除。"""
     import modules.ga4.insights_service as insights_service_module
 
-    mocker.patch.object(insights_service_module, "CHANNEL_MIN_SAMPLE", 0)
+    mocker.patch("modules.ga4.insights.channels.CHANNEL_MIN_SAMPLE", 0)
 
     def fake_get_analytics(*, user, property_id, start_date, end_date, metrics, dimensions, db=None, **_):
         if dimensions == ["sessionDefaultChannelGroup"]:

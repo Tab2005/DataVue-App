@@ -113,7 +113,7 @@ def test_get_dashboard_uses_cache_without_refetching(mocker, db, sample_user):
     db.commit()
 
     mock_fetch = mocker.patch(
-        "modules.ga4.insights_service.GA4InsightsService._fetch_intraday_dashboard_payload"
+        "modules.ga4.insights.dashboard._fetch_intraday_dashboard_payload"
     )
 
     snapshot = GA4InsightsService.get_dashboard(db, user=sample_user, property_id="123456")
@@ -136,7 +136,7 @@ def test_refresh_dashboard_respects_cooldown_then_refreshes(mocker, db, sample_u
     db.refresh(existing)
 
     mock_fetch = mocker.patch(
-        "modules.ga4.insights_service.GA4InsightsService._fetch_intraday_dashboard_payload",
+        "modules.ga4.insights.dashboard._fetch_intraday_dashboard_payload",
         return_value={"date": today, "stage": "second"},
     )
 
@@ -437,7 +437,7 @@ def test_get_items_flags_potential_products(mocker, db, sample_user):
 
     mocker.patch("modules.ga4.insights_service.GA4Service.get_analytics", side_effect=fake_get_analytics)
     mocker.patch(
-        "modules.ga4.insights_service.GA4InsightsService._trailing_period",
+        "modules.ga4.insights.items._trailing_period",
         side_effect=lambda days, now_local=None: ("2026-07-03", "2026-07-09") if days == 7 else ("2026-06-26", "2026-07-09"),
     )
 

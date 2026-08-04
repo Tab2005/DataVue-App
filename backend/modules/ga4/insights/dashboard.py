@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from datetime import date, datetime, timedelta
+
 from ._shared import *
 from ._parallel import resolve_ga4_credentials, run_parallel
 
@@ -23,8 +25,8 @@ def _compute_metric_baseline(
     單一取樣失敗維持既有容錯——只跳過該筆、不影響其他取樣，所以例外在 task
     內就吃掉，不讓它中斷整組。
     """
-    fetch_metric_total = _service_attr("_fetch_metric_total", _fetch_metric_total)
-    sample_dates = _service_attr("_historical_dates", _historical_dates)(now_local)
+    fetch_metric_total = _fetch_metric_total
+    sample_dates = _historical_dates(now_local)
     # 憑證在請求執行緒解析（該刷新的刷新、該回寫的回寫），worker thread 只拿結果。
     credentials = resolve_ga4_credentials(user, db)
 
@@ -129,7 +131,7 @@ def _fetch_intraday_dashboard_payload(*, user: User, property_id: str, db, now_l
         event_cumulative, key=lambda name: event_cumulative[name], reverse=True
     )[:MAX_CONVERSION_EVENTS]
 
-    compute_baseline = _service_attr("_compute_metric_baseline", _compute_metric_baseline)
+    compute_baseline = _compute_metric_baseline
 
     conversion_events = [{"key": "__all__", "label": "全部關鍵事件"}]
     all_baseline, all_is_anomaly = compute_baseline(
@@ -199,7 +201,7 @@ def _fetch_intraday_dashboard_payload(*, user: User, property_id: str, db, now_l
 
 
 def _refresh_dashboard_snapshot(db, *, user: User, property_id: str):
-    fetch_payload = _service_attr("_fetch_intraday_dashboard_payload", _fetch_intraday_dashboard_payload)
+    fetch_payload = _fetch_intraday_dashboard_payload
     payload = fetch_payload(user=user, property_id=property_id, db=db)
     return repository.upsert_snapshot(
         db,
@@ -216,7 +218,7 @@ def get_dashboard(db, *, user: User, property_id: str):
     today = (datetime.utcnow() + timedelta(hours=8)).date().isoformat()
     snapshot = repository.get_latest_snapshot(db, property_id=property_id, kind=DASHBOARD_KIND, date=today)
     if not snapshot:
-        snapshot = _service_attr("_refresh_dashboard_snapshot", _refresh_dashboard_snapshot)(db, user=user, property_id=property_id)
+        snapshot = _refresh_dashboard_snapshot(db, user=user, property_id=property_id)
     return snapshot
 
 
@@ -228,7 +230,7 @@ def refresh_dashboard(db, *, user: User, property_id: str):
         elapsed = datetime.utcnow() - existing.fetched_at
         if elapsed < timedelta(minutes=DASHBOARD_REFRESH_COOLDOWN_MINUTES):
             return existing, False
-    snapshot = _service_attr("_refresh_dashboard_snapshot", _refresh_dashboard_snapshot)(db, user=user, property_id=property_id)
+    snapshot = _refresh_dashboard_snapshot(db, user=user, property_id=property_id)
     return snapshot, True
 
 

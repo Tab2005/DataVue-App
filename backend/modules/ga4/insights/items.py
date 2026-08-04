@@ -4,6 +4,9 @@ from __future__ import annotations
 
 import hashlib
 
+from datetime import datetime, timedelta
+from statistics import median
+
 from ._shared import *
 from .channel_groups import get_channel_group_match_conditions
 from ._parallel import resolve_ga4_credentials, run_parallel
@@ -43,10 +46,10 @@ def get_items(
     else:
         dimension_filter = None
 
-    start_date, end_date = _service_attr("_trailing_period", _trailing_period)(days)
+    start_date, end_date = _trailing_period(days)
 
     # 瀏覽成長比較固定用「近 7 天 vs 前 7 天」（3.4 節），與 days 參數（表格期間）無關
-    recent_start, recent_end = _service_attr("_trailing_period", _trailing_period)(7)
+    recent_start, recent_end = _trailing_period(7)
     prior_end = (datetime.strptime(recent_start, "%Y-%m-%d") - timedelta(days=1)).strftime("%Y-%m-%d")
     prior_start = (datetime.strptime(recent_start, "%Y-%m-%d") - timedelta(days=7)).strftime("%Y-%m-%d")
 
@@ -178,7 +181,7 @@ def get_items(
         recent = recent_views.get(item_name, 0)
         prior = prior_views.get(item_name, 0)
         growth_rate = ((recent - prior) / prior) if prior else (1.0 if recent > 0 else 0.0)
-        item_category, item_category_source = _facade_attr("classify_item_category", classify_item_category)(
+        item_category, item_category_source = classify_item_category(
             item_name, category_by_item.get(item_name), item_category_rules
         )
 

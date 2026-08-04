@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from datetime import datetime, timedelta
+
 from ._shared import *
 from ._parallel import resolve_ga4_credentials, run_parallel
 
@@ -42,7 +44,7 @@ def get_channels(
     if dimension not in CHANNEL_DIMENSION_MAP:
         raise ValueError(f"Unsupported channel dimension: {dimension}")
     session_dim, first_user_dim = CHANNEL_DIMENSION_MAP[dimension]
-    start_date, end_date = _service_attr("_trailing_period", _trailing_period)(days)
+    start_date, end_date = _trailing_period(days)
 
     # docs/65：兩支查詢是同一期間的兩個維度，彼此無資料相依，並行送出。
     # credentials 在請求執行緒先解析好，worker thread 因此不碰 db/user。
@@ -79,7 +81,7 @@ def get_channels(
     for channel in channels:
         closing = session_by_channel.get(channel, 0)
         assisting = first_user_by_channel.get(channel, 0)
-        if closing > 0 and (closing + assisting) >= _get_channel_min_sample():
+        if closing > 0 and (closing + assisting) >= CHANNEL_MIN_SAMPLE:
             ratio = assisting / closing
             if ratio > 1.3:
                 tag = "assist"
@@ -125,7 +127,7 @@ def get_channels(
         "truncated": truncated,
         "total_row_count": total_row_count,
         "total_closing_conversions": total_closing_conversions,
-        "attribution_model": _service_attr("_get_attribution_model", _get_attribution_model)(db, user=user, property_id=property_id),
+        "attribution_model": _get_attribution_model(db, user=user, property_id=property_id),
     }
     return repository.upsert_snapshot(
         db, property_id=property_id, kind=kind, date=end_date, payload=payload, fetched_by=user.id,

@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from datetime import date, datetime, timedelta
+
 from ._shared import *
 
 
@@ -44,7 +46,7 @@ def compute_kpi_pacing(
       （`actual_value / time_progress`），僅供參考、非精確預測。
     """
     today = today or (datetime.utcnow() + timedelta(hours=8)).date()
-    start, end = _service_attr("_kpi_period_bounds", _kpi_period_bounds)(period_type, period_key)
+    start, end = _kpi_period_bounds(period_type, period_key)
     period_length = (end - start).days + 1
     elapsed_days = max(0, min((today - start).days + 1, period_length))
     time_progress = elapsed_days / period_length if period_length else 0.0
@@ -80,7 +82,7 @@ def get_kpi_targets_with_pacing(db, *, user: User, property_id: str) -> list[dic
     results = []
     for target in targets:
         api_metric = SUPPORTED_METRICS.get(target.metric_key, target.metric_key)
-        start, end = _service_attr("_kpi_period_bounds", _kpi_period_bounds)(target.period_type, target.period_key)
+        start, end = _kpi_period_bounds(target.period_type, target.period_key)
         query_end = min(end, today)
 
         actual_value = 0.0
@@ -100,7 +102,7 @@ def get_kpi_targets_with_pacing(db, *, user: User, property_id: str) -> list[dic
             elif data and data.get("rows"):
                 actual_value = float(data["rows"][0].get(api_metric, 0))
 
-        pacing = _service_attr("compute_kpi_pacing", compute_kpi_pacing)(
+        pacing = compute_kpi_pacing(
             target_value=target.target_value,
             period_type=target.period_type,
             period_key=target.period_key,

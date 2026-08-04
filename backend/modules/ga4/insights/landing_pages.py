@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import hashlib
 
+from datetime import datetime, timedelta
+
 from ._shared import *
 from .channel_groups import get_channel_group_match_conditions
 from ._parallel import resolve_ga4_credentials, run_parallel
@@ -54,7 +56,7 @@ def get_landing_pages(
     else:
         dimension_filter = None
 
-    start_date, end_date = _service_attr("_trailing_period", _trailing_period)(days)
+    start_date, end_date = _trailing_period(days)
 
     # 2026-07-10 與使用者確認：主查詢的「轉換次數」「轉換率」改用 GA4
     # 官方 keyEvents / sessionKeyEventRate；帶 key_event 時改用該事件的
@@ -149,7 +151,7 @@ def get_landing_pages(
         key_events_count = row.get(key_events_metric, 0)
         session_key_event_rate = row.get(key_event_rate_metric, 0.0)
         bounce_rate = row.get("bounceRate", 0.0)
-        category = _facade_attr("classify_landing_page", classify_landing_page)(landing_page, rules)
+        category = classify_landing_page(landing_page, rules)
 
         # 比較模式：is_new 只有在「查詢成功、且這個頁面在上一期完全沒出現」
         # 時才成立；查詢失敗時所有列都不標記新頁面，避免誤導。

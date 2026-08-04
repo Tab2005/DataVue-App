@@ -2,6 +2,12 @@
 
 from __future__ import annotations
 
+import asyncio
+import os
+import smtplib
+from datetime import datetime, timedelta
+from email.message import EmailMessage
+
 from ._shared import *
 
 
@@ -52,7 +58,7 @@ def acknowledge_event(db, *, event_id: str, user_id: str):
 def list_available_key_events(db, *, user: User, property_id: str) -> list[str]:
     """docs/52：告警規則建立表單用的關鍵事件下拉清單，近 7 天、跟規則的
     check_frequency（hourly/daily）無關，純粹讓清單不受抓取當下時間點影響。"""
-    start_date, end_date = _service_attr("_trailing_period", _trailing_period)(7)
+    start_date, end_date = _trailing_period(7)
     data, error = GA4Service.get_analytics(
         user=user, property_id=property_id, start_date=start_date, end_date=end_date,
         metrics=["keyEvents"], dimensions=["eventName"], db=db,
@@ -70,9 +76,9 @@ def build_alert_message(*, property_label: str, metric_key: str, observed: float
         metric_label = f"{metric_label}（{key_event}）"
     return (
         f"⚠️ GA4 異常（{property_label}）\n"
-        f"{metric_label} 今日累計 {_service_attr('_format_metric_value', _format_metric_value)(metric_key, observed)}，"
-        f"低於/高於預期區間 {_service_attr('_format_metric_value', _format_metric_value)(metric_key, expected_low)}"
-        f"~{_service_attr('_format_metric_value', _format_metric_value)(metric_key, expected_high)}（過去 8 週同時段基線）\n"
+        f"{metric_label} 今日累計 {_format_metric_value(metric_key, observed)}，"
+        f"低於/高於預期區間 {_format_metric_value(metric_key, expected_low)}"
+        f"~{_format_metric_value(metric_key, expected_high)}（過去 8 週同時段基線）\n"
         f"可能方向：檢查廣告投放是否中斷 / 網站追蹤碼 / 檔期效應\n"
         f"{os.getenv('FRONTEND_URL', 'http://localhost:3000')}/ga4-insights"
     )
@@ -123,7 +129,7 @@ async def evaluate_rule(db, rule, *, now_local: datetime | None = None):
 
     target_date = now_local.date().isoformat() if rule.check_frequency == "hourly" else (now_local.date() - timedelta(days=1)).isoformat()
     current_hour = now_local.hour if rule.check_frequency == "hourly" else None
-    observed, raw_rows = _service_attr("_fetch_metric_total", _fetch_metric_total)(
+    observed, raw_rows = _fetch_metric_total(
         user=user,
         property_id=rule.property_id,
         date_value=target_date,
@@ -150,9 +156,9 @@ async def evaluate_rule(db, rule, *, now_local: datetime | None = None):
     )
 
     samples: list[float] = []
-    for sample_date in _service_attr("_historical_dates", _historical_dates)(now_local):
+    for sample_date in _historical_dates(now_local):
         try:
-            sample_total, _ = _service_attr("_fetch_metric_total", _fetch_metric_total)(
+            sample_total, _ = _fetch_metric_total(
                 user=user,
                 property_id=rule.property_id,
                 date_value=sample_date,
@@ -173,7 +179,7 @@ async def evaluate_rule(db, rule, *, now_local: datetime | None = None):
     if repository.get_recent_event_for_rule(db, rule_id=rule.id, cooldown_hours=rule.cooldown_hours):
         return {"status": "cooled_down", "observed": observed}
 
-    message = _service_attr("build_alert_message", build_alert_message)(
+    message = build_alert_message(
         property_label=rule.property_id,
         metric_key=rule.metric_key,
         observed=observed,
@@ -185,7 +191,7 @@ async def evaluate_rule(db, rule, *, now_local: datetime | None = None):
     if rule.notify_line and user.line_user_id:
         notified_channels["line"] = await send_line_push_message(user.line_user_id, message)
     if rule.notify_email and user.email:
-        notified_channels["email"] = await _service_attr("_send_email_if_possible", _send_email_if_possible)(
+        notified_channels["email"] = await _send_email_if_possible(
             user.email,
             f"GA4 異常通知 {rule.property_id}",
             message,

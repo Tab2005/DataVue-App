@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from datetime import datetime
+
 from ._shared import *
 
 CHANNEL_GROUP_MATCH_TYPES = ("exact", "prefix", "contains")

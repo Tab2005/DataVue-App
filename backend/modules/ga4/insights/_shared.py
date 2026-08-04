@@ -7,7 +7,6 @@ import logging
 import os
 import re
 import smtplib
-import sys
 from datetime import date, datetime, timedelta
 from email.message import EmailMessage
 from statistics import median
@@ -113,23 +112,6 @@ ITEM_METRICS_WITH_OFFICIAL_RATES = [
 ITEM_METRICS_FALLBACK = ["itemsViewed", "itemsAddedToCart", "itemsPurchased", "itemRevenue"]
 ITEM_CART_TO_VIEW_RATE_DEFINITION = "看過此商品的使用者中，把它加入購物車的比率（使用者去重）"
 ITEM_PURCHASE_TO_VIEW_RATE_DEFINITION = "看過此商品的使用者中，購買它的比率（使用者去重）"
-
-
-def _service_attr(name: str, fallback):
-    facade = sys.modules.get("modules.ga4.insights_service")
-    service = getattr(facade, "GA4InsightsService", None) if facade is not None else None
-    return getattr(service, name, fallback)
-
-
-def _facade_attr(name: str, fallback):
-    facade = sys.modules.get("modules.ga4.insights_service")
-    return getattr(facade, name, fallback) if facade is not None else fallback
-
-def _get_channel_min_sample() -> int:
-    facade = sys.modules.get("modules.ga4.insights_service")
-    if facade is not None and hasattr(facade, "CHANNEL_MIN_SAMPLE"):
-        return int(getattr(facade, "CHANNEL_MIN_SAMPLE"))
-    return CHANNEL_MIN_SAMPLE
 
 
 def _percentile(sorted_values: list[float], fraction: float) -> float:
@@ -249,4 +231,53 @@ def _trailing_period(days: int, *, now_local: datetime | None = None) -> tuple[s
     start_date = end_date - timedelta(days=max(days, 1) - 1)
     return start_date.isoformat(), end_date.isoformat()
 
-__all__ = [name for name in globals() if not name.startswith("__")]
+# docs/59 P2-5：明列要匯出的名字。之前是
+# `[name for name in globals() if not name.startswith("__")]`，那會把 `logging`、
+# `re`、`smtplib` 這些 import 進來的東西一併匯出；各子模組再 `from ._shared
+# import *`，等於每個檔案的命名空間都被塞滿無關符號，靜態分析工具也
+# 分不出哪些 import 沒用到。這裡的清單是用 AST 算出「子模組真的有引用」
+# 的名字，新增共用符號時記得一併加進來。
+#
+# stdlib（os / smtplib / asyncio / datetime / median / EmailMessage）刷掉不匯出：
+# 需要的子模組已改成自己 import。靠星號帶 stdlib 進來是這個命名空間問題
+# 最難看的那一面——看到 `median(...)` 根本不知道它從哪來。
+__all__ = [
+    "ATTRIBUTION_MODEL_MAP",
+    "ATTRIBUTION_SETTINGS_CACHE_HOURS",
+    "ATTRIBUTION_SETTINGS_DATE",
+    "ATTRIBUTION_SETTINGS_KIND",
+    "CHANNEL_DEFAULT_DIMENSION",
+    "CHANNEL_DIMENSION_MAP",
+    "CHANNEL_METRIC",
+    "CHANNEL_MIN_SAMPLE",
+    "CHANNEL_TOP_N",
+    "DASHBOARD_KIND",
+    "DASHBOARD_METRICS",
+    "DASHBOARD_REFRESH_COOLDOWN_MINUTES",
+    "GA4Client",
+    "GA4Service",
+    "ITEM_CART_TO_VIEW_RATE_DEFINITION",
+    "ITEM_METRICS_FALLBACK",
+    "ITEM_METRICS_WITH_OFFICIAL_RATES",
+    "ITEM_PURCHASE_TO_VIEW_RATE_DEFINITION",
+    "KPI_PACING_BUFFER",
+    "LANDING_PAGE_KEY_EVENTS_COUNT_DEFINITION",
+    "LANDING_PAGE_KEY_EVENT_PATTERN",
+    "LANDING_PAGE_SESSION_KEY_EVENT_RATE_DEFINITION",
+    "METRIC_LABELS",
+    "REALTIME_WINDOW_MINUTES",
+    "SUPPORTED_METRICS",
+    "User",
+    "_fetch_metric_total",
+    "_format_metric_value",
+    "_historical_dates",
+    "_percentile",
+    "_trailing_period",
+    "build_expected_range",
+    "classify_item_category",
+    "classify_landing_page",
+    "evaluate_anomaly",
+    "logger",
+    "repository",
+    "send_line_push_message",
+]
