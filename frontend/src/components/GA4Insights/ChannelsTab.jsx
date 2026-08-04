@@ -3,6 +3,7 @@ import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, Responsive
 
 import {
     AIInsightNote,
+    DaySelector,
     ATTRIBUTION_MODEL_LABELS,
     CHANNEL_DIMENSION_OPTIONS,
     badgeStyle,
@@ -29,7 +30,6 @@ const ChannelsTab = ({
     channelsError,
     channelsSnapshot,
     channelsLoading,
-    DaySelector,
 }) => (
     <>
                     <section style={baseCardStyle}>
@@ -89,7 +89,7 @@ const ChannelsTab = ({
                                         <option key={option.value} value={option.value}>{t(option.en, option.zh)}</option>
                                     ))}
                                 </select>
-                                <DaySelector value={channelsDays} onChange={(d) => { setChannelsDays(d); loadChannels(propertyId, d, channelsDimension); }} />
+                                <DaySelector language={language} value={channelsDays} onChange={(d) => { setChannelsDays(d); loadChannels(propertyId, d, channelsDimension); }} />
                             </div>
                         </div>
                         {channelsError && <div style={{ color: '#fca5a5', fontSize: '0.85rem', marginBottom: '10px' }}>{channelsError}</div>}

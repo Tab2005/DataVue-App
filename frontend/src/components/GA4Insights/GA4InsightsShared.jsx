@@ -173,6 +173,71 @@ const pagerButtonStyle = {
     minWidth: '32px',
 };
 
+// 天數選擇：7/14/30 預設按鈕 ＋ 自訂天數輸入框（1-90）。預設按鈕與輸入框共用
+// 同一個 value/onChange，外部切換到 7/14/30 時輸入框自動清空回 placeholder，
+// 輸入自訂值時視覺上不特別標記某個預設按鈕為 active。
+//
+// docs/66：原本定義在 `GA4Insights.jsx` 的元件函式**內部**，再當 prop 傳給 5 個
+// 分頁。那樣每次父層 render 都會產生新的函式 identity，React 會當成不同的元件
+// 型別把整棵子樹 unmount 再 mount，內部的 customText 跟著被重置。搬到模組層級
+// 之後身分穩定，分頁也不用再收這個 prop。
+const DAY_PRESETS = [7, 14, 30];
+
+export const DaySelector = ({ value, onChange, language }) => {
+    const t = (en, zh) => tr(language, en, zh);
+    const [customText, setCustomText] = useState(DAY_PRESETS.includes(value) ? '' : String(value));
+
+    useEffect(() => {
+        setCustomText(DAY_PRESETS.includes(value) ? '' : String(value));
+    }, [value]);
+
+    const applyCustom = () => {
+        const n = parseInt(customText, 10);
+        if (Number.isFinite(n) && n >= 1 && n <= 90) {
+            if (n !== value) onChange(n);
+        } else {
+            // 輸入無效（空白/超出範圍）時還原顯示，避免卡在一個不會生效的值
+            setCustomText(DAY_PRESETS.includes(value) ? '' : String(value));
+        }
+    };
+
+    return (
+        <div style={{ display: 'flex', gap: '6px', alignItems: 'center' }}>
+            {DAY_PRESETS.map((d) => (
+                <button key={d} type="button" style={dayButtonStyle(value === d)} onClick={() => onChange(d)}>
+                    {d}{t('d', '天')}
+                </button>
+            ))}
+            <input
+                type="number"
+                min="1"
+                max="90"
+                value={customText}
+                onChange={(event) => setCustomText(event.target.value)}
+                onBlur={applyCustom}
+                onKeyDown={(event) => {
+                    if (event.key === 'Enter') {
+                        event.preventDefault();
+                        applyCustom();
+                        event.target.blur();
+                    }
+                }}
+                placeholder={t('Custom', '自訂')}
+                title={t('Custom day count (1-90)', '自訂天數（1-90）')}
+                style={{
+                    ...inputStyle,
+                    // 「自訂」佔兩個中文字寬度，加上 type="number" 的原生
+                    // 增減按鈕，58px 會把 placeholder 文字切掉，加寬到 76px。
+                    width: '76px',
+                    padding: '6px 6px',
+                    textAlign: 'center',
+                    ...(!DAY_PRESETS.includes(value) ? { borderColor: 'var(--accent-primary, #3987e5)' } : {}),
+                }}
+            />
+        </div>
+    );
+};
+
 // docs/56：totalItems 是可選 prop（篩選後的實際筆數，不是原始總筆數），
 // 有傳才顯示「共 N 筆」；沒傳維持現況只顯示「第 X / Y 頁」，向下相容。
 export const TablePager = ({ page, totalPages, onPageChange, language, totalItems }) => {

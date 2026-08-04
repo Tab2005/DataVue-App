@@ -2,6 +2,7 @@ import React, { useEffect, useMemo, useState } from 'react';
 
 import {
     AIInsightNote,
+    DaySelector,
     TablePager,
     baseCardStyle,
     emptyState,
@@ -42,7 +43,6 @@ const ItemLandingCrossTab = ({
     itemLandingSnapshot,
     itemLandingCompareEnabled,
     setItemLandingCompareEnabled,
-    DaySelector,
 }) => {
     const [page, setPage] = useState(1);
     // docs/57：指標＋方向兩個下拉，只有 itemLandingCompareEnabled 時才顯示/生效。
@@ -104,7 +104,7 @@ const ItemLandingCrossTab = ({
                                     />
                                     {t('Compare to prior period', '比較上一期')}
                                 </label>
-                                <DaySelector value={itemLandingDays} onChange={(d) => { setItemLandingDays(d); loadItemLandingCross(propertyId, d); }} />
+                                <DaySelector language={language} value={itemLandingDays} onChange={(d) => { setItemLandingDays(d); loadItemLandingCross(propertyId, d); }} />
                             </div>
                         </div>
                         {/* docs/57：指標＋方向篩選只有比較上一期開啟時才顯示，選了「全部」

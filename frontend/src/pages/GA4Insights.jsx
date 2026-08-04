@@ -4,6 +4,8 @@ import { ga4Service } from '../services/ga4Service';
 import { ga4InsightsService } from '../services/ga4InsightsService';
 import { lineService } from '../services/lineService';
 import { useModuleAccess, usePermission, useSelectedTeamId } from '../hooks/usePermission';
+import useGA4LandingPagesTab from '../hooks/useGA4LandingPagesTab';
+import useGA4ItemsTab from '../hooks/useGA4ItemsTab';
 import OverviewTab from '../components/GA4Insights/OverviewTab';
 import ChannelsTab from '../components/GA4Insights/ChannelsTab';
 import LandingPagesTab from '../components/GA4Insights/LandingPagesTab';
@@ -12,11 +14,9 @@ import ItemLandingCrossTab from '../components/GA4Insights/ItemLandingCrossTab';
 import KpiTab from '../components/GA4Insights/KpiTab';
 import AlertsTab from '../components/GA4Insights/AlertsTab';
 import {
-    ITEMS_SORT_COLUMNS,
     VIZ_TOKENS,
     baseCardStyle,
     currentMonthKey,
-    dayButtonStyle,
     emptyState,
     inputStyle,
     secondaryButtonStyle,
@@ -48,6 +48,13 @@ const GA4Insights = () => {
     const { hasAccess: ga4ModuleAccess } = useModuleAccess('ga4');
     const { hasPermission: ga4ManageAlertsPermission } = usePermission('ga4:insights:manage_alerts');
     const canManageGa4InsightsRules = selectedTeamId ? ga4ManageAlertsPermission : ga4ModuleAccess;
+
+    // docs/66：到達頁與商品這兩個分頁的整組狀態抽成各自的 hook（原本是 51 / 53
+    // 個 props）。hook 在這裡（父層）呼叫而不是分頁元件自己呼叫——分頁是條件
+    // 渲染的，切走就 unmount，狀態放在父層才能在切回來時保住快照與篩選條件、
+    // 也不會重打一次 GA4 查詢。
+    const landing = useGA4LandingPagesTab({ propertyId, t });
+    const items = useGA4ItemsTab({ propertyId, t });
 
     // 第 1 波：告警規則 / 事件歷史
     const [rules, setRules] = useState([]);
@@ -91,76 +98,6 @@ const GA4Insights = () => {
     const [channelsSnapshot, setChannelsSnapshot] = useState(null);
     const [channelsLoading, setChannelsLoading] = useState(false);
     const [channelsError, setChannelsError] = useState('');
-
-    // 第 2/5 波：到達頁
-    const [landingDays, setLandingDays] = useState(7);
-    const [landingSnapshot, setLandingSnapshot] = useState(null);
-    const [landingLoading, setLandingLoading] = useState(false);
-    const [landingError, setLandingError] = useState('');
-    const [landingCategoryFilter, setLandingCategoryFilter] = useState('all');
-    const [landingKeyEvent, setLandingKeyEvent] = useState('');
-    // docs/54：跟上一期比較開關，預設關閉（不多打一次 GA4 查詢）。
-    const [landingCompareEnabled, setLandingCompareEnabled] = useState(false);
-    // docs/42：到達頁渠道篩選——維度＋渠道值兩層下拉，渠道值清單複用
-    // getChannels 既有回應，不用另外開一支「列出渠道值」的端點。
-    const [landingChannelDimension, setLandingChannelDimension] = useState('');
-    const [landingChannelValue, setLandingChannelValue] = useState('');
-    const [landingChannelValues, setLandingChannelValues] = useState([]);
-    const [landingChannelValuesLoading, setLandingChannelValuesLoading] = useState(false);
-    const [landingRules, setLandingRules] = useState(null);
-    const [landingRulesOpen, setLandingRulesOpen] = useState(false);
-    const [landingRulesLoading, setLandingRulesLoading] = useState(false);
-    const [landingRulesError, setLandingRulesError] = useState('');
-    const [landingRuleSaving, setLandingRuleSaving] = useState(false);
-    const [landingRuleForm, setLandingRuleForm] = useState({ category: 'product', match_type: 'prefix', pattern: '', priority: 0 });
-
-    // docs/44：渠道值自訂分組——第三個下拉（跟渠道值互斥），選了維度後才
-    // 抓對應的分組清單；規則管理面板另外維護該維度底下的規則列表。
-    const [landingChannelGroup, setLandingChannelGroup] = useState('');
-    const [landingChannelGroups, setLandingChannelGroups] = useState([]);
-    const [landingChannelGroupsLoading, setLandingChannelGroupsLoading] = useState(false);
-    const [landingChannelGroupRulesOpen, setLandingChannelGroupRulesOpen] = useState(false);
-    const [landingChannelGroupRules, setLandingChannelGroupRules] = useState(null);
-    const [landingChannelGroupRulesLoading, setLandingChannelGroupRulesLoading] = useState(false);
-    const [landingChannelGroupRulesError, setLandingChannelGroupRulesError] = useState('');
-    const [landingChannelGroupRuleSaving, setLandingChannelGroupRuleSaving] = useState(false);
-    const [landingChannelGroupRuleForm, setLandingChannelGroupRuleForm] = useState({ group_label: '', match_type: 'contains', pattern: '', priority: 0 });
-
-    // 第 2/6 波：商品
-    const [itemsDays, setItemsDays] = useState(7);
-    const [itemsSnapshot, setItemsSnapshot] = useState(null);
-    const [itemsLoading, setItemsLoading] = useState(false);
-    const [itemsError, setItemsError] = useState('');
-    const [itemsCategoryFilter, setItemsCategoryFilter] = useState('all');
-    const [itemsSearchQuery, setItemsSearchQuery] = useState('');
-    // docs/54：跟上一期比較開關，預設關閉（不多打一次 GA4 查詢）。
-    const [itemsCompareEnabled, setItemsCompareEnabled] = useState(false);
-    const [itemsSortKey, setItemsSortKey] = useState(null);
-    const [itemsSortDirection, setItemsSortDirection] = useState('desc');
-
-    // docs/45：商品渠道篩選，比照到達頁（42+44）同一套維度／渠道值／自訂
-    // 分組三個下拉＋規則管理面板；渠道分組規則跨分頁共用（綁維度不綁分頁）。
-    const [itemsChannelDimension, setItemsChannelDimension] = useState('');
-    const [itemsChannelValue, setItemsChannelValue] = useState('');
-    const [itemsChannelValues, setItemsChannelValues] = useState([]);
-    const [itemsChannelValuesLoading, setItemsChannelValuesLoading] = useState(false);
-    const [itemsChannelGroup, setItemsChannelGroup] = useState('');
-    const [itemsChannelGroups, setItemsChannelGroups] = useState([]);
-    const [itemsChannelGroupsLoading, setItemsChannelGroupsLoading] = useState(false);
-    const [itemsChannelGroupRulesOpen, setItemsChannelGroupRulesOpen] = useState(false);
-    const [itemsChannelGroupRules, setItemsChannelGroupRules] = useState(null);
-    const [itemsChannelGroupRulesLoading, setItemsChannelGroupRulesLoading] = useState(false);
-    const [itemsChannelGroupRulesError, setItemsChannelGroupRulesError] = useState('');
-    const [itemsChannelGroupRuleSaving, setItemsChannelGroupRuleSaving] = useState(false);
-    const [itemsChannelGroupRuleForm, setItemsChannelGroupRuleForm] = useState({ group_label: '', match_type: 'contains', pattern: '', priority: 0 });
-
-    // 第 7 波：商品分類補充規則（GA4 itemCategory 缺值時的補充來源）
-    const [itemCategoryRules, setItemCategoryRules] = useState(null);
-    const [itemCategoryRulesOpen, setItemCategoryRulesOpen] = useState(false);
-    const [itemCategoryRulesLoading, setItemCategoryRulesLoading] = useState(false);
-    const [itemCategoryRulesError, setItemCategoryRulesError] = useState('');
-    const [itemCategoryRuleSaving, setItemCategoryRuleSaving] = useState(false);
-    const [itemCategoryRuleForm, setItemCategoryRuleForm] = useState({ category: '', match_type: 'prefix', pattern: '', priority: 0 });
 
     // docs/47：商品頁面與商品轉換率交叉對照（獨立新分頁）
     const [itemLandingDays, setItemLandingDays] = useState(7);
@@ -274,325 +211,6 @@ const GA4Insights = () => {
         }
     };
 
-    const loadLandingPages = async (
-        pid, days,
-        keyEvent = landingKeyEvent,
-        channelDimension = landingChannelDimension,
-        channelValue = landingChannelValue,
-        channelGroup = landingChannelGroup,
-        compare = landingCompareEnabled,
-    ) => {
-        if (!pid) return;
-        setLandingLoading(true);
-        setLandingError('');
-        try {
-            setLandingSnapshot(
-                await ga4InsightsService.getLandingPages(
-                    pid, days, keyEvent || null, channelDimension || null, channelValue || null, channelGroup || null, compare
-                )
-            );
-        } catch (err) {
-            setLandingError(err.message || t('Failed to load landing pages.', '載入到達頁分析失敗。'));
-        } finally {
-            setLandingLoading(false);
-        }
-    };
-
-    // docs/42：渠道值清單——選了「維度」後，用該維度呼叫一次既有的渠道
-    // 對照端點，取實際存在的渠道值來組第二層下拉選單，不用另開新端點。
-    const loadLandingChannelValues = async (pid, days, dimension) => {
-        if (!pid || !dimension) {
-            setLandingChannelValues([]);
-            return;
-        }
-        setLandingChannelValuesLoading(true);
-        try {
-            const res = await ga4InsightsService.getChannels(pid, days, dimension);
-            setLandingChannelValues((res.payload?.channels || []).map((c) => c.channel).filter(Boolean));
-        } catch (err) {
-            setLandingError(err.message || t('Failed to load channel values.', '載入渠道清單失敗。'));
-        } finally {
-            setLandingChannelValuesLoading(false);
-        }
-    };
-
-    // docs/44：渠道值自訂分組清單——跟渠道值清單不同，這是直接從資料庫的
-    // 規則列表 derive 出來的（不用打 GA4 API），不需要帶 days 參數。
-    const loadLandingChannelGroups = async (pid, dimension) => {
-        if (!pid || !dimension) {
-            setLandingChannelGroups([]);
-            return;
-        }
-        setLandingChannelGroupsLoading(true);
-        try {
-            const res = await ga4InsightsService.listChannelGroups(pid, dimension);
-            setLandingChannelGroups(res.groups || []);
-        } catch (err) {
-            setLandingError(err.message || t('Failed to load channel groups.', '載入自訂分組失敗。'));
-        } finally {
-            setLandingChannelGroupsLoading(false);
-        }
-    };
-
-    const loadLandingChannelGroupRules = async (pid, dimension) => {
-        if (!pid || !dimension) {
-            setLandingChannelGroupRules([]);
-            return;
-        }
-        setLandingChannelGroupRulesLoading(true);
-        setLandingChannelGroupRulesError('');
-        try {
-            const res = await ga4InsightsService.listChannelGroupRules(pid, dimension);
-            setLandingChannelGroupRules(res.rules || []);
-        } catch (err) {
-            setLandingChannelGroupRulesError(err.message || t('Failed to load channel group rules.', '載入渠道分組規則失敗。'));
-        } finally {
-            setLandingChannelGroupRulesLoading(false);
-        }
-    };
-
-    const handleCreateChannelGroupRule = async (event) => {
-        event.preventDefault();
-        if (!propertyId || !landingChannelDimension || !landingChannelGroupRuleForm.group_label.trim() || !landingChannelGroupRuleForm.pattern.trim()) return;
-        setLandingChannelGroupRuleSaving(true);
-        setLandingChannelGroupRulesError('');
-        try {
-            await ga4InsightsService.upsertChannelGroupRule({
-                property_id: propertyId,
-                channel_dimension: landingChannelDimension,
-                group_label: landingChannelGroupRuleForm.group_label.trim(),
-                match_type: landingChannelGroupRuleForm.match_type,
-                pattern: landingChannelGroupRuleForm.pattern.trim(),
-                priority: Number(landingChannelGroupRuleForm.priority) || 0,
-            });
-            setLandingChannelGroupRuleForm((prev) => ({ ...prev, group_label: '', pattern: '' }));
-            await loadLandingChannelGroupRules(propertyId, landingChannelDimension);
-            await loadLandingChannelGroups(propertyId, landingChannelDimension);
-        } catch (err) {
-            setLandingChannelGroupRulesError(err.message || t('Failed to save rule.', '儲存規則失敗。'));
-        } finally {
-            setLandingChannelGroupRuleSaving(false);
-        }
-    };
-
-    const handleDeleteChannelGroupRule = async (ruleId) => {
-        if (!window.confirm(t('Delete this channel group rule?', '要刪除此渠道分組規則嗎？'))) return;
-        try {
-            await ga4InsightsService.deleteChannelGroupRule(ruleId);
-            await loadLandingChannelGroupRules(propertyId, landingChannelDimension);
-            await loadLandingChannelGroups(propertyId, landingChannelDimension);
-        } catch (err) {
-            setLandingChannelGroupRulesError(err.message || t('Failed to delete rule.', '刪除規則失敗。'));
-        }
-    };
-
-    const loadLandingPageRules = async (pid) => {
-        if (!pid) return;
-        setLandingRulesLoading(true);
-        setLandingRulesError('');
-        try {
-            const res = await ga4InsightsService.listLandingPageRules(pid);
-            setLandingRules(res.rules || []);
-        } catch (err) {
-            setLandingRulesError(err.message || t('Failed to load landing page rules.', '載入到達頁分類規則失敗。'));
-        } finally {
-            setLandingRulesLoading(false);
-        }
-    };
-
-    const handleCreateLandingPageRule = async (event) => {
-        event.preventDefault();
-        if (!propertyId || !landingRuleForm.pattern.trim()) return;
-        setLandingRuleSaving(true);
-        setLandingRulesError('');
-        try {
-            await ga4InsightsService.upsertLandingPageRule({
-                property_id: propertyId,
-                category: landingRuleForm.category,
-                match_type: landingRuleForm.match_type,
-                pattern: landingRuleForm.pattern.trim(),
-                priority: Number(landingRuleForm.priority) || 0,
-            });
-            setLandingRuleForm((prev) => ({ ...prev, pattern: '' }));
-            await loadLandingPageRules(propertyId);
-            await loadLandingPages(propertyId, landingDays);
-        } catch (err) {
-            setLandingRulesError(err.message || t('Failed to save rule.', '儲存規則失敗。'));
-        } finally {
-            setLandingRuleSaving(false);
-        }
-    };
-
-    const handleDeleteLandingPageRule = async (ruleId) => {
-        if (!window.confirm(t('Delete this classification rule?', '要刪除此分類規則嗎？'))) return;
-        try {
-            await ga4InsightsService.deleteLandingPageRule(ruleId);
-            await loadLandingPageRules(propertyId);
-            await loadLandingPages(propertyId, landingDays);
-        } catch (err) {
-            setLandingRulesError(err.message || t('Failed to delete rule.', '刪除規則失敗。'));
-        }
-    };
-
-    const loadItems = async (
-        pid, days,
-        channelDimension = itemsChannelDimension,
-        channelValue = itemsChannelValue,
-        channelGroup = itemsChannelGroup,
-        compare = itemsCompareEnabled,
-    ) => {
-        if (!pid) return;
-        setItemsLoading(true);
-        setItemsError('');
-        try {
-            setItemsSnapshot(
-                await ga4InsightsService.getItems(
-                    pid, days, channelDimension || null, channelValue || null, channelGroup || null, compare
-                )
-            );
-        } catch (err) {
-            setItemsError(err.message || t('Failed to load item insights.', '載入商品分析失敗。'));
-        } finally {
-            setItemsLoading(false);
-        }
-    };
-
-    // docs/45：渠道值清單——沿用到達頁既有作法，複用渠道對照端點取實際
-    // 存在的渠道值，不用另開新端點。
-    const loadItemsChannelValues = async (pid, days, dimension) => {
-        if (!pid || !dimension) {
-            setItemsChannelValues([]);
-            return;
-        }
-        setItemsChannelValuesLoading(true);
-        try {
-            const res = await ga4InsightsService.getChannels(pid, days, dimension);
-            setItemsChannelValues((res.payload?.channels || []).map((c) => c.channel).filter(Boolean));
-        } catch (err) {
-            setItemsError(err.message || t('Failed to load channel values.', '載入渠道清單失敗。'));
-        } finally {
-            setItemsChannelValuesLoading(false);
-        }
-    };
-
-    // docs/45：自訂分組清單——渠道分組規則綁定維度、不綁分頁，到達頁跟
-    // 商品分頁共用同一批規則，這裡只是重新用目前選的維度查一次。
-    const loadItemsChannelGroups = async (pid, dimension) => {
-        if (!pid || !dimension) {
-            setItemsChannelGroups([]);
-            return;
-        }
-        setItemsChannelGroupsLoading(true);
-        try {
-            const res = await ga4InsightsService.listChannelGroups(pid, dimension);
-            setItemsChannelGroups(res.groups || []);
-        } catch (err) {
-            setItemsError(err.message || t('Failed to load channel groups.', '載入自訂分組失敗。'));
-        } finally {
-            setItemsChannelGroupsLoading(false);
-        }
-    };
-
-    const loadItemsChannelGroupRules = async (pid, dimension) => {
-        if (!pid || !dimension) {
-            setItemsChannelGroupRules([]);
-            return;
-        }
-        setItemsChannelGroupRulesLoading(true);
-        setItemsChannelGroupRulesError('');
-        try {
-            const res = await ga4InsightsService.listChannelGroupRules(pid, dimension);
-            setItemsChannelGroupRules(res.rules || []);
-        } catch (err) {
-            setItemsChannelGroupRulesError(err.message || t('Failed to load channel group rules.', '載入渠道分組規則失敗。'));
-        } finally {
-            setItemsChannelGroupRulesLoading(false);
-        }
-    };
-
-    const handleCreateItemsChannelGroupRule = async (event) => {
-        event.preventDefault();
-        if (!propertyId || !itemsChannelDimension || !itemsChannelGroupRuleForm.group_label.trim() || !itemsChannelGroupRuleForm.pattern.trim()) return;
-        setItemsChannelGroupRuleSaving(true);
-        setItemsChannelGroupRulesError('');
-        try {
-            await ga4InsightsService.upsertChannelGroupRule({
-                property_id: propertyId,
-                channel_dimension: itemsChannelDimension,
-                group_label: itemsChannelGroupRuleForm.group_label.trim(),
-                match_type: itemsChannelGroupRuleForm.match_type,
-                pattern: itemsChannelGroupRuleForm.pattern.trim(),
-                priority: Number(itemsChannelGroupRuleForm.priority) || 0,
-            });
-            setItemsChannelGroupRuleForm((prev) => ({ ...prev, group_label: '', pattern: '' }));
-            await loadItemsChannelGroupRules(propertyId, itemsChannelDimension);
-            await loadItemsChannelGroups(propertyId, itemsChannelDimension);
-        } catch (err) {
-            setItemsChannelGroupRulesError(err.message || t('Failed to save rule.', '儲存規則失敗。'));
-        } finally {
-            setItemsChannelGroupRuleSaving(false);
-        }
-    };
-
-    const handleDeleteItemsChannelGroupRule = async (ruleId) => {
-        if (!window.confirm(t('Delete this channel group rule?', '要刪除此渠道分組規則嗎？'))) return;
-        try {
-            await ga4InsightsService.deleteChannelGroupRule(ruleId);
-            await loadItemsChannelGroupRules(propertyId, itemsChannelDimension);
-            await loadItemsChannelGroups(propertyId, itemsChannelDimension);
-        } catch (err) {
-            setItemsChannelGroupRulesError(err.message || t('Failed to delete rule.', '刪除規則失敗。'));
-        }
-    };
-
-    const loadItemCategoryRules = async (pid) => {
-        if (!pid) return;
-        setItemCategoryRulesLoading(true);
-        setItemCategoryRulesError('');
-        try {
-            const res = await ga4InsightsService.listItemCategoryRules(pid);
-            setItemCategoryRules(res.rules || []);
-        } catch (err) {
-            setItemCategoryRulesError(err.message || t('Failed to load item category rules.', '載入商品分類規則失敗。'));
-        } finally {
-            setItemCategoryRulesLoading(false);
-        }
-    };
-
-    const handleCreateItemCategoryRule = async (event) => {
-        event.preventDefault();
-        if (!propertyId || !itemCategoryRuleForm.category.trim() || !itemCategoryRuleForm.pattern.trim()) return;
-        setItemCategoryRuleSaving(true);
-        setItemCategoryRulesError('');
-        try {
-            await ga4InsightsService.upsertItemCategoryRule({
-                property_id: propertyId,
-                category: itemCategoryRuleForm.category.trim(),
-                match_type: itemCategoryRuleForm.match_type,
-                pattern: itemCategoryRuleForm.pattern.trim(),
-                priority: Number(itemCategoryRuleForm.priority) || 0,
-            });
-            setItemCategoryRuleForm((prev) => ({ ...prev, category: '', pattern: '' }));
-            await loadItemCategoryRules(propertyId);
-            await loadItems(propertyId, itemsDays);
-        } catch (err) {
-            setItemCategoryRulesError(err.message || t('Failed to save rule.', '儲存規則失敗。'));
-        } finally {
-            setItemCategoryRuleSaving(false);
-        }
-    };
-
-    const handleDeleteItemCategoryRule = async (ruleId) => {
-        if (!window.confirm(t('Delete this category rule?', '要刪除此分類規則嗎？'))) return;
-        try {
-            await ga4InsightsService.deleteItemCategoryRule(ruleId);
-            await loadItemCategoryRules(propertyId);
-            await loadItems(propertyId, itemsDays);
-        } catch (err) {
-            setItemCategoryRulesError(err.message || t('Failed to delete rule.', '刪除規則失敗。'));
-        }
-    };
-
     // docs/47：商品頁面與商品轉換率交叉對照
     const loadItemLandingCross = async (pid, days, compare = itemLandingCompareEnabled) => {
         if (!pid) return;
@@ -604,15 +222,6 @@ const GA4Insights = () => {
             setItemLandingError(err.message || t('Failed to load item x landing page comparison.', '載入商品頁面比對失敗。'));
         } finally {
             setItemLandingLoading(false);
-        }
-    };
-
-    const handleItemsSort = (key) => {
-        if (itemsSortKey === key) {
-            setItemsSortDirection((prev) => (prev === 'asc' ? 'desc' : 'asc'));
-        } else {
-            setItemsSortKey(key);
-            setItemsSortDirection(ITEMS_SORT_COLUMNS[key].defaultDir);
         }
     };
 
@@ -698,10 +307,8 @@ const GA4Insights = () => {
         if (!propertyId) return;
         if (activeTab === 'overview' && !dashboard) loadDashboard(propertyId);
         if (activeTab === 'channels' && !channelsSnapshot) loadChannels(propertyId, channelsDays);
-        if (activeTab === 'landing' && !landingSnapshot) loadLandingPages(propertyId, landingDays);
-        if (activeTab === 'landing' && !landingRules) loadLandingPageRules(propertyId);
-        if (activeTab === 'items' && !itemsSnapshot) loadItems(propertyId, itemsDays);
-        if (activeTab === 'items' && !itemCategoryRules) loadItemCategoryRules(propertyId);
+        if (activeTab === 'landing') landing.ensureLoaded(propertyId);
+        if (activeTab === 'items') items.ensureLoaded(propertyId);
         if (activeTab === 'itemLandingCross' && !itemLandingSnapshot) loadItemLandingCross(propertyId, itemLandingDays);
         if (activeTab === 'kpi' && !kpiTargets) loadKpiTargets(propertyId);
         // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -726,16 +333,8 @@ const GA4Insights = () => {
         setDashboard(null);
         setRealtime(null);
         setChannelsSnapshot(null);
-        setLandingSnapshot(null);
-        setLandingRules(null);
-        setLandingCategoryFilter('all');
-        setLandingKeyEvent('');
-        setLandingCompareEnabled(false);
-        setItemsSnapshot(null);
-        setItemsCategoryFilter('all');
-        setItemsSearchQuery('');
-        setItemsCompareEnabled(false);
-        setItemCategoryRules(null);
+        landing.reset();
+        items.reset();
         setKpiTargets(null);
         setRefreshNotice('');
         await load(next);
@@ -835,97 +434,6 @@ const GA4Insights = () => {
         { key: 'alerts', en: 'Alerts', zh: '告警設定' },
     ];
 
-    // docs/46：自訂天數——後端 days query 參數本來就接受 1-90（不只
-    // 7/14/30），這裡加一個文字輸入框直接補齊；輸入框跟三個預設按鈕共用
-    // 同一個 value/onChange，外部切換到 7/14/30 時輸入框自動清空回placeholder，
-    // 輸入自訂值時視覺上不特別標記某個預設按鈕為 active。
-    const DAY_PRESETS = [7, 14, 30];
-    const DaySelector = ({ value, onChange }) => {
-        const [customText, setCustomText] = useState(DAY_PRESETS.includes(value) ? '' : String(value));
-
-        useEffect(() => {
-            setCustomText(DAY_PRESETS.includes(value) ? '' : String(value));
-        }, [value]);
-
-        const applyCustom = () => {
-            const n = parseInt(customText, 10);
-            if (Number.isFinite(n) && n >= 1 && n <= 90) {
-                if (n !== value) onChange(n);
-            } else {
-                // 輸入無效（空白/超出範圍）時還原顯示，避免卡在一個不會生效的值
-                setCustomText(DAY_PRESETS.includes(value) ? '' : String(value));
-            }
-        };
-
-        return (
-            <div style={{ display: 'flex', gap: '6px', alignItems: 'center' }}>
-                {DAY_PRESETS.map((d) => (
-                    <button key={d} type="button" style={dayButtonStyle(value === d)} onClick={() => onChange(d)}>
-                        {d}{t('d', '天')}
-                    </button>
-                ))}
-                <input
-                    type="number"
-                    min="1"
-                    max="90"
-                    value={customText}
-                    onChange={(event) => setCustomText(event.target.value)}
-                    onBlur={applyCustom}
-                    onKeyDown={(event) => {
-                        if (event.key === 'Enter') {
-                            event.preventDefault();
-                            applyCustom();
-                            event.target.blur();
-                        }
-                    }}
-                    placeholder={t('Custom', '自訂')}
-                    title={t('Custom day count (1-90)', '自訂天數（1-90）')}
-                    style={{
-                        ...inputStyle,
-                        // 「自訂」佔兩個中文字寬度，加上 type="number" 的原生
-                        // 增減按鈕，58px 會把 placeholder 文字切掉，加寬到 76px。
-                        width: '76px',
-                        padding: '6px 6px',
-                        textAlign: 'center',
-                        ...(!DAY_PRESETS.includes(value) ? { borderColor: 'var(--accent-primary, #3987e5)' } : {}),
-                    }}
-                />
-            </div>
-        );
-    };
-
-    // 商品分析表格的可排序表頭（點擊切換欄位/方向）。
-    const renderItemsSortHeader = (key, label, tooltip) => {
-        const isActive = itemsSortKey === key;
-        const arrow = isActive ? (itemsSortDirection === 'asc' ? ' ▲' : ' ▼') : '';
-        return (
-            <th
-                style={{ padding: '6px', cursor: 'pointer', userSelect: 'none', color: isActive ? 'var(--text-primary)' : 'var(--text-secondary)' }}
-                title={tooltip}
-                onClick={() => handleItemsSort(key)}
-            >
-                {label}{tooltip ? ' ⓘ' : ''}{arrow}
-            </th>
-        );
-    };
-
-    const sortedItemsRows = (rows) => {
-        if (!itemsSortKey) {
-            // 預設排序：潛力商品優先（既有行為）
-            return [...rows].sort((a, b) => (b.is_potential ? 1 : 0) - (a.is_potential ? 1 : 0));
-        }
-        const meta = ITEMS_SORT_COLUMNS[itemsSortKey];
-        const dir = itemsSortDirection === 'asc' ? 1 : -1;
-        return [...rows].sort((a, b) => {
-            const av = a[itemsSortKey];
-            const bv = b[itemsSortKey];
-            if (meta.type === 'string') {
-                return dir * String(av || '').localeCompare(String(bv || ''));
-            }
-            return dir * ((av ?? 0) - (bv ?? 0));
-        });
-    };
-
     return (
         <div style={{ padding: isMobile ? '16px' : '24px', display: 'grid', gap: '16px' }}>
             <style>{VIZ_TOKENS}</style>
@@ -1021,7 +529,6 @@ const GA4Insights = () => {
                     channelsError={channelsError}
                     channelsSnapshot={channelsSnapshot}
                     channelsLoading={channelsLoading}
-                    DaySelector={DaySelector}
                 />
             )}
 
@@ -1031,53 +538,8 @@ const GA4Insights = () => {
                     t={t}
                     isMobile={isMobile}
                     propertyId={propertyId}
-                    landingDays={landingDays}
-                    setLandingDays={setLandingDays}
-                    loadLandingPages={loadLandingPages}
-                    landingError={landingError}
-                    landingLoading={landingLoading}
-                    landingSnapshot={landingSnapshot}
-                    landingCategoryFilter={landingCategoryFilter}
-                    setLandingCategoryFilter={setLandingCategoryFilter}
-                    landingKeyEvent={landingKeyEvent}
-                    setLandingKeyEvent={setLandingKeyEvent}
-                    landingCompareEnabled={landingCompareEnabled}
-                    setLandingCompareEnabled={setLandingCompareEnabled}
-                    landingChannelDimension={landingChannelDimension}
-                    setLandingChannelDimension={setLandingChannelDimension}
-                    landingChannelValue={landingChannelValue}
-                    setLandingChannelValue={setLandingChannelValue}
-                    landingChannelValues={landingChannelValues}
-                    landingChannelValuesLoading={landingChannelValuesLoading}
-                    loadLandingChannelValues={loadLandingChannelValues}
-                    landingChannelGroup={landingChannelGroup}
-                    setLandingChannelGroup={setLandingChannelGroup}
-                    landingChannelGroups={landingChannelGroups}
-                    landingChannelGroupsLoading={landingChannelGroupsLoading}
-                    loadLandingChannelGroups={loadLandingChannelGroups}
-                    landingChannelGroupRulesOpen={landingChannelGroupRulesOpen}
-                    setLandingChannelGroupRulesOpen={setLandingChannelGroupRulesOpen}
-                    landingChannelGroupRules={landingChannelGroupRules}
-                    landingChannelGroupRulesLoading={landingChannelGroupRulesLoading}
-                    landingChannelGroupRulesError={landingChannelGroupRulesError}
-                    loadLandingChannelGroupRules={loadLandingChannelGroupRules}
-                    handleCreateChannelGroupRule={handleCreateChannelGroupRule}
-                    handleDeleteChannelGroupRule={handleDeleteChannelGroupRule}
-                    landingChannelGroupRuleForm={landingChannelGroupRuleForm}
-                    setLandingChannelGroupRuleForm={setLandingChannelGroupRuleForm}
-                    landingChannelGroupRuleSaving={landingChannelGroupRuleSaving}
-                    DaySelector={DaySelector}
-                    landingRulesOpen={landingRulesOpen}
-                    setLandingRulesOpen={setLandingRulesOpen}
-                    landingRulesError={landingRulesError}
-                    landingRulesLoading={landingRulesLoading}
-                    landingRules={landingRules}
                     canManageGa4InsightsRules={canManageGa4InsightsRules}
-                    handleDeleteLandingPageRule={handleDeleteLandingPageRule}
-                    handleCreateLandingPageRule={handleCreateLandingPageRule}
-                    landingRuleForm={landingRuleForm}
-                    setLandingRuleForm={setLandingRuleForm}
-                    landingRuleSaving={landingRuleSaving}
+                    landing={landing}
                 />
             )}
 
@@ -1087,55 +549,8 @@ const GA4Insights = () => {
                     t={t}
                     isMobile={isMobile}
                     propertyId={propertyId}
-                    itemsDays={itemsDays}
-                    setItemsDays={setItemsDays}
-                    loadItems={loadItems}
-                    itemsError={itemsError}
-                    itemsLoading={itemsLoading}
-                    itemsSnapshot={itemsSnapshot}
-                    itemsCategoryFilter={itemsCategoryFilter}
-                    setItemsCategoryFilter={setItemsCategoryFilter}
-                    itemsSearchQuery={itemsSearchQuery}
-                    setItemsSearchQuery={setItemsSearchQuery}
-                    itemsCompareEnabled={itemsCompareEnabled}
-                    setItemsCompareEnabled={setItemsCompareEnabled}
-                    itemsChannelDimension={itemsChannelDimension}
-                    setItemsChannelDimension={setItemsChannelDimension}
-                    itemsChannelValue={itemsChannelValue}
-                    setItemsChannelValue={setItemsChannelValue}
-                    itemsChannelValues={itemsChannelValues}
-                    itemsChannelValuesLoading={itemsChannelValuesLoading}
-                    loadItemsChannelValues={loadItemsChannelValues}
-                    itemsChannelGroup={itemsChannelGroup}
-                    setItemsChannelGroup={setItemsChannelGroup}
-                    itemsChannelGroups={itemsChannelGroups}
-                    itemsChannelGroupsLoading={itemsChannelGroupsLoading}
-                    loadItemsChannelGroups={loadItemsChannelGroups}
-                    itemsChannelGroupRulesOpen={itemsChannelGroupRulesOpen}
-                    setItemsChannelGroupRulesOpen={setItemsChannelGroupRulesOpen}
-                    itemsChannelGroupRules={itemsChannelGroupRules}
-                    itemsChannelGroupRulesLoading={itemsChannelGroupRulesLoading}
-                    itemsChannelGroupRulesError={itemsChannelGroupRulesError}
-                    loadItemsChannelGroupRules={loadItemsChannelGroupRules}
-                    handleCreateItemsChannelGroupRule={handleCreateItemsChannelGroupRule}
-                    handleDeleteItemsChannelGroupRule={handleDeleteItemsChannelGroupRule}
-                    itemsChannelGroupRuleForm={itemsChannelGroupRuleForm}
-                    setItemsChannelGroupRuleForm={setItemsChannelGroupRuleForm}
-                    itemsChannelGroupRuleSaving={itemsChannelGroupRuleSaving}
-                    DaySelector={DaySelector}
-                    renderItemsSortHeader={renderItemsSortHeader}
-                    sortedItemsRows={sortedItemsRows}
-                    itemCategoryRulesOpen={itemCategoryRulesOpen}
-                    setItemCategoryRulesOpen={setItemCategoryRulesOpen}
-                    itemCategoryRulesError={itemCategoryRulesError}
-                    itemCategoryRulesLoading={itemCategoryRulesLoading}
-                    itemCategoryRules={itemCategoryRules}
                     canManageGa4InsightsRules={canManageGa4InsightsRules}
-                    handleDeleteItemCategoryRule={handleDeleteItemCategoryRule}
-                    handleCreateItemCategoryRule={handleCreateItemCategoryRule}
-                    itemCategoryRuleForm={itemCategoryRuleForm}
-                    setItemCategoryRuleForm={setItemCategoryRuleForm}
-                    itemCategoryRuleSaving={itemCategoryRuleSaving}
+                    items={items}
                 />
             )}
 
@@ -1152,7 +567,6 @@ const GA4Insights = () => {
                     itemLandingSnapshot={itemLandingSnapshot}
                     itemLandingCompareEnabled={itemLandingCompareEnabled}
                     setItemLandingCompareEnabled={setItemLandingCompareEnabled}
-                    DaySelector={DaySelector}
                 />
             )}
 
