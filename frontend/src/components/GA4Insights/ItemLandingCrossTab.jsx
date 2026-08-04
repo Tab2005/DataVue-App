@@ -3,13 +3,12 @@ import React, { useEffect, useMemo, useState } from 'react';
 import {
     AIInsightNote,
     TablePager,
-    badgeStyle,
     baseCardStyle,
     emptyState,
-    fmtNumber,
-    fmtPct,
     inputStyle,
 } from './GA4InsightsShared';
+// docs/64：表格主體與警示橫幅跟分享頁共用同一份實作。
+import { ItemLandingCrossTable, PayloadWarnings } from './GA4InsightsTables';
 
 const ITEM_LANDING_PAGE_SIZE = 25;
 
@@ -28,27 +27,6 @@ const compareScopeLabel = (payload, t) => {
     return t(
         `compared to prior period (${payload.compare_start_date} ~ ${payload.compare_end_date})`,
         `已啟用上一期比較（${payload.compare_start_date} ~ ${payload.compare_end_date}）`
-    );
-};
-
-// docs/56：次數類指標（到達頁工作階段）用相對成長率；比率類指標（商品購買率/
-// 到達頁轉換率）改用百分點差異，跟到達頁/商品分頁同一套邏輯，pp 加滑鼠提示。
-const GrowthBadge = ({ value, isPercentagePoint = false, t }) => {
-    if (value == null) return null;
-    const arrow = value > 0 ? '▲' : value < 0 ? '▼' : '';
-    const color = value > 0 ? '#34d399' : value < 0 ? '#f87171' : 'var(--text-tertiary)';
-    const magnitude = Math.abs(value);
-    const text = isPercentagePoint ? `${magnitude.toFixed(1)}pp` : `${(magnitude * 100).toFixed(0)}%`;
-    const title = isPercentagePoint
-        ? t(
-            'pp = percentage point, the absolute gap vs. the prior period (e.g. a rate going from 5% to 6% is +1.0pp, not a 20% increase).',
-            'pp＝百分點，是跟上一期的絕對差距（例如比率從 5% 變 6% 是 +1.0pp，不是成長 20%）。'
-        )
-        : undefined;
-    return (
-        <span style={{ fontSize: '0.72rem', marginLeft: '4px', color, whiteSpace: 'nowrap', cursor: isPercentagePoint ? 'help' : 'default' }} title={title}>
-            {arrow}{text}
-        </span>
     );
 };
 
@@ -157,100 +135,16 @@ const ItemLandingCrossTab = ({
                             </div>
                         )}
                         {itemLandingError && <div style={{ color: '#fca5a5', fontSize: '0.85rem', marginBottom: '10px' }}>{itemLandingError}</div>}
-                        {itemLandingSnapshot?.payload?.compare_enabled && itemLandingSnapshot?.payload?.item_compare_query_error && (
-                            <div style={{ color: '#fbbf24', fontSize: '0.78rem', marginBottom: '10px' }}>
-                                {t(
-                                    'Could not fetch the prior period for item comparison (temporary); item purchase rate comparison unavailable.',
-                                    '暫時無法取得上一期商品資料做比較，商品購買率比較暫缺。'
-                                )}
-                            </div>
-                        )}
-                        {itemLandingSnapshot?.payload?.compare_enabled && itemLandingSnapshot?.payload?.landing_compare_query_error && (
-                            <div style={{ color: '#fbbf24', fontSize: '0.78rem', marginBottom: '10px' }}>
-                                {t(
-                                    'Could not fetch the prior period for landing page comparison (temporary); page comparison unavailable.',
-                                    '暫時無法取得上一期到達頁資料做比較，到達頁比較暫缺。'
-                                )}
-                            </div>
-                        )}
-                        {itemLandingSnapshot?.payload?.used_fallback_conversion_metrics && (
-                            <div style={{ color: '#fbbf24', fontSize: '0.78rem', marginBottom: '10px' }}>
-                                {t(
-                                    'GA4 could not return the official purchase rate for this property; showing a locally computed rate instead.',
-                                    '此屬性無法取得 GA4 官方購買率，改顯示本地計算的比率。'
-                                )}
-                            </div>
-                        )}
-                        {(itemLandingSnapshot?.payload?.mapping_query_error || itemLandingSnapshot?.payload?.landing_query_error) && (
-                            <div style={{ color: '#fbbf24', fontSize: '0.78rem', marginBottom: '10px' }}>
-                                {t(
-                                    'Could not fetch landing page match data from GA4 (temporary), so some items below show no matched page.',
-                                    '暫時無法從 GA4 取得商品與到達頁的對照資料，以下部分商品因此顯示「無對應到達頁」（非長期缺資料）。'
-                                )}
-                            </div>
-                        )}
+                        <PayloadWarnings t={t} payload={itemLandingSnapshot?.payload} kind="item_landing_cross" />
                         {itemLandingLoading && !itemLandingSnapshot ? (
                             emptyState(t('Loading…', '載入資料中…'))
                         ) : rows.length ? (
                             <>
-                                <div style={{ overflowX: 'auto' }}>
-                                    <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.85rem' }}>
-                                        <thead>
-                                            <tr style={{ color: 'var(--text-secondary)', textAlign: 'left' }}>
-                                                <th style={{ padding: '6px' }}>{t('Item', '商品')}</th>
-                                                <th style={{ padding: '6px' }}>{t('Primary landing page', '主要到達頁')}</th>
-                                                <th style={{ padding: '6px' }}>{t('Item purchase rate', '商品瀏覽後購買率')}</th>
-                                                <th style={{ padding: '6px' }}>{t('Page conversion rate', '到達頁轉換率')}</th>
-                                                <th style={{ padding: '6px' }}>{t('Page sessions', '到達頁工作階段')}</th>
-                                                <th style={{ padding: '6px' }}>{t('Flag', '標記')}</th>
-                                            </tr>
-                                        </thead>
-                                        <tbody>
-                                            {pagedRows.map((row) => {
-                                                const showItemGrowth = itemLandingSnapshot.payload.compare_enabled
-                                                    && !itemLandingSnapshot.payload.item_compare_query_error
-                                                    && !row.item_is_new;
-                                                const showPageGrowth = itemLandingSnapshot.payload.compare_enabled
-                                                    && !itemLandingSnapshot.payload.landing_compare_query_error;
-                                                return (
-                                                <tr key={row.itemName} style={{ borderTop: '1px solid var(--glass-border)' }}>
-                                                    <td style={{ padding: '6px', color: 'var(--text-primary)' }}>{row.itemName}</td>
-                                                    <td
-                                                        style={{ padding: '6px', color: 'var(--text-secondary)', maxWidth: '220px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}
-                                                        title={row.primary_landing_page || ''}
-                                                    >
-                                                        {row.primary_landing_page || t('No matched page', '無對應到達頁')}
-                                                    </td>
-                                                    <td style={{ padding: '6px', color: 'var(--text-secondary)', whiteSpace: 'nowrap' }}>
-                                                        {fmtPct(row.purchase_to_view_rate)}
-                                                        {showItemGrowth && <GrowthBadge value={row.purchase_to_view_rate_delta_pp} isPercentagePoint t={t} />}
-                                                    </td>
-                                                    <td style={{ padding: '6px', color: 'var(--text-secondary)', whiteSpace: 'nowrap' }}>
-                                                        {fmtPct(row.page_session_key_event_rate)}
-                                                        {showPageGrowth && <GrowthBadge value={row.page_session_key_event_rate_delta_pp} isPercentagePoint t={t} />}
-                                                    </td>
-                                                    <td style={{ padding: '6px', color: 'var(--text-secondary)', whiteSpace: 'nowrap' }}>
-                                                        {fmtNumber(row.page_sessions)}
-                                                        {showPageGrowth && <GrowthBadge value={row.page_sessions_growth_rate} t={t} />}
-                                                    </td>
-                                                    <td style={{ padding: '6px' }}>
-                                                        <div style={{ display: 'flex', gap: '4px', flexWrap: 'wrap' }}>
-                                                            {row.page_underperforms_item && (
-                                                                <span style={badgeStyle('flagged')}>{t('Page may be the issue', '頁面可能拖累')}</span>
-                                                            )}
-                                                            {itemLandingSnapshot.payload.compare_enabled && row.item_is_new && (
-                                                                <span style={badgeStyle('flagged')} title={t('No data in the prior period for this item', '上一期沒有這個商品的資料')}>
-                                                                    🆕 {t('New', '新')}
-                                                                </span>
-                                                            )}
-                                                        </div>
-                                                    </td>
-                                                </tr>
-                                                );
-                                            })}
-                                        </tbody>
-                                    </table>
-                                </div>
+                                <ItemLandingCrossTable
+                                    t={t}
+                                    payload={itemLandingSnapshot.payload}
+                                    rows={pagedRows}
+                                />
                                 <TablePager
                                     page={pageClamped}
                                     totalPages={totalPages}

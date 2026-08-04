@@ -5,18 +5,17 @@ import {
     AIInsightNote,
     ATTRIBUTION_MODEL_LABELS,
     CHANNEL_DIMENSION_OPTIONS,
-    CHANNEL_TAG_LABELS,
     badgeStyle,
     baseCardStyle,
     channelClosingLabel,
     channelDimensionLabel,
     emptyState,
-    fmtNumber,
-    fmtPct,
     inputStyle,
     secondaryButtonStyle,
     tr,
 } from './GA4InsightsShared';
+// docs/64：表格主體與警示橫幅跟分享頁共用同一份實作。
+import { ChannelsTable, PayloadWarnings } from './GA4InsightsTables';
 
 const ChannelsTab = ({
     language,
@@ -94,14 +93,7 @@ const ChannelsTab = ({
                             </div>
                         </div>
                         {channelsError && <div style={{ color: '#fca5a5', fontSize: '0.85rem', marginBottom: '10px' }}>{channelsError}</div>}
-                        {channelsSnapshot?.payload?.truncated && (
-                            <div style={{ color: '#fbbf24', fontSize: '0.78rem', marginBottom: '10px' }}>
-                                {t(
-                                    `Showing top 20 of ${channelsSnapshot.payload.total_row_count} (ranked by assisting + closing conversions).`,
-                                    `顯示前 20 名（依開發+收單轉換數排序），共 ${channelsSnapshot.payload.total_row_count} 個項目。`
-                                )}
-                            </div>
-                        )}
+                        <PayloadWarnings t={t} payload={channelsSnapshot?.payload} kind="daily_channel" />
                         {channelsLoading && !channelsSnapshot ? (
                             emptyState(t('Loading channels…', '載入渠道資料中…'))
                         ) : channelsSnapshot?.payload?.channels?.length ? (
@@ -119,44 +111,13 @@ const ChannelsTab = ({
                                         </BarChart>
                                     </ResponsiveContainer>
                                 </div>
-                                <div style={{ overflowX: 'auto', marginTop: '12px' }}>
-                                    <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.85rem' }}>
-                                        <thead>
-                                            <tr style={{ color: 'var(--text-secondary)', textAlign: 'left' }}>
-                                                <th style={{ padding: '6px' }}>{channelDimensionLabel(channelsSnapshot.payload.dimension, language)}</th>
-                                                <th style={{ padding: '6px' }}>{t('Assisting', '開發')}</th>
-                                                <th style={{ padding: '6px' }}>{channelClosingLabel(channelsSnapshot?.payload?.attribution_model, language)}</th>
-                                                <th style={{ padding: '6px' }}>{t('Ratio', '比例')}</th>
-                                                <th style={{ padding: '6px' }}>{t('Tag', '標籤')}</th>
-                                            </tr>
-                                        </thead>
-                                        <tbody>
-                                            {channelsSnapshot.payload.channels.map((row) => (
-                                                <tr key={row.channel} style={{ borderTop: '1px solid var(--glass-border)' }}>
-                                                    <td style={{ padding: '6px', color: 'var(--text-primary)' }}>{row.channel}</td>
-                                                    <td style={{ padding: '6px', color: 'var(--text-secondary)' }}>{fmtNumber(row.assisting_conversions)}</td>
-                                                    <td style={{ padding: '6px', color: 'var(--text-secondary)' }}>{fmtNumber(row.closing_conversions)}</td>
-                                                    <td style={{ padding: '6px', color: 'var(--text-secondary)' }}>{row.ratio != null ? row.ratio.toFixed(2) : '--'}</td>
-                                                    <td style={{ padding: '6px' }}>
-                                                        <span style={badgeStyle(row.tag)}>
-                                                            {tr(language, CHANNEL_TAG_LABELS[row.tag]?.en, CHANNEL_TAG_LABELS[row.tag]?.zh) || row.tag}
-                                                        </span>
-                                                        {channelsSnapshot.payload.total_closing_conversions > 0 && (
-                                                            <span
-                                                                style={{ color: 'var(--text-secondary)', fontSize: '0.74rem', marginLeft: '6px' }}
-                                                                title={t(
-                                                                    'Share of this channel\'s closing conversions out of all channels\' total.',
-                                                                    '這個渠道的收單轉換數，佔全部渠道收單轉換數加總的比例。'
-                                                                )}
-                                                            >
-                                                                ({t('share', '佔收單')} {fmtPct(row.closing_conversions / channelsSnapshot.payload.total_closing_conversions)})
-                                                            </span>
-                                                        )}
-                                                    </td>
-                                                </tr>
-                                            ))}
-                                        </tbody>
-                                    </table>
+                                <div style={{ marginTop: '12px' }}>
+                                    <ChannelsTable
+                                        language={language}
+                                        t={t}
+                                        payload={channelsSnapshot.payload}
+                                        rows={channelsSnapshot.payload.channels}
+                                    />
                                 </div>
                             </>
                         ) : (

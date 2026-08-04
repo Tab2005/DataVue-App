@@ -4,7 +4,6 @@ import {
     AIInsightNote,
     CHANNEL_DIMENSION_OPTIONS,
     CHANNEL_GROUP_MATCH_TYPE_OPTIONS,
-    ITEM_CATEGORY_SOURCE_LABELS,
     LANDING_MATCH_TYPE_OPTIONS,
     TablePager,
     badgeStyle,
@@ -12,12 +11,13 @@ import {
     buttonStyle,
     channelDimensionLabel,
     emptyState,
-    fmtNumber,
-    fmtPct,
     inputStyle,
     secondaryButtonStyle,
     tr,
 } from './GA4InsightsShared';
+// docs/64：表格主體與警示橫幅跟分享頁共用同一份實作。可排序表頭是本頁專屬的
+// 互動，用 renderHeader 傳進去，欄位定義本身仍然只有共用元件那一份。
+import { ItemsTable, PayloadWarnings } from './GA4InsightsTables';
 
 const ITEMS_PAGE_SIZE = 25;
 
@@ -60,28 +60,6 @@ const compareScopeLabel = (payload, t) => {
     return t(
         `compared to prior period (${payload.compare_start_date} ~ ${payload.compare_end_date})`,
         `已啟用上一期比較（${payload.compare_start_date} ~ ${payload.compare_end_date}）`
-    );
-};
-
-// docs/54：次數/金額類指標（瀏覽數/營收）用相對成長率；比率類指標（加購率/
-// 購買率）改用百分點差異，避免「5%→6%」被講成「成長20%」造成誤解。pp 是
-// percentage point（百分點）的縮寫，加 title 滑鼠提示說明清楚。
-const GrowthBadge = ({ value, isPercentagePoint = false, t }) => {
-    if (value == null) return null;
-    const arrow = value > 0 ? '▲' : value < 0 ? '▼' : '';
-    const color = value > 0 ? '#34d399' : value < 0 ? '#f87171' : 'var(--text-tertiary)';
-    const magnitude = Math.abs(value);
-    const text = isPercentagePoint ? `${magnitude.toFixed(1)}pp` : `${(magnitude * 100).toFixed(0)}%`;
-    const title = isPercentagePoint
-        ? t(
-            'pp = percentage point, the absolute gap vs. the prior period (e.g. a rate going from 5% to 6% is +1.0pp, not a 20% increase).',
-            'pp＝百分點，是跟上一期的絕對差距（例如比率從 5% 變 6% 是 +1.0pp，不是成長 20%）。'
-        )
-        : undefined;
-    return (
-        <span style={{ fontSize: '0.72rem', marginLeft: '4px', color, whiteSpace: 'nowrap', cursor: isPercentagePoint ? 'help' : 'default' }} title={title}>
-            {arrow}{text}
-        </span>
     );
 };
 
@@ -219,30 +197,7 @@ const ItemsTab = ({
                             </div>
                         </div>
                         {itemsError && <div style={{ color: '#fca5a5', fontSize: '0.85rem', marginBottom: '10px' }}>{itemsError}</div>}
-                        {itemsSnapshot?.payload?.compare_enabled && itemsSnapshot?.payload?.compare_query_error && (
-                            <div style={{ color: '#fbbf24', fontSize: '0.78rem', marginBottom: '10px' }}>
-                                {t(
-                                    'Could not fetch the prior period for comparison (temporary); showing this period only.',
-                                    '暫時無法取得上一期資料做比較，以下僅顯示本期數字。'
-                                )}
-                            </div>
-                        )}
-                        {itemsSnapshot?.payload?.used_fallback_conversion_metrics && (
-                            <div style={{ color: '#fbbf24', fontSize: '0.78rem', marginBottom: '10px' }}>
-                                {t(
-                                    'GA4 could not return the official cart/purchase rate for this property; showing a locally computed rate instead.',
-                                    '此屬性無法取得 GA4 官方加購/購買率，改顯示本地計算的比率。'
-                                )}
-                            </div>
-                        )}
-                        {itemsSnapshot?.payload?.category_breakdown_error && (
-                            <div style={{ color: '#fbbf24', fontSize: '0.78rem', marginBottom: '10px' }}>
-                                {t(
-                                    'Could not fetch item category data from GA4 (temporary), so every item shows "Uncategorized" below.',
-                                    '暫時無法從 GA4 取得商品分類資料，以下商品因此都顯示「未分類」（非您網站真的沒有分類）。'
-                                )}
-                            </div>
-                        )}
+                        <PayloadWarnings t={t} payload={itemsSnapshot?.payload} kind="item" />
                         {itemsLoading && !itemsSnapshot ? (
                             emptyState(t('Loading items…', '載入商品資料中…'))
                         ) : itemsSnapshot?.payload?.items?.length ? (
@@ -360,81 +315,13 @@ const ItemsTab = ({
                                         </>
                                     )}
                                 </div>
-                                <div style={{ overflowX: 'auto' }}>
-                                    <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.85rem' }}>
-                                        <thead>
-                                            <tr style={{ color: 'var(--text-secondary)', textAlign: 'left' }}>
-                                                {renderItemsSortHeader('itemName', t('Item', '商品'))}
-                                                {renderItemsSortHeader('item_category', t('Category', '分類'))}
-                                                {renderItemsSortHeader('itemsViewed', t('Views', '瀏覽'))}
-                                                {renderItemsSortHeader('cart_to_view_rate', t('Add-to-cart rate', '瀏覽後加購率'), itemsSnapshot.payload.cart_to_view_rate_definition || '')}
-                                                {renderItemsSortHeader('purchase_to_view_rate', t('Purchase rate', '瀏覽後購買率'), itemsSnapshot.payload.purchase_to_view_rate_definition || '')}
-                                                {renderItemsSortHeader('views_growth_rate', t('View growth', '瀏覽成長'))}
-                                                {renderItemsSortHeader('itemRevenue', t('Revenue', '營收'))}
-                                                <th style={{ padding: '6px' }}>{t('Flag', '標記')}</th>
-                                            </tr>
-                                        </thead>
-                                        <tbody>
-                                            {pagedItems
-                                                .map((row) => {
-                                                    const isNewEntry = row.views_prior_7d === 0 && row.views_recent_7d > 0;
-                                                    const showCompare = itemsSnapshot.payload.compare_enabled && !itemsSnapshot.payload.compare_query_error;
-                                                    const showGrowth = showCompare && !row.is_new;
-                                                    return (
-                                                        <tr key={row.itemName} style={{ borderTop: '1px solid var(--glass-border)' }}>
-                                                            <td style={{ padding: '6px', color: 'var(--text-primary)' }}>{row.itemName}</td>
-                                                            <td
-                                                                style={{ padding: '6px', color: 'var(--text-secondary)', cursor: 'help' }}
-                                                                title={tr(language, ITEM_CATEGORY_SOURCE_LABELS[row.item_category_source]?.en, ITEM_CATEGORY_SOURCE_LABELS[row.item_category_source]?.zh)}
-                                                            >
-                                                                {row.item_category === '(not set)' ? t('Uncategorized', '未分類') : row.item_category}
-                                                                {row.item_category_source === 'custom_rule' && ' ✎'}
-                                                            </td>
-                                                            <td style={{ padding: '6px', color: 'var(--text-secondary)', whiteSpace: 'nowrap' }}>
-                                                                {fmtNumber(row.itemsViewed)}
-                                                                {showGrowth && <GrowthBadge value={row.views_compare_growth_rate} />}
-                                                            </td>
-                                                            <td style={{ padding: '6px', color: 'var(--text-secondary)', whiteSpace: 'nowrap' }}>
-                                                                {fmtPct(row.cart_to_view_rate)}
-                                                                {showGrowth && <GrowthBadge value={row.cart_to_view_rate_delta_pp} isPercentagePoint t={t} />}
-                                                            </td>
-                                                            <td style={{ padding: '6px', color: 'var(--text-secondary)', whiteSpace: 'nowrap' }}>
-                                                                {fmtPct(row.purchase_to_view_rate)}
-                                                                {showGrowth && <GrowthBadge value={row.purchase_to_view_rate_delta_pp} isPercentagePoint t={t} />}
-                                                            </td>
-                                                            <td
-                                                                style={{ padding: '6px', color: 'var(--text-secondary)', cursor: 'help' }}
-                                                                title={t(
-                                                                    `Last 7 days: ${fmtNumber(row.views_recent_7d)} / Prior 7 days: ${fmtNumber(row.views_prior_7d)}`,
-                                                                    `近 7 天 ${fmtNumber(row.views_recent_7d)} 次 / 前 7 天 ${fmtNumber(row.views_prior_7d)} 次`
-                                                                )}
-                                                            >
-                                                                {isNewEntry ? (
-                                                                    <span style={badgeStyle('new_entry')}>{t('New entry', '新進榜')}</span>
-                                                                ) : (
-                                                                    fmtPct(row.views_growth_rate)
-                                                                )}
-                                                            </td>
-                                                            <td style={{ padding: '6px', color: 'var(--text-secondary)', whiteSpace: 'nowrap' }}>
-                                                                {fmtNumber(row.itemRevenue)}
-                                                                {showGrowth && <GrowthBadge value={row.revenue_growth_rate} />}
-                                                            </td>
-                                                            <td style={{ padding: '6px' }}>
-                                                                <div style={{ display: 'flex', gap: '4px', flexWrap: 'wrap' }}>
-                                                                    {row.is_potential && <span style={badgeStyle('potential')}>{t('Potential', '潛力商品')}</span>}
-                                                                    {showCompare && row.is_new && (
-                                                                        <span style={badgeStyle('flagged')} title={t('No data in the prior period', '上一期沒有這個商品的資料')}>
-                                                                            🆕 {t('New', '新')}
-                                                                        </span>
-                                                                    )}
-                                                                </div>
-                                                            </td>
-                                                        </tr>
-                                                    );
-                                                })}
-                                        </tbody>
-                                    </table>
-                                </div>
+                                <ItemsTable
+                                    language={language}
+                                    t={t}
+                                    payload={itemsSnapshot.payload}
+                                    rows={pagedItems}
+                                    renderHeader={renderItemsSortHeader}
+                                />
                                 <TablePager
                                     page={itemsPageClamped}
                                     totalPages={itemsTotalPages}

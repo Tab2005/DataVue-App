@@ -14,12 +14,13 @@ import {
     channelDimensionLabel,
     dayButtonStyle,
     emptyState,
-    fmtNumber,
-    fmtPct,
     inputStyle,
     secondaryButtonStyle,
     tr,
 } from './GA4InsightsShared';
+// docs/64：表格主體與警示橫幅跟分享頁共用同一份實作（原本兩邊各一套，已經
+// 漏同步過欄位與橫幅）。這個檔只留篩選/分頁/規則管理等本頁專屬的部分。
+import { LandingPagesTable, PayloadWarnings } from './GA4InsightsTables';
 
 const LANDING_PAGE_SIZE = 25;
 
@@ -65,29 +66,6 @@ const compareScopeLabel = (payload, t) => {
     return t(
         `compared to prior period (${payload.compare_start_date} ~ ${payload.compare_end_date})`,
         `已啟用上一期比較（${payload.compare_start_date} ~ ${payload.compare_end_date}）`
-    );
-};
-
-// docs/54：次數類指標（工作階段/轉換次數）用相對成長率；比率類指標（轉換率/
-// 跳出率）改用百分點差異，避免「5%→6%」被講成「成長20%」造成誤解。pp 是
-// percentage point（百分點）的縮寫，不是每個使用者都認得，加 title 滑鼠提示
-// 說明清楚，跟畫面上其他 ⓘ 提示同一套「用 cursor: help 提示可以看說明」慣例。
-const GrowthBadge = ({ value, isPercentagePoint = false, t }) => {
-    if (value == null) return null;
-    const arrow = value > 0 ? '▲' : value < 0 ? '▼' : '';
-    const color = value > 0 ? '#34d399' : value < 0 ? '#f87171' : 'var(--text-tertiary)';
-    const magnitude = Math.abs(value);
-    const text = isPercentagePoint ? `${magnitude.toFixed(1)}pp` : `${(magnitude * 100).toFixed(0)}%`;
-    const title = isPercentagePoint
-        ? t(
-            'pp = percentage point, the absolute gap vs. the prior period (e.g. a rate going from 5% to 6% is +1.0pp, not a 20% increase).',
-            'pp＝百分點，是跟上一期的絕對差距（例如比率從 5% 變 6% 是 +1.0pp，不是成長 20%）。'
-        )
-        : undefined;
-    return (
-        <span style={{ fontSize: '0.72rem', marginLeft: '4px', color, whiteSpace: 'nowrap', cursor: isPercentagePoint ? 'help' : 'default' }} title={title}>
-            {arrow}{text}
-        </span>
     );
 };
 
@@ -209,14 +187,7 @@ const LandingPagesTab = ({
                             </div>
                         </div>
                         {landingError && <div style={{ color: '#fca5a5', fontSize: '0.85rem', marginBottom: '10px' }}>{landingError}</div>}
-                        {landingSnapshot?.payload?.compare_enabled && landingSnapshot?.payload?.compare_query_error && (
-                            <div style={{ color: '#fbbf24', fontSize: '0.78rem', marginBottom: '10px' }}>
-                                {t(
-                                    'Could not fetch the prior period for comparison (temporary); showing this period only.',
-                                    '暫時無法取得上一期資料做比較，以下僅顯示本期數字。'
-                                )}
-                            </div>
-                        )}
+                        <PayloadWarnings t={t} payload={landingSnapshot?.payload} kind="landing_page" />
                         {landingLoading && !landingSnapshot ? (
                             emptyState(t('Loading landing pages…', '載入到達頁資料中…'))
                         ) : landingSnapshot?.payload?.landing_pages?.length ? (
@@ -350,78 +321,12 @@ const LandingPagesTab = ({
                                         </>
                                     )}
                                 </div>
-                                <div style={{ overflowX: 'auto' }}>
-                                    <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '0.85rem' }}>
-                                        <thead>
-                                            <tr style={{ color: 'var(--text-secondary)', textAlign: 'left' }}>
-                                                <th style={{ padding: '6px' }}>{t('Page', '頁面')}</th>
-                                                <th style={{ padding: '6px' }}>{t('Category', '分類')}</th>
-                                                <th style={{ padding: '6px' }}>{t('Sessions', '工作階段')}</th>
-                                                <th
-                                                    style={{ padding: '6px', cursor: 'help' }}
-                                                    title={landingSnapshot.payload.key_events_count_definition || ''}
-                                                >
-                                                    {t('Key events', '轉換次數')} ⓘ
-                                                </th>
-                                                <th
-                                                    style={{ padding: '6px', cursor: 'help' }}
-                                                    title={landingSnapshot.payload.session_key_event_rate_definition || ''}
-                                                >
-                                                    {t('Conversion rate', '轉換率')} ⓘ
-                                                </th>
-                                                <th style={{ padding: '6px' }}>{t('Bounce rate', '跳出率')}</th>
-                                                <th style={{ padding: '6px' }}>{t('Flag', '標記')}</th>
-                                            </tr>
-                                        </thead>
-                                        <tbody>
-                                            {pagedLandingPages
-                                                .map((row) => {
-                                                    const showCompare = landingSnapshot.payload.compare_enabled && !landingSnapshot.payload.compare_query_error;
-                                                    const showGrowth = showCompare && !row.is_new;
-                                                    return (
-                                                    <tr key={row.landingPage} style={{ borderTop: '1px solid var(--glass-border)' }}>
-                                                        <td style={{ padding: '6px', color: 'var(--text-primary)', maxWidth: '260px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={row.landingPage}>
-                                                            {row.landingPage}
-                                                        </td>
-                                                        <td style={{ padding: '6px' }}>
-                                                            <span style={badgeStyle(row.category)}>
-                                                                {tr(language, LANDING_CATEGORY_LABELS[row.category]?.en, LANDING_CATEGORY_LABELS[row.category]?.zh) || row.category}
-                                                            </span>
-                                                        </td>
-                                                        <td style={{ padding: '6px', color: 'var(--text-secondary)', whiteSpace: 'nowrap' }}>
-                                                            {fmtNumber(row.sessions)}
-                                                            {showGrowth && <GrowthBadge value={row.sessions_growth_rate} />}
-                                                        </td>
-                                                        <td style={{ padding: '6px', color: 'var(--text-secondary)', whiteSpace: 'nowrap' }}>
-                                                            {fmtNumber(row.conversions)}
-                                                            {showGrowth && <GrowthBadge value={row.conversions_growth_rate} />}
-                                                        </td>
-                                                        <td style={{ padding: '6px', color: 'var(--text-secondary)', whiteSpace: 'nowrap' }}>
-                                                            {fmtPct(row.session_key_event_rate)}
-                                                            {showGrowth && <GrowthBadge value={row.session_key_event_rate_delta_pp} isPercentagePoint t={t} />}
-                                                        </td>
-                                                        <td style={{ padding: '6px', color: 'var(--text-secondary)', whiteSpace: 'nowrap' }}>
-                                                            {fmtPct(row.bounceRate)}
-                                                            {showGrowth && <GrowthBadge value={row.bounce_rate_delta_pp} isPercentagePoint t={t} />}
-                                                        </td>
-                                                        <td style={{ padding: '6px' }}>
-                                                            <div style={{ display: 'flex', gap: '4px', flexWrap: 'wrap' }}>
-                                                                {row.is_high_traffic_low_conversion && (
-                                                                    <span style={badgeStyle('flagged')}>{t('High traffic, low conversion', '高流量低轉換')}</span>
-                                                                )}
-                                                                {showCompare && row.is_new && (
-                                                                    <span style={badgeStyle('flagged')} title={t('No data in the prior period', '上一期沒有這個頁面的資料')}>
-                                                                        🆕 {t('New', '新')}
-                                                                    </span>
-                                                                )}
-                                                            </div>
-                                                        </td>
-                                                    </tr>
-                                                    );
-                                                })}
-                                        </tbody>
-                                    </table>
-                                </div>
+                                <LandingPagesTable
+                                    language={language}
+                                    t={t}
+                                    payload={landingSnapshot.payload}
+                                    rows={pagedLandingPages}
+                                />
                                 <TablePager
                                     page={landingPageClamped}
                                     totalPages={landingTotalPages}
