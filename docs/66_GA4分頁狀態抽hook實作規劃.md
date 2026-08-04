@@ -103,3 +103,42 @@ hook 在父層呼叫則兩者兼得：狀態的生命週期不變，而「這個
   到達頁與商品這兩個 50+ 的，其餘規模還在可讀範圍
 - 不引入狀態管理函式庫
 - 不做 `memo` / callback 穩定化（理由見第 2 節末）
+
+---
+
+## 7. 完成紀錄（2026-08-04）
+
+| 指標 | 之前 | 之後 |
+|---|---|---|
+| `GA4Insights.jsx` 行數 | 1,206 | 620 |
+| `GA4Insights.jsx` 的 `useState` | 94 | 39 |
+| `LandingPagesTab` props | 51 | 5 |
+| `ItemsTab` props | 53 | 5 |
+| `ChannelsTab` / `ItemLandingCrossTab` props | 12 | 11（少了 `DaySelector`） |
+
+新增 `useGA4LandingPagesTab.js`、`useGA4ItemsTab.jsx`（後者含 `renderItemsSortHeader`
+的 JSX，依專案慣例用 `.jsx`）。分頁元件的**內容一個字沒改**——只是把原本的 props
+解構換成從單一個物件解構，名字全部保持一致，降低這次重構的風險面。
+
+### 測試
+
+新增 `frontend/src/pages/__tests__/GA4Insights.test.jsx`（5 個）。前端測試 59 → 64
+全綠，`npm run build` 通過。ESLint 針對這批檔案的錯誤數 39 → 37，且新增的兩個 hook
+檔零錯誤（剩下的都是既有的 `react-refresh/only-export-components`、
+`set-state-in-effect`、`KpiTab` 的 `no-undef`，跟本次無關）。
+
+### 突變測試
+
+刻意破壞六處，**六個突變全部被抓到**：
+
+| 突變 | |
+|---|---|
+| `ensureLoaded` 不再檢查快照（每次切回來都重抓） | CAUGHT |
+| 切換屬性時不清到達頁快照 | CAUGHT |
+| 切換屬性時不重設分類篩選 | CAUGHT |
+| 新增分類規則後不重載到達頁資料 | CAUGHT |
+| 排序點同一欄不反向 | CAUGHT |
+| `DaySelector` 無效值也照單全收 | CAUGHT |
+
+第一個突變正是第 2 節那個決策的反面——如果哪天有人把狀態移進分頁元件，這條會直接
+紅給他看。
