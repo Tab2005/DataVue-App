@@ -290,11 +290,17 @@ def test_get_landing_pages_with_channel_filter_applies_dimension_filter(mocker, 
     )
     db.commit()
 
+    # docs/65：查詢改成並行發出，抓到的順序不再固定，斷言改成順序無關。
     # 只取工作階段那一半（sessionSourceMedium），不用 firstUserSourceMedium。
-    assert captured_calls[0]["dimension_filter"] == ("sessionSourceMedium", "google / organic")
-    assert captured_calls[1]["dimension_filter"] == ("sessionSourceMedium", "google / organic")
+    assert len(captured_calls) == 2
+    assert all(
+        call["dimension_filter"] == ("sessionSourceMedium", "google / organic")
+        for call in captured_calls
+    )
     # dimensions（group by）不因為篩選而多帶渠道維度，回傳列的形狀不變。
-    assert captured_calls[0]["dimensions"] == ["landingPage"]
+    assert {tuple(call["dimensions"]) for call in captured_calls} == {
+        ("landingPage",), ("landingPage", "eventName"),
+    }
     assert snapshot.payload["channel_dimension"] == "source_medium"
     assert snapshot.payload["channel_value"] == "google / organic"
     assert snapshot.kind.startswith("landing_page:ch_")
@@ -408,8 +414,9 @@ def test_get_landing_pages_with_channel_group_applies_or_filter(mocker, db, samp
         ("sessionSourceMedium", "contains", "facebook / cpc"),
         ("sessionSourceMedium", "prefix", "facebook / post"),
     ]
-    assert captured_calls[0] == expected_filter
-    assert captured_calls[1] == expected_filter
+    # docs/65：並行發出，順序不再固定——斷言的本意是「每一支都帶了分組篩選」。
+    assert len(captured_calls) == 2
+    assert all(call == expected_filter for call in captured_calls)
     assert snapshot.payload["channel_group"] == "Facebook Ads"
     assert snapshot.payload["channel_value"] is None
     assert snapshot.kind.startswith("landing_page:chg_")

@@ -109,6 +109,8 @@ def test_ga4_service_get_analytics_forwards_to_analytics_service(mocker):
         offset=5,
         db="db-session",
         dimension_filter=None,
+        # docs/65：並行查詢用的預解析憑證，轉發層要原樣帶過去。
+        credentials=None,
     )
     assert result == ({"rows": []}, None)
 

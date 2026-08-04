@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from ._shared import *
+from ._parallel import resolve_ga4_credentials, run_parallel
 
 # docs/50：「轉換」卡片個別關鍵事件拆分，下拉選單最多列出（「全部關鍵事件」以外）
 # 這麼多個依當日次數排序的個別事件，避免關鍵事件數量不可預期地把基線查詢量推高。
@@ -12,23 +13,43 @@ MAX_CONVERSION_EVENTS = 5
 def _compute_metric_baseline(
     *, user: User, property_id: str, api_metric: str, now_local: datetime, current_hour: int, db, observed: float,
 ) -> tuple[dict | None, bool]:
-    """依 8 週歷史同星期幾抓 `api_metric` 的基線區間，並判斷 `observed` 是否異常。"""
-    samples: list[float] = []
-    for sample_date in _service_attr("_historical_dates", _historical_dates)(now_local):
-        try:
-            sample_total, _ = _service_attr("_fetch_metric_total", _fetch_metric_total)(
-                user=user,
-                property_id=property_id,
-                date_value=sample_date,
-                api_metric=api_metric,
-                db=db,
-                by_hour=True,
-                current_hour=current_hour,
-            )
-        except Exception:
-            logger.warning("[GA4Insights] dashboard baseline sample failed %s %s", property_id, sample_date)
-            continue
-        samples.append(sample_total)
+    """依 8 週歷史同星期幾抓 `api_metric` 的基線區間，並判斷 `observed` 是否異常。
+
+    docs/65：8 個取樣日彼此無關，並行抓。這裡是整個當日儀表板最大的循序鏈——
+    一次刷新最多會算 8 組基線（全部關鍵事件＋最多 5 個個別事件＋2 個非轉換
+    指標），每組 8 個取樣日，也就是最壞 64 次循序查詢。docs/59 的呼叫點統計
+    看不到它，因為這些查詢藏在 `_fetch_metric_total` 底下。
+
+    單一取樣失敗維持既有容錯——只跳過該筆、不影響其他取樣，所以例外在 task
+    內就吃掉，不讓它中斷整組。
+    """
+    fetch_metric_total = _service_attr("_fetch_metric_total", _fetch_metric_total)
+    sample_dates = _service_attr("_historical_dates", _historical_dates)(now_local)
+    # 憑證在請求執行緒解析（該刷新的刷新、該回寫的回寫），worker thread 只拿結果。
+    credentials = resolve_ga4_credentials(user, db)
+
+    def _make_sample_task(sample_date: str):
+        def _sample():
+            try:
+                sample_total, _ = fetch_metric_total(
+                    user=user,
+                    property_id=property_id,
+                    date_value=sample_date,
+                    api_metric=api_metric,
+                    db=None,
+                    credentials=credentials,
+                    by_hour=True,
+                    current_hour=current_hour,
+                )
+            except Exception:
+                logger.warning("[GA4Insights] dashboard baseline sample failed %s %s", property_id, sample_date)
+                return None
+            return sample_total
+        return _sample
+
+    sampled = run_parallel({date: _make_sample_task(date) for date in sample_dates})
+    # 依歷史日期順序收集，讓 samples 的內容不受完成先後影響。
+    samples: list[float] = [sampled[date] for date in sample_dates if sampled[date] is not None]
     expected = build_expected_range(samples, "medium")
     is_anomaly = bool(expected and (observed < expected["low"] or observed > expected["high"]))
     return expected, is_anomaly
@@ -39,15 +60,31 @@ def _fetch_intraday_dashboard_payload(*, user: User, property_id: str, db, now_l
     today = now_local.date().isoformat()
     current_hour = now_local.hour
 
-    data, error = GA4Service.get_analytics(
-        user=user,
-        property_id=property_id,
-        start_date=today,
-        end_date=today,
-        metrics=DASHBOARD_METRICS,
-        dimensions=["hour", "sessionDefaultChannelGroup"],
-        db=db,
-    )
+    # docs/65：主查詢與下面的事件拆解都是「當日 hour × 某維度」，彼此無資料
+    # 相依，並行送出。credentials 在請求執行緒先解析好，worker thread 不碰 db。
+    credentials = resolve_ga4_credentials(user, db)
+    results = run_parallel({
+        "main": lambda: GA4Service.get_analytics(
+            user=user,
+            property_id=property_id,
+            start_date=today,
+            end_date=today,
+            metrics=DASHBOARD_METRICS,
+            dimensions=["hour", "sessionDefaultChannelGroup"],
+            credentials=credentials,
+        ),
+        "breakdown": lambda: GA4Service.get_analytics(
+            user=user,
+            property_id=property_id,
+            start_date=today,
+            end_date=today,
+            metrics=["keyEvents"],
+            dimensions=["hour", "eventName"],
+            credentials=credentials,
+        ),
+    })
+
+    data, error = results["main"]
     if error:
         raise RuntimeError(error)
     rows = (data or {}).get("rows", [])
@@ -71,15 +108,7 @@ def _fetch_intraday_dashboard_payload(*, user: User, property_id: str, db, now_l
     # 事件，依當日次數排序取前 N 大做「全部關鍵事件」以外的個別下拉選項。
     # 查詢失敗時只保留「全部關鍵事件」，不擋主要的 cumulative_totals/baseline 邏輯。
     event_hourly_totals: dict[str, dict[int, float]] = {}
-    breakdown_data, breakdown_error = GA4Service.get_analytics(
-        user=user,
-        property_id=property_id,
-        start_date=today,
-        end_date=today,
-        metrics=["keyEvents"],
-        dimensions=["hour", "eventName"],
-        db=db,
-    )
+    breakdown_data, breakdown_error = results["breakdown"]
     if breakdown_error:
         logger.warning("[GA4Insights] dashboard event breakdown failed %s: %s", property_id, breakdown_error)
     else:

@@ -47,7 +47,8 @@ class GA4Service:
         limit: Optional[int] = None,
         offset: int = 0,
         db: Session = None,
-        dimension_filter: Optional[Tuple[str, str]] = None
+        dimension_filter: Optional[Tuple[str, str]] = None,
+        credentials: Optional[Any] = None
     ) -> Tuple[Optional[Dict[str, Any]], Optional[str]]:
         return GA4AnalyticsService.get_analytics(
             user=user,
@@ -59,7 +60,8 @@ class GA4Service:
             limit=limit,
             offset=offset,
             db=db,
-            dimension_filter=dimension_filter
+            dimension_filter=dimension_filter,
+            credentials=credentials
         )
 
     @staticmethod

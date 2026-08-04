@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from ._shared import *
+from ._parallel import resolve_ga4_credentials, run_parallel
 
 
 def _get_attribution_model(db, *, user: User, property_id: str) -> str:
@@ -43,16 +44,24 @@ def get_channels(
     session_dim, first_user_dim = CHANNEL_DIMENSION_MAP[dimension]
     start_date, end_date = _service_attr("_trailing_period", _trailing_period)(days)
 
-    session_data, error = GA4Service.get_analytics(
-        user=user, property_id=property_id, start_date=start_date, end_date=end_date,
-        metrics=[CHANNEL_METRIC], dimensions=[session_dim], db=db,
-    )
+    # docs/65：兩支查詢是同一期間的兩個維度，彼此無資料相依，並行送出。
+    # credentials 在請求執行緒先解析好，worker thread 因此不碰 db/user。
+    credentials = resolve_ga4_credentials(user, db)
+    results = run_parallel({
+        "session": lambda: GA4Service.get_analytics(
+            user=user, property_id=property_id, start_date=start_date, end_date=end_date,
+            metrics=[CHANNEL_METRIC], dimensions=[session_dim], credentials=credentials,
+        ),
+        "first_user": lambda: GA4Service.get_analytics(
+            user=user, property_id=property_id, start_date=start_date, end_date=end_date,
+            metrics=[CHANNEL_METRIC], dimensions=[first_user_dim], credentials=credentials,
+        ),
+    })
+
+    session_data, error = results["session"]
     if error:
         raise RuntimeError(error)
-    first_user_data, error = GA4Service.get_analytics(
-        user=user, property_id=property_id, start_date=start_date, end_date=end_date,
-        metrics=[CHANNEL_METRIC], dimensions=[first_user_dim], db=db,
-    )
+    first_user_data, error = results["first_user"]
     if error:
         raise RuntimeError(error)
 

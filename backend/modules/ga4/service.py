@@ -19,6 +19,7 @@ from google.analytics.data_v1beta.types import (
     FilterExpressionList,
     RunReportRequest,
 )
+from google.oauth2.credentials import Credentials
 from sqlalchemy.orm import Session
 
 from database import User
@@ -48,7 +49,8 @@ class GA4AnalyticsService:
         limit: Optional[int] = None,
         offset: int = 0,
         db: Session = None,
-        dimension_filter: Optional[Union[Tuple[str, str], List[Tuple[str, str, str]]]] = None
+        dimension_filter: Optional[Union[Tuple[str, str], List[Tuple[str, str, str]]]] = None,
+        credentials: Optional[Credentials] = None
     ) -> Tuple[Optional[Dict[str, Any]], Optional[str]]:
         """
         取得 GA4 分析資料
@@ -62,6 +64,11 @@ class GA4AnalyticsService:
             metrics: 指標列表，預設使用常見指標
             dimensions: 維度列表，預設使用日期
             db: 資料庫 session（可選，用於更新 token）
+            credentials: 已解析好的 Credentials（可選）。給了就跳過
+                `GA4Client.get_credentials`，因此完全不碰 `user` / `db`——
+                docs/65 的並行查詢靠這個保證 worker thread 不會踩到
+                非 thread-safe 的 Session。呼叫端負責先在請求執行緒用
+                `resolve_ga4_credentials()` 解析（該刷新的刷新、該回寫的回寫）。
             dimension_filter: 兩種形狀擇一，None 表示不篩選：
                 - (維度名, 篩選值) 的 2-tuple：對該維度做單一精確比對篩選
                   （docs/42：到達頁渠道篩選用）
@@ -75,7 +82,7 @@ class GA4AnalyticsService:
         Returns:
             tuple: (analytics_data, error_message)
         """
-        creds = GA4Client.get_credentials(user, db)
+        creds = credentials if credentials is not None else GA4Client.get_credentials(user, db)
         if not creds:
             return None, "No GA4 credentials found"
 
@@ -119,7 +126,8 @@ class GA4AnalyticsService:
                         limit=limit,
                         offset=offset,
                         db=db,
-                        dimension_filter=dimension_filter
+                        dimension_filter=dimension_filter,
+                        credentials=creds
                     )
 
                     if chunk_err:

@@ -208,7 +208,9 @@ def _format_metric_value(metric_key: str, value: float) -> str:
     return f"{value:,.0f}"
 
 
-def _fetch_metric_total(*, user: User, property_id: str, date_value: str, api_metric: str, db, by_hour: bool = False, current_hour: int | None = None):
+def _fetch_metric_total(*, user: User, property_id: str, date_value: str, api_metric: str, db, by_hour: bool = False, current_hour: int | None = None, credentials=None):
+    # docs/65：`credentials` 給了就直接用，不碰 `db`——並行取樣時 worker thread
+    # 靠這個保證不會踩到非 thread-safe 的 Session（見 insights/_parallel.py）。
     dimensions = ["hour"] if by_hour else []
     data, error = GA4Service.get_analytics(
         user=user,
@@ -218,6 +220,7 @@ def _fetch_metric_total(*, user: User, property_id: str, date_value: str, api_me
         metrics=[api_metric],
         dimensions=dimensions,
         db=db,
+        credentials=credentials,
     )
     if error or not data:
         raise RuntimeError(error or "GA4 data unavailable")

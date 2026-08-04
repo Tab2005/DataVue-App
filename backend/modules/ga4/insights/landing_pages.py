@@ -6,6 +6,7 @@ import hashlib
 
 from ._shared import *
 from .channel_groups import get_channel_group_match_conditions
+from ._parallel import resolve_ga4_credentials, run_parallel
 
 
 def get_landing_pages(
@@ -61,12 +62,43 @@ def get_landing_pages(
     key_events_metric = f"keyEvents:{key_event}" if key_event else "keyEvents"
     key_event_rate_metric = f"sessionKeyEventRate:{key_event}" if key_event else "sessionKeyEventRate"
 
-    data, error = GA4Service.get_analytics(
-        user=user, property_id=property_id, start_date=start_date, end_date=end_date,
-        metrics=["sessions", "engagementRate", "bounceRate", key_events_metric, key_event_rate_metric],
-        dimensions=["landingPage"], db=db,
-        dimension_filter=dimension_filter,
-    )
+    # docs/54：跟上一期比較（開關預設關閉，只有 compare=True 才多查一次）。
+    # 往前推同樣天數的前一段期間，沿用主查詢當下的指標/維度/渠道篩選，
+    # 確保比較的是同一組篩選條件下的兩期。
+    compare_start_date = compare_end_date = None
+    if compare:
+        end_date_obj = datetime.strptime(start_date, "%Y-%m-%d") - timedelta(days=1)
+        start_date_obj = end_date_obj - timedelta(days=days - 1)
+        compare_start_date = start_date_obj.strftime("%Y-%m-%d")
+        compare_end_date = end_date_obj.strftime("%Y-%m-%d")
+
+    # docs/65：主查詢、關鍵事件拆解、比較期間彼此無資料相依（比較期間的
+    # 指標在發查詢前就已經決定），一次並行送出。credentials 在請求執行緒
+    # 先解析好，worker thread 因此不碰 db/user。
+    credentials = resolve_ga4_credentials(user, db)
+    tasks = {
+        "main": lambda: GA4Service.get_analytics(
+            user=user, property_id=property_id, start_date=start_date, end_date=end_date,
+            metrics=["sessions", "engagementRate", "bounceRate", key_events_metric, key_event_rate_metric],
+            dimensions=["landingPage"], credentials=credentials,
+            dimension_filter=dimension_filter,
+        ),
+        "breakdown": lambda: GA4Service.get_analytics(
+            user=user, property_id=property_id, start_date=start_date, end_date=end_date,
+            metrics=["keyEvents"], dimensions=["landingPage", "eventName"], credentials=credentials,
+            dimension_filter=dimension_filter,
+        ),
+    }
+    if compare:
+        tasks["compare"] = lambda: GA4Service.get_analytics(
+            user=user, property_id=property_id, start_date=compare_start_date, end_date=compare_end_date,
+            metrics=["sessions", "bounceRate", key_events_metric, key_event_rate_metric],
+            dimensions=["landingPage"], credentials=credentials,
+            dimension_filter=dimension_filter,
+        )
+    results = run_parallel(tasks)
+
+    data, error = results["main"]
     if error:
         raise RuntimeError(error)
     rows = (data or {}).get("rows", [])
@@ -76,11 +108,7 @@ def get_landing_pages(
     # 渠道篩選也要一併帶上，否則主表格數字有篩、這裡的明細沒篩，會對不起來。
     key_events_breakdown: dict[str, dict[str, int]] = {}
     available_key_events: set[str] = set()
-    breakdown_data, breakdown_error = GA4Service.get_analytics(
-        user=user, property_id=property_id, start_date=start_date, end_date=end_date,
-        metrics=["keyEvents"], dimensions=["landingPage", "eventName"], db=db,
-        dimension_filter=dimension_filter,
-    )
+    breakdown_data, breakdown_error = results["breakdown"]
     if not breakdown_error:
         for row in (breakdown_data or {}).get("rows", []):
             page = row.get("landingPage", "")
@@ -99,26 +127,12 @@ def get_landing_pages(
         for r in rule_rows
     ]
 
-    # docs/54：跟上一期比較（開關預設關閉，只有 compare=True 才多查一次）。
-    # 往前推同樣天數的前一段期間，沿用主查詢當下的指標/維度/渠道篩選，
-    # 確保比較的是同一組篩選條件下的兩期。查詢失敗只記警告、不擋主表格，
-    # 每列的比較欄位維持 None，並在 payload 標示 compare_query_error 讓前端
-    # 呈現提示（不會把「查詢失敗」誤標成「這是新頁面」）。
-    compare_start_date = compare_end_date = None
+    # 查詢失敗只記警告、不擋主表格，每列的比較欄位維持 None，並在 payload
+    # 標示 compare_query_error 讓前端呈現提示（不會把「查詢失敗」誤標成「這是新頁面」）。
     compare_map: dict[str, dict] = {}
     compare_query_error = None
     if compare:
-        end_date_obj = datetime.strptime(start_date, "%Y-%m-%d") - timedelta(days=1)
-        start_date_obj = end_date_obj - timedelta(days=days - 1)
-        compare_start_date = start_date_obj.strftime("%Y-%m-%d")
-        compare_end_date = end_date_obj.strftime("%Y-%m-%d")
-
-        compare_data, compare_error = GA4Service.get_analytics(
-            user=user, property_id=property_id, start_date=compare_start_date, end_date=compare_end_date,
-            metrics=["sessions", "bounceRate", key_events_metric, key_event_rate_metric],
-            dimensions=["landingPage"], db=db,
-            dimension_filter=dimension_filter,
-        )
+        compare_data, compare_error = results["compare"]
         if compare_error:
             logger.warning("[GA4Insights] landing page compare query failed %s: %s", property_id, compare_error)
             compare_query_error = compare_error

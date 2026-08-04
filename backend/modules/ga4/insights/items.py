@@ -6,6 +6,7 @@ import hashlib
 
 from ._shared import *
 from .channel_groups import get_channel_group_match_conditions
+from ._parallel import resolve_ga4_credentials, run_parallel
 
 
 def get_items(
@@ -44,40 +45,62 @@ def get_items(
 
     start_date, end_date = _service_attr("_trailing_period", _trailing_period)(days)
 
-    data, error = GA4Service.get_analytics(
-        user=user, property_id=property_id, start_date=start_date, end_date=end_date,
-        metrics=ITEM_METRICS_WITH_OFFICIAL_RATES, dimensions=["itemName"], db=db,
-        dimension_filter=dimension_filter,
-    )
-    used_fallback_conversion_metrics = False
-    if error:
+    # 瀏覽成長比較固定用「近 7 天 vs 前 7 天」（3.4 節），與 days 參數（表格期間）無關
+    recent_start, recent_end = _service_attr("_trailing_period", _trailing_period)(7)
+    prior_end = (datetime.strptime(recent_start, "%Y-%m-%d") - timedelta(days=1)).strftime("%Y-%m-%d")
+    prior_start = (datetime.strptime(recent_start, "%Y-%m-%d") - timedelta(days=7)).strftime("%Y-%m-%d")
+
+    credentials = resolve_ga4_credentials(user, db)
+
+    def _fetch_main():
+        """主查詢鍰：官方比率指標 →（失敗才）退回基礎指標。
+
+        鍰內兩步有相依（第二步要看第一步的錯誤），整段因此當成一個 task，
+        鍰內仍然循序。回傳值帶上「有沒有退回 fallback」，比較查詢要拿它決定指標。
+        """
+        data, error = GA4Service.get_analytics(
+            user=user, property_id=property_id, start_date=start_date, end_date=end_date,
+            metrics=ITEM_METRICS_WITH_OFFICIAL_RATES, dimensions=["itemName"], credentials=credentials,
+            dimension_filter=dimension_filter,
+        )
+        if not error:
+            return data, False
         logger.warning(
             "[GA4Insights] items official rate metrics failed %s: %s; falling back to local ratios",
             property_id, error,
         )
         data, error = GA4Service.get_analytics(
             user=user, property_id=property_id, start_date=start_date, end_date=end_date,
-            metrics=ITEM_METRICS_FALLBACK, dimensions=["itemName"], db=db,
+            metrics=ITEM_METRICS_FALLBACK, dimensions=["itemName"], credentials=credentials,
             dimension_filter=dimension_filter,
         )
         if error:
             raise RuntimeError(error)
-        used_fallback_conversion_metrics = True
+        return data, True
+
+    # docs/65：主查詢鍰、近 7 天、前 7 天、分類拆解彼此無資料相依，一次並行送出。
+    # 比較期間要等主查詢的 fallback 結果才能決定指標，放第二階段。
+    # credentials 在請求執行緒先解析好，worker thread 因此不碰 db/user。
+    phase1 = run_parallel({
+        "main": _fetch_main,
+        "recent": lambda: GA4Service.get_analytics(
+            user=user, property_id=property_id, start_date=recent_start, end_date=recent_end,
+            metrics=["itemsViewed"], dimensions=["itemName"], credentials=credentials,
+        ),
+        "prior": lambda: GA4Service.get_analytics(
+            user=user, property_id=property_id, start_date=prior_start, end_date=prior_end,
+            metrics=["itemsViewed"], dimensions=["itemName"], credentials=credentials,
+        ),
+        "breakdown": lambda: GA4Service.get_analytics(
+            user=user, property_id=property_id, start_date=start_date, end_date=end_date,
+            metrics=["itemsViewed"], dimensions=["itemName", "itemCategory"], credentials=credentials,
+        ),
+    })
+
+    data, used_fallback_conversion_metrics = phase1["main"]
     rows = (data or {}).get("rows", [])
-
-    # 瀏覽成長比較固定用「近 7 天 vs 前 7 天」（3.4 節），與 days 參數（表格期間）無關
-    recent_start, recent_end = _service_attr("_trailing_period", _trailing_period)(7)
-    prior_end = (datetime.strptime(recent_start, "%Y-%m-%d") - timedelta(days=1)).strftime("%Y-%m-%d")
-    prior_start = (datetime.strptime(recent_start, "%Y-%m-%d") - timedelta(days=7)).strftime("%Y-%m-%d")
-
-    recent_data, _ = GA4Service.get_analytics(
-        user=user, property_id=property_id, start_date=recent_start, end_date=recent_end,
-        metrics=["itemsViewed"], dimensions=["itemName"], db=db,
-    )
-    prior_data, _ = GA4Service.get_analytics(
-        user=user, property_id=property_id, start_date=prior_start, end_date=prior_end,
-        metrics=["itemsViewed"], dimensions=["itemName"], db=db,
-    )
+    recent_data, _ = phase1["recent"]
+    prior_data, _ = phase1["prior"]
     recent_views = {row["itemName"]: row.get("itemsViewed", 0) for row in (recent_data or {}).get("rows", [])}
     prior_views = {row["itemName"]: row.get("itemsViewed", 0) for row in (prior_data or {}).get("rows", [])}
 
@@ -98,7 +121,7 @@ def get_items(
         compare_metrics = ITEM_METRICS_FALLBACK if used_fallback_conversion_metrics else ITEM_METRICS_WITH_OFFICIAL_RATES
         compare_data, compare_error = GA4Service.get_analytics(
             user=user, property_id=property_id, start_date=compare_start_date, end_date=compare_end_date,
-            metrics=compare_metrics, dimensions=["itemName"], db=db,
+            metrics=compare_metrics, dimensions=["itemName"], credentials=credentials,
             dimension_filter=dimension_filter,
         )
         if compare_error:
@@ -118,10 +141,7 @@ def get_items(
     # 的 GA4/GTM 電子商務事件沒有設定商品分類。
     category_by_item: dict[str, str] = {}
     best_views_by_item: dict[str, int] = {}
-    breakdown_data, breakdown_error = GA4Service.get_analytics(
-        user=user, property_id=property_id, start_date=start_date, end_date=end_date,
-        metrics=["itemsViewed"], dimensions=["itemName", "itemCategory"], db=db,
-    )
+    breakdown_data, breakdown_error = phase1["breakdown"]
     if not breakdown_error:
         for row in (breakdown_data or {}).get("rows", []):
             item_name = row.get("itemName", "")
