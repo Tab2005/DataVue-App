@@ -1,5 +1,5 @@
 """
-Phase 0 可行性驗證腳本（docs/35_GSC_AI_Overview_生成式AI搜尋數據擴充實作規劃.md）
+Phase 0 可行性驗證腳本（docs/05_gsc/35_GSC_AI_Overview_生成式AI搜尋數據擴充實作規劃.md）
 
 用途：
     呼叫 GSC Search Analytics API，dimensions=["searchAppearance"]，

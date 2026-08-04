@@ -6,7 +6,7 @@
 - expand_existing: 建議補充進現有頁面的段落方向
 - new_article: 建議獨立成一篇新文章的方向
 
-參見 docs/37_GSC_內容缺口_AI文章方向建議_實作規劃.md
+參見 docs/05_gsc/37_GSC_內容缺口_AI文章方向建議_實作規劃.md
 """
 import json
 import logging

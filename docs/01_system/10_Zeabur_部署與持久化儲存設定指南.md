@@ -116,7 +116,7 @@ META_ANDROMEDA_STORAGE_PUBLIC_BASE_URL=https://assets.sitetegy.com/meta-andromed
 
 ### 2.4 Meta Andromeda 獨立 Worker（docs/24 Wave 2，選配但生產環境強烈建議）
 
-**背景**：Meta Andromeda 的素材評分與觀測匯入若跟 API 服務同一個 process，評分期間的 DB/檔案/ffmpeg 等阻塞工作會佔用 event loop，導致整站 API（含權限檢查）在批次評分時全部卡住無回應（根因與修復過程見 [docs/24](file:///C:/Users/BWM2/Documents/python/DataVue-App/docs/24_Meta_Andromeda_評分管線Event_Loop阻塞修復與模組優化實作計劃.md)）。Wave 1 已用 `asyncio.to_thread` 止血，讓同 process 運行也不會卡死；本節的獨立 Worker 是進一步的架構隔離，讓評分負載完全離開 API 服務。
+**背景**：Meta Andromeda 的素材評分與觀測匯入若跟 API 服務同一個 process，評分期間的 DB/檔案/ffmpeg 等阻塞工作會佔用 event loop，導致整站 API（含權限檢查）在批次評分時全部卡住無回應（根因與修復過程見 [docs/24](../03_meta_andromeda/24_Meta_Andromeda_評分管線Event_Loop阻塞修復與模組優化實作計劃.md)）。Wave 1 已用 `asyncio.to_thread` 止血，讓同 process 運行也不會卡死；本節的獨立 Worker 是進一步的架構隔離，讓評分負載完全離開 API 服務。
 
 > [!IMPORTANT]
 > 這個「Meta Andromeda Worker」跟 2.1 節既有的「Scheduler Worker」（`scheduler_worker.py`）是**兩個不同的東西**，靠兩個獨立的環境變數切換，彼此不互斥：

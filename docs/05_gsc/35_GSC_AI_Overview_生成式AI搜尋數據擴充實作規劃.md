@@ -3,7 +3,7 @@
 > 建立日期：2026-07-17
 > 狀態：Phase 0～3 全部完成並已部署驗證（後端 `search-appearance-summary` 端點、前端「搜尋外觀」分頁）。**2026-07-17 追加查證結論：Google 的「生成式 AI 效能報表」（AI Overview / AI Mode）目前完全未開放 API，本功能無法且不會取得該報表數據**，詳見下方「⚠️ 2026-07-17 重大結論更新」。
 > 範圍：透過 Google Search Console Search Analytics API 的 `searchAppearance` 維度，呈現網站在既有搜尋外觀（Rich Result 等）中的成效數據；AI Overview 本身目前不在範圍內（Google 尚未開放 API）。
-> 前置關聯：本文件延伸自 [`docs/29_GSC_API_資料呈現擴充實作規劃.md`](./29_GSC_API_資料呈現擴充實作規劃.md) 第 1 項「Search Appearance 成效」。
+> 前置關聯：本文件延伸自 [`docs/05_gsc/29_GSC_API_資料呈現擴充實作規劃.md`](./29_GSC_API_資料呈現擴充實作規劃.md) 第 1 項「Search Appearance 成效」。
 
 ## ⚠️ 2026-07-17 重大結論更新（部署後實測 + 官方文件查證）
 
@@ -55,7 +55,7 @@
 |---|---|---|
 | `GSCService.get_analytics()` | 不支援任何非 date/query/page/country/device 以外的維度傳遞限制（技術上可傳，但從未用 `searchAppearance` 測試過） | 需實測 API 回傳的 `searchAppearance` 列舉值中，AI Overview 對應的實際字串（如 `AI_OVERVIEW` 或其他命名），以帳號本身有 AI Overview 曝光的站台驗證 |
 | `routers/gsc.py` | 無 `searchAppearance` 相關端點 | 新增端點時的路徑與參數命名 |
-| 前端 `GSCStats.jsx` | 無搜尋外觀 tab | 需拆成獨立子元件避免檔案再度膨脹（延續 `docs/33_大型檔案拆分重構實作計劃.md` 的原則） |
+| 前端 `GSCStats.jsx` | 無搜尋外觀 tab | 需拆成獨立子元件避免檔案再度膨脹（延續 `docs/07_audits_and_reviews/33_大型檔案拆分重構實作計劃.md` 的原則） |
 | 資料可得性 | **已於 2026-07-17 確認**：`searchAppearance` 維度本身沒有任何 AI Overview 對應值——不是「這個站台剛好沒有」，而是 Google 根本沒有把這份資料放進 API | 無需再驗證，見上方「⚠️ 2026-07-17 重大結論更新」 |
 
 ## 建議實作項目
@@ -94,7 +94,7 @@
 
 - Tooltip 建議文案：
   - `AI Overview：Google 在搜尋結果頁以生成式 AI 摘要呈現答案時，若引用了你的頁面，這裡呈現的是聚合後的點擊與曝光成效，Google 目前不提供引用內容或排序細節。`
-- 需在 `docs/05_API_參考手冊.md` 補充新端點說明（待實作完成後同步）。
+- 需在 `docs/01_system/05_API_參考手冊.md` 補充新端點說明（待實作完成後同步）。
 
 ## 實作階段
 
@@ -168,9 +168,9 @@
 
 ### Phase 3：文件同步 — 已完成
 
-- `docs/05_API_參考手冊.md`：GSC 段落新增 `GET /gsc/search-appearance-summary` 說明（參數、回傳格式、`is_ai_related_hint` 的提示性質），並補充 `/gsc/analytics` 的 `dimensions` 可傳任意維度（含 `searchAppearance`）。
-- `docs/01_專案概覽.md`：Roadmap 新增一行「GSC 搜尋外觀／AI Overview 曝光洞察」，並註明「待實際站台累積 AI Overview 曝光後生效」——因 Phase 0 尚未在真實帳號驗證過是否真的有 AI Overview 資料。
-- `docs/29_GSC_API_資料呈現擴充實作規劃.md`：更新頂部狀態與第 1 項「Search Appearance 成效」，標記為已透過本文件（`docs/35`）實作完成，並說明實作與原規劃的差異（分母計算方式、新增 AI 提示旗標），避免兩份文件對現況描述互相矛盾。
+- `docs/01_system/05_API_參考手冊.md`：GSC 段落新增 `GET /gsc/search-appearance-summary` 說明（參數、回傳格式、`is_ai_related_hint` 的提示性質），並補充 `/gsc/analytics` 的 `dimensions` 可傳任意維度（含 `searchAppearance`）。
+- `docs/01_system/01_專案概覽.md`：Roadmap 新增一行「GSC 搜尋外觀／AI Overview 曝光洞察」，並註明「待實際站台累積 AI Overview 曝光後生效」——因 Phase 0 尚未在真實帳號驗證過是否真的有 AI Overview 資料。
+- `docs/05_gsc/29_GSC_API_資料呈現擴充實作規劃.md`：更新頂部狀態與第 1 項「Search Appearance 成效」，標記為已透過本文件（`docs/35`）實作完成，並說明實作與原規劃的差異（分母計算方式、新增 AI 提示旗標），避免兩份文件對現況描述互相矛盾。
 
 ## 風險與對策
 

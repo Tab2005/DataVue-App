@@ -145,7 +145,7 @@
 - `modules.auth.service.TokenManager._normalize_ai_provider()` 會把任何 `"gemini"`/`"google_gemini"` 值正規化為 `"openrouter"`，`user.gemini_api_key` 欄位保留下來只作為「使用者選 OpenRouter、但只填過 Gemini Key」情境的備援讀取來源，這是刻意保留的相容設計。
 - 但 `backend/routers/gsc.py` 的 `/page-intents`（既有功能）與 `/content-gap-suggestions`（本文件 Phase 1 新增，直接複製了 `/page-intents` 的寫法）都還留著一段**沒有正規化、獨立判斷 `provider == "gemini"`** 的 fallback 死代碼，讀取的是已經不再有意義的 `GOOGLE_AI_API_KEY` 環境變數，且就算被觸發，`AIIntentClassifier`/`AIContentGapSuggester` 建構子只認 `"openrouter"` 這個字串，`"gemini"` 會被誤判走 `ZeaburAIClient`，行為是錯的（只是前端已不會送出這個值，才沒有實際爆炸）。
 
-**已修復**：兩個端點都在讀取 `TokenManager.get_ai_api_key()` 之前，先把 `provider in ("gemini", "google_gemini")` 正規化為 `"openrouter"`，並把 fallback 環境變數從 `GOOGLE_AI_API_KEY` 改成正確的 `OPENROUTER_API_KEY`（對應 `OpenRouterClient.__init__` 本身的 env fallback 順序）。`PageIntentRequest`/`ContentGapSuggestionRequest` 的 `provider` 欄位註解也同步更新，說明 `"gemini"` 只是相容用的舊值。修復後 `pytest tests/ -k "gsc or ai"` 86 項測試仍全數通過。`docs/05_API_參考手冊.md` 的 `content-gap-suggestions` 參數說明已同步更新。
+**已修復**：兩個端點都在讀取 `TokenManager.get_ai_api_key()` 之前，先把 `provider in ("gemini", "google_gemini")` 正規化為 `"openrouter"`，並把 fallback 環境變數從 `GOOGLE_AI_API_KEY` 改成正確的 `OPENROUTER_API_KEY`（對應 `OpenRouterClient.__init__` 本身的 env fallback 順序）。`PageIntentRequest`/`ContentGapSuggestionRequest` 的 `provider` 欄位註解也同步更新，說明 `"gemini"` 只是相容用的舊值。修復後 `pytest tests/ -k "gsc or ai"` 86 項測試仍全數通過。`docs/01_system/05_API_參考手冊.md` 的 `content-gap-suggestions` 參數說明已同步更新。
 
 **2026-07-21 追加修復：GSC 的 AI 端點從未讀取使用者在設定頁選的模型**
 
@@ -189,7 +189,7 @@
 - **未做**：實際瀏覽器操作驗證與真實 API Key 端到端測試，原因與 Phase 1 相同——本機無真實 GSC 連線帳號與 AI API Key。
 
 ### Phase 3：文件同步
-- `docs/05_API_參考手冊.md` 新增 `POST /gsc/content-gap-suggestions` 說明。
+- `docs/01_system/05_API_參考手冊.md` 新增 `POST /gsc/content-gap-suggestions` 說明。
 
 ## 風險與對策
 

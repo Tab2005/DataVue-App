@@ -797,10 +797,10 @@ Meta Andromeda 採用「模組層級」統一存取控制，所有操作統一�
 
 | 文件 | 說明 |
 |---|---|
-| `docs/13_Meta_Andromeda_模組操作與核對流程指南.md` | 操作人員日常核對流程指南 |
-| `docs/14_Meta_Andromeda_投放環境診斷系統實作計劃.md` | Spearman ρ 四象限診斷系統設計，含市場護航等標籤解讀 |
-| `docs/15_Meta_Andromeda_Prompt自適應校準計畫.md` | AI Prompt 自適應校準未來規劃 |
-| `docs/16_Meta_Andromeda_廣告目標分類與指標路由計畫.md` | 廣告目標分類（Phase 1 已完成，Phase 2-3 待實作） |
-| `docs/17_Meta_Andromeda_Phase3_學習閉環與診斷校準工作台實作成果報告.md` | Phase 3 學習閉環實作成果里程碑記錄 |
-| `docs/18_Meta_Andromeda_模組功能審查與優化報告.md` | 功能審查與最終優化里程碑記錄 |
-| `docs/zeabur_deployment_guide.md` | Zeabur 部署指南（含 Meta Andromeda 環境變數） |
+| `docs/03_meta_andromeda/13_Meta_Andromeda_模組操作與核對流程指南.md` | 操作人員日常核對流程指南 |
+| `docs/03_meta_andromeda/14_Meta_Andromeda_投放環境診斷系統實作計劃.md` | Spearman ρ 四象限診斷系統設計，含市場護航等標籤解讀 |
+| `docs/03_meta_andromeda/15_Meta_Andromeda_Prompt自適應校準計畫.md` | AI Prompt 自適應校準未來規劃 |
+| `docs/03_meta_andromeda/16_Meta_Andromeda_廣告目標分類與指標路由計畫.md` | 廣告目標分類（Phase 1 已完成，Phase 2-3 待實作） |
+| `docs/03_meta_andromeda/17_Meta_Andromeda_Phase3_學習閉環與診斷校準工作台實作成果報告.md` | Phase 3 學習閉環實作成果里程碑記錄 |
+| `docs/03_meta_andromeda/18_Meta_Andromeda_模組功能審查與優化報告.md` | 功能審查與最終優化里程碑記錄 |
+| `docs/01_system/zeabur_deployment_guide.md` | Zeabur 部署指南（含 Meta Andromeda 環境變數） |

@@ -185,7 +185,7 @@ psycopg2.errors.StringDataRightTruncation: value too long for type character var
 1. 刪除 `backend/tmp_migrate.py`（確認無殘留 import，已被 Alembic migration 取代）。
 2. **不**移動／刪除 `run_migration.py`（更正原計畫的錯誤假設）。
 3. `backend/core/startup.py::run_startup_tasks()`：新增啟動日誌 `ENV=... | DEBUG_MODE=...`，並在 `ENV=production` 但 `DEBUG_MODE=true` 時額外印出警告（避免生產環境意外掛載 `/api/debug/*`）。
-4. `docs/06_部署指南.md`：
+4. `docs/01_system/06_部署指南.md`：
    - 新增「✅ 生產環境部署前檢查清單」段落，列出 `ENV`、`DEBUG_MODE`、`DATAVUE_SKIP_STARTUP_MIGRATIONS`、`DATABASE_URL`、`ENCRYPTION_KEY`、`SUPER_ADMIN_EMAIL` 六項環境變數的生產建議值與說明。
    - 修正「資料庫遷移」段落原本建議「手動於 Console 執行 `alembic upgrade head`」的過時說明，改為說明生產環境的 `Dockerfile CMD` 已自動執行 `run_migration.py`，通常不需手動介入。
 
@@ -299,7 +299,7 @@ class Settings(BaseSettings):
 
 在 gunicorn/uvicorn 多 worker（多 process）部署下：
 - 進度查詢端點（router L374-385 `.../status`）可能落在**未持有該進度**的 worker，回傳「查無」。
-- `_observation_import_semaphore` 掛在 `router.py` 的 `BackgroundTasks`（由處理上傳請求的 web worker 執行），跨 process 的總並發是 `worker 數 × concurrency`，可能超過對 OpenRouter/DB 的預期上限。`_score_event_semaphore` 則因為目前實際評分工作集中在 APScheduler（依 `docs/06_部署指南.md` 建議跑獨立 scheduler worker），風險較低，但沒有程式層級保障，一併處理。
+- `_observation_import_semaphore` 掛在 `router.py` 的 `BackgroundTasks`（由處理上傳請求的 web worker 執行），跨 process 的總並發是 `worker 數 × concurrency`，可能超過對 OpenRouter/DB 的預期上限。`_score_event_semaphore` 則因為目前實際評分工作集中在 APScheduler（依 `docs/01_system/06_部署指南.md` 建議跑獨立 scheduler worker），風險較低，但沒有程式層級保障，一併處理。
 
 **已完成的變更**
 

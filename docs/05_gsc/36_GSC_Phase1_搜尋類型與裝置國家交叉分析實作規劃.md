@@ -3,7 +3,7 @@
 > 建立日期：2026-07-21
 > 狀態：規劃中，尚未實作
 > 範圍：`docs/29` 第 2-4 項（搜尋類型成效、Page/Query × Device 交叉、Page/Query × Country 交叉）的細部實作規劃，聚焦低風險、可沿用現有 Search Analytics API 與 `/api/gsc/analytics` 端點的擴充。
-> 前置關聯：延伸自 [`docs/29_GSC_API_資料呈現擴充實作規劃.md`](./29_GSC_API_資料呈現擴充實作規劃.md) 的「Phase 1：低風險 Search Analytics 擴充」，本文件為該階段的落地實作規劃（含現況程式碼盤點與具體改動點），第 1 項「搜尋外觀」已於 `docs/35` 完成，不在本文件範圍內。
+> 前置關聯：延伸自 [`docs/05_gsc/29_GSC_API_資料呈現擴充實作規劃.md`](./29_GSC_API_資料呈現擴充實作規劃.md) 的「Phase 1：低風險 Search Analytics 擴充」，本文件為該階段的落地實作規劃（含現況程式碼盤點與具體改動點），第 1 項「搜尋外觀」已於 `docs/35` 完成，不在本文件範圍內。
 
 ## 背景
 
@@ -95,8 +95,8 @@
 ## 文件同步
 
 實作完成後應更新：
-- `docs/05_API_參考手冊.md`：`/api/gsc/analytics` 新增 `search_type` 參數說明。
-- `docs/29_GSC_API_資料呈現擴充實作規劃.md`：標記第 2-4 項為已透過本文件（`docs/36`）實作完成，並記錄實際做法與原規劃的差異（若有）。
+- `docs/01_system/05_API_參考手冊.md`：`/api/gsc/analytics` 新增 `search_type` 參數說明。
+- `docs/05_gsc/29_GSC_API_資料呈現擴充實作規劃.md`：標記第 2-4 項為已透過本文件（`docs/36`）實作完成，並記錄實際做法與原規劃的差異（若有）。
 
 ## 官方參考
 

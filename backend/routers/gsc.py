@@ -90,7 +90,7 @@ def get_gsc_analytics(
         traceback.print_exc()
         raise HTTPException(status_code=500, detail=f"Internal Server Error: {str(e)}")
 
-# 3b. Search Appearance Summary (docs/35_GSC_AI_Overview_生成式AI搜尋數據擴充實作規劃.md Phase 1)
+# 3b. Search Appearance Summary (docs/05_gsc/35_GSC_AI_Overview_生成式AI搜尋數據擴充實作規劃.md Phase 1)
 # 已知的 AI 相關提示關鍵字，僅用於前端標示疑似項目，不作為硬編碼的判斷依據。
 #
 # 重要澄清（2026-07-17 查證 Google 官方文件與公告後確認）：Google 於 2026-06-03 推出的
@@ -665,7 +665,7 @@ async def analyze_keyword_gap(
         raise HTTPException(status_code=500, detail=f"Gap analysis failed: {str(e)}")
 
 
-# 7. Content Gap Suggestions (docs/37_GSC_內容缺口_AI文章方向建議_實作規劃.md)
+# 7. Content Gap Suggestions (docs/05_gsc/37_GSC_內容缺口_AI文章方向建議_實作規劃.md)
 class ContentGapSuggestionRequest(BaseModel):
     site_url: str
     page_url: str

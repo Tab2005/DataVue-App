@@ -1,7 +1,7 @@
 # GSC API 資料呈現擴充實作規劃
 
 > 建立日期：2026-07-13  
-> 狀態：規劃中，尚未實作；**其中第 1 項「Search Appearance 成效」已於 2026-07-17 透過 `docs/35_GSC_AI_Overview_生成式AI搜尋數據擴充實作規劃.md` 實作完成**，其餘項目（Search Type、裝置/國家交叉分析、Fresh Data、Sitemap、URL Inspection）仍待實作。
+> 狀態：規劃中，尚未實作；**其中第 1 項「Search Appearance 成效」已於 2026-07-17 透過 `docs/05_gsc/35_GSC_AI_Overview_生成式AI搜尋數據擴充實作規劃.md` 實作完成**，其餘項目（Search Type、裝置/國家交叉分析、Fresh Data、Sitemap、URL Inspection）仍待實作。
 > 範圍：Google Search Console 模組新增可呈現資料面向，包含 Search Analytics 進階維度、Sitemaps 與 URL Inspection。
 
 ## 背景
@@ -60,7 +60,7 @@ Google Search Console API 仍有多個可直接提升 SEO 判讀價值的資料�
 >
 > **重要澄清**：`searchAppearance` 維度不包含、也不會包含 AI Overview / 生成式 AI 曝光數據——Google 於 2026-06-03 推出的「生成式 AI 效能報表」目前僅限 GSC 後台 UI 查看，尚未透過任何 API 開放（詳見 `docs/35` 的「⚠️ 2026-07-17 重大結論更新」）。此分頁呈現的是既有 Rich Result／AMP／Merchant Listing 等真實搜尋外觀數據，與生成式 AI 報表是兩個互不相干的資料來源。
 >
-> 以下原規劃內容保留作為歷史記錄，實際規格請見 `docs/35_GSC_AI_Overview_生成式AI搜尋數據擴充實作規劃.md`。
+> 以下原規劃內容保留作為歷史記錄，實際規格請見 `docs/05_gsc/35_GSC_AI_Overview_生成式AI搜尋數據擴充實作規劃.md`。
 
 **資料來源**
 
@@ -582,8 +582,8 @@ POST /api/gsc/url-inspection
 
 新增功能完成後應同步更新：
 
-- `docs/05_API_參考手冊.md`
-- `docs/01_專案概覽.md`
+- `docs/01_system/05_API_參考手冊.md`
+- `docs/01_system/01_專案概覽.md`
 - GSC 頁面上的 tooltip 與 empty state 文案
 
 建議 tooltip 文案：

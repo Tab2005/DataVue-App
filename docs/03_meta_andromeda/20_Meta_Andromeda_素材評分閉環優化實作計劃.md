@@ -2,7 +2,7 @@
 
 - **日期**：2026-07-03
 - **性質**：實作計劃（依 docs/19 分析報告展開為可執行任務）
-- **依據**：docs/19_Meta_Andromeda_素材評分閉環優化建議報告.md
+- **依據**：docs/03_meta_andromeda/19_Meta_Andromeda_素材評分閉環優化建議報告.md
 - **範圍**：`backend/modules/meta_andromeda`（runtime / model_registry / calibration_pipeline / repository / service / importers）、`backend/core/scheduler.py`、`backend/database/models/meta_andromeda.py`
 - **執行原則**：每個任務獨立可測、可回滾；第 1 波全部完成前不進入第 2 波（P0 斷點會污染第 2 波要修的統計量）。
 - **實作狀態**：三波已於 2026-07-03 全數完成實作並 commit（見下方「執行狀態總覽」），2026-07-06 逐項對照程式碼複查完畢。

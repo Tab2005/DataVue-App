@@ -148,7 +148,7 @@ Wave 2 拆分 worker process 時，這個限制會自然消失——因為屆時
 | 2.4 | 匯入 job 走 queue | `router.py`、`queue_host.py`、`service.py` | ✅ stream 訊息加 `kind` 欄位（`observation_import` vs 缺省/`score_event`，向後相容舊訊息）；新增 `enqueue_observation_import_event()`、`_schedule_observation_import_message()`；`MetaAndromedaService.dispatch_observed_facebook_ad_import()` 在 `web` 角色下優先經 stream 派工，失敗（非 web 角色或 Redis 不可用）時退回 `BackgroundTasks`（Wave 1 已確保安全） |
 | 2.5 | worker 入口 | `backend/worker_main.py`（新檔） | ✅ 極簡 FastAPI app，僅掛 `/healthz`；lifespan 做最小化啟動（DB 連線檢查、MA 種子資料、快取失效監聽，**不**重跑 migrations/權限種子/super admin 同步，避免與 web 服務 race）+ `start_scheduler()`；關閉時 `stop_scheduler(wait=True)` 優雅等待 in-flight job |
 | 2.6 | 測試 | `backend/tests/test_meta_andromeda_module.py` | ✅ 新增 6 個測試：角色分流純函式（all/web/worker 三種 parametrize）、`get_active_host()` web 角色收斂（含 Redis 可用/不可用兩種情境）、observation_import stream 端對端（enqueue → consumer 依 kind 分流 → 呼叫 `add_meta_andromeda_observation_import_job`）、匯入端點在 web 角色下優先走 stream 而非本地執行 |
-| 2.7 | 部署文件 | `docs/10_Zeabur_部署與持久化儲存設定指南.md` | ✅ 新增 2.4 節：獨立 Meta Andromeda Worker 服務設定、環境變數矩陣（`SERVICE_ROLE`/`META_ANDROMEDA_QUEUE_HOST`/`REDIS_URL`/`ENABLE_REPORT_SCHEDULER`）、部署後驗證步驟、降級路徑；並在常見問題新增一則「評分事件卡在 queued」的排查 TIP |
+| 2.7 | 部署文件 | `docs/01_system/10_Zeabur_部署與持久化儲存設定指南.md` | ✅ 新增 2.4 節：獨立 Meta Andromeda Worker 服務設定、環境變數矩陣（`SERVICE_ROLE`/`META_ANDROMEDA_QUEUE_HOST`/`REDIS_URL`/`ENABLE_REPORT_SCHEDULER`）、部署後驗證步驟、降級路徑；並在常見問題新增一則「評分事件卡在 queued」的排查 TIP |
 
 驗收標準（本機驗證方式，staging 雙 service 部署留待實際上線時執行）：`backend/tests/test_meta_andromeda_module.py` 全量跑過，Wave 1/2 前後失敗案例完全一致（16 個既有失敗為環境既有問題，見 Wave 1 備註），新增測試與既有測試皆綠（55→61 通過）；`worker_main.py` 可獨立 import 且只掛載 `/healthz` 一個路由，驗證於實作過程中以 `python -c "import worker_main"` 執行確認。
 

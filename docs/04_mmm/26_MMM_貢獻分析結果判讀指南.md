@@ -264,9 +264,9 @@ docs/21 第 3 波 A 將新增「同帳戶 + 同期間」跑 meta-y 與 ga4-y 兩
 
 ## 十、相關文件
 
-- **技術與演算法**：docs/21_MMM_廣告活動貢獻衡量模組實作計劃.md（引擎規格、guardrails、API、限制）
-- **同類解讀指南**：docs/13_Meta_Andromeda_模組操作與核對流程指南.md（Andromeda 素材評分的判讀方式；模組邊界互補）
-- **GA4 整合計畫**：docs/22_GA4_即時轉換洞察模組實作計劃.md（雙 y 對照上線後本指南補 § 三.5）
+- **技術與演算法**：docs/04_mmm/21_MMM_廣告活動貢獻衡量模組實作計劃.md（引擎規格、guardrails、API、限制）
+- **同類解讀指南**：docs/03_meta_andromeda/13_Meta_Andromeda_模組操作與核對流程指南.md（Andromeda 素材評分的判讀方式；模組邊界互補）
+- **GA4 整合計畫**：docs/02_ga4/22_GA4_即時轉換洞察模組實作計劃.md（雙 y 對照上線後本指南補 § 三.5）
 
 ---
 

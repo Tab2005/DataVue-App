@@ -124,4 +124,4 @@ DB 端的 `meta_andromeda_scoring_profiles.objective_profiles` 過去由 `202606
 1. **`get_review_queue_detail()`（`repository.py`）呼叫 `label_observed_band()` 漏傳 `label_thresholds`**：「成效分析匯入」直連路徑（`request_context.observed_creative_id`，不經過 `CalibrationItem`）沒有先算動態門檻就呼叫，CTR/CPC 原本設計為「樣本不足時無 fallback、直接回傳 low + fallback_traffic」（見 docs/16），導致這條路徑上的 TRAFFIC/AWARENESS/ENGAGEMENT/VIDEO 廣告一律誤判 LOW。修法：呼叫前先 `compute_label_thresholds()` 取得該帳號/時間窗已持久化門檻；並比照 ROAS 補上 CTR/CPC 固定 fallback 常數。
 2. **AWARENESS 不該跟 TRAFFIC/ENGAGEMENT/VIDEO 共用 CTR/CPC**：AWARENESS 優化目標是觸及/曝光效率而非點擊，改用 CPM（`spend/impressions*1000`）判斷，獨立於 `objective_routing.py` 新增的 `CTR_CPC_GROUPS`（`NON_ROAS_GROUPS` 語意不變）。`MetaAndromedaLabelPolicy` 新增 `cpm_low/cpm_high/cpm_method/cpm_sample_count` 四欄（migration `20260714_ma_label_policy_cpm`）。
 
-詳細改動見 `docs/16_Meta_Andromeda_廣告目標分類與指標路由計畫.md` 文末「2026-07-14 後續修正」章節；這次發現的 bug 也牽動 `docs/30`/`docs/32` 的準確率分析假設，已一併補記。
+詳細改動見 `docs/03_meta_andromeda/16_Meta_Andromeda_廣告目標分類與指標路由計畫.md` 文末「2026-07-14 後續修正」章節；這次發現的 bug 也牽動 `docs/30`/`docs/32` 的準確率分析假設，已一併補記。
