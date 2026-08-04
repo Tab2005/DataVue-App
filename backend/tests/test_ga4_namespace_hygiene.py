@@ -84,19 +84,30 @@ def test_all_is_an_explicit_list_not_a_globals_comprehension(filename):
     assert all(isinstance(e, ast.Constant) for e in node.elts)
 
 
+STDLIB_NAMES = ("os", "sys", "re", "logging", "smtplib", "asyncio", "median", "EmailMessage")
+
+
+@pytest.mark.unit
+def test_stdlib_names_are_not_exported_from_shared():
+    """最重要的一道：`_shared.__all__` 不該帶 stdlib。
+
+    每個子模組都是 `from ._shared import *`，這裡漏一個名字，八個檔案的命名
+    空間就多一個來歷不明的符號——這才是 docs/59 P2-5 抱怨的核心。facade
+    那層另有一條測試，但 facade 自己的 `__all__` 是明列的、擋得住 `_shared`
+    的漏洞，所以不能只靠那一條（突變測試真的漏掉過一次）。
+    """
+    from modules.ga4.insights import _shared
+
+    leaked = [name for name in STDLIB_NAMES if name in _shared.__all__]
+    assert leaked == [], f"stdlib 又漏進 _shared 的 __all__：{leaked}"
+
+
 @pytest.mark.unit
 def test_stdlib_names_are_not_exported_from_the_facade():
-    """`os` / `smtplib` / `median` 這些不該從 GA4 洞察的 facade 匯得到。
-
-    它們原本是被 `from ._shared import *` 一路帶到每個子模組與 facade 上的。
-    需要的子模組現在各自 import。
-    """
+    """`os` / `smtplib` / `median` 這些不該從 GA4 洞察的 facade 匯得到。"""
     import modules.ga4.insights_service as facade
 
-    leaked = [
-        name for name in ("os", "sys", "re", "logging", "smtplib", "asyncio", "median", "EmailMessage")
-        if name in getattr(facade, "__all__", [])
-    ]
+    leaked = [name for name in STDLIB_NAMES if name in getattr(facade, "__all__", [])]
     assert leaked == [], f"stdlib 又漏進 facade 的 __all__：{leaked}"
 
 
