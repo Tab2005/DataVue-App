@@ -57,18 +57,29 @@ def test_meta_andromeda_review_queue_excludes_backtest_scores(db):
 
 @pytest.mark.unit
 def test_meta_andromeda_review_queue_supports_filters(meta_andromeda_access):
+    # 2026-06-26 審核佇列改版為評估紀錄後，reviewed 篩選參數已移除；
+    # 現行篩選為 status / roas_band / has_observation / search / source /
+    # scoring_engine（見 router/review_queue.py）。
     response = meta_andromeda_access.get(
         "/api/meta-andromeda/review-queue",
-        params={"status": "completed", "reviewed": "false", "limit": 30},
+        params={"status": "completed", "page_size": 30},
     )
 
     assert response.status_code == 200
     payload = response.json()
     assert payload["summary"]["status_filter"] == "completed"
-    assert payload["summary"]["reviewed_filter"] is False
     assert payload["items"]
     assert all(item["status"] == "completed" for item in payload["items"])
-    assert all(item["reviewed"] is False for item in payload["items"])
+
+    band_response = meta_andromeda_access.get(
+        "/api/meta-andromeda/review-queue",
+        params={"status": "completed", "roas_band": "high", "page_size": 30},
+    )
+
+    assert band_response.status_code == 200
+    band_payload = band_response.json()
+    assert band_payload["summary"]["roas_band_filter"] == "high"
+    assert all(item["roas_band"] == "high" for item in band_payload["items"])
 
 
 @pytest.mark.unit

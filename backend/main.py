@@ -175,12 +175,15 @@ async def app_exception_handler(request: Request, exc: AppException):
 
 @app.exception_handler(HTTPException)
 async def http_exception_handler(request: Request, exc: HTTPException):
+    # detail 原樣保留：release gate 等端點以 dict detail 傳結構化錯誤碼
+    # （code/details），僅有 str(detail) 會讓機器可讀的欄位變成 Python repr 字串
     response = JSONResponse(
         status_code=exc.status_code,
         content={
             "error": str(exc.detail),
             "error_code": f"HTTP_{exc.status_code}",
-            "error_type": "http_error"
+            "error_type": "http_error",
+            "detail": exc.detail,
         }
     )
     return _add_cors_headers_to_response(request, response)

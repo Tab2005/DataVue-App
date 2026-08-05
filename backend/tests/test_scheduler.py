@@ -32,12 +32,15 @@ def _build_schedule(**overrides):
 
 @pytest.mark.unit
 def test_get_next_run_time_uses_weekly_schedule():
+    # day_of_week 採前端慣例：0=週日（見 StepSchedule.jsx 的選項值與
+    # engine._build_trigger 的 (raw-1)%7 轉換）。參考時間 2026-04-15 為週三，
+    # day_of_week="0" 的下一次執行是週日 2026-04-19。
     schedule = _build_schedule()
     reference = datetime.fromisoformat("2026-04-15T10:00:00+08:00")
 
     next_run = get_next_run_time(schedule, reference_time=reference)
 
-    assert next_run == datetime(2026, 4, 20, 8, 30)
+    assert next_run == datetime(2026, 4, 19, 8, 30)
 
 
 @pytest.mark.unit

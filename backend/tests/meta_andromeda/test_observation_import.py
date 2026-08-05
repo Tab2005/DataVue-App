@@ -1,5 +1,26 @@
 from .conftest import *  # noqa: F401,F403
 
+import modules.meta_andromeda.service.observation_import as observation_import_module
+
+
+class _SessionProxy:
+    """背景匯入 job 以 SessionLocal() 開新 session；測試需把它綁回 db fixture
+    的同一個 session（in-memory 測試庫 + 外層 transaction 隔離），否則寫入
+    落到開發資料庫且測試查不到。close 改為 no-op，由 fixture 統一收尾。"""
+
+    def __init__(self, session):
+        self._session = session
+
+    def __getattr__(self, name):
+        return getattr(self._session, name)
+
+    def close(self):
+        return None
+
+
+def _bind_background_import_session(monkeypatch, db):
+    monkeypatch.setattr(observation_import_module, "SessionLocal", lambda: _SessionProxy(db))
+
 
 @pytest.mark.unit
 def test_meta_andromeda_observation_import_stream_dispatch_and_consume(monkeypatch):
@@ -109,7 +130,7 @@ def test_meta_andromeda_import_endpoint_dispatches_to_worker_in_web_role(meta_an
 
 
 @pytest.mark.unit
-def test_meta_andromeda_observation_import_accepts_supported_window_contract(meta_andromeda_access, monkeypatch):
+def test_meta_andromeda_observation_import_accepts_supported_window_contract(meta_andromeda_access, db, monkeypatch):
     from modules.meta_andromeda.schemas import ObservedCreativeCandidate
 
     async def fake_fetch_observed_creative_candidate(**kwargs):
@@ -154,6 +175,7 @@ def test_meta_andromeda_observation_import_accepts_supported_window_contract(met
         "_download_observed_asset_snapshot",
         staticmethod(fake_download_observed_asset_snapshot),
     )
+    _bind_background_import_session(monkeypatch, db)
 
     response = meta_andromeda_access.post(
         "/api/meta-andromeda/evaluations/import/facebook-ads",
@@ -166,17 +188,26 @@ def test_meta_andromeda_observation_import_accepts_supported_window_contract(met
         },
     )
 
+    # 匯入自 2026-06-22 起為完整背景工作流：202 立即回應只保證受理，
+    # asset_uri 由背景 job 產生後透過輪詢狀態端點取得（TestClient 會在
+    # 回應後同步執行 BackgroundTasks，因此這裡能直接查到最終狀態）。
     assert response.status_code == 202
     payload = response.json()
     assert payload["status"] == "accepted"
     assert payload["source"]["platform"] == "facebook_ads"
     assert payload["source"]["account_id"] == "act_123456789"
     assert payload["source"]["ad_id"] == "120000000000012"
-    assert payload["asset_uri"].startswith("storage://meta-andromeda/")
+    assert payload["asset_uri"] is None
     assert payload["observation_window"]["kind"] == "last_30d"
-    assert payload["observation_window"]["start"]
-    assert payload["observation_window"]["end"]
     assert payload["observed_creative_id"].startswith("ma_obs_")
+
+    status_response = meta_andromeda_access.get(
+        f"/api/meta-andromeda/evaluations/import/facebook-ads/{payload['observed_creative_id']}/status"
+    )
+    assert status_response.status_code == 200
+    status_payload = status_response.json()
+    assert status_payload["observation_status"] == "completed"
+    assert status_payload["asset_uri"].startswith("storage://meta-andromeda/")
 
 
 @pytest.mark.unit
@@ -244,7 +275,8 @@ def test_meta_andromeda_facebook_importer_normalizes_ad_row():
 
 
 @pytest.mark.unit
-def test_meta_andromeda_observation_import_uses_facebook_importer(meta_andromeda_access, monkeypatch):
+def test_meta_andromeda_observation_import_uses_facebook_importer(meta_andromeda_access, db, monkeypatch):
+    from database import MetaAndromedaObservedCreative
     from modules.meta_andromeda.schemas import ObservedCreativeCandidate
 
     async def fake_fetch_observed_creative_candidate(**kwargs):
@@ -298,6 +330,7 @@ def test_meta_andromeda_observation_import_uses_facebook_importer(meta_andromeda
         "_download_observed_asset_snapshot",
         staticmethod(fake_download_observed_asset_snapshot),
     )
+    _bind_background_import_session(monkeypatch, db)
 
     response = meta_andromeda_access.post(
         "/api/meta-andromeda/evaluations/import/facebook-ads",
@@ -313,13 +346,22 @@ def test_meta_andromeda_observation_import_uses_facebook_importer(meta_andromeda
         },
     )
 
+    # 202 立即回應不含成效快照（由背景 job 呼叫 importer 後寫入 DB），
+    # importer 是否被正確使用改由背景完成後的 DB 紀錄驗證。
     assert response.status_code == 202
     payload = response.json()
     assert payload["source"]["ad_id"] == "120000000000012"
-    assert payload["asset_uri"].startswith("storage://meta-andromeda/")
-    assert payload["performance_snapshot"]["purchases"] == 14
-    assert payload["performance_snapshot"]["roas"] == 2.85
     assert payload["observation_window"]["kind"] == "last_30d"
+
+    observed = (
+        db.query(MetaAndromedaObservedCreative)
+        .filter(MetaAndromedaObservedCreative.id == payload["observed_creative_id"])
+        .one()
+    )
+    assert observed.asset_uri.startswith("storage://meta-andromeda/")
+    assert observed.performance_snapshot["purchases"] == 14
+    assert observed.performance_snapshot["roas"] == 2.85
+    assert observed.observation_window_kind == "last_30d"
 
 
 @pytest.mark.unit
@@ -382,6 +424,7 @@ def test_meta_andromeda_observation_import_persists_asset_and_observed_record(
         "_download_observed_asset_snapshot",
         staticmethod(fake_download_observed_asset_snapshot),
     )
+    _bind_background_import_session(monkeypatch, db)
 
     response = meta_andromeda_access.post(
         "/api/meta-andromeda/evaluations/import/facebook-ads",
@@ -400,12 +443,15 @@ def test_meta_andromeda_observation_import_persists_asset_and_observed_record(
     assert response.status_code == 202
     payload = response.json()
 
-    stored_asset = db.query(MetaAndromedaAsset).filter(MetaAndromedaAsset.asset_uri == payload["asset_uri"]).one()
+    # asset_uri 由背景 job 產生（_bind_background_import_session 已把背景
+    # session 綁回測試 session），202 回應中為 None：改由 ObservedCreative
+    # 紀錄反查出實際儲存的 asset。
     observed = (
         db.query(MetaAndromedaObservedCreative)
         .filter(MetaAndromedaObservedCreative.id == payload["observed_creative_id"])
         .one()
     )
+    stored_asset = db.query(MetaAndromedaAsset).filter(MetaAndromedaAsset.asset_uri == observed.asset_uri).one()
 
     assert stored_asset.asset_type == "image"
     assert stored_asset.source_filename == "120000000000012.png"
@@ -477,6 +523,7 @@ def test_meta_andromeda_observation_import_auto_creates_score_event(
             "delay_seconds": delay_seconds,
         },
     )
+    _bind_background_import_session(monkeypatch, db)
 
     response = meta_andromeda_access.post(
         "/api/meta-andromeda/evaluations/import/facebook-ads",
@@ -489,19 +536,26 @@ def test_meta_andromeda_observation_import_auto_creates_score_event(
         },
     )
 
+    # 202 立即回應時評分事件尚未建立（score_status 為 pending_observation），
+    # 背景 job 完成匯入後才自動建立並派工評分事件。
     assert response.status_code == 202
     payload = response.json()
     assert payload["score_event_id"] is None
-    assert payload["score_status"] == "queued_background"
+    assert payload["score_status"] == "pending_observation"
     assert payload["runtime_job_id"] is None
+
+    status_payload = meta_andromeda_access.get(
+        f"/api/meta-andromeda/evaluations/import/facebook-ads/{payload['observed_creative_id']}/status"
+    ).json()
+    assert status_payload["observation_status"] == "completed"
+    assert status_payload["asset_uri"].startswith("storage://meta-andromeda/")
 
     score_event = (
         db.query(MetaAndromedaScoreEvent)
-        .filter(MetaAndromedaScoreEvent.asset_uri == payload["asset_uri"])
+        .filter(MetaAndromedaScoreEvent.asset_uri == status_payload["asset_uri"])
         .one()
     )
     assert score_event.status == "queued"
-    assert score_event.asset_uri == payload["asset_uri"]
     assert score_event.runtime_job_id.startswith("ma_score_")
 
 
@@ -808,8 +862,17 @@ def test_meta_andromeda_observation_import_rejects_disallowed_media_host(meta_an
         },
     )
 
-    assert response.status_code == 400
-    assert (response.json().get("detail") or response.json().get("error")) == "observed_media_url_host_not_allowed"
+    # 背景工作流下請求一律先受理（202），media host 白名單驗證在背景 job
+    # 執行，失敗結果透過輪詢狀態端點呈現（前端據此顯示「匯入失敗」徽章）。
+    assert response.status_code == 202
+    observed_creative_id = response.json()["observed_creative_id"]
+
+    status_payload = meta_andromeda_access.get(
+        f"/api/meta-andromeda/evaluations/import/facebook-ads/{observed_creative_id}/status"
+    ).json()
+    assert status_payload["observation_status"] == "failed"
+    assert status_payload["observation_message"] == "observed_media_url_host_not_allowed"
+    assert status_payload["score_status"] == "blocked_by_observation_failure"
 
 
 @pytest.mark.unit

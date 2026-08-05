@@ -84,6 +84,9 @@ def test_meta_andromeda_upload_supports_s3_compatible_storage(meta_andromeda_acc
 
 @pytest.mark.unit
 def test_meta_andromeda_preview_proxies_filesystem_asset_from_internal_worker(meta_andromeda_access, db, tmp_path, monkeypatch):
+    # SERVICE_ROLE=all 時預覽直接本地回應（不經 worker 代理）；要驗證
+    # 「經內部 worker 代理」路徑必須切到 web 角色（見 scoring_assets.py）。
+    monkeypatch.setenv("SERVICE_ROLE", "web")
     monkeypatch.setenv("META_ANDROMEDA_STORAGE_ROOT", str(tmp_path))
     monkeypatch.setenv("META_ANDROMEDA_INTERNAL_WORKER_BASE_URL", "http://meta-andromeda-worker.zeabur.internal")
     monkeypatch.setenv("META_ANDROMEDA_INTERNAL_WORKER_TOKEN", "worker-token")
@@ -107,6 +110,8 @@ def test_meta_andromeda_preview_proxies_filesystem_asset_from_internal_worker(me
 
 @pytest.mark.unit
 def test_meta_andromeda_preview_returns_404_when_internal_worker_returns_404(meta_andromeda_access, db, tmp_path, monkeypatch):
+    # 同上：只有非 all 角色才會走 proxy_asset_preview_response 代理路徑。
+    monkeypatch.setenv("SERVICE_ROLE", "web")
     monkeypatch.setenv("META_ANDROMEDA_STORAGE_ROOT", str(tmp_path))
     monkeypatch.setenv("META_ANDROMEDA_INTERNAL_WORKER_BASE_URL", "http://meta-andromeda-worker.zeabur.internal")
     monkeypatch.setenv("META_ANDROMEDA_INTERNAL_WORKER_TOKEN", "worker-token")
@@ -231,7 +236,7 @@ def test_meta_andromeda_overview_returns_current_integration_state(meta_andromed
     payload = response.json()
     assert payload["module"]["key"] == "meta_andromeda"
     assert payload["summary"]["integration_status"] == "in_progress"
-    assert payload["summary"]["current_slice"] == "queue_host_observability_enabled"
+    assert payload["summary"]["current_slice"] == "db_backed_scoring_profiles_and_calibration_pipeline"
     assert any(item["key"] == "review_queue" for item in payload["capabilities"])
 
 

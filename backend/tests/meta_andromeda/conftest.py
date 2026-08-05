@@ -209,9 +209,14 @@ def _install_internal_worker_httpx_proxy(monkeypatch, db):
     worker_test_app.dependency_overrides[get_db] = override_get_db
     transport = httpx.ASGITransport(app=worker_test_app)
 
+    # 先把真正的 AsyncClient 類別存下來：下面會把 httpx.AsyncClient 全域
+    # patch 成 FakeAsyncClient，若 __init__ 內再取 httpx.AsyncClient 會拿到
+    # 自己而無限遞迴（SERVICE_ROLE=web 的代理路徑觸發時會 RecursionError）
+    real_async_client_cls = httpx.AsyncClient
+
     class FakeAsyncClient:
         def __init__(self, *args, **kwargs):
-            self._client = httpx.AsyncClient(transport=transport, base_url="http://worker.test")
+            self._client = real_async_client_cls(transport=transport, base_url="http://worker.test")
 
         async def __aenter__(self):
             return self

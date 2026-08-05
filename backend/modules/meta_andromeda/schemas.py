@@ -410,6 +410,7 @@ class ReleaseHistoryEntryResponse(BaseModel):
     actor: str
     created_at: str
     note: str
+    forced: bool = False
 
 
 class ReleaseOverviewResponse(BaseModel):

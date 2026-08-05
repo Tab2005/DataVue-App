@@ -32,32 +32,40 @@ def test_meta_andromeda_drift_trigger_creates_report_and_alert(meta_andromeda_ac
 
 @pytest.mark.unit
 def test_meta_andromeda_drift_accuracy_and_mae_calculation(meta_andromeda_access, db):
-    from database.models.meta_andromeda import MetaAndromedaObservedCreative, MetaAndromedaScoreEvent
-    
-    # 清除現有的相關資料，確保測試環境純淨
+    from database.models.meta_andromeda import (
+        MetaAndromedaLabelPolicy,
+        MetaAndromedaObservedCreative,
+        MetaAndromedaScoreEvent,
+    )
+
+    # 清除現有的相關資料，確保測試環境純淨；label policy 也要清，
+    # 否則先前測試持久化的門檻會取代固定 fallback（low<3.0 / high>=6.0）
     db.query(MetaAndromedaObservedCreative).delete()
     db.query(MetaAndromedaScoreEvent).delete()
     db.query(MetaAndromedaBacktestRun).delete()
+    db.query(MetaAndromedaLabelPolicy).delete()
     db.commit()
 
-    # 1. 建立 5 筆預測與真實績效完全吻合的 healthy 數據
-    # 區間切分: low < 1.5, 1.5 <= mid < 3.5, high >= 3.5
-    test_cases = [
-        {"uri": "uri_1", "pred_band": "high", "real_roas": 5.0},  # high == high
-        {"uri": "uri_2", "pred_band": "mid", "real_roas": 2.0},   # mid == mid
-        {"uri": "uri_3", "pred_band": "low", "real_roas": 0.5},   # low == low
-        {"uri": "uri_4", "pred_band": "high", "real_roas": 4.0},  # high == high
-        {"uri": "uri_5", "pred_band": "mid", "real_roas": 3.0},   # mid == mid
+    # 1. 建立 15 筆預測與真實績效完全吻合的 healthy 數據。
+    # 現行判定規則（docs/30/32 之後）：
+    # - spend>0、impressions>=1000、觀測窗>=3 天才納入 accuracy
+    # - n>=15 才允許 healthy/warning/drifted 判定（主判據 Spearman ρ）
+    # - 樣本 <20 時 ROAS band 門檻退回固定 fallback：low<3.0、high>=6.0
+    roas_values = [
+        0.5, 0.7, 0.9, 1.1, 1.3,   # low（<3.0）
+        3.4, 3.7, 4.0, 4.3, 4.6,   # mid（3.0~6.0）
+        6.5, 7.0, 7.5, 8.0, 8.5,   # high（>=6.0）
     ]
+    pred_bands = ["low"] * 5 + ["mid"] * 5 + ["high"] * 5
 
-    for idx, tc in enumerate(test_cases):
-        # 建立 Observed Creative
+    for idx, (roas, band) in enumerate(zip(roas_values, pred_bands)):
         obs = MetaAndromedaObservedCreative(
             id=f"test_obs_{idx}",
-            asset_uri=tc["uri"],
+            asset_uri=f"uri_{idx}",
             source_platform="facebook_ads",
             source_account_id="act_12345",
             ad_id=f"ad_{idx}",
+            objective="CONVERSIONS",
             placement_family="feed",
             market="TW",
             media_type="image",
@@ -65,21 +73,22 @@ def test_meta_andromeda_drift_accuracy_and_mae_calculation(meta_andromeda_access
             observation_window_start="2026-06-09",
             observation_window_end="2026-06-16",
             source_fetched_at="2026-06-16T12:00:00Z",
-            performance_snapshot={"roas": tc["real_roas"]}
+            performance_snapshot={"roas": roas, "spend": 50.0 + idx * 10, "impressions": 5000},
         )
         db.add(obs)
 
-        # 建立對應的 completed ScoreEvent
+        # overall_score 與 ROAS 同向遞增 → Spearman ρ = 1.0（healthy）
         score_evt = MetaAndromedaScoreEvent(
             id=f"test_score_{idx}",
             status="completed",
-            asset_uri=tc["uri"],
+            asset_uri=f"uri_{idx}",
             asset_type="image",
             request_mode="manual",
             objective="CONVERSIONS",
             placement_family="feed",
             market="TW",
-            roas_band=tc["pred_band"]
+            roas_band=band,
+            overall_score=40 + idx * 3,
         )
         db.add(score_evt)
 
@@ -93,14 +102,19 @@ def test_meta_andromeda_drift_accuracy_and_mae_calculation(meta_andromeda_access
     assert response.status_code == 201
     payload = response.json()
     assert payload["drift_status"] == "healthy"
+    assert payload["report_payload"]["total_band_matched"] == 15
     assert payload["report_payload"]["accuracy"] == 1.0
     assert payload["report_payload"]["mae"] == 0.0
 
-    # 2. 修改為預估與實際嚴重偏離的 drifted 數據
-    # 5 筆預估都是 high (3)，實際均為 low (1, ROAS=0.5)
-    db.query(MetaAndromedaScoreEvent).update({"roas_band": "high"})
+    # 2. 把 overall_score 反轉為與 ROAS 完全反向 → Spearman ρ = -1.0。
+    # band 對齊不變（accuracy 仍為 1.0），驗證健康度主判據是排名相關性
+    # 而非 band 命中率
+    for idx in range(15):
+        db.query(MetaAndromedaScoreEvent).filter(
+            MetaAndromedaScoreEvent.id == f"test_score_{idx}"
+        ).update({"overall_score": 40 + (14 - idx) * 3})
     db.commit()
-    
+
     # 重新觸發
     response2 = meta_andromeda_access.post(
         "/api/meta-andromeda/drift:trigger",
@@ -109,22 +123,24 @@ def test_meta_andromeda_drift_accuracy_and_mae_calculation(meta_andromeda_access
     assert response2.status_code == 201
     payload2 = response2.json()
     assert payload2["drift_status"] == "drifted"
-    assert payload2["report_payload"]["accuracy"] == 0.4
-    assert payload2["report_payload"]["mae"] == 0.8
+    assert payload2["report_payload"]["accuracy"] == 1.0
+    assert payload2["report_payload"]["spearman_r"] < 0.10
 
 
 @pytest.mark.unit
 def test_meta_andromeda_drift_matching_by_checksum(meta_andromeda_access, db):
     from database.models.meta_andromeda import (
         MetaAndromedaAsset,
+        MetaAndromedaLabelPolicy,
         MetaAndromedaObservedCreative,
         MetaAndromedaScoreEvent
     )
-    
+
     db.query(MetaAndromedaObservedCreative).delete()
     db.query(MetaAndromedaScoreEvent).delete()
     db.query(MetaAndromedaBacktestRun).delete()
     db.query(MetaAndromedaAsset).delete()
+    db.query(MetaAndromedaLabelPolicy).delete()
     db.commit()
 
     checksums = ["sum_1", "sum_2", "sum_3", "sum_4", "sum_5"]
@@ -166,7 +182,9 @@ def test_meta_andromeda_drift_matching_by_checksum(meta_andromeda_access, db):
             observation_window_start="2026-06-09",
             observation_window_end="2026-06-16",
             source_fetched_at="2026-06-16T12:00:00Z",
-            performance_snapshot={"roas": 2.0}
+            # spend>0 / impressions>=1000 才會納入統計；roas 4.0 在固定
+            # fallback 門檻（low<3.0 / high>=6.0）下為 mid
+            performance_snapshot={"roas": 4.0, "spend": 120.0, "impressions": 5000}
         )
         db.add(obs)
 
@@ -192,7 +210,10 @@ def test_meta_andromeda_drift_matching_by_checksum(meta_andromeda_access, db):
     )
     assert response.status_code == 201
     payload = response.json()
-    assert payload["drift_status"] == "healthy"
+    # 本測試的重點是 checksum 配對：5 筆全配對成功且 band 全命中。
+    # 樣本數 <15 時新判定規則不允許給 healthy 判定（insufficient_sample），
+    # 那是獨立的統計門檻，與配對邏輯無關。
+    assert payload["drift_status"] == "insufficient_sample"
     assert payload["report_payload"]["total_matched"] == 5
     assert payload["report_payload"]["accuracy"] == 1.0
 
@@ -264,7 +285,9 @@ def test_sync_calibration_dataset_endpoint(meta_andromeda_access, db):
         observation_window_start="2026-06-09",
         observation_window_end="2026-06-16",
         source_fetched_at="2026-06-16T12:00:00Z",
-        performance_snapshot={"roas": 0.5}  # low (1)
+        # spend=0 的紀錄會被校準同步排除（廣告未實際投放）；roas 0.5 在
+        # 固定 fallback 門檻（low<3.0）下為 low (1)
+        performance_snapshot={"roas": 0.5, "spend": 80.0, "impressions": 3000}
     )
     db.add(obs)
 
