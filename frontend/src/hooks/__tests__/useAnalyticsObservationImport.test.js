@@ -1,10 +1,13 @@
 import { act, renderHook, waitFor } from '@testing-library/react';
 
-import useAnalyticsObservationImport from '../useAnalyticsObservationImport';
+import useAnalyticsObservationImport, { BATCH_IMPORT_CONCURRENCY } from '../useAnalyticsObservationImport';
 import {
+    fetchMetaAndromedaAiReady,
     fetchMetaAndromedaObservedImportStatus,
     importMetaAndromedaObservedFacebookAd,
 } from '../../services/metaAndromedaWorkflowService';
+
+const flushMicrotasks = () => new Promise((resolve) => setTimeout(resolve, 0));
 
 vi.mock('../../services/metaAndromedaWorkflowService', () => ({
     fetchMetaAndromedaAiReady: vi.fn(),
@@ -164,5 +167,112 @@ describe('useAnalyticsObservationImport polling (docs/68 B1)', () => {
 
         // 卸載後排定的輪詢應被清掉，不會再打狀態端點。
         expect(fetchMetaAndromedaObservedImportStatus).toHaveBeenCalledTimes(callCountBeforeUnmount);
+    });
+});
+
+// docs/68 B2：批次送出改以有限併發處理，避免 N 筆選取變成 N 次嚴格序列往返
+// （每筆都要等前一筆完全處理完才送下一筆，50 筆在正常網路延遲下要等超過十秒）。
+describe('useAnalyticsObservationImport batch concurrency (docs/68 B2)', () => {
+    let observationImportState;
+    let setObservationImportState;
+    let observationBatchSummary;
+    let setObservationBatchSummary;
+
+    const buildHookProps = (overrides = {}) => ({
+        datePreset: 'last_30d',
+        dateRange: { since: '2026-07-01', until: '2026-07-30' },
+        language: 'zh',
+        selectedAccountId: 'act_123456789',
+        selectedObservationRows: [],
+        setObservationBatchSummary,
+        setObservationImportState,
+        ...overrides,
+    });
+
+    beforeEach(() => {
+        vi.clearAllMocks();
+        observationImportState = {};
+        setObservationImportState = vi.fn((updater) => {
+            observationImportState = typeof updater === 'function'
+                ? updater(observationImportState)
+                : updater;
+        });
+        observationBatchSummary = null;
+        setObservationBatchSummary = vi.fn((updater) => {
+            observationBatchSummary = typeof updater === 'function'
+                ? updater(observationBatchSummary)
+                : updater;
+        });
+        fetchMetaAndromedaAiReady.mockResolvedValue({ ready: true });
+        fetchMetaAndromedaObservedImportStatus.mockResolvedValue({
+            observation_status: 'completed',
+            score_status: 'completed',
+        });
+    });
+
+    it('caps in-flight batch import requests at BATCH_IMPORT_CONCURRENCY instead of sending them fully serially or all at once', async () => {
+        const totalRows = 9;
+        const rows = Array.from({ length: totalRows }, (_, i) => ({
+            id: `row_${i}`,
+            ad_id: `1200000${String(i).padStart(5, '0')}`,
+        }));
+
+        const pendingResolvers = [];
+        importMetaAndromedaObservedFacebookAd.mockImplementation(() => new Promise((resolve) => {
+            pendingResolvers.push(resolve);
+        }));
+
+        const { result } = renderHook(() => useAnalyticsObservationImport(
+            buildHookProps({ selectedObservationRows: rows }),
+        ));
+
+        let batchDone = false;
+        let batchPromise;
+        await act(async () => {
+            batchPromise = result.current.handleBatchObservationImport().then(() => {
+                batchDone = true;
+            });
+            await flushMicrotasks();
+        });
+
+        // 第一波應該只送出「併發上限」筆請求，而不是 9 筆一次全送出，也不是只送 1 筆。
+        expect(importMetaAndromedaObservedFacebookAd).toHaveBeenCalledTimes(BATCH_IMPORT_CONCURRENCY);
+        expect(batchDone).toBe(false);
+
+        // 逐波釋放目前卡住的請求：驗證釋放後才會接著送出下一批，符合
+        // work-stealing（有 worker 空出來才拿下一筆），而非固定切批次。
+        let safetyCounter = 0;
+        while (
+            importMetaAndromedaObservedFacebookAd.mock.calls.length < totalRows
+            && safetyCounter < totalRows
+        ) {
+            const toRelease = pendingResolvers.splice(0, pendingResolvers.length);
+            expect(toRelease.length).toBeGreaterThan(0);
+            await act(async () => {
+                toRelease.forEach((resolve) => resolve({
+                    observed_creative_id: `ma_obs_batch_${safetyCounter}`,
+                    status: 'accepted',
+                    score_status: 'pending_observation',
+                }));
+                await flushMicrotasks();
+            });
+            safetyCounter += 1;
+        }
+
+        expect(importMetaAndromedaObservedFacebookAd).toHaveBeenCalledTimes(totalRows);
+
+        // 釋放最後一波，讓批次真正跑完。
+        await act(async () => {
+            pendingResolvers.splice(0).forEach((resolve) => resolve({
+                observed_creative_id: 'ma_obs_batch_last',
+                status: 'accepted',
+                score_status: 'pending_observation',
+            }));
+            await batchPromise;
+        });
+
+        expect(batchDone).toBe(true);
+        expect(observationBatchSummary.successCount).toBe(totalRows);
+        expect(observationBatchSummary.failureCount).toBe(0);
     });
 });

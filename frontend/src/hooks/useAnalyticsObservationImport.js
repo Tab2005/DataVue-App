@@ -13,6 +13,12 @@ import { resolveObservationWindowKind } from '../components/Analytics/analyticsM
 const OBSERVATION_STATUS_POLL_INTERVAL_MS = 5000;
 const OBSERVATION_STATUS_POLL_TIMEOUT_MS = 120000;
 
+// 批次送出時同時在飛的匯入請求數上限（docs/68 B2）：後端 POST 只是排入背景 job
+// 就立即回 202，真正的下載/存檔/評分都在 worker 端進行，前端逐筆嚴格序列送出
+// 純粹是白白等待網路往返——50 筆在 200ms RTT 下要等 10 秒以上才顯示「批次完成」。
+// 限制併發數而非全部一次送出，避免瞬間對後端/worker 造成過大突發負載。
+export const BATCH_IMPORT_CONCURRENCY = 4;
+
 const TERMINAL_OBSERVATION_STATUSES = new Set(['completed', 'failed']);
 const TERMINAL_SCORE_STATUSES = new Set([
     'completed',
@@ -31,6 +37,29 @@ const isImportStatusTerminal = (status) => {
         return true;
     }
     return !status.score_status || TERMINAL_SCORE_STATUSES.has(status.score_status);
+};
+
+// 以固定併發上限跑完 items，每個 worker 完成一項就立刻接手下一項（work-stealing），
+// 不是把 items 死板切成固定批次——較慢的請求不會拖住其他 worker 提早去拿下一筆。
+const runWithConcurrencyLimit = async (items, limit, worker) => {
+    const results = new Array(items.length);
+    let nextIndex = 0;
+
+    const runNext = async () => {
+        for (;;) {
+            const currentIndex = nextIndex;
+            nextIndex += 1;
+            if (currentIndex >= items.length) {
+                return;
+            }
+            results[currentIndex] = await worker(items[currentIndex], currentIndex);
+        }
+    };
+
+    const workerCount = Math.min(limit, items.length);
+    await Promise.all(Array.from({ length: workerCount }, runNext));
+
+    return results;
 };
 
 const useAnalyticsObservationImport = ({
@@ -251,11 +280,18 @@ const useAnalyticsObservationImport = ({
                 : `Batch submission in progress for ${selectedObservationRows.length} ads.`,
         });
 
+        // docs/68 B2：以有限併發（而非逐筆嚴格序列）送出，大幅縮短「批次送出中」
+        // 卡住使用者的時間——每筆本身只是快速的 202 受理 + 一次狀態檢查，序列送出
+        // 純粹是白白等待網路往返，並不會減少後端/worker 負擔。
+        const results = await runWithConcurrencyLimit(
+            selectedObservationRows,
+            BATCH_IMPORT_CONCURRENCY,
+            submitObservationRow,
+        );
+
         let successCount = 0;
         let failureCount = 0;
-
-        for (const row of selectedObservationRows) {
-            const result = await submitObservationRow(row);
+        for (const result of results) {
             if (result.ok) {
                 successCount += 1;
             } else {
