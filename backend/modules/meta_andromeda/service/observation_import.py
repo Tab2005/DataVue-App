@@ -235,6 +235,7 @@ class ObservationImportServiceMixin:
                     "adset_id": candidate.adset_id,
                     "ad_id": candidate.ad_id,
                     "objective_group": resolve_objective_group(candidate.objective),
+                    "media_degraded_reason": candidate.media_degraded_reason,
                 },
             },
         )

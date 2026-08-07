@@ -275,6 +275,148 @@ def test_meta_andromeda_facebook_importer_normalizes_ad_row():
 
 
 @pytest.mark.unit
+def test_meta_andromeda_facebook_importer_normalizes_video_ad_row():
+    """docs/68 B3：row 帶 video_id 時應判為 media_type='video'，media_url 此刻
+    仍是 FB 廣告清單 API 給的縮圖（真正的影片來源要在
+    fetch_observed_creative_candidate() 內另外解析，見下方測試）。"""
+    from modules.meta_andromeda.importers.facebook_ads_importer import normalize_facebook_ad_row
+
+    candidate = normalize_facebook_ad_row(
+        row={
+            "campaign_id": "120000000000010",
+            "adset_id": "120000000000011",
+            "ad_id": "120000000000099",
+            "name": "Video Ad 01",
+            "objective": "OUTCOME_SALES",
+            "image_url": "https://scontent.xx.fbcdn.net/thumb.jpg",
+            "video_id": "998877665544",
+            "spend": 500.0,
+            "impressions": 9000,
+            "clicks": 120,
+            "purchases": 5,
+            "purchase_value": 1500,
+            "roas": 3.0,
+            "ctr": 1.33,
+            "cpc": 4.16,
+        },
+        account_id="act_123456789",
+        market="TW",
+        placement_family="feed",
+        primary_text=None,
+        headline=None,
+        cta=None,
+        observation_window_kind="last_30d",
+        observation_window_start="2026-05-17",
+        observation_window_end="2026-06-15",
+        source_fetched_at="2026-06-15T00:00:00Z",
+    )
+
+    assert candidate.media_type == "video"
+    assert candidate.media_url == "https://scontent.xx.fbcdn.net/thumb.jpg"
+    assert candidate.media_degraded_reason is None
+
+
+@pytest.mark.unit
+async def test_meta_andromeda_fetch_observed_creative_candidate_resolves_video_source(monkeypatch):
+    """docs/68 B3：video_id 存在且來源解析成功時，media_url 應改指向真正可
+    下載的影片來源，而不是停留在縮圖。"""
+    import modules.meta_andromeda.importers.facebook_ads_importer as facebook_ads_importer_module
+
+    async def fake_report_fetcher(**kwargs):
+        return [{
+            "ad_id": "120000000099100",
+            "campaign_id": "120000000000010",
+            "adset_id": "120000000000011",
+            "name": "Video Ad Resolvable",
+            "objective": "OUTCOME_SALES",
+            "image_url": "https://scontent.xx.fbcdn.net/thumb_100.jpg",
+            "video_id": "111222333444",
+            "spend": 300.0,
+        }]
+
+    class _FakeVideoResponse:
+        def __init__(self, payload):
+            self._payload = payload
+
+        def raise_for_status(self):
+            return None
+
+        def json(self):
+            return self._payload
+
+    class _FakeVideoAsyncClient:
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *exc_info):
+            return False
+
+        async def get(self, url, headers=None, params=None):
+            assert "111222333444" in url
+            return _FakeVideoResponse({"source": "https://video-abc.xx.fbcdn.net/actual_video.mp4"})
+
+    monkeypatch.setattr(facebook_ads_importer_module, "get_headers", lambda *a, **kw: {"Authorization": "Bearer FAKE"})
+    monkeypatch.setattr(facebook_ads_importer_module.httpx, "AsyncClient", lambda *a, **kw: _FakeVideoAsyncClient())
+
+    candidate = await facebook_ads_importer_module.fetch_observed_creative_candidate(
+        account_id="act_123456789",
+        ad_id="120000000099100",
+        user_id="google_user_1",
+        observation_window_kind="last_30d",
+        market="TW",
+        placement_family="feed",
+        primary_text=None,
+        headline=None,
+        cta=None,
+        report_fetcher=fake_report_fetcher,
+    )
+
+    assert candidate.media_type == "video"
+    assert candidate.media_url == "https://video-abc.xx.fbcdn.net/actual_video.mp4"
+    assert candidate.media_degraded_reason is None
+
+
+@pytest.mark.unit
+async def test_meta_andromeda_fetch_observed_creative_candidate_falls_back_when_video_source_unavailable(monkeypatch):
+    """docs/68 B3：影片來源解析失敗（例如權限不足、影片已刪除）時，應優雅
+    退化為以縮圖當靜態圖片評分，而不是讓整個匯入失敗。"""
+    import modules.meta_andromeda.importers.facebook_ads_importer as facebook_ads_importer_module
+
+    async def fake_report_fetcher(**kwargs):
+        return [{
+            "ad_id": "120000000099200",
+            "campaign_id": "120000000000010",
+            "adset_id": "120000000000011",
+            "name": "Video Ad Unresolvable",
+            "objective": "OUTCOME_SALES",
+            "image_url": "https://scontent.xx.fbcdn.net/thumb_200.jpg",
+            "video_id": "555666777888",
+            "spend": 300.0,
+        }]
+
+    # get_headers 回傳 None 模擬「無可用的存取權杖」，_fetch_facebook_video_source_url
+    # 應短路回傳 None，交由 _resolve_video_candidate 退化為 image。
+    monkeypatch.setattr(facebook_ads_importer_module, "get_headers", lambda *a, **kw: None)
+
+    candidate = await facebook_ads_importer_module.fetch_observed_creative_candidate(
+        account_id="act_123456789",
+        ad_id="120000000099200",
+        user_id="google_user_1",
+        observation_window_kind="last_30d",
+        market="TW",
+        placement_family="feed",
+        primary_text=None,
+        headline=None,
+        cta=None,
+        report_fetcher=fake_report_fetcher,
+    )
+
+    assert candidate.media_type == "image"
+    assert candidate.media_url == "https://scontent.xx.fbcdn.net/thumb_200.jpg"
+    assert candidate.media_degraded_reason == "video_source_unavailable_fallback_to_thumbnail"
+
+
+@pytest.mark.unit
 def test_meta_andromeda_observation_import_uses_facebook_importer(meta_andromeda_access, db, monkeypatch):
     from database import MetaAndromedaObservedCreative
     from modules.meta_andromeda.schemas import ObservedCreativeCandidate

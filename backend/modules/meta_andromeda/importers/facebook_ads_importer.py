@@ -1,10 +1,15 @@
+import logging
 from datetime import UTC, date, datetime, timedelta
 
+import httpx
+
 from exceptions import ValidationError
+from modules.fb_ads._base import BASE_URL, TIMEOUT, get_headers
 from modules.fb_ads.analytics_service import get_custom_report
 
 from ..schemas import ObservedCreativeCandidate
 
+logger = logging.getLogger(__name__)
 
 _LIFETIME_START = date(2000, 1, 1)
 
@@ -44,8 +49,13 @@ def normalize_facebook_ad_row(
     observation_window_end: str,
     source_fetched_at: str,
 ) -> ObservedCreativeCandidate:
+    # image_url 對影片廣告來說其實是 FB 自動產生的縮圖（analytics_service 在
+    # image_url 缺值時已 fallback 成 thumbnail_url），只能當靜態圖片評分用的
+    # 保底素材；有 video_id 才代表這是真正的影片廣告，media_url 會在
+    # fetch_observed_creative_candidate() 內嘗試改指向可下載的影片來源。
     media_url = row.get("image_url")
-    media_type = "image" if media_url else "unknown"
+    video_id = row.get("video_id")
+    media_type = "video" if video_id else ("image" if media_url else "unknown")
 
     spend = float(row.get("spend", 0) or 0)
     clicks = int(row.get("clicks", 0) or 0)
@@ -92,6 +102,60 @@ def normalize_facebook_ad_row(
     )
 
 
+async def _fetch_facebook_video_source_url(
+    video_id: str,
+    *,
+    user_id: str,
+    team_id: str | None,
+) -> str | None:
+    """用 video_id 查詢實際可下載的影片來源網址。
+
+    廣告清單 API（/{account_id}/ads?fields=creative{...}）只會回傳影片縮圖，
+    不會直接給可下載的檔案位置，必須額外對 video 節點查一次 `source` 欄位。
+    任何失敗（權限不足、影片已刪除、逾時、回應缺欄位）都回傳 None，交由
+    呼叫端退化為以縮圖當靜態圖片評分，而不是讓整個匯入失敗。
+    """
+    headers = get_headers(user_id, team_id, allow_fallback=True)
+    if not headers:
+        return None
+
+    url = f"{BASE_URL}/{video_id}"
+    try:
+        async with httpx.AsyncClient(timeout=TIMEOUT) as client:
+            response = await client.get(url, headers=headers, params={"fields": "source"})
+            response.raise_for_status()
+            data = response.json()
+    except Exception as exc:
+        logger.warning(
+            "[MetaAndromeda] Failed to resolve Facebook video source for video_id=%s: %s",
+            video_id, exc,
+        )
+        return None
+
+    return data.get("source")
+
+
+async def _resolve_video_candidate(
+    candidate: ObservedCreativeCandidate,
+    *,
+    video_id: str,
+    user_id: str,
+    team_id: str | None,
+) -> ObservedCreativeCandidate:
+    source_url = await _fetch_facebook_video_source_url(video_id, user_id=user_id, team_id=team_id)
+    if source_url:
+        return candidate.model_copy(update={"media_url": source_url})
+
+    logger.info(
+        "[MetaAndromeda] Video source unavailable for video_id=%s, falling back to thumbnail as image.",
+        video_id,
+    )
+    return candidate.model_copy(update={
+        "media_type": "image",
+        "media_degraded_reason": "video_source_unavailable_fallback_to_thumbnail",
+    })
+
+
 async def fetch_observed_creative_candidate(
     *,
     account_id: str,
@@ -112,9 +176,9 @@ async def fetch_observed_creative_candidate(
         observation_window_start, observation_window_end = since, until
     else:
         observation_window_start, observation_window_end = resolve_observation_window(observation_window_kind)
-    
+
     fetcher = report_fetcher or get_custom_report
-    
+
     # 1. 優先從整包快取/報告中尋找，以發揮 Cache 功效使批次匯入極速完成
     rows = await fetcher(
         account_id=account_id,
@@ -124,9 +188,9 @@ async def fetch_observed_creative_candidate(
         level="ad",
         team_id=team_id,
     )
-    
+
     target_row = next((row for row in rows if str(row.get("ad_id")) == str(ad_id)), None) if rows else None
-    
+
     # 2. 若快取中找不到（可能因 limit 500 被截斷），退回直打單一 ad_id 的精準查詢 (Fallback)
     if target_row is None:
         fallback_rows = await fetcher(
@@ -140,7 +204,7 @@ async def fetch_observed_creative_candidate(
         )
         if fallback_rows:
             target_row = next((row for row in fallback_rows if str(row.get("ad_id")) == str(ad_id)), None)
-            
+
     if target_row is None:
         raise ValidationError(f"該廣告目前在 Facebook 尚未產生任何投放數據，無法匯入漂移診斷。")
 
@@ -152,7 +216,7 @@ async def fetch_observed_creative_candidate(
         )
 
     source_fetched_at = datetime.now(UTC).replace(microsecond=0).isoformat().replace("+00:00", "Z")
-    return normalize_facebook_ad_row(
+    candidate = normalize_facebook_ad_row(
         row=target_row,
         account_id=account_id,
         market=market,
@@ -165,3 +229,11 @@ async def fetch_observed_creative_candidate(
         observation_window_end=observation_window_end,
         source_fetched_at=source_fetched_at,
     )
+
+    video_id = target_row.get("video_id")
+    if candidate.media_type == "video" and video_id:
+        candidate = await _resolve_video_candidate(
+            candidate, video_id=video_id, user_id=user_id, team_id=team_id,
+        )
+
+    return candidate

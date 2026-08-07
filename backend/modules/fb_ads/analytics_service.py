@@ -71,6 +71,7 @@ def _process_flat_row(row: dict, level: str, ad_meta_map: dict) -> dict:
             if row.get("purchase_roas") else 0
         ),
         "image_url": meta.get("image_url"),
+        "video_id": meta.get("video_id"),
         "quality_ranking": row.get("quality_ranking", "-"),
         "engagement_rate_ranking": row.get("engagement_rate_ranking", "-"),
         "conversion_rate_ranking": row.get("conversion_rate_ranking", "-"),
@@ -268,7 +269,7 @@ async def get_custom_report(
             if level == "ad":
                 c_url = f"{BASE_URL}/{account_id}/ads"
                 c_params = {
-                    "fields": "id,effective_status,creative{thumbnail_url,image_url}",
+                    "fields": "id,effective_status,creative{thumbnail_url,image_url,video_id}",
                     "limit": 1000,
                 }
                 ad_meta_task = client.get(c_url, headers=headers, params=c_params)
@@ -312,6 +313,9 @@ async def get_custom_report(
             img = creative.get("image_url") or creative.get("thumbnail_url")
             ad_meta_map[ad["id"]] = {
                 "image_url": img,
+                # 廣告清單 API 只給縮圖，真正可下載的影片來源要另外用 video_id
+                # 查 /{video_id}?fields=source（見 meta_andromeda 匯入器）。
+                "video_id": creative.get("video_id"),
                 "status": ad.get("effective_status", "UNKNOWN"),
             }
 

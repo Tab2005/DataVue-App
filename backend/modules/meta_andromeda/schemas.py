@@ -316,6 +316,9 @@ class ObservedCreativeCandidate(BaseModel):
     cta: str | None = None
     media_url: str | None = None
     media_type: Literal["image", "video", "unknown"] = "unknown"
+    # 影片來源解析失敗時，media_type 會退化為 "image"（改用縮圖評分），
+    # 這裡記錄退化原因供 lineage 與後續分析追溯（docs/68 B3）。
+    media_degraded_reason: str | None = None
     performance_snapshot: dict = Field(default_factory=dict)
     observation_window_kind: str
     observation_window_start: str
