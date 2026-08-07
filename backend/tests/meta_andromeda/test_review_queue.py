@@ -56,6 +56,70 @@ def test_meta_andromeda_review_queue_excludes_backtest_scores(db):
 
 
 @pytest.mark.unit
+def test_meta_andromeda_review_queue_filters_by_source_and_has_observation(db):
+    """使用者回報：篩選「評分工作台」或「成效分析匯入」（source 參數）會請求
+    逾時。根因是 request_context["observed_creative_id"] 用裸的 JSON 運算式
+    （PostgreSQL 對應 ->，回傳 json，沒有 btree operator class，建不了
+    index），改用 .as_string()（對應 ->>，回傳 text，可建 index）後，這裡
+    驗證篩選結果語意完全不變：source=analytics 只回傳有連結觀測素材的
+    事件，source=score_lab 只回傳沒有的；has_observation 的兩個分支
+    （True 用 or_ 合併 EXISTS 子查詢、False 用 ~EXISTS 排除）也一併重寫，
+    這裡一併驗證行為不變。"""
+    from database.models.meta_andromeda import MetaAndromedaScoreEvent
+
+    _clear_meta_andromeda_operational_data(db)
+    db.add(
+        MetaAndromedaScoreEvent(
+            id="analytics_evt",
+            status="completed",
+            asset_uri="asset://analytics",
+            asset_type="image",
+            request_mode="auto",
+            objective="sales",
+            placement_family="feed",
+            market="TW",
+            diagnostic_breakdown={},
+            risk_tags=[],
+            top_positive_drivers=[],
+            top_negative_drivers=[],
+            lineage={"scoring_mode": "ai"},
+            request_context={"origin": "analytics", "observed_creative_id": "obs_1"},
+        )
+    )
+    db.add(
+        MetaAndromedaScoreEvent(
+            id="score_lab_evt",
+            status="completed",
+            asset_uri="asset://score_lab",
+            asset_type="image",
+            request_mode="manual",
+            objective="sales",
+            placement_family="feed",
+            market="TW",
+            diagnostic_breakdown={},
+            risk_tags=[],
+            top_positive_drivers=[],
+            top_negative_drivers=[],
+            lineage={"scoring_mode": "ai"},
+            request_context={"origin": "score_lab"},
+        )
+    )
+    db.commit()
+
+    analytics_result = repository.list_review_queue(db, source="analytics", limit=25)
+    assert [item["score_event_id"] for item in analytics_result["items"]] == ["analytics_evt"]
+
+    score_lab_result = repository.list_review_queue(db, source="score_lab", limit=25)
+    assert [item["score_event_id"] for item in score_lab_result["items"]] == ["score_lab_evt"]
+
+    matched_result = repository.list_review_queue(db, has_observation=True, limit=25)
+    assert [item["score_event_id"] for item in matched_result["items"]] == ["analytics_evt"]
+
+    unmatched_result = repository.list_review_queue(db, has_observation=False, limit=25)
+    assert [item["score_event_id"] for item in unmatched_result["items"]] == ["score_lab_evt"]
+
+
+@pytest.mark.unit
 def test_meta_andromeda_review_queue_paginates_at_sql_level(db):
     """list_review_queue() 過去是把符合條件的整批結果撈進 Python 再用
     list slicing 分頁，資料量大時會拖慢審核佇列頁面（見使用者回報的

@@ -112,14 +112,16 @@ class ReviewQueueMixin:
             query = query.filter(MetaAndromedaScoreEvent.status == status)
         if roas_band:
             query = query.filter(MetaAndromedaScoreEvent.roas_band == roas_band)
+        # 用 .as_string()（SQL 層 ->>，取出 text）而非裸的 ["key"]（->，取出 json/jsonb）：
+        # PostgreSQL 的 json 型別沒有預設的 btree operator class，裸 JSON 運算式無法建
+        # index；文字運算式才能建立可用的 expression index（見下方 migration），這是
+        # 「篩選來源就逾時」的根因——status/roas_band/created_at 補了索引後，一旦查詢
+        # 條件裡混入這種無法用索引的 JSON 判斷，PostgreSQL 還是得整表掃描評估。
+        observed_creative_id = MetaAndromedaScoreEvent.request_context["observed_creative_id"].as_string()
         if source == "analytics":
-            query = query.filter(
-                MetaAndromedaScoreEvent.request_context["observed_creative_id"].isnot(None)
-            )
+            query = query.filter(observed_creative_id.isnot(None))
         elif source == "score_lab":
-            query = query.filter(
-                MetaAndromedaScoreEvent.request_context["observed_creative_id"].is_(None)
-            )
+            query = query.filter(observed_creative_id.is_(None))
         if scoring_engine == "ai":
             query = query.filter(
                 MetaAndromedaScoreEvent.lineage["scoring_mode"].as_string() == "ai"
@@ -135,8 +137,7 @@ class ReviewQueueMixin:
                 .correlate(MetaAndromedaScoreEvent)
                 .exists()
             )
-            obs_linked = MetaAndromedaScoreEvent.request_context["observed_creative_id"].isnot(None)
-            query = query.filter(or_(cal_exists, obs_linked))
+            query = query.filter(or_(cal_exists, observed_creative_id.isnot(None)))
         elif has_observation is False:
             cal_exists = (
                 db.query(MetaAndromedaCalibrationItem.score_event_id)
@@ -144,8 +145,7 @@ class ReviewQueueMixin:
                 .correlate(MetaAndromedaScoreEvent)
                 .exists()
             )
-            obs_linked = MetaAndromedaScoreEvent.request_context["observed_creative_id"].isnot(None)
-            query = query.filter(~cal_exists, ~obs_linked)
+            query = query.filter(~cal_exists, observed_creative_id.is_(None))
         if search:
             pat = f"%{search}%"
             ad_name_match = (
