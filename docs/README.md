@@ -64,6 +64,7 @@ docs/
 - [23_Meta_Andromeda_非轉換素材預測對照補完計劃.md](03_meta_andromeda/23_Meta_Andromeda_非轉換素材預測對照補完計劃.md) - 非轉換素材預測對照
 - [24_Meta_Andromeda_評分管線Event_Loop阻塞修復與模組優化實作計劃.md](03_meta_andromeda/24_Meta_Andromeda_評分管線Event_Loop阻塞修復與模組優化實作計劃.md) & [28_Meta_Andromeda_素材縮圖跨容器儲存問題與Worker集中化方案規劃.md](03_meta_andromeda/28_Meta_Andromeda_素材縮圖跨容器儲存問題與Worker集中化方案規劃.md) - 異步效能與儲存優化
 - [30_Meta_Andromeda_評分模型真實準確率分析與改善建議.md](03_meta_andromeda/30_Meta_Andromeda_評分模型真實準確率分析與改善建議.md) & [32_Meta_Andromeda_評分模型準確率改善實作計劃.md](03_meta_andromeda/32_Meta_Andromeda_評分模型準確率改善實作計劃.md) - AI 模型準確率反饋與迭代
+- [68_Meta_Andromeda_模組與成效分析匯入優化審查報告.md](03_meta_andromeda/68_Meta_Andromeda_模組與成效分析匯入優化審查報告.md) - 模組整體與觀測匯入路徑優化審查（2026-08-07）
 - [facebook-ads-metrics-guide.md](03_meta_andromeda/facebook-ads-metrics-guide.md) - Facebook 廣告指標參考指南
 
 ---
