@@ -140,6 +140,97 @@ def test_meta_andromeda_preview_returns_404_when_internal_worker_returns_404(met
 
 
 @pytest.mark.unit
+def test_meta_andromeda_preview_releases_db_connection_before_proxy_call(
+    meta_andromeda_access, db, tmp_path, monkeypatch,
+):
+    """2026-08-07 事故修復驗證：preview_asset() 查完資產 metadata 後應該
+    立刻釋放 DB 連線，才去打代理請求給 worker——不能讓連線一路握到跨服務
+    HTTP 呼叫做完，否則審核佇列列表頁一次渲染 25 張縮圖、瀏覽器同時發出
+    多個預覽請求時就會把連線池吃光（正式環境 pool_size=10+overflow=10，
+    QueuePool 逾時 30 秒）。這裡直接攔截呼叫順序：db.close() 必須先於
+    代理呼叫發生。"""
+    from fastapi import Response
+
+    monkeypatch.setenv("SERVICE_ROLE", "web")
+    monkeypatch.setenv("META_ANDROMEDA_STORAGE_ROOT", str(tmp_path))
+    monkeypatch.setenv("META_ANDROMEDA_INTERNAL_WORKER_BASE_URL", "http://meta-andromeda-worker.zeabur.internal")
+    monkeypatch.setenv("META_ANDROMEDA_INTERNAL_WORKER_TOKEN", "worker-token")
+    _install_internal_worker_httpx_proxy(monkeypatch, db)
+
+    upload_response = meta_andromeda_access.post(
+        "/api/meta-andromeda/assets:upload",
+        data={"asset_type": "image", "source_filename": "close-order.png"},
+        files={"file": ("close-order.png", b"close-order-bytes", "image/png")},
+    )
+    assert upload_response.status_code == 201
+    payload = upload_response.json()
+
+    call_order = []
+    original_close = db.close
+
+    def tracking_close():
+        call_order.append("db_closed")
+        return original_close()
+
+    monkeypatch.setattr(db, "close", tracking_close)
+
+    async def tracking_proxy(uri: str):
+        call_order.append("proxy_called")
+        return Response(content=b"ok", media_type="image/png")
+
+    monkeypatch.setattr(meta_andromeda_router_module, "proxy_asset_preview_response", tracking_proxy)
+
+    response = meta_andromeda_access.get(
+        "/api/meta-andromeda/assets/preview", params={"uri": payload["asset_uri"]}
+    )
+
+    assert response.status_code == 200
+    assert call_order == ["db_closed", "proxy_called"]
+
+
+@pytest.mark.unit
+def test_meta_andromeda_upload_releases_db_connection_before_proxy_call(
+    meta_andromeda_access, db, tmp_path, monkeypatch,
+):
+    """2026-08-07 事故修復驗證（upload_asset 版本）：非 all 角色下的代理上傳
+    分支完全不需要 db——但前面的 get_current_meta_andromeda_user /
+    require_meta_andromeda_operate 依賴已經用同一個 session 查過使用者與
+    權限，連線早已 checkout。應該在代理上傳給 worker（檔案可能比縮圖大
+    很多，等待更久）之前就先釋放，而不是握到整個上傳完成才放。"""
+    monkeypatch.setenv("SERVICE_ROLE", "web")
+    monkeypatch.setenv("META_ANDROMEDA_STORAGE_ROOT", str(tmp_path))
+    monkeypatch.setenv("META_ANDROMEDA_INTERNAL_WORKER_BASE_URL", "http://meta-andromeda-worker.zeabur.internal")
+    monkeypatch.setenv("META_ANDROMEDA_INTERNAL_WORKER_TOKEN", "worker-token")
+    _install_internal_worker_httpx_proxy(monkeypatch, db)
+
+    call_order = []
+    original_close = db.close
+
+    def tracking_close():
+        call_order.append("db_closed")
+        return original_close()
+
+    monkeypatch.setattr(db, "close", tracking_close)
+
+    real_proxy = meta_andromeda_router_module.proxy_asset_upload_response
+
+    async def tracking_proxy(**kwargs):
+        call_order.append("proxy_called")
+        return await real_proxy(**kwargs)
+
+    monkeypatch.setattr(meta_andromeda_router_module, "proxy_asset_upload_response", tracking_proxy)
+
+    response = meta_andromeda_access.post(
+        "/api/meta-andromeda/assets:upload",
+        data={"asset_type": "image", "source_filename": "upload-close-order.png"},
+        files={"file": ("upload-close-order.png", b"upload-close-order-bytes", "image/png")},
+    )
+
+    assert response.status_code == 201
+    assert call_order == ["db_closed", "proxy_called"]
+
+
+@pytest.mark.unit
 def test_meta_andromeda_internal_asset_route_rejects_missing_auth(db, tmp_path, monkeypatch):
     monkeypatch.setenv("META_ANDROMEDA_STORAGE_ROOT", str(tmp_path))
     monkeypatch.setenv("META_ANDROMEDA_INTERNAL_WORKER_TOKEN", "worker-token")

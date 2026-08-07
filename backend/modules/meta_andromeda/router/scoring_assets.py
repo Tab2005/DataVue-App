@@ -30,7 +30,17 @@ async def preview_asset(
             detail=f"Asset not found for URI: {uri}",
         )
 
-    if asset.storage_backend == "filesystem":
+    storage_backend = asset.storage_backend
+    # 已經拿到需要的 metadata，立刻釋放 DB 連線——接下來的代理呼叫（跨服務
+    # HTTP 打去 worker，逾時上限預設 10 秒）或 S3 讀取跟資料庫完全無關，
+    # 若讓 FastAPI 的 db=Depends(get_db) 繼續握著連線等到整個 request 結束，
+    # 審核佇列列表頁一次渲染最多 25 張縮圖、瀏覽器同時發出一批預覽請求時，
+    # 疊加起來就會把連線池吃光（2026-08-07 事故：pool_size=10+overflow=10
+    # 全部卡滿，逾時 30 秒）。asset 的純量欄位已在查詢時載入，關閉 session
+    # 後仍可安全存取。
+    db.close()
+
+    if storage_backend == "filesystem":
         if settings.SERVICE_ROLE == "all":
             return build_asset_response(asset)
         try:
@@ -38,12 +48,12 @@ async def preview_asset(
         except MetaAndromedaInternalWorkerGatewayError as exc:
             raise HTTPException(status_code=exc.status_code, detail=exc.detail) from exc
 
-    if asset.storage_backend == "s3_compatible":
+    if storage_backend == "s3_compatible":
         return build_asset_response(asset)
 
     raise HTTPException(
         status_code=status.HTTP_400_BAD_REQUEST,
-        detail=f"Unsupported storage backend: {asset.storage_backend}",
+        detail=f"Unsupported storage backend: {storage_backend}",
     )
 
 
@@ -67,11 +77,18 @@ async def upload_asset(
                 uploaded_by=getattr(user, "id", None),
                 content_type=file.content_type,
             )
+        # 這個分支完全不需要 db——但前面的 get_current_meta_andromeda_user /
+        # require_meta_andromeda_operate 依賴已經用同一個 db session 查過
+        # 使用者/權限，連線早已 checkout。提前釋放，才不會在代理上傳給
+        # worker（檔案可能比縮圖大很多，等待時間更久）期間繼續占用連線池，
+        # 跟 preview_asset 是同一個成因（見該函式的註解與 2026-08-07 事故）。
+        uploaded_by = getattr(user, "id", None)
+        db.close()
         return await _facade_attr("proxy_asset_upload_response", proxy_asset_upload_response)(
             asset_type=asset_type,
             source_filename=source_filename,
             file_bytes=file_bytes,
-            uploaded_by=getattr(user, "id", None),
+            uploaded_by=uploaded_by,
             content_type=file.content_type,
         )
     except MetaAndromedaValidationError as exc:
