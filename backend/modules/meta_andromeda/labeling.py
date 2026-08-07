@@ -78,6 +78,63 @@ def match_observed_to_prediction(db, obs) -> MetaAndromedaScoreEvent | None:
     return pred
 
 
+def find_reusable_ai_score_event(
+    db,
+    *,
+    asset_id: str | None,
+    asset_uri: str | None,
+) -> MetaAndromedaScoreEvent | None:
+    """Find the most recent completed AI-mode ScoreEvent for the same underlying
+    asset content, so observation-import auto-scoring can skip re-scoring a
+    creative it has already evaluated.
+
+    Checksum-based matching (via sibling assets sharing the same file hash)
+    takes priority over asset_uri exact matching: every observation import
+    downloads and stores a fresh copy of the creative under a brand-new random
+    asset_uri (see storage.py's uuid4-based asset_id), so the same creative
+    observed across last_7d/last_30d/lifetime windows would otherwise never
+    match on asset_uri and would be re-scored by AI every time (docs/68 A1).
+    """
+    pred = None
+    asset = (
+        db.query(MetaAndromedaAsset).filter(MetaAndromedaAsset.id == asset_id).first()
+        if asset_id
+        else None
+    )
+
+    if asset and asset.checksum_sha256:
+        sibling_asset_ids = [
+            row[0]
+            for row in db.query(MetaAndromedaAsset.id)
+            .filter(MetaAndromedaAsset.checksum_sha256 == asset.checksum_sha256)
+            .all()
+        ]
+        if sibling_asset_ids:
+            pred = (
+                db.query(MetaAndromedaScoreEvent)
+                .filter(
+                    MetaAndromedaScoreEvent.asset_id.in_(sibling_asset_ids),
+                    MetaAndromedaScoreEvent.status == "completed",
+                    MetaAndromedaScoreEvent.lineage["scoring_mode"].as_string() == "ai",
+                )
+                .order_by(MetaAndromedaScoreEvent.completed_at.desc())
+                .first()
+            )
+
+    if not pred and asset_uri:
+        pred = (
+            db.query(MetaAndromedaScoreEvent)
+            .filter(
+                MetaAndromedaScoreEvent.asset_uri == asset_uri,
+                MetaAndromedaScoreEvent.status == "completed",
+                MetaAndromedaScoreEvent.lineage["scoring_mode"].as_string() == "ai",
+            )
+            .order_by(MetaAndromedaScoreEvent.completed_at.desc())
+            .first()
+        )
+    return pred
+
+
 def _percentile(sorted_values: list[float], pct: float) -> float:
     """Linear-interpolation percentile (numpy's default 'linear' method).
 

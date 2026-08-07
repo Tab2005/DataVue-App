@@ -560,6 +560,137 @@ def test_meta_andromeda_observation_import_auto_creates_score_event(
 
 
 @pytest.mark.unit
+def test_meta_andromeda_observation_import_reuses_existing_ai_score_by_checksum(
+    meta_andromeda_access,
+    db,
+    monkeypatch,
+):
+    """docs/68 A1 修復驗證：同一素材（相同 bytes → 相同 checksum）在不同觀測窗口
+    匯入時，即使每次都會存成一個全新隨機 asset_uri 的資產，也應重用既有的
+    completed + AI 模式評分，而不是每個窗口都重新呼叫一次 AI（修復前 asset_uri
+    精確比對永遠不會命中，此測試在修復前會失敗）。"""
+    from datetime import UTC, datetime
+
+    from database import MetaAndromedaAsset, MetaAndromedaScoreEvent
+    from modules.meta_andromeda.schemas import ObservedCreativeCandidate
+    from modules.meta_andromeda.storage import storage_adapter
+
+    # meta_andromeda_access fixture 已呼叫 ensure_seed_data() 灌入固定的 seed 評分事件，
+    # 用 baseline 而非硬編絕對數量，避免耦合到 seed 資料筆數。
+    baseline_score_event_count = db.query(MetaAndromedaScoreEvent).count()
+
+    shared_file_bytes = b"same-creative-bytes-across-observation-windows"
+
+    # 模擬「第一個觀測窗口」已完成的 AI 評分：用 storage_adapter 實際存出一份
+    # 資產，確保 checksum 與稍後背景匯入下載到的 bytes 完全一致，但 asset_uri
+    # 刻意不同（如同真實情況：每次匯入都是獨立下載、獨立存檔）。
+    first_window_asset_record = storage_adapter.store_asset(
+        file_bytes=shared_file_bytes,
+        asset_type="image",
+        source_filename="first_window.png",
+    )
+    first_window_asset = MetaAndromedaAsset(**first_window_asset_record)
+    db.add(first_window_asset)
+    db.flush()
+
+    existing_score_event = MetaAndromedaScoreEvent(
+        id="ma_evt_existing_ai_score",
+        status="completed",
+        runtime_job_id="ma_score_existing",
+        created_at=datetime.now(UTC),
+        queued_at=datetime.now(UTC),
+        completed_at=datetime.now(UTC),
+        asset_uri=first_window_asset.asset_uri,
+        asset_type="image",
+        asset_id=first_window_asset.id,
+        request_mode="auto",
+        objective="purchase",
+        placement_family="all",
+        market="TW",
+        overall_score=72,
+        roas_band="mid",
+        model_version="test-model-v1",
+        lineage={"scoring_mode": "ai"},
+        request_context={"observed_creative_id": "ma_obs_first_window"},
+    )
+    db.add(existing_score_event)
+    db.commit()
+
+    async def fake_fetch_observed_creative_candidate(**kwargs):
+        payload = kwargs["payload"]
+        return ObservedCreativeCandidate(
+            source_platform="facebook_ads",
+            source_account_id=payload["account_id"],
+            campaign_id="120000000000010",
+            adset_id="120000000000011",
+            ad_id=payload["ad_id"],
+            ad_name="Second Window Ad",
+            objective="OUTCOME_SALES",
+            placement_family=payload["placement_family"],
+            market=payload["market"],
+            primary_text=None,
+            headline=None,
+            cta=None,
+            media_url="https://cdn.example.com/second-window-ad.png",
+            media_type="image",
+            performance_snapshot={"roas": 3.1},
+            observation_window_kind="lifetime",
+            observation_window_start="2023-08-08",
+            observation_window_end="2026-08-07",
+            source_fetched_at="2026-08-07T00:00:00Z",
+        )
+
+    async def fake_download_observed_asset_snapshot(*, media_url: str, ad_id: str, media_type: str):
+        return {
+            "file_bytes": shared_file_bytes,
+            "source_filename": f"{ad_id}.png",
+            "content_type": "image/png",
+            "asset_type": media_type,
+        }
+
+    monkeypatch.setattr(
+        meta_andromeda_service_module.MetaAndromedaService,
+        "_fetch_observed_facebook_ad_candidate",
+        staticmethod(fake_fetch_observed_creative_candidate),
+    )
+    monkeypatch.setattr(
+        meta_andromeda_service_module.MetaAndromedaService,
+        "_download_observed_asset_snapshot",
+        staticmethod(fake_download_observed_asset_snapshot),
+    )
+    _bind_background_import_session(monkeypatch, db)
+
+    response = meta_andromeda_access.post(
+        "/api/meta-andromeda/evaluations/import/facebook-ads",
+        json={
+            "account_id": "act_123456789",
+            "ad_id": "120000000099099",
+            "observation_window_kind": "lifetime",
+            "market": "TW",
+            "placement_family": "feed",
+        },
+    )
+    assert response.status_code == 202
+    payload = response.json()
+
+    status_payload = meta_andromeda_access.get(
+        f"/api/meta-andromeda/evaluations/import/facebook-ads/{payload['observed_creative_id']}/status"
+    ).json()
+
+    # 內容相同（checksum 相同）但 asset_uri 不同的第二次匯入，應直接重用既有
+    # AI 評分事件，而不是再建一筆新的評分事件、再打一次 AI。
+    assert status_payload["score_status"] == "completed"
+    assert status_payload["score_event_id"] == "ma_evt_existing_ai_score"
+
+    # 重用既有評分後，總筆數只比 baseline 多我們手動建立的那一筆
+    # existing_score_event，匯入流程本身沒有再新增評分事件。
+    assert db.query(MetaAndromedaScoreEvent).count() == baseline_score_event_count + 1
+
+    db.refresh(existing_score_event)
+    assert payload["observed_creative_id"] in existing_score_event.lineage["linked_observation_ids"]
+
+
+@pytest.mark.unit
 def test_meta_andromeda_observation_import_denies_without_fb_ads_module_access(
     meta_andromeda_permission_client,
     db,

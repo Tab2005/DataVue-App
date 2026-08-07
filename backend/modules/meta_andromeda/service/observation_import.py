@@ -281,32 +281,23 @@ class ObservationImportServiceMixin:
         local_async fallback 時會用到 asyncio.create_task()，不能丟進 to_thread。
         回傳 ("error", None)：建立評分事件失敗，狀態已標記為 failed，呼叫端直接回傳 None。
         """
-        from database.models.meta_andromeda import MetaAndromedaScoreEvent as _ScoreEvent
         from sqlalchemy.orm.attributes import flag_modified
+
+        from ..labeling import find_reusable_ai_score_event
 
         db = SessionLocal()
         observed_creative_id = auto_score_payload.get("observed_creative_id") or "unknown_observation"
         asset_uri = auto_score_payload.get("asset_uri")
+        asset_id = auto_score_payload.get("asset_id")
         try:
             # 同一素材可能在多個觀測窗口（last_7d/last_30d/lifetime）各匯入一次；只要該素材已有
             # 「AI 模式、completed」的最新評分就重用，不必每個窗口都重新呼叫 AI 評一次分。
+            # 用 checksum（經 sibling asset）比對，而非 asset_uri 精確比對：每次觀測匯入都會
+            # 重新下載並存成一個全新隨機 asset_uri 的資產，即使檔案內容位元組相同也一樣，
+            # 純用 asset_uri 比對永遠不會命中（docs/68 A1）。
             # request_context.observed_creative_id 保留原本第一個連結的觀測（相容現有單值查詢），
             # 完整的多對一關聯改記在 lineage.linked_observation_ids（新增、不影響既有查詢）。
-            existing = None
-            if asset_uri:
-                existing = (
-                    db.query(_ScoreEvent)
-                    .filter(
-                        _ScoreEvent.asset_uri == asset_uri,
-                        _ScoreEvent.status == "completed",
-                    )
-                    .order_by(_ScoreEvent.completed_at.desc())
-                    .all()
-                )
-                existing = next(
-                    (evt for evt in existing if (evt.lineage or {}).get("scoring_mode") == "ai"),
-                    None,
-                )
+            existing = find_reusable_ai_score_event(db, asset_id=asset_id, asset_uri=asset_uri)
 
             if existing:
                 rc = dict(existing.request_context or {})
