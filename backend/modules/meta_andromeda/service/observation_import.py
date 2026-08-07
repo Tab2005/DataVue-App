@@ -112,13 +112,35 @@ class ObservationImportServiceMixin:
             raise MetaAndromedaValidationError("observed_media_url_must_use_https", status_code=400)
         if not MetaAndromedaService._is_allowed_media_host(parsed.hostname):
             raise MetaAndromedaValidationError("observed_media_url_host_not_allowed", status_code=400)
-        async with httpx.AsyncClient(timeout=30.0, follow_redirects=True) as client:
-            response = await client.get(media_url)
-            response.raise_for_status()
 
-        content_type = response.headers.get("content-type", "").split(";")[0].strip() or None
-        if len(response.content) > settings.META_ANDROMEDA_OBSERVED_DOWNLOAD_MAX_BYTES:
-            raise MetaAndromedaValidationError("observed_media_too_large", status_code=413)
+        # docs/68 B4：改用串流下載——超大檔案（或惡意 URL）過去會先把整個 body
+        # 讀進記憶體才比對大小上限被拒絕，等於白白吃滿頻寬與記憶體，批次匯入
+        # 時多個併發 job 疊加更嚴重。改為：Content-Length header 若已超限直接
+        # 中止（連 body 都不讀）；沒有該 header（或伺服器謊報）則邊讀邊累計，
+        # 一旦累計位元組超限立刻中止連線，不繼續讀完剩餘內容。
+        max_bytes = settings.META_ANDROMEDA_OBSERVED_DOWNLOAD_MAX_BYTES
+        async with httpx.AsyncClient(timeout=30.0, follow_redirects=True) as client:
+            async with client.stream("GET", media_url) as response:
+                response.raise_for_status()
+
+                content_length = response.headers.get("content-length")
+                if content_length is not None:
+                    try:
+                        declared_size = int(content_length)
+                    except ValueError:
+                        declared_size = None
+                    if declared_size is not None and declared_size > max_bytes:
+                        raise MetaAndromedaValidationError("observed_media_too_large", status_code=413)
+
+                content_type = response.headers.get("content-type", "").split(";")[0].strip() or None
+
+                downloaded = bytearray()
+                async for chunk in response.aiter_bytes():
+                    downloaded.extend(chunk)
+                    if len(downloaded) > max_bytes:
+                        raise MetaAndromedaValidationError("observed_media_too_large", status_code=413)
+
+        file_bytes = bytes(downloaded)
         if media_type == "image" and content_type not in {"image/png", "image/jpeg", "image/webp"}:
             raise MetaAndromedaValidationError("observed_media_mime_not_allowed", status_code=415)
         if media_type == "video" and content_type not in {"video/mp4", "video/quicktime"}:
@@ -134,7 +156,7 @@ class ObservationImportServiceMixin:
 
         asset_type = media_type if media_type in {"image", "video"} else "image"
         return {
-            "file_bytes": response.content,
+            "file_bytes": file_bytes,
             "source_filename": source_filename,
             "content_type": content_type,
             "asset_type": asset_type,

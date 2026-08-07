@@ -1341,6 +1341,140 @@ def test_meta_andromeda_observation_import_rejects_disallowed_media_host(meta_an
     assert status_payload["score_status"] == "blocked_by_observation_failure"
 
 
+class _FakeStreamResponse:
+    """模擬 httpx 的串流回應：headers 固定、body 依 chunks 逐塊供
+    aiter_bytes() 消費，並記錄實際被消費的 chunk 數，供測試驗證超限時
+    是否有提早中止、不繼續讀完剩餘內容。"""
+
+    def __init__(self, *, headers=None, chunks=None, status_code=200):
+        self.headers = headers or {}
+        self._chunks = list(chunks or [])
+        self.status_code = status_code
+        self.consumed_chunk_count = 0
+
+    def raise_for_status(self):
+        if self.status_code >= 400:
+            raise httpx.HTTPStatusError("error", request=None, response=self)
+
+    async def aiter_bytes(self):
+        for chunk in self._chunks:
+            self.consumed_chunk_count += 1
+            yield chunk
+
+
+class _FakeStreamContextManager:
+    def __init__(self, response):
+        self._response = response
+
+    async def __aenter__(self):
+        return self._response
+
+    async def __aexit__(self, *exc_info):
+        return False
+
+
+class _FakeAsyncClientForDownload:
+    def __init__(self, response):
+        self._response = response
+
+    async def __aenter__(self):
+        return self
+
+    async def __aexit__(self, *exc_info):
+        return False
+
+    def stream(self, method, url):
+        return _FakeStreamContextManager(self._response)
+
+
+@pytest.mark.unit
+async def test_meta_andromeda_download_observed_asset_rejects_by_content_length_without_reading_body(monkeypatch):
+    """docs/68 B4 修復驗證：Content-Length 已宣告超過上限時應直接中止，
+    完全不消費 body（不呼叫 aiter_bytes 的任何一塊），而不是像修復前那樣
+    先把整個檔案讀進記憶體才拒絕。"""
+    monkeypatch.setenv("META_ANDROMEDA_OBSERVED_DOWNLOAD_MAX_BYTES", "100")
+
+    fake_response = _FakeStreamResponse(
+        headers={"content-length": "999999", "content-type": "image/png"},
+        chunks=[b"x" * 50, b"x" * 50, b"x" * 50],
+    )
+    monkeypatch.setattr(
+        observation_import_module.httpx,
+        "AsyncClient",
+        lambda *a, **kw: _FakeAsyncClientForDownload(fake_response),
+    )
+
+    with pytest.raises(observation_import_module.MetaAndromedaValidationError) as exc_info:
+        await observation_import_module.MetaAndromedaService._download_observed_asset_snapshot(
+            media_url="https://scontent.xx.fbcdn.net/oversized.png",
+            ad_id="120000000000900",
+            media_type="image",
+        )
+
+    assert exc_info.value.detail == "observed_media_too_large"
+    assert exc_info.value.status_code == 413
+    assert fake_response.consumed_chunk_count == 0
+
+
+@pytest.mark.unit
+async def test_meta_andromeda_download_observed_asset_aborts_mid_stream_without_content_length(monkeypatch):
+    """docs/68 B4 修復驗證：伺服器沒給 Content-Length（或謊報）時，邊讀邊
+    累計位元組，一旦超限立刻中止，不繼續讀完剩餘的 chunk。"""
+    monkeypatch.setenv("META_ANDROMEDA_OBSERVED_DOWNLOAD_MAX_BYTES", "100")
+
+    fake_response = _FakeStreamResponse(
+        headers={"content-type": "image/png"},  # 無 content-length
+        chunks=[b"x" * 60, b"x" * 60, b"x" * 60, b"x" * 60],  # 累計到第 2 塊就已超過 100 bytes
+    )
+    monkeypatch.setattr(
+        observation_import_module.httpx,
+        "AsyncClient",
+        lambda *a, **kw: _FakeAsyncClientForDownload(fake_response),
+    )
+
+    with pytest.raises(observation_import_module.MetaAndromedaValidationError) as exc_info:
+        await observation_import_module.MetaAndromedaService._download_observed_asset_snapshot(
+            media_url="https://scontent.xx.fbcdn.net/oversized.png",
+            ad_id="120000000000901",
+            media_type="image",
+        )
+
+    assert exc_info.value.detail == "observed_media_too_large"
+    assert exc_info.value.status_code == 413
+    # 第 2 塊消費完後累計已達 120 bytes > 100，應立刻中止，第 3、4 塊完全不會被讀取。
+    assert fake_response.consumed_chunk_count == 2
+
+
+@pytest.mark.unit
+async def test_meta_andromeda_download_observed_asset_succeeds_under_limit(monkeypatch):
+    """docs/68 B4 修復驗證：串流化後，正常大小的檔案仍能完整組回原始
+    bytes，行為與修復前一致（回歸驗證，非新增能力）。"""
+    monkeypatch.setenv("META_ANDROMEDA_OBSERVED_DOWNLOAD_MAX_BYTES", "1000")
+
+    expected_bytes = b"png-bytes-part-1" + b"png-bytes-part-2"
+    fake_response = _FakeStreamResponse(
+        headers={"content-length": str(len(expected_bytes)), "content-type": "image/png"},
+        chunks=[b"png-bytes-part-1", b"png-bytes-part-2"],
+    )
+    monkeypatch.setattr(
+        observation_import_module.httpx,
+        "AsyncClient",
+        lambda *a, **kw: _FakeAsyncClientForDownload(fake_response),
+    )
+
+    snapshot = await observation_import_module.MetaAndromedaService._download_observed_asset_snapshot(
+        media_url="https://scontent.xx.fbcdn.net/ok.png",
+        ad_id="120000000000902",
+        media_type="image",
+    )
+
+    assert snapshot["file_bytes"] == expected_bytes
+    assert snapshot["content_type"] == "image/png"
+    assert snapshot["asset_type"] == "image"
+    assert snapshot["source_filename"] == "ok.png"
+    assert fake_response.consumed_chunk_count == 2
+
+
 @pytest.mark.unit
 def test_meta_andromeda_team_user_without_module_access_is_denied_read_only_endpoint(
     meta_andromeda_permission_client,
