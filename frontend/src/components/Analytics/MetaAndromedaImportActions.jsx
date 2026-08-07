@@ -1,4 +1,11 @@
-import React from 'react';
+import React, { useMemo } from 'react';
+
+// 評分（觀測匯入自動評分）到終態的三種歸類：完成 / 失敗（含被匯入失敗
+// 連帶擋下）/ 略過（無素材可評）；其餘 pending_observation、
+// queued_background、queued、processing、pending_score_event 或尚未有
+// 任何狀態，都算「評估中」。與 useAnalyticsObservationImport.js 的
+// TERMINAL_SCORE_STATUSES 對應，但這裡要拆開分類顯示，不能只判斷終態。
+const FAILED_SCORE_STATUSES = new Set(['failed', 'blocked_by_observation_failure']);
 
 const observationStatCardStyle = {
     padding: '10px 12px',
@@ -27,9 +34,40 @@ const MetaAndromedaImportActions = ({
     observationImportableRows,
     observationWindowKind,
     observationBatchSummary,
+    observationImportState,
     handleToggleAllObservationRows,
     handleBatchObservationImport,
 }) => {
+    // 「本次送出成功」只代表匯入請求本身被接受，實際 AI 評分是背景非同步
+    // 進行、輪詢才會逐漸更新（docs/68 B1）。這裡從 observationImportState
+    // 即時彙總這批 row 的評分終態分佈，讓使用者看得到「送出成功」之後
+    // 究竟有幾筆真的評估完成、進了評估紀錄，而不是只看到匯入本身的成功/
+    // 失敗數。隨 observationImportState 更新自動重新計算，不需要額外輪詢。
+    const evaluationStats = useMemo(() => {
+        const rowIds = observationBatchSummary?.rowIds;
+        if (!rowIds || rowIds.length === 0) {
+            return null;
+        }
+        let evaluatedCount = 0;
+        let evaluationFailedCount = 0;
+        let evaluationSkippedCount = 0;
+        rowIds.forEach((rowId) => {
+            const scoreStatus = observationImportState?.[rowId]?.scoreStatus;
+            if (scoreStatus === 'completed') {
+                evaluatedCount += 1;
+            } else if (FAILED_SCORE_STATUSES.has(scoreStatus)) {
+                evaluationFailedCount += 1;
+            } else if (scoreStatus === 'skipped_no_asset') {
+                evaluationSkippedCount += 1;
+            }
+        });
+        const pendingCount = Math.max(
+            0,
+            rowIds.length - evaluatedCount - evaluationFailedCount - evaluationSkippedCount,
+        );
+        return { evaluatedCount, evaluationFailedCount, evaluationSkippedCount, pendingCount };
+    }, [observationBatchSummary?.rowIds, observationImportState]);
+
     return (
         <>
             {canUseObservationImport ? (
@@ -77,7 +115,9 @@ const MetaAndromedaImportActions = ({
                         {observationBatchSummary && (
                             <div style={{
                                 display: 'grid',
-                                gridTemplateColumns: 'repeat(3, minmax(90px, 1fr))',
+                                gridTemplateColumns: evaluationStats
+                                    ? 'repeat(4, minmax(90px, 1fr))'
+                                    : 'repeat(3, minmax(90px, 1fr))',
                                 gap: '8px',
                                 marginTop: '8px',
                             }}>
@@ -105,6 +145,36 @@ const MetaAndromedaImportActions = ({
                                         {observationBatchSummary.failureCount ?? '--'}
                                     </div>
                                 </div>
+                                {evaluationStats && (
+                                    <div style={observationStatCardStyle}>
+                                        <div style={observationStatLabelStyle}>
+                                            {language === 'zh' ? '評估完成（進評估紀錄）' : 'Evaluated'}
+                                        </div>
+                                        <div style={{
+                                            ...observationStatValueStyle,
+                                            color: evaluationStats.evaluatedCount === (observationBatchSummary.successCount || 0) && evaluationStats.evaluatedCount > 0
+                                                ? '#34d399'
+                                                : 'var(--text-primary)',
+                                        }}>
+                                            {`${evaluationStats.evaluatedCount} / ${observationBatchSummary.successCount ?? 0}`}
+                                        </div>
+                                        {(evaluationStats.pendingCount > 0 || evaluationStats.evaluationFailedCount > 0 || evaluationStats.evaluationSkippedCount > 0) && (
+                                            <div style={{ fontSize: '0.68rem', color: 'var(--text-secondary)', marginTop: '2px' }}>
+                                                {[
+                                                    evaluationStats.pendingCount > 0
+                                                        ? (language === 'zh' ? `評估中 ${evaluationStats.pendingCount}` : `${evaluationStats.pendingCount} pending`)
+                                                        : null,
+                                                    evaluationStats.evaluationFailedCount > 0
+                                                        ? (language === 'zh' ? `失敗 ${evaluationStats.evaluationFailedCount}` : `${evaluationStats.evaluationFailedCount} failed`)
+                                                        : null,
+                                                    evaluationStats.evaluationSkippedCount > 0
+                                                        ? (language === 'zh' ? `略過 ${evaluationStats.evaluationSkippedCount}` : `${evaluationStats.evaluationSkippedCount} skipped`)
+                                                        : null,
+                                                ].filter(Boolean).join(' · ')}
+                                            </div>
+                                        )}
+                                    </div>
+                                )}
                             </div>
                         )}
                     </div>

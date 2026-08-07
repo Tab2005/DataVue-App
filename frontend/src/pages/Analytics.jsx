@@ -830,6 +830,7 @@ const Analytics = () => {
                 observationImportableRows={observationImportableRows}
                 observationWindowKind={observationWindowKind}
                 observationBatchSummary={observationBatchSummary}
+                observationImportState={observationImportState}
                 handleToggleAllObservationRows={handleToggleAllObservationRows}
                 handleBatchObservationImport={handleBatchObservationImport}
             />

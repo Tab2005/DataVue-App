@@ -270,11 +270,17 @@ const useAnalyticsObservationImport = ({
             // AI readiness failures should not block observation import.
         }
 
+        // 記下這一批送出的 row id，供批次摘要面板即時彙總「評估紀錄」進度
+        // 用（scoreStatus 已經由 checkObservationStatusOnce 的輪詢持續更新到
+        // observationImportState，這裡不需要另外拉狀態，只要知道要看哪幾列）。
+        const batchRowIds = selectedObservationRows.map((row) => row.id);
+
         setObservationBatchSummary({
             status: 'loading',
             attemptedCount: selectedObservationRows.length,
             successCount: 0,
             failureCount: 0,
+            rowIds: batchRowIds,
             message: language === 'zh'
                 ? `批次送出中，共 ${selectedObservationRows.length} 筆。`
                 : `Batch submission in progress for ${selectedObservationRows.length} ads.`,
@@ -304,6 +310,7 @@ const useAnalyticsObservationImport = ({
             attemptedCount: selectedObservationRows.length,
             successCount,
             failureCount,
+            rowIds: batchRowIds,
             message: language === 'zh'
                 ? `批次送出完成，成功送出 ${successCount} 筆，失敗 ${failureCount} 筆。`
                 : `Batch submission completed: ${successCount} accepted, ${failureCount} failed.`,
