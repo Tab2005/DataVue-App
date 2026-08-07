@@ -130,6 +130,87 @@ def test_meta_andromeda_import_endpoint_dispatches_to_worker_in_web_role(meta_an
 
 
 @pytest.mark.unit
+def test_meta_andromeda_queue_observed_facebook_ad_import_skips_duplicate_in_flight_dispatch():
+    """docs/68 B5 修復驗證：queue_observed_facebook_ad_import() 純服務層行為——
+    同一筆觀測（同廣告+同觀測窗口+同日）在前一次仍是 queued/processing 時，第二次
+    呼叫應直接回報 already_queued 且不需要再派工；該筆進度轉為 completed 之後，
+    則視為已結束，允許重新送出一個新的匯入（不是永久卡住）。"""
+    from modules.meta_andromeda.import_status_store import set_import_status
+
+    payload = {
+        "account_id": "act_123456789",
+        "ad_id": "120000000000666",
+        "observation_window_kind": "last_7d",
+        "market": "TW",
+        "placement_family": "feed",
+    }
+
+    first = meta_andromeda_service_module.MetaAndromedaService.queue_observed_facebook_ad_import(payload)
+    assert first["status"] == "accepted"
+    assert first["_dispatch_needed"] is True
+
+    second = meta_andromeda_service_module.MetaAndromedaService.queue_observed_facebook_ad_import(payload)
+    assert second["status"] == "already_queued"
+    assert second["_dispatch_needed"] is False
+    assert second["observed_creative_id"] == first["observed_creative_id"]
+
+    # 模擬背景 job 已經跑完：completed 之後不該再被當成 in-flight 卡住。
+    set_import_status(first["observed_creative_id"], observation_status="completed")
+    third = meta_andromeda_service_module.MetaAndromedaService.queue_observed_facebook_ad_import(payload)
+    assert third["status"] == "accepted"
+    assert third["_dispatch_needed"] is True
+
+
+@pytest.mark.unit
+def test_meta_andromeda_observation_import_endpoint_is_idempotent_for_in_flight_duplicate(
+    meta_andromeda_access, monkeypatch,
+):
+    """docs/68 B5 修復驗證：HTTP 端點層級——同一筆觀測前一次的匯入已經被
+    dispatch 出去（模擬 web 角色成功派工給 worker、job 尚未完成）時重複送出，
+    第二次應直接回 already_queued，且不應該再呼叫一次
+    dispatch_observed_facebook_ad_import()（否則就是排出重複 job）。
+    _dispatch_needed 這個內部旗標不應該外洩到 API 回應。"""
+    dispatch_calls = []
+
+    def fake_dispatch(payload, *, user_id, team_id):
+        dispatch_calls.append(payload)
+        return True  # 模擬派工成功，job 留在 worker 端還沒完成
+
+    monkeypatch.setattr(
+        meta_andromeda_service_module.MetaAndromedaService,
+        "dispatch_observed_facebook_ad_import",
+        staticmethod(fake_dispatch),
+    )
+
+    request_payload = {
+        "account_id": "act_123456789",
+        "ad_id": "120000000000777",
+        "observation_window_kind": "last_7d",
+        "market": "TW",
+        "placement_family": "feed",
+    }
+
+    first_response = meta_andromeda_access.post(
+        "/api/meta-andromeda/evaluations/import/facebook-ads", json=request_payload,
+    )
+    second_response = meta_andromeda_access.post(
+        "/api/meta-andromeda/evaluations/import/facebook-ads", json=request_payload,
+    )
+
+    assert first_response.status_code == 202
+    assert second_response.status_code == 202
+    first_payload = first_response.json()
+    second_payload = second_response.json()
+
+    assert first_payload["status"] == "accepted"
+    assert "_dispatch_needed" not in first_payload
+    assert second_payload["status"] == "already_queued"
+    assert "_dispatch_needed" not in second_payload
+    assert second_payload["observed_creative_id"] == first_payload["observed_creative_id"]
+    assert len(dispatch_calls) == 1
+
+
+@pytest.mark.unit
 def test_meta_andromeda_observation_import_accepts_supported_window_contract(meta_andromeda_access, db, monkeypatch):
     from modules.meta_andromeda.schemas import ObservedCreativeCandidate
 

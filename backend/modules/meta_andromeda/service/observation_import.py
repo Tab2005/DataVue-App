@@ -45,6 +45,38 @@ class ObservationImportServiceMixin:
             payload["ad_id"],
             payload["observation_window_kind"],
         )
+        source = {
+            "platform": "facebook_ads",
+            "account_id": payload["account_id"],
+            "ad_id": payload["ad_id"],
+        }
+        observation_window = {
+            "kind": payload["observation_window_kind"],
+            "start": payload.get("since") or "",
+            "end": payload.get("until") or "",
+        }
+
+        # docs/68 B5：同一 observed_creative_id（同廣告+同觀測窗口+同日）重複送出
+        # 時，若已有一個 in-flight（queued/processing）的匯入，直接回傳現況、不再
+        # 派工——否則兩個 job 都會完整跑一遍：各自下載媒體、各存一份資產（放大
+        # docs/68 A2 的去重效果）、各建一個評分事件（放大 docs/68 A1 成本成兩次
+        # AI 呼叫）。用既有的 import status store 查現況即可，TTL 1 小時內天然
+        # 冪等，查詢成本極低；completed/failed 視為已結束，允許重新送出。
+        current = get_import_status(observed_creative_id)
+        if current.get("observation_status") in {"queued", "processing"}:
+            return {
+                "observed_creative_id": observed_creative_id,
+                "status": "already_queued",
+                "asset_uri": current.get("asset_uri"),
+                "score_event_id": current.get("score_event_id"),
+                "score_status": current.get("score_status") or "pending_observation",
+                "runtime_job_id": current.get("runtime_job_id"),
+                "source": source,
+                "observation_window": observation_window,
+                "performance_snapshot": {},
+                "_dispatch_needed": False,
+            }
+
         MetaAndromedaService._set_observation_import_status(
             observed_creative_id,
             observation_status="queued",
@@ -61,17 +93,10 @@ class ObservationImportServiceMixin:
             "score_event_id": None,
             "score_status": "pending_observation",
             "runtime_job_id": None,
-            "source": {
-                "platform": "facebook_ads",
-                "account_id": payload["account_id"],
-                "ad_id": payload["ad_id"],
-            },
-            "observation_window": {
-                "kind": payload["observation_window_kind"],
-                "start": payload.get("since") or "",
-                "end": payload.get("until") or "",
-            },
+            "source": source,
+            "observation_window": observation_window,
             "performance_snapshot": {},
+            "_dispatch_needed": True,
         }
 
 
