@@ -62,9 +62,9 @@ class MetaAndromedaScoreEvent(Base):
     __tablename__ = "meta_andromeda_score_events"
 
     id = Column(String, primary_key=True, default=lambda: f"ma_evt_{uuid.uuid4().hex[:12]}")
-    status = Column(String(50), nullable=False)
+    status = Column(String(50), nullable=False, index=True)
     runtime_job_id = Column(String(120), nullable=True, index=True)
-    created_at = Column(DateTime, default=text("CURRENT_TIMESTAMP"))
+    created_at = Column(DateTime, default=text("CURRENT_TIMESTAMP"), index=True)
     queued_at = Column(DateTime, default=text("CURRENT_TIMESTAMP"))
     started_at = Column(DateTime, nullable=True)
     completed_at = Column(DateTime, nullable=True)
@@ -80,7 +80,7 @@ class MetaAndromedaScoreEvent(Base):
     market = Column(String(20), nullable=False)
     prediction_mode = Column(String(50), nullable=True)
     overall_score = Column(Integer, nullable=True)
-    roas_band = Column(String(50), nullable=True)
+    roas_band = Column(String(50), nullable=True, index=True)
     model_version = Column(String(100), nullable=True)
     reviewed = Column(Boolean, nullable=False, default=False)
     feedback_count = Column(Integer, nullable=False, default=0)

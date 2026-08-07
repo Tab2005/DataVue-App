@@ -165,15 +165,24 @@ class ReviewQueueMixin:
                     ad_name_match,
                 )
             )
-        all_rows = [
-            row for row in query.order_by(MetaAndromedaScoreEvent.created_at.desc()).all()
-            if (row.lineage or {}).get("scoring_purpose") != "backtest"
-        ]
-        total = len(all_rows)
+        # 排除 backtest 評分事件——過去是把整個查詢結果撈進 Python 再用
+        # list comprehension 濾掉，等於每次翻頁都對全表做一次「隱性全表掃描 +
+        # 逐列反序列化 lineage JSON」，score_events 表隨匯入/評分持續增長後
+        # 就是審核佇列偶發請求逾時（>30000ms）的主因。改成 SQL 層過濾：
+        # 沒有 scoring_purpose 鍵（NULL）視為非 backtest，一併納入。
+        scoring_purpose = MetaAndromedaScoreEvent.lineage["scoring_purpose"].as_string()
+        query = query.filter(or_(scoring_purpose.is_(None), scoring_purpose != "backtest"))
+
+        total = query.count()
         page = max(1, page)
         offset = (page - 1) * limit
         total_pages = max(1, math.ceil(total / limit))
-        rows = all_rows[offset:offset + limit]
+        rows = (
+            query.order_by(MetaAndromedaScoreEvent.created_at.desc())
+            .offset(offset)
+            .limit(limit)
+            .all()
+        )
         cal_ids: set[str] = set()
         if rows:
             matched = (

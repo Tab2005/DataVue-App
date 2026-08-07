@@ -56,6 +56,123 @@ def test_meta_andromeda_review_queue_excludes_backtest_scores(db):
 
 
 @pytest.mark.unit
+def test_meta_andromeda_review_queue_paginates_at_sql_level(db):
+    """list_review_queue() 過去是把符合條件的整批結果撈進 Python 再用
+    list slicing 分頁，資料量大時會拖慢審核佇列頁面（見使用者回報的
+    請求逾時）。改成 SQL 層 LIMIT/OFFSET 後，這裡驗證分頁語意不變：
+    total 是「排除 backtest 後」符合篩選條件的總筆數、每頁筆數正確、
+    跨頁不重複不遺漏、且維持 created_at 由新到舊排序。"""
+    from datetime import UTC, datetime, timedelta
+
+    from database.models.meta_andromeda import MetaAndromedaScoreEvent
+
+    _clear_meta_andromeda_operational_data(db)
+    base_time = datetime(2026, 8, 1, tzinfo=UTC)
+    total_rows = 7
+    for i in range(total_rows):
+        db.add(
+            MetaAndromedaScoreEvent(
+                id=f"page_evt_{i}",
+                status="completed",
+                created_at=base_time + timedelta(minutes=i),
+                asset_uri=f"asset://page_{i}",
+                asset_type="image",
+                request_mode="manual",
+                objective="sales",
+                placement_family="feed",
+                market="TW",
+                overall_score=50,
+                diagnostic_breakdown={},
+                risk_tags=[],
+                top_positive_drivers=[],
+                top_negative_drivers=[],
+                lineage={"scoring_mode": "ai"},
+                request_context={},
+            )
+        )
+    db.commit()
+
+    page_size = 3
+    page_1 = repository.list_review_queue(db, limit=page_size, page=1)
+    page_2 = repository.list_review_queue(db, limit=page_size, page=2)
+    page_3 = repository.list_review_queue(db, limit=page_size, page=3)
+
+    assert page_1["summary"]["total"] == total_rows
+    assert page_1["summary"]["total_pages"] == 3
+    assert len(page_1["items"]) == page_size
+    assert len(page_2["items"]) == page_size
+    assert len(page_3["items"]) == 1  # 最後一頁只剩 1 筆（7 筆 / 每頁 3 筆）
+
+    # created_at 新到舊排序：page_evt_6 最新，應排在第一頁最前面。
+    assert page_1["items"][0]["score_event_id"] == "page_evt_6"
+
+    all_ids_across_pages = [
+        item["score_event_id"]
+        for page in (page_1, page_2, page_3)
+        for item in page["items"]
+    ]
+    # 跨頁串起來應該剛好是全部 7 筆、不重複、不遺漏。
+    assert len(all_ids_across_pages) == total_rows
+    assert len(set(all_ids_across_pages)) == total_rows
+    assert set(all_ids_across_pages) == {f"page_evt_{i}" for i in range(total_rows)}
+
+
+@pytest.mark.unit
+def test_meta_andromeda_review_queue_uses_sql_level_limit_offset(db):
+    """docs/68 追加修復驗證：上面那個「分頁輸出正確」的測試測不出效能問題
+    ——把整批結果撈進 Python 再用 list slicing 切頁，跟直接用 SQL
+    LIMIT/OFFSET，兩者的「輸出結果」本來就應該一樣，差別只在有沒有把
+    不需要的資料庫列也撈出來，這正是使用者回報的請求逾時（>30000ms）
+    根因。這裡直接攔截實際送往資料庫的 SQL 語句文字，確認真的有下
+    LIMIT，而不是只驗證分頁計算邏輯。"""
+    from sqlalchemy import event
+
+    from database.models.meta_andromeda import MetaAndromedaScoreEvent
+
+    _clear_meta_andromeda_operational_data(db)
+    for i in range(5):
+        db.add(
+            MetaAndromedaScoreEvent(
+                id=f"limit_check_evt_{i}",
+                status="completed",
+                asset_uri=f"asset://limit_check_{i}",
+                asset_type="image",
+                request_mode="manual",
+                objective="sales",
+                placement_family="feed",
+                market="TW",
+                diagnostic_breakdown={},
+                risk_tags=[],
+                top_positive_drivers=[],
+                top_negative_drivers=[],
+                lineage={},
+                request_context={},
+            )
+        )
+    db.commit()
+
+    executed_statements = []
+
+    def _capture(conn, cursor, statement, parameters, context, executemany):
+        executed_statements.append(statement)
+
+    bind = db.get_bind()
+    event.listen(bind, "before_cursor_execute", _capture)
+    try:
+        repository.list_review_queue(db, limit=2, page=1)
+    finally:
+        event.remove(bind, "before_cursor_execute", _capture)
+
+    select_statements = [s for s in executed_statements if s.strip().upper().startswith("SELECT")]
+    assert select_statements
+    assert any("LIMIT" in s.upper() for s in select_statements), (
+        "list_review_queue() 應該用 SQL 層 LIMIT 分頁，而不是把整批結果撈進 "
+        "Python 再切頁；實際送出的 SELECT 語句都沒有 LIMIT，代表分頁又退化 "
+        "回全表撈取了。"
+    )
+
+
+@pytest.mark.unit
 def test_meta_andromeda_review_queue_supports_filters(meta_andromeda_access):
     # 2026-06-26 審核佇列改版為評估紀錄後，reviewed 篩選參數已移除；
     # 現行篩選為 status / roas_band / has_observation / search / source /
