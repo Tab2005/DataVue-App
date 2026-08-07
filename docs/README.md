@@ -98,8 +98,7 @@ docs/
 ### 7. 🔍 代碼審查與重構歷史 (`docs/07_audits_and_reviews/`)
 - [33_大型檔案拆分重構實作計劃.md](07_audits_and_reviews/33_大型檔案拆分重構實作計劃.md) - 代碼模組化拆分
 - [69_全專案未完成規劃與缺口盤點.md](07_audits_and_reviews/69_全專案未完成規劃與缺口盤點.md) - 全 docs 目錄未完成項目盤點清單（2026-08-07）
-- [OPTIMIZATION_REPORT.md](07_audits_and_reviews/OPTIMIZATION_REPORT.md) - 專案性能優化總結報告
-- `CODE_AUDIT_*.md` & `CODE_REVIEW_*.md` - 專案階段性品質與安全性審查紀錄
+- [archive/](07_audits_and_reviews/archive/) - 過時歷史快照（`CODE_AUDIT_*.md`、`CODE_REVIEW_*.md`、`OPTIMIZATION_REPORT.md`）：內容提到的架構（如單檔 `backend/database.py`）已不存在，僅供追溯歷史脈絡，非現行待辦
 
 ---
 
