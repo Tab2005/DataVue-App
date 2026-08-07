@@ -125,7 +125,19 @@ class ObservationImportServiceMixin:
 
     @staticmethod
     def _store_observed_asset_sync(db, snapshot: dict, user_db_id: str) -> dict:
-        """同步版本：把下載好的素材位元組寫入儲存後端並登記資產紀錄（檔案/S3 寫入 + DB，見 docs/24 Wave 1）。"""
+        """同步版本：把下載好的素材位元組寫入儲存後端並登記資產紀錄（檔案/S3 寫入 + DB，見 docs/24 Wave 1）。
+
+        寫入前先用 checksum 查有無內容完全相同的既有資產（docs/68 A2）：觀測匯入
+        每次都是獨立下載，同一素材在不同觀測窗口（last_7d/last_30d/lifetime）重複
+        匯入時位元組完全相同，若不去重會持續寫入重複檔案、灌爆資產表——命中既有
+        資產時直接沿用，連下載後的寫檔/S3 上傳都省下，也讓 docs/68 A1 的評分重用
+        （find_reusable_ai_score_event）更容易透過同一個 asset_id 直接命中。
+        """
+        checksum = hashlib.sha256(snapshot["file_bytes"]).hexdigest()
+        existing_asset = repository.find_stored_asset_by_checksum(db, checksum)
+        if existing_asset:
+            return existing_asset
+
         asset_record = storage_adapter.store_asset(
             file_bytes=snapshot["file_bytes"],
             asset_type=snapshot["asset_type"],

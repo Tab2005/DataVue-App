@@ -310,11 +310,8 @@ class ObservationMixin:
         """根據 asset_uri 查詢已上傳的 MetaAndromedaAsset"""
         return db.query(MetaAndromedaAsset).filter(MetaAndromedaAsset.asset_uri == asset_uri).first()
 
-    def create_uploaded_asset(self, db: Session, asset_record: dict):
-        asset = MetaAndromedaAsset(**asset_record)
-        db.add(asset)
-        db.commit()
-        db.refresh(asset)
+    @staticmethod
+    def _asset_to_dict(asset: MetaAndromedaAsset) -> dict:
         return {
             "asset_uri": asset.asset_uri,
             "asset_id": asset.id,
@@ -328,6 +325,31 @@ class ObservationMixin:
             "public_url": asset.public_url,
             "uploaded_at": asset.uploaded_at.isoformat(),
         }
+
+    def find_stored_asset_by_checksum(self, db: Session, checksum_sha256: str) -> dict | None:
+        """依 checksum 找出已成功存好的既有資產，供觀測匯入去重使用（docs/68 A2）：
+        觀測匯入每次都是獨立下載，同一素材內容在不同觀測窗口重複匯入時位元組
+        完全相同，若不去重會持續寫入重複檔案、灌爆資產表。只匹配
+        upload_status == 'stored' 的正常資產，略過 seed 資料（checksum 是假值，
+        不代表真實檔案存在，不能被當成可重用的儲存內容）。
+        """
+        asset = (
+            db.query(MetaAndromedaAsset)
+            .filter(
+                MetaAndromedaAsset.checksum_sha256 == checksum_sha256,
+                MetaAndromedaAsset.upload_status == "stored",
+            )
+            .order_by(MetaAndromedaAsset.uploaded_at.desc())
+            .first()
+        )
+        return self._asset_to_dict(asset) if asset else None
+
+    def create_uploaded_asset(self, db: Session, asset_record: dict):
+        asset = MetaAndromedaAsset(**asset_record)
+        db.add(asset)
+        db.commit()
+        db.refresh(asset)
+        return self._asset_to_dict(asset)
 
     def create_observed_creative(self, db: Session, observed_record: dict):
         existing = db.query(MetaAndromedaObservedCreative).filter(

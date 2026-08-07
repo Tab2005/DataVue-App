@@ -691,6 +691,118 @@ def test_meta_andromeda_observation_import_reuses_existing_ai_score_by_checksum(
 
 
 @pytest.mark.unit
+def test_meta_andromeda_observation_import_dedupes_asset_by_checksum(
+    meta_andromeda_access,
+    db,
+    monkeypatch,
+):
+    """docs/68 A2 修復驗證：兩次觀測匯入（不同廣告、不同觀測窗口）下載到位元組
+    完全相同的素材時，第二次應直接沿用既有資產（相同 asset_id/asset_uri），
+    而不是再寫一份重複檔案、多建一筆資產紀錄（修復前每次匯入都是獨立下載，
+    完全不查重，此測試在修復前會失敗）。"""
+    from database import MetaAndromedaAsset, MetaAndromedaObservedCreative
+    from modules.meta_andromeda.schemas import ObservedCreativeCandidate
+
+    shared_file_bytes = b"identical-creative-bytes-for-dedup-test"
+    # meta_andromeda_access fixture 已呼叫 ensure_seed_data() 灌入固定的 seed 資產，
+    # 用 baseline 而非硬編絕對數量，避免耦合到 seed 資料筆數。
+    baseline_asset_count = db.query(MetaAndromedaAsset).count()
+
+    def make_fake_fetch(ad_name):
+        async def fake_fetch_observed_creative_candidate(**kwargs):
+            payload = kwargs["payload"]
+            return ObservedCreativeCandidate(
+                source_platform="facebook_ads",
+                source_account_id=payload["account_id"],
+                campaign_id="120000000000010",
+                adset_id="120000000000011",
+                ad_id=payload["ad_id"],
+                ad_name=ad_name,
+                objective="OUTCOME_SALES",
+                placement_family=payload["placement_family"],
+                market=payload["market"],
+                primary_text=None,
+                headline=None,
+                cta=None,
+                media_url=f"https://cdn.example.com/{payload['ad_id']}.png",
+                media_type="image",
+                performance_snapshot={"roas": 2.0},
+                observation_window_kind=payload["observation_window_kind"],
+                observation_window_start="2026-07-01",
+                observation_window_end="2026-08-06",
+                source_fetched_at="2026-08-06T00:00:00Z",
+            )
+        return fake_fetch_observed_creative_candidate
+
+    async def fake_download_observed_asset_snapshot(*, media_url: str, ad_id: str, media_type: str):
+        return {
+            "file_bytes": shared_file_bytes,
+            "source_filename": f"{ad_id}.png",
+            "content_type": "image/png",
+            "asset_type": media_type,
+        }
+
+    monkeypatch.setattr(
+        meta_andromeda_service_module.MetaAndromedaService,
+        "_download_observed_asset_snapshot",
+        staticmethod(fake_download_observed_asset_snapshot),
+    )
+    _bind_background_import_session(monkeypatch, db)
+
+    # 第一次匯入：正常存出一份新資產。
+    monkeypatch.setattr(
+        meta_andromeda_service_module.MetaAndromedaService,
+        "_fetch_observed_facebook_ad_candidate",
+        staticmethod(make_fake_fetch("Dedup Ad First")),
+    )
+    first_payload = meta_andromeda_access.post(
+        "/api/meta-andromeda/evaluations/import/facebook-ads",
+        json={
+            "account_id": "act_123456789",
+            "ad_id": "120000000099001",
+            "observation_window_kind": "last_7d",
+            "market": "TW",
+            "placement_family": "feed",
+        },
+    ).json()
+
+    first_observed = (
+        db.query(MetaAndromedaObservedCreative)
+        .filter(MetaAndromedaObservedCreative.id == first_payload["observed_creative_id"])
+        .one()
+    )
+    assert db.query(MetaAndromedaAsset).count() == baseline_asset_count + 1
+
+    # 第二次匯入：不同廣告、不同觀測窗口，但下載到的位元組（checksum）完全相同，
+    # 應直接沿用第一次的資產，不再新增資產紀錄。
+    monkeypatch.setattr(
+        meta_andromeda_service_module.MetaAndromedaService,
+        "_fetch_observed_facebook_ad_candidate",
+        staticmethod(make_fake_fetch("Dedup Ad Second")),
+    )
+    second_payload = meta_andromeda_access.post(
+        "/api/meta-andromeda/evaluations/import/facebook-ads",
+        json={
+            "account_id": "act_123456789",
+            "ad_id": "120000000099002",
+            "observation_window_kind": "last_30d",
+            "market": "TW",
+            "placement_family": "feed",
+        },
+    ).json()
+
+    second_observed = (
+        db.query(MetaAndromedaObservedCreative)
+        .filter(MetaAndromedaObservedCreative.id == second_payload["observed_creative_id"])
+        .one()
+    )
+
+    assert second_observed.asset_id == first_observed.asset_id
+    assert second_observed.asset_uri == first_observed.asset_uri
+    assert db.query(MetaAndromedaAsset).count() == baseline_asset_count + 1
+
+
+@pytest.mark.unit
 def test_meta_andromeda_observation_import_denies_without_fb_ads_module_access(
     meta_andromeda_permission_client,
     db,
