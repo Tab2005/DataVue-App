@@ -29,6 +29,8 @@ from ..schemas import (
     ObservedAccountListResponse,
     ExternalWorkerCallbackRequest,
     ExternalWorkerCallbackResponse,
+    FacebookAdBatchObservedImportRequest,
+    FacebookAdBatchObservedImportResponse,
     FacebookAdObservedImportRequest,
     FacebookAdObservedImportResponse,
     FacebookAdObservedImportStatusResponse,

@@ -101,6 +101,79 @@ class ObservationImportServiceMixin:
 
 
     @staticmethod
+    async def queue_observed_facebook_ad_import_batch(
+        payload: dict,
+        *,
+        user_id: str,
+        team_id: str | None,
+        background_tasks,
+    ) -> list[dict]:
+        """docs/68 B2 第二層：批次觀測匯入。
+
+        跟前端逐筆呼叫單筆端點相比，這裡在派工前先預熱一次整包報告快取
+        （見 prewarm_facebook_ads_report_cache 的說明），讓批次裡每一筆各自
+        走的 fetch_observed_creative_candidate() 都命中同一份快取，不必
+        各自對 Facebook API 重複發送整包報告請求；快取預熱失敗不影響匯入
+        本身，退回每筆各自現抓（跟現有單筆流程行為一致）。
+
+        逐筆仍然重用 queue_observed_facebook_ad_import()（含 docs/68 B5
+        的冪等去重）與 dispatch_observed_facebook_ad_import()/
+        run_observed_facebook_ad_import_job() 既有派工路徑，不重新實作。
+        """
+        account_id = payload["account_id"]
+        observation_window_kind = payload["observation_window_kind"]
+        since = payload.get("since")
+        until = payload.get("until")
+
+        try:
+            await prewarm_facebook_ads_report_cache(
+                account_id=account_id,
+                user_id=user_id,
+                team_id=team_id,
+                observation_window_kind=observation_window_kind,
+                since=since,
+                until=until,
+            )
+        except Exception as exc:
+            logger.warning(
+                "[Observation Import] Batch cache pre-warm failed for account %s (%s): %s; "
+                "falling back to per-item fetch.",
+                account_id, observation_window_kind, exc,
+            )
+
+        results = []
+        for item in payload["items"]:
+            item_payload = {
+                "account_id": account_id,
+                "ad_id": item["ad_id"],
+                "observation_window_kind": observation_window_kind,
+                "since": since,
+                "until": until,
+                "market": payload.get("market") or "TW",
+                "placement_family": payload.get("placement_family") or "all",
+                "primary_text": item.get("primary_text"),
+                "headline": item.get("headline"),
+                "cta": item.get("cta"),
+            }
+            accepted = MetaAndromedaService.queue_observed_facebook_ad_import(item_payload)
+            dispatch_needed = accepted.pop("_dispatch_needed", True)
+            if dispatch_needed:
+                dispatched = MetaAndromedaService.dispatch_observed_facebook_ad_import(
+                    item_payload, user_id=user_id, team_id=team_id,
+                )
+                if not dispatched:
+                    background_tasks.add_task(
+                        MetaAndromedaService.run_observed_facebook_ad_import_job,
+                        item_payload,
+                        user_id=user_id,
+                        team_id=team_id,
+                    )
+            results.append(accepted)
+
+        return results
+
+
+    @staticmethod
     async def _download_observed_asset_snapshot(
         *,
         media_url: str,

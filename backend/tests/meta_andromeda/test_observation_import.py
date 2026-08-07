@@ -129,6 +129,134 @@ def test_meta_andromeda_import_endpoint_dispatches_to_worker_in_web_role(meta_an
     assert ran_in_process["called"] is False
 
 
+@pytest.mark.asyncio
+async def test_meta_andromeda_batch_import_calls_prewarm_exactly_once_before_dispatching_items(monkeypatch):
+    """docs/68 B2 第二層修復驗證：批次匯入應該先呼叫一次
+    prewarm_facebook_ads_report_cache() 預熱整包報告快取，再逐筆派工。
+
+    這裡直接在服務層攔截呼叫，而不是透過 HTTP 端點 + 觀察 Facebook API
+    實際被打幾次來間接驗證：測試環境的 BackgroundTasks 是同一個 process
+    內單執行緒依序執行，就算完全不做預熱，第一筆自己的
+    fetch_observed_creative_candidate() 也會把結果寫進同一份行程內快取，
+    讓後面幾筆「碰巧」命中——這種寫法量不出「有沒有做預熱」的差異，
+    正式環境派工到 worker 才是真正需要預熱來避免 thundering herd 的場景。
+    直接驗證 prewarm 呼叫本身，才是這個修復實際改變的可觀察行為。"""
+    from modules.meta_andromeda.service import MetaAndromedaService
+
+    prewarm_calls = []
+
+    async def fake_prewarm(**kwargs):
+        prewarm_calls.append(kwargs)
+
+    dispatch_calls = []
+
+    def fake_dispatch(payload, *, user_id, team_id):
+        dispatch_calls.append(payload["ad_id"])
+        return True  # 模擬派工成功給 worker，不需要真的跑完整匯入流程
+
+    monkeypatch.setattr(
+        "modules.meta_andromeda.service.observation_import.prewarm_facebook_ads_report_cache",
+        fake_prewarm,
+    )
+    monkeypatch.setattr(
+        MetaAndromedaService, "dispatch_observed_facebook_ad_import", staticmethod(fake_dispatch),
+    )
+
+    class _FailingBackgroundTasks:
+        def add_task(self, *a, **kw):
+            raise AssertionError("dispatch 已模擬派工成功，不應該退回 background_tasks 執行")
+
+    results = await MetaAndromedaService.queue_observed_facebook_ad_import_batch(
+        {
+            "account_id": "act_123456789",
+            "items": [{"ad_id": "ad_1"}, {"ad_id": "ad_2"}, {"ad_id": "ad_3"}],
+            "observation_window_kind": "last_7d",
+            "market": "TW",
+            "placement_family": "feed",
+        },
+        user_id="google_user_1",
+        team_id=None,
+        background_tasks=_FailingBackgroundTasks(),
+    )
+
+    # 不管批次有幾筆，預熱只應該發生一次，而且要在派工之前完成。
+    assert len(prewarm_calls) == 1
+    assert prewarm_calls[0]["account_id"] == "act_123456789"
+    assert dispatch_calls == ["ad_1", "ad_2", "ad_3"]
+    assert len(results) == 3
+    assert all(item["status"] == "accepted" for item in results)
+
+
+@pytest.mark.unit
+def test_meta_andromeda_batch_import_rejects_empty_items(meta_andromeda_access):
+    response = meta_andromeda_access.post(
+        "/api/meta-andromeda/evaluations/import/facebook-ads/batch",
+        json={
+            "account_id": "act_123456789",
+            "items": [],
+            "observation_window_kind": "last_7d",
+        },
+    )
+
+    assert response.status_code == 422
+
+
+@pytest.mark.unit
+def test_meta_andromeda_batch_import_reuses_single_item_idempotency(
+    meta_andromeda_access, monkeypatch,
+):
+    """docs/68 B2 批次端點應該重用 B5 既有的冪等去重邏輯，而不是重新實作
+    一份：批次裡若混入一個已經 in-flight 的 observed_creative_id，該筆
+    應回報 already_queued，且不應該再被派工一次。"""
+    from modules.meta_andromeda.import_status_store import set_import_status
+
+    dispatch_calls = []
+
+    def fake_dispatch(payload, *, user_id, team_id):
+        dispatch_calls.append(payload["ad_id"])
+        return True
+
+    monkeypatch.setattr(
+        meta_andromeda_service_module.MetaAndromedaService,
+        "dispatch_observed_facebook_ad_import",
+        staticmethod(fake_dispatch),
+    )
+
+    async def fake_prewarm(**kwargs):
+        return None
+
+    monkeypatch.setattr(
+        "modules.meta_andromeda.service.observation_import.prewarm_facebook_ads_report_cache",
+        fake_prewarm,
+    )
+
+    already_in_flight_id = meta_andromeda_service_module.MetaAndromedaService.build_observed_creative_id(
+        "120000000099201", "last_7d",
+    )
+    set_import_status(already_in_flight_id, observation_status="processing")
+
+    response = meta_andromeda_access.post(
+        "/api/meta-andromeda/evaluations/import/facebook-ads/batch",
+        json={
+            "account_id": "act_123456789",
+            "items": [
+                {"ad_id": "120000000099201"},
+                {"ad_id": "120000000099202"},
+            ],
+            "observation_window_kind": "last_7d",
+            "market": "TW",
+            "placement_family": "feed",
+        },
+    )
+
+    assert response.status_code == 202
+    payload = response.json()
+    statuses = {item["observed_creative_id"]: item["status"] for item in payload["items"]}
+    assert statuses[already_in_flight_id] == "already_queued"
+    # 只有真正需要派工的第二筆才應該呼叫 dispatch，已經 in-flight 的第一筆不應該。
+    assert dispatch_calls == ["120000000099202"]
+
+
 @pytest.mark.unit
 def test_meta_andromeda_queue_observed_facebook_ad_import_skips_duplicate_in_flight_dispatch():
     """docs/68 B5 修復驗證：queue_observed_facebook_ad_import() 純服務層行為——

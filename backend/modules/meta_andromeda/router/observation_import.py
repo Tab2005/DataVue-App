@@ -49,6 +49,37 @@ async def import_facebook_ad_observation(
         raise HTTPException(status_code=exc.status_code, detail=exc.detail) from exc
 
 
+@router.post(
+    "/evaluations/import/facebook-ads/batch",
+    response_model=FacebookAdBatchObservedImportResponse,
+    status_code=status.HTTP_202_ACCEPTED,
+)
+async def import_facebook_ad_observations_batch(
+    payload: FacebookAdBatchObservedImportRequest,
+    background_tasks: BackgroundTasks,
+    user=Depends(get_current_meta_andromeda_user),
+    _access: bool = Depends(require_meta_andromeda_module),
+    _fb_ads_access: bool = Depends(require_fb_ads_module),
+    _fb_ads_permission: bool = Depends(require_fb_ads_analytics_view),
+    x_team_id: str | None = Header(default=None, alias="X-Team-ID"),
+    db=Depends(get_db),
+):
+    """docs/68 B2 第二層：批次觀測匯入，一次預熱報告快取再逐筆派工，
+    取代前端對同一批廣告逐筆各自呼叫單筆端點（見
+    queue_observed_facebook_ad_import_batch 的完整說明）。"""
+    try:
+        user_id = getattr(user, "google_id", None) or getattr(user, "id", None)
+        items = await MetaAndromedaService.queue_observed_facebook_ad_import_batch(
+            payload.model_dump(),
+            user_id=user_id,
+            team_id=x_team_id,
+            background_tasks=background_tasks,
+        )
+        return {"items": items}
+    except MetaAndromedaValidationError as exc:
+        raise HTTPException(status_code=exc.status_code, detail=exc.detail) from exc
+
+
 @router.get(
     "/evaluations/import/facebook-ads/{observed_creative_id}/status",
     response_model=FacebookAdObservedImportStatusResponse,

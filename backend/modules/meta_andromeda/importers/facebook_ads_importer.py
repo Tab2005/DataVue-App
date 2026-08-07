@@ -35,6 +35,46 @@ def resolve_observation_window(
     return start.isoformat(), current_day.isoformat()
 
 
+async def prewarm_facebook_ads_report_cache(
+    *,
+    account_id: str,
+    user_id: str,
+    observation_window_kind: str,
+    team_id: str | None = None,
+    since: str | None = None,
+    until: str | None = None,
+    report_fetcher=None,
+) -> None:
+    """批次觀測匯入前先預熱整包報告快取一次（docs/68 B2 第二層）。
+
+    刻意不帶 ad_id 呼叫（analytics_service.get_custom_report 只有不帶
+    ad_id 的整包查詢才會讀寫快取，見該函式的 cache_key_suffix 邏輯），
+    讓批次裡每一筆各自呼叫的 fetch_observed_creative_candidate() 都能
+    直接命中同一份快取，不必各自對 Facebook API 重複發送整包報告請求。
+
+    快取未命中時尤其重要：若沒有這一步，批次派工出去的 N 個背景 job
+    幾乎同時起跑，會同時發現快取是空的、各自現抓一次整包報告——典型的
+    thundering herd，對 Facebook API 配額與延遲都是不必要的放大。快取
+    TTL 只有 120 秒（見 cache.py set_analytics_cache），大批次的尾端
+    幾筆仍可能碰到過期後退回現抓，但已經消除了原本保證發生的批次首波
+    重複請求。
+    """
+    if since and until:
+        observation_window_start, observation_window_end = since, until
+    else:
+        observation_window_start, observation_window_end = resolve_observation_window(observation_window_kind)
+
+    fetcher = report_fetcher or get_custom_report
+    await fetcher(
+        account_id=account_id,
+        user_id=user_id,
+        since=observation_window_start,
+        until=observation_window_end,
+        level="ad",
+        team_id=team_id,
+    )
+
+
 def normalize_facebook_ad_row(
     *,
     row: dict,

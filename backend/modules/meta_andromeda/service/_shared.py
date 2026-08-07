@@ -23,7 +23,7 @@ from ..import_status_store import (
     get_import_status,
     set_import_status,
 )
-from ..importers.facebook_ads_importer import fetch_observed_creative_candidate
+from ..importers.facebook_ads_importer import fetch_observed_creative_candidate, prewarm_facebook_ads_report_cache
 from ..model_registry import model_registry
 from ..objective_routing import resolve_objective_group
 from ..queue_host import queue_host_adapter

@@ -301,6 +301,30 @@ class FacebookAdObservedImportStatusResponse(BaseModel):
     updated_at: str | None = None
 
 
+class FacebookAdBatchImportItem(BaseModel):
+    ad_id: str
+    primary_text: str | None = None
+    headline: str | None = None
+    cta: str | None = None
+
+
+class FacebookAdBatchObservedImportRequest(BaseModel):
+    account_id: str
+    # docs/68 B2 第二層：批次共用同一個帳號/觀測窗口，逐筆只需要各自的
+    # ad_id 與素材文案（後者來自前端表格列本身，Facebook Insights API
+    # 不會回傳，無法從整包報告推得，所以仍要逐筆帶）。
+    items: list[FacebookAdBatchImportItem] = Field(..., min_length=1, max_length=100)
+    observation_window_kind: Literal["last_7d", "last_30d", "lifetime", "custom"]
+    since: str | None = None
+    until: str | None = None
+    market: str = "TW"
+    placement_family: str = "all"
+
+
+class FacebookAdBatchObservedImportResponse(BaseModel):
+    items: list[FacebookAdObservedImportResponse]
+
+
 class ObservedCreativeCandidate(BaseModel):
     source_platform: str
     source_account_id: str
