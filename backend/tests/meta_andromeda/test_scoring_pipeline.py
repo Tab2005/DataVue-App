@@ -1004,3 +1004,99 @@ def test_meta_andromeda_enqueue_score_event_reports_dispatch_accepted(db, monkey
     )
     assert failed_result["dispatch_accepted"] is False
     assert failed_result["status"] == "queued"
+
+
+@pytest.mark.asyncio
+async def test_meta_andromeda_call_provider_once_backs_off_before_fallback_on_structured_rate_limit(monkeypatch):
+    """docs/68 A7 修復驗證：structured output 前置嘗試（P2-2）若剛好撞到 429
+    限流，過去會立刻不分青紅皂白地退回 regex fallback 迴圈、馬上再送一次
+    完整請求，在被限流的當下火上加油。修復後應該先照 fallback 迴圈同款的
+    backoff 稍等一下，再進入 fallback。"""
+    from modules.meta_andromeda.model_registry import MetaAndromedaModelEntry
+    from modules.meta_andromeda.runtime import OpenRouterScoringProvider
+
+    call_log = []
+
+    class FakeClient:
+        def generate_content(
+            self, prompt, model, system_prompt, temperature, max_tokens,
+            timeout_seconds, user_content, response_format=None,
+        ):
+            call_log.append({"response_format": response_format})
+            if response_format is not None:
+                raise RuntimeError("429 Too Many Requests")
+            return json.dumps({"overall_score": 70, "summary": "ok"})
+
+    sleep_calls = []
+
+    async def fake_sleep(seconds):
+        sleep_calls.append(seconds)
+
+    monkeypatch.setattr(asyncio, "sleep", fake_sleep)
+
+    registry_entry = MetaAndromedaModelEntry(
+        model_version="test_model",
+        provider="openrouter",
+        provider_model="test/test-model",
+        scoring_profile="default",
+        feature_manifest_id="fm_test",
+        release_channel="test",
+        source_of_truth="test",
+    )
+
+    result = await OpenRouterScoringProvider._call_provider_once(
+        FakeClient(), "prompt", "system", [], registry_entry, use_structured_output=True,
+    )
+
+    assert result["overall_score"] == 70
+    # 結構化嘗試撞到限流 → 應該先 backoff 一次，才進入 fallback 迴圈打第二發。
+    assert sleep_calls == [2.0]
+    assert len(call_log) == 2
+    assert call_log[0]["response_format"] is not None
+    assert call_log[1]["response_format"] is None
+
+
+@pytest.mark.asyncio
+async def test_meta_andromeda_call_provider_once_skips_backoff_on_non_rate_limit_structured_failure(monkeypatch):
+    """docs/68 A7 對照組：structured output 前置嘗試若是「模型不支援
+    response_format」這類非限流失敗，不應該多等，直接進入 fallback 迴圈——
+    backoff 只該保留給真正的限流情境。"""
+    from modules.meta_andromeda.model_registry import MetaAndromedaModelEntry
+    from modules.meta_andromeda.runtime import OpenRouterScoringProvider
+
+    call_log = []
+
+    class FakeClient:
+        def generate_content(
+            self, prompt, model, system_prompt, temperature, max_tokens,
+            timeout_seconds, user_content, response_format=None,
+        ):
+            call_log.append({"response_format": response_format})
+            if response_format is not None:
+                raise RuntimeError("model does not support structured output")
+            return json.dumps({"overall_score": 55, "summary": "fallback ok"})
+
+    sleep_calls = []
+
+    async def fake_sleep(seconds):
+        sleep_calls.append(seconds)
+
+    monkeypatch.setattr(asyncio, "sleep", fake_sleep)
+
+    registry_entry = MetaAndromedaModelEntry(
+        model_version="test_model",
+        provider="openrouter",
+        provider_model="test/test-model",
+        scoring_profile="default",
+        feature_manifest_id="fm_test",
+        release_channel="test",
+        source_of_truth="test",
+    )
+
+    result = await OpenRouterScoringProvider._call_provider_once(
+        FakeClient(), "prompt", "system", [], registry_entry, use_structured_output=True,
+    )
+
+    assert result["overall_score"] == 55
+    assert sleep_calls == []
+    assert len(call_log) == 2

@@ -14,7 +14,12 @@ from redis_cache import get_redis_client
 
 IMPORT_STATUS_KEY = "ma:import_status:{observed_creative_id}"
 IMPORT_STATUS_BY_SCORE_EVENT_KEY = "ma:import_status_by_score_event:{score_event_id}"
-IMPORT_STATUS_TTL_SECONDS = 3600
+# docs/68 B6：佇列壅塞（併發上限 + 大批次）時，排在尾端的 job 可能在
+# semaphore 等待期間超過原本 1 小時的 TTL——「queued, waiting for concurrency
+# slot」是等待期間唯一的一次寫入，TTL 到期後狀態端點會誤判成 not_found，
+# 即使 job 其實還在正常排隊。拉長到 4 小時，把這個邊角情境的容忍窗口
+# 蓋過絕大多數批次匯入的實際等待時間。
+IMPORT_STATUS_TTL_SECONDS = 4 * 3600
 
 _local_statuses: dict[str, dict[str, Any]] = {}
 _local_score_event_index: dict[str, str] = {}

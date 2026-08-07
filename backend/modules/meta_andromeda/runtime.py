@@ -14,7 +14,6 @@ from .model_registry import MetaAndromedaModelEntry, model_registry
 from .objective_routing import is_roas_band_eligible, resolve_objective_group
 from .labeling import LABEL_POLICY_VERSION
 from .confidence import (
-    VALID_ROAS_BANDS,
     _aggregate_self_consistency_samples,
     _build_multimodal_user_content,
     _clip,
@@ -35,7 +34,6 @@ from .result_parsing import _extract_json_payload, _validate_provider_result
 
 
 logger = logging.getLogger(__name__)
-VALID_ROAS_BANDS = {"high", "mid", "low"}
 
 # TTL 作為多 worker 快取失效的底線：即使 Redis pub/sub 通知因故沒送達（worker 啟動時機、
 # 網路抖動等），5 分鐘後也會自動視為過期重新查 DB，不會無限期卡在舊 prompt
@@ -245,6 +243,16 @@ class OpenRouterScoringProvider(BaseScoringProvider):
         """
         import openai
 
+        def _is_rate_limit_error(exc: Exception) -> bool:
+            if isinstance(exc, openai.RateLimitError):
+                return True
+            if hasattr(exc, "status_code") and exc.status_code == 429:
+                return True
+            exc_str = str(exc).lower()
+            return "429" in str(exc) or "resource_exhausted" in exc_str or "exhausted" in exc_str or "rate_limit" in exc_str
+
+        backoff = 2.0
+
         if use_structured_output:
             try:
                 raw = await asyncio.to_thread(
@@ -261,14 +269,24 @@ class OpenRouterScoringProvider(BaseScoringProvider):
                 if raw and raw.strip():
                     return _extract_json_payload(raw)
             except Exception as exc:
-                logger.info(
-                    "[MetaAndromeda] Structured output attempt failed (%s), falling back to regex-parsed prompt.",
-                    exc,
-                )
+                if _is_rate_limit_error(exc):
+                    # docs/68 A7：structured pre-attempt 撞到限流時，先照下面
+                    # regex fallback 迴圈同款的 backoff 稍等一下，再進入 fallback，
+                    # 避免在被限流的當下立刻再送一次完整請求、雪上加霜。
+                    logger.warning(
+                        "[MetaAndromeda] Structured output attempt hit rate limit (%s). "
+                        "Backing off %.1fs before falling back to regex-parsed prompt.",
+                        exc, backoff,
+                    )
+                    await asyncio.sleep(backoff)
+                else:
+                    logger.info(
+                        "[MetaAndromeda] Structured output attempt failed (%s), falling back to regex-parsed prompt.",
+                        exc,
+                    )
 
         raw = None
         max_retries = 3
-        backoff = 2.0
         max_tokens = _DEFAULT_SCORE_MAX_TOKENS
         for attempt in range(max_retries):
             try:
@@ -293,13 +311,7 @@ class OpenRouterScoringProvider(BaseScoringProvider):
                         continue
                 break
             except Exception as e:
-                is_rate_limit = False
-                if isinstance(e, openai.RateLimitError):
-                    is_rate_limit = True
-                elif hasattr(e, "status_code") and e.status_code == 429:
-                    is_rate_limit = True
-                elif "429" in str(e) or "resource_exhausted" in str(e).lower() or "exhausted" in str(e).lower() or "rate_limit" in str(e).lower():
-                    is_rate_limit = True
+                is_rate_limit = _is_rate_limit_error(e)
 
                 shrunk_max_tokens = _shrink_max_tokens_for_context_error(e, max_tokens)
 
