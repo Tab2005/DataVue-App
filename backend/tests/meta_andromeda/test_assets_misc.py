@@ -377,6 +377,146 @@ async def test_meta_andromeda_storage_image_is_encoded_and_sent_as_data_uri(
     assert image_parts[0]["image_url"]["url"].startswith("data:image/png;base64,")
 
 
+@pytest.mark.unit
+def test_meta_andromeda_resolve_openrouter_key_uses_shared_per_user_lookup(db, sample_admin_user, monkeypatch):
+    """docs/68 A4 修復驗證：resolve_openrouter_api_key_for_asset()（供
+    calibration_pipeline 等直連 OpenRouter 的路徑使用）與
+    _resolve_per_user_openrouter_key()（供 _prepare_asset_context 使用）
+    現在共用同一段 asset → uploaded_by → user → TokenManager 查詢邏輯，
+    對同一筆資產應解析出一致的個人金鑰，而不是各自實作一份、日後改一邊
+    忘了改另一邊（2026-07-03 事故的成因）。"""
+    from database.models.meta_andromeda import MetaAndromedaAsset
+    from modules.auth.service import TokenManager
+    from modules.meta_andromeda.runtime import (
+        _resolve_per_user_openrouter_key,
+        resolve_openrouter_api_key_for_asset,
+    )
+
+    asset = MetaAndromedaAsset(
+        id="asset_a4_per_user_key",
+        asset_uri="storage://meta-andromeda/uploads/a4-test.png",
+        storage_backend="filesystem",
+        storage_key="uploads/a4-test.png",
+        asset_type="image",
+        source_filename="a4-test.png",
+        checksum_sha256="checksum-a4-test",
+        file_size_bytes=100,
+        uploaded_by=sample_admin_user.id,
+    )
+    db.add(asset)
+    db.commit()
+
+    monkeypatch.setattr(
+        TokenManager, "get_ai_api_key", staticmethod(lambda google_id, provider=None: "per-user-fake-key")
+    )
+
+    assert _resolve_per_user_openrouter_key(db, asset) == "per-user-fake-key"
+    assert resolve_openrouter_api_key_for_asset(db, asset.id) == "per-user-fake-key"
+
+
+@pytest.mark.unit
+def test_meta_andromeda_resolve_openrouter_key_falls_back_when_no_per_user_key(db, monkeypatch):
+    """docs/68 A4：資產無上傳者時，resolve_openrouter_api_key_for_asset()
+    應退回 settings.OPENROUTER_API_KEY，而 _resolve_per_user_openrouter_key()
+    則維持回傳 None——這個區分是 _prepare_asset_context() 用來判斷「這把金鑰
+    究竟是不是使用者自己的」所需要的語意，合併重複邏輯時不能弄丟。"""
+    from database.models.meta_andromeda import MetaAndromedaAsset
+    from modules.meta_andromeda.runtime import (
+        _resolve_per_user_openrouter_key,
+        resolve_openrouter_api_key_for_asset,
+    )
+
+    monkeypatch.setenv("OPENROUTER_API_KEY", "env-fallback-key")
+
+    asset_without_uploader = MetaAndromedaAsset(
+        id="asset_a4_no_uploader",
+        asset_uri="storage://meta-andromeda/uploads/a4-no-uploader.png",
+        storage_backend="filesystem",
+        storage_key="uploads/a4-no-uploader.png",
+        asset_type="image",
+        source_filename="a4-no-uploader.png",
+        checksum_sha256="checksum-a4-no-uploader",
+        file_size_bytes=100,
+        uploaded_by=None,
+    )
+    db.add(asset_without_uploader)
+    db.commit()
+
+    assert _resolve_per_user_openrouter_key(db, asset_without_uploader) is None
+    assert resolve_openrouter_api_key_for_asset(db, asset_without_uploader.id) == "env-fallback-key"
+    # asset_id 為 None（未指定素材）時同樣直接退回設定值。
+    assert resolve_openrouter_api_key_for_asset(db, None) == "env-fallback-key"
+
+
+@pytest.mark.unit
+def test_meta_andromeda_prepare_asset_context_blocks_path_traversal_outside_storage_root(
+    db, sample_admin_user, tmp_path, monkeypatch, caplog,
+):
+    """docs/68 A6 修復驗證：storage_key 解析後若跑出 storage root 之外
+    （路徑穿越），is_relative_to() 應正確判斷為 False 並乾淨地跳過讀檔。
+
+    修復前的安全結果其實「碰巧」一樣正確——relative_to() 對不在 root 底下
+    的路徑是拋 ValueError，被外層籠統的 except Exception 吃掉，一樣不會讀到
+    檔案——但語意是錯的：那個例外會被誤記錄成「Base64 encoding failed」，
+    掩蓋了這其實是一次路徑穿越嘗試。這裡除了驗證素材內容沒被讀出來，也用
+    caplog 驗證「不會產生那則誤導性錯誤訊息」，這才是本次修復實際改變的
+    可觀察行為（修復前這個測試若只斷言 asset_public_url 不會通過，因為
+    舊寫法本來就意外擋得住）。"""
+    import logging
+
+    from database.models.meta_andromeda import MetaAndromedaAsset
+    from modules.meta_andromeda.runtime import MetaAndromedaRuntimeAdapter
+
+    storage_root = tmp_path / "storage_root"
+    storage_root.mkdir()
+    monkeypatch.setenv("META_ANDROMEDA_STORAGE_ROOT", str(storage_root))
+
+    # storage root 之外放一個真實檔案，storage_key 用 ../ 試圖跳出去讀它。
+    outside_secret = tmp_path / "outside_secret.png"
+    outside_secret.write_bytes(b"should-not-be-readable")
+
+    asset = MetaAndromedaAsset(
+        id="asset_path_traversal",
+        asset_uri="storage://meta-andromeda/../outside_secret.png",
+        storage_backend="filesystem",
+        storage_key="../outside_secret.png",
+        asset_type="image",
+        source_filename="outside_secret.png",
+        checksum_sha256="checksum-outside-secret",
+        file_size_bytes=len(b"should-not-be-readable"),
+        uploaded_by=sample_admin_user.id,
+        public_url="https://cdn.example.com/fallback.png",
+    )
+    db.add(asset)
+    db.commit()
+
+    class SessionProxy:
+        def __init__(self, session):
+            self._session = session
+
+        def __getattr__(self, name):
+            return getattr(self._session, name)
+
+        def close(self):
+            return None
+
+    monkeypatch.setattr("database.SessionLocal", lambda: SessionProxy(db))
+
+    score_payload = {"asset_id": asset.id, "request_context": {}}
+    with caplog.at_level(logging.ERROR):
+        MetaAndromedaRuntimeAdapter._prepare_asset_context(score_payload)
+
+    request_context = score_payload["request_context"]
+    # 路徑穿越被擋下：asset_public_url 應維持 fallback 的 public_url，
+    # 而不是被替換成讀到 outside_secret.png 內容編碼出的 base64 data URI。
+    assert request_context["asset_public_url"] == "https://cdn.example.com/fallback.png"
+    assert "base64," not in (request_context.get("asset_public_url") or "")
+    # 修復前 relative_to() 拋出的 ValueError 會被誤記錄成「Base64 encoding
+    # failed」，把一次路徑穿越嘗試偽裝成無害的編碼錯誤；修復後 is_relative_to()
+    # 乾淨地判斷為 False、不進入 except 分支，不應該有這則誤導性錯誤訊息。
+    assert not any("Base64 encoding failed" in record.message for record in caplog.records)
+
+
 def test_meta_andromeda_image_auto_compression():
     import io
     from PIL import Image, ImageDraw

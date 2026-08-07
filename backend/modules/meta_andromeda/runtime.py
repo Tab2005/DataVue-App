@@ -105,6 +105,34 @@ def _shrink_max_tokens_for_context_error(exc: Exception, current_max_tokens: int
     if safe_max_tokens < _MIN_SCORE_MAX_TOKENS or safe_max_tokens >= current_max_tokens:
         return None
     return safe_max_tokens
+def _resolve_per_user_openrouter_key(db_session, asset) -> str | None:
+    """依資產上傳者反查其個人 OpenRouter API 金鑰。
+
+    抽取自原本各自實作一份的共用核心邏輯（docs/68 A4）：
+    resolve_openrouter_api_key_for_asset() 與
+    MetaAndromedaRuntimeAdapter._prepare_asset_context() 過去分別內嵌同一段
+    asset → uploaded_by → user → TokenManager 查詢，這種重複正是 2026-07-03
+    事故的成因（見下方 resolve_openrouter_api_key_for_asset docstring）——改
+    一邊時忘了同步改另一邊。接受呼叫端已經查好的 asset row（兩個呼叫端本來
+    就都需要查一次資產），不重複查詢。
+    """
+    if not asset or not asset.uploaded_by:
+        return None
+    try:
+        from database.models.user import User
+        from modules.auth.service import TokenManager
+
+        user = db_session.query(User).filter(User.id == asset.uploaded_by).first()
+        if user and user.google_id:
+            return TokenManager.get_ai_api_key(user.google_id, provider="openrouter")
+    except Exception as exc:
+        logger.warning(
+            "[MetaAndromeda] Failed to resolve per-user OpenRouter key for asset %s: %s",
+            asset.id, exc,
+        )
+    return None
+
+
 def resolve_openrouter_api_key_for_asset(db_session, asset_id: str | None) -> str | None:
     """Look up the OpenRouter API key belonging to whoever uploaded this asset — the
     same per-user, DB-stored key resolution MetaAndromedaRuntime.generate_score_result
@@ -119,23 +147,19 @@ def resolve_openrouter_api_key_for_asset(db_session, asset_id: str | None) -> st
     degraded LLM calibration-guidance generation to its hardcoded template fallback).
     """
     if asset_id:
+        asset = None
         try:
             from database.models.meta_andromeda import MetaAndromedaAsset
-            from database.models.user import User
-            from modules.auth.service import TokenManager
 
             asset = db_session.query(MetaAndromedaAsset).filter(MetaAndromedaAsset.id == asset_id).first()
-            if asset and asset.uploaded_by:
-                user = db_session.query(User).filter(User.id == asset.uploaded_by).first()
-                if user and user.google_id:
-                    db_key = TokenManager.get_ai_api_key(user.google_id, provider="openrouter")
-                    if db_key:
-                        return db_key
         except Exception as exc:
             logger.warning(
                 "[MetaAndromeda] Failed to resolve per-user OpenRouter key for asset %s: %s",
                 asset_id, exc,
             )
+        db_key = _resolve_per_user_openrouter_key(db_session, asset)
+        if db_key:
+            return db_key
     return settings.OPENROUTER_API_KEY
 class BaseScoringProvider:
     async def score(self, score_payload: dict, registry_entry: MetaAndromedaModelEntry) -> dict:
@@ -419,16 +443,13 @@ class MetaAndromedaRuntimeAdapter:
         try:
             from database import SessionLocal
             from database.models.meta_andromeda import MetaAndromedaAsset
-            from database.models.user import User
-            from modules.auth.service import TokenManager
 
             db_session = SessionLocal()
             try:
                 asset = db_session.query(MetaAndromedaAsset).filter(MetaAndromedaAsset.id == asset_id).first()
-                if asset and asset.uploaded_by:
-                    user = db_session.query(User).filter(User.id == asset.uploaded_by).first()
-                    if user and user.google_id:
-                        db_key = TokenManager.get_ai_api_key(user.google_id, provider="openrouter")
+                # docs/68 A4：金鑰解析邏輯統一交給 _resolve_per_user_openrouter_key()，
+                # 不在這裡重複實作一份 asset → uploaded_by → user → TokenManager 查詢。
+                db_key = _resolve_per_user_openrouter_key(db_session, asset)
                 if asset:
                     request_context = score_payload.setdefault("request_context", {})
                     request_context.setdefault("asset_public_url", asset.public_url)
@@ -443,7 +464,12 @@ class MetaAndromedaRuntimeAdapter:
                             if asset.storage_backend == "filesystem":
                                 storage_root = Path(settings.META_ANDROMEDA_STORAGE_ROOT)
                                 safe_path = (storage_root / asset.storage_key).resolve()
-                                if safe_path.relative_to(storage_root.resolve()) and safe_path.exists():
+                                # docs/68 A6：relative_to() 在路徑不在 root 底下時是拋
+                                # ValueError，不是回傳 False——舊寫法「碰巧」擋得住路徑
+                                # 穿越，只是因為例外被下面 except Exception 吃掉，錯誤訊息
+                                # 卻誤植成「Base64 編碼失敗」。is_relative_to() 才是正確的
+                                # 布林判斷寫法。
+                                if safe_path.is_relative_to(storage_root.resolve()) and safe_path.exists():
                                     file_bytes = safe_path.read_bytes()
                                     mime = "image/png"
                                     if asset.source_filename.lower().endswith((".jpg", ".jpeg")):
@@ -479,7 +505,9 @@ class MetaAndromedaRuntimeAdapter:
                                 from pathlib import Path
                                 storage_root = Path(settings.META_ANDROMEDA_STORAGE_ROOT)
                                 safe_path = (storage_root / asset.storage_key).resolve()
-                                if safe_path.relative_to(storage_root.resolve()) and safe_path.exists():
+                                # docs/68 A6：relative_to() 判斷式同上（見 base64 分支的
+                                # 註解）——is_relative_to() 才是正確的布林寫法。
+                                if safe_path.is_relative_to(storage_root.resolve()) and safe_path.exists():
                                     video_bytes = safe_path.read_bytes()
                             elif asset.storage_backend == "s3_compatible":
                                 from .storage import storage_adapter

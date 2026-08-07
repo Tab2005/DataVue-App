@@ -952,3 +952,55 @@ async def test_meta_andromeda_openrouter_invalid_schema_falls_back_to_heuristic(
 
     assert result["lineage"]["scoring_mode"] == "heuristic"
     assert "provider_fallback" in result["risk_tags"]
+
+
+@pytest.mark.unit
+def test_meta_andromeda_enqueue_score_event_reports_dispatch_accepted(db, monkeypatch):
+    """docs/68 A3 修復驗證：enqueue_score_event() 過去兩個分支（accepted 與
+    未 accepted）回傳完全相同，呼叫端無從得知這次派工是否真的成功。合併
+    分支後應在回傳值多帶出 dispatch_accepted，忠實反映
+    queue_host_adapter 的實際派工結果；派工失敗時 score event 本身仍應
+    停留在 queued（交由 sweeper 之後補派），不應該被誤標記成別的狀態。"""
+    created = meta_andromeda_service_module.MetaAndromedaService.create_score_event(
+        db,
+        {
+            "asset_uri": "storage://meta-andromeda/uploads/a3-test.png",
+            "asset_type": "image",
+            "objective": "purchase",
+            "placement_family": "feed",
+            "market": "TW",
+        },
+    )
+    score_event_id = created["score_event_id"]
+
+    monkeypatch.setattr(
+        meta_andromeda_service_module.queue_host_adapter,
+        "enqueue_score_event",
+        lambda score_event_id, delay_seconds=1.0: {
+            "accepted": True,
+            "queue_host": "database_queue",
+            "dispatch_mode": "db_backlog",
+            "delay_seconds": delay_seconds,
+        },
+    )
+    accepted_result = meta_andromeda_service_module.MetaAndromedaService.enqueue_score_event(
+        db, score_event_id=score_event_id, runtime_job_id="ma_score_a3_accepted",
+    )
+    assert accepted_result["dispatch_accepted"] is True
+    assert accepted_result["status"] == "queued"
+
+    monkeypatch.setattr(
+        meta_andromeda_service_module.queue_host_adapter,
+        "enqueue_score_event",
+        lambda score_event_id, delay_seconds=1.0: {
+            "accepted": False,
+            "queue_host": "redis_stream",
+            "dispatch_mode": "redis_unavailable",
+            "delay_seconds": delay_seconds,
+        },
+    )
+    failed_result = meta_andromeda_service_module.MetaAndromedaService.enqueue_score_event(
+        db, score_event_id=score_event_id, runtime_job_id="ma_score_a3_failed",
+    )
+    assert failed_result["dispatch_accepted"] is False
+    assert failed_result["status"] == "queued"
