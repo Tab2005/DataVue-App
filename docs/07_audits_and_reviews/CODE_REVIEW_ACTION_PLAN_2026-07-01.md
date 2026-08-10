@@ -333,7 +333,13 @@ psycopg2.errors.StringDataRightTruncation: value too long for type character var
 
 ## P2 — 可維護性
 
-### P2-1 拆分巨型檔案
+### P2-1 拆分巨型檔案 ✅ 已由 docs/33 執行完畢（2026-08-10 回填）
+
+**2026-08-10 回填說明**：本節原始候選清單（`repository.py`、`service.py`、`GSCStats.jsx`/`GA4Stats.jsx` 等）後續被獨立立案為 `docs/07_audits_and_reviews/33_大型檔案拆分重構實作計劃.md`，以「行數 × 變更熱度 × 內部結構證據」重新排序優先級並實際執行，範圍比本節原始草案更完整（多涵蓋 `runtime.py`、`MetaAndromedaMonitoring.jsx`、`test_meta_andromeda_module.py`、`core/scheduler.py` 等）。docs/33 第 1-7 波已於 2026-07-14～17 全部完成並驗收覆核，2026-08-10 另補做兩個決策點（前端頁面組合層 <400 行標準維持、`_shared` 萬用匯入全面替換）。實測現況：`modules/meta_andromeda/repository.py`／`service.py`／`core/scheduler.py` 皆已拆成套件（`repository/`、`service/`、`core/scheduler/`），根目錄同名檔已不存在；`MetaAndromedaMonitoring.jsx` 降至 20 行；`Analytics.jsx`/`ContributionAnalysis.jsx`/`GA4Insights.jsx` 三頁已補拆到 <400 行。**已知的限定範圍例外**（docs/33 自行裁定不追、非遺漏）：`SettingsModal.jsx`（573 行）與 `GA4Insights.jsx` 的面板集中檔功能拆分已較完整，列為觀察、不主動再拆；`ContributionAnalysisComponents.jsx`（1,646 行）是已知落差，超出「面板 <600 行」標準，尚未進一步拆成 15 個獨立元件檔。本節（P2-1）視為已執行完畢，後續細節與驗收記錄一律以 docs/33 為準，不在本文件重複維護。
+
+---
+
+**（以下為本節原始規劃草案，實際執行內容與驗收記錄請見 docs/33，此處保留作歷史脈絡）**
 
 **後端 `modules/meta_andromeda/repository.py`（2124 行）**
 現為單一 `MetaAndromedaRepository` 類含 40+ 方法。依聚合根拆分為多個 repository，用組合維持既有 `repository` 單例介面（呼叫點零改動）：
@@ -437,7 +443,7 @@ repository = MetaAndromedaRepository()
 | 5 | P1-1 空殼模組真遷移（ga4→gsc→ai_hub）| 2d | — | 中 | ✅ 2026-08-10 完成（router 層隨 P1-2 解決；gsc/ai_hub 的 service 層於本次補完） |
 | 6 | P1-2 路由統一 | 2d | 可併 P1-1 | 低（已完成） | ✅ 2026-08-10 完成 |
 | 7 | P1-3 config → BaseSettings | 1-2d | — | 低（已完成） | ✅ 2026-08-10 完成 |
-| 8 | P2-1 拆分巨型檔案 | 持續 | 有測試護航更佳 | 中 | 待處理 |
+| 8 | P2-1 拆分巨型檔案 | 持續 | 有測試護航更佳 | 中 | ✅ 已由 docs/33 執行完畢（2026-07-14～17 完成，2026-08-10 回填） |
 | 9 | P2-3 補測試 | 持續 | — | 低 | 待處理 |
 | 10 | P2-2 導入 TS | 持續 | — | 低 | 待處理 |
 | 11 | P2-4 指標單一來源 | 1d（實測後修正：至少 2-3d，見該節 2026-08-10 盤點） | — | 中（原估低） | ⏸️ 已盤點暫緩 |
