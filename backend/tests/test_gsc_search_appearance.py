@@ -1,7 +1,7 @@
 from unittest.mock import patch
 
 from dependencies import get_current_user
-from routers.gsc import gsc_module_check
+from modules.gsc.router import gsc_module_check
 
 
 def _override_dependencies(app, user):
@@ -12,7 +12,7 @@ def _override_dependencies(app, user):
 def test_search_appearance_summary_no_data(client, sample_user):
     _override_dependencies(client.app, sample_user)
 
-    with patch("routers.gsc.GSCService.get_analytics", return_value=([], None)):
+    with patch("modules.gsc.router.GSCService.get_analytics", return_value=([], None)):
         resp = client.get(
             "/api/gsc/search-appearance-summary",
             params={"site_url": "sc-domain:example.com", "start_date": "2026-01-01", "end_date": "2026-01-31"},
@@ -46,7 +46,7 @@ def test_search_appearance_summary_computes_shares_and_ai_hint(client, sample_us
             return total_rows, None
         return [], None
 
-    with patch("routers.gsc.GSCService.get_analytics", side_effect=fake_get_analytics):
+    with patch("modules.gsc.router.GSCService.get_analytics", side_effect=fake_get_analytics):
         resp = client.get(
             "/api/gsc/search-appearance-summary",
             params={"site_url": "sc-domain:example.com", "start_date": "2026-01-01", "end_date": "2026-01-31"},
@@ -77,7 +77,7 @@ def test_search_appearance_summary_computes_shares_and_ai_hint(client, sample_us
 def test_search_appearance_summary_propagates_error(client, sample_user):
     _override_dependencies(client.app, sample_user)
 
-    with patch("routers.gsc.GSCService.get_analytics", return_value=(None, "boom")):
+    with patch("modules.gsc.router.GSCService.get_analytics", return_value=(None, "boom")):
         resp = client.get(
             "/api/gsc/search-appearance-summary",
             params={"site_url": "sc-domain:example.com", "start_date": "2026-01-01", "end_date": "2026-01-31"},

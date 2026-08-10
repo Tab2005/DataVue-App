@@ -209,12 +209,15 @@ async def general_exception_handler(request: Request, exc: Exception):
 # Router Registration
 # ============================================================
 
-from routers import users, teams, invites, admin, ai, saved_views, gsc, permissions
-from routers import facebook, debug, ga4, auth, reports, line, analytics_ai
+from routers import users, teams, invites, admin, saved_views, permissions
+from routers import facebook, debug, auth, reports, line, analytics_ai
 from routers.metrics import router as metrics_router
 from modules.meta_andromeda.router import router as meta_andromeda_router
 from modules.contribution import router as contribution_router
+from modules.ga4.router import router as ga4_router
 from modules.ga4.insights_router import router as ga4_insights_router
+from modules.gsc.router import router as gsc_router
+from modules.ai_hub.router import router as ai_router
 
 # Authentication & Users
 app.include_router(auth.router)
@@ -227,13 +230,13 @@ app.include_router(invites.router, prefix="/api", tags=["invites"])
 
 # Business Routers (Data Sources)
 app.include_router(facebook.router)
-app.include_router(gsc.router)
-app.include_router(ga4.router)
+app.include_router(gsc_router)
+app.include_router(ga4_router)
 app.include_router(ga4_insights_router, prefix="/api/ga4/insights", tags=["ga4_insights"])
 app.include_router(analytics_ai.router)
 
 # AI & Features
-app.include_router(ai.router, prefix="/api/ai", tags=["ai"])
+app.include_router(ai_router, prefix="/api/ai", tags=["ai"])
 app.include_router(saved_views.router)
 app.include_router(reports.router)
 app.include_router(line.router)

@@ -5,7 +5,7 @@ GA4 模組化重構驗證（docs/22 第 0 波）
 - `modules/ga4/client.py`（`GA4Client`）：OAuth / Admin API / Data API RunReport 底層封裝
 - `modules/ga4/service.py`（`GA4AnalyticsService`）：報表組裝、快取、週報資料
 
-`ga4_service.GA4Service` 保留為薄轉發層，確保既有呼叫端（`routers/ga4.py`、
+`ga4_service.GA4Service` 保留為薄轉發層，確保既有呼叫端（`modules/ga4/router.py`、
 `services/report_service.py`）零改動。本檔案驗證：
 1. 轉發層每個方法都「真的」轉呼叫新模組（而非重新實作、產生邏輯漂移）。
 2. 新模組本身的報表組裝行為（型別轉換、快取、無憑證錯誤）與重構前一致。
@@ -395,7 +395,7 @@ def test_get_analytics_splits_requests_over_ten_metrics(mocker):
 def test_ga4_properties_endpoint_still_works_through_forwarding_layer(
     client, db, sample_user, mocker
 ):
-    import routers.ga4 as ga4_router_module
+    import modules.ga4.router as ga4_router_module
     from dependencies import get_current_user as root_get_current_user
     from main import app
 
@@ -421,7 +421,7 @@ def test_ga4_properties_endpoint_still_works_through_forwarding_layer(
 def test_ga4_report_endpoint_still_works_through_forwarding_layer(
     client, db, sample_user, mocker
 ):
-    import routers.ga4 as ga4_router_module
+    import modules.ga4.router as ga4_router_module
     from dependencies import get_current_user as root_get_current_user
     from main import app
 

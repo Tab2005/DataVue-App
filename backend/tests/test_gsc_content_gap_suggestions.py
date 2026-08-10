@@ -1,7 +1,7 @@
 from unittest.mock import patch, MagicMock
 
 from dependencies import get_current_user
-from routers.gsc import gsc_module_check
+from modules.gsc.router import gsc_module_check
 
 
 def _override_dependencies(app, user):
@@ -123,7 +123,7 @@ def test_content_gap_suggestions_falls_back_to_keyword_gap_analysis(client, samp
         "suggestions": []
     }
 
-    with patch("routers.gsc._compute_keyword_gap", return_value=gap_result), \
+    with patch("modules.gsc.router._compute_keyword_gap", return_value=gap_result), \
          patch("modules.auth.service.TokenManager.get_ai_api_key", return_value="fake-key"), \
          patch("services.ai.content_gap_suggester.AIContentGapSuggester.suggest_directions", return_value=fake_result) as mock_suggest:
         resp = client.post(
