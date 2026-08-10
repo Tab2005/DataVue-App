@@ -401,18 +401,28 @@ repository = MetaAndromedaRepository()
 
 ---
 
-### P2-4 指標定義單一事實來源
+### P2-4 指標定義單一事實來源 ⏸️ 已盤點，暫緩執行（2026-08-10）
 
-**問題**：指標定義散落 `frontend/src/constants/metricsRegistry.js`(545)、`backend/modules/fb_ads/metrics_registry.py`、`backend/routers/metrics.py`、`backend/service_modules/metrics.py`。
+**問題**：指標定義散落 `frontend/src/constants/metricsRegistry.js`(545)、`backend/modules/fb_ads/metrics_registry.py`、`backend/routers/metrics.py`（已於 P1-2 搬到 `modules/fb_ads/metrics_router.py`）、`backend/service_modules/metrics.py`。
 
-**方案**
-1. 以**後端為單一事實來源**（`modules/fb_ads/metrics_registry.py`）。
-2. `routers/metrics.py` 提供 `GET /api/metrics/registry` 回傳完整定義。
-3. 前端啟動時拉取並快取（React Query），移除 `constants/metricsRegistry.js` 的重複定義（保留純 UI 呈現用的補充設定即可）。
-4. `service_modules/metrics.py` 與 `modules/fb_ads/metrics_registry.py` 若重疊，收斂為一。
+**2026-08-10 盤點結果（比原規劃複雜得多，決議暫緩，不繼續往下做）**
+
+實際查證發現這個「散落四處」的狀態，其實是**先前已經有人做到一半、但沒接上的 P2-4 嘗試**，而不是從零開始：
+
+1. `backend/service_modules/metrics.py`（278 行）**不是指標定義**，是 `MetricsCalculator`——處理 Facebook `actions`/`action_values` 解析與格式化的計算邏輯類別，跟「指標定義」是不同關注點，不適用本節「若重疊收斂為一」的前提，應排除在本次整併範圍外。
+2. `backend/modules/fb_ads/metrics_registry.py`（178 行）是給 `build_fb_fields()` 用的 FB API 欄位對應表（`source`/`fb_field`/`action_type`），約 60 個 key，**不含**任何前端顯示用的 label/category/format——這是完全不同用途的「指標定義」，不是 UI 用的那種。
+3. `backend/modules/fb_ads/metrics_router.py`（P1-2 搬移後路徑）的 `GET /api/metrics/registry` 端點**已經存在**（docstring 明講「避免前後端各自維護一份指標清單」），但它自己另外維護一份**只有 ~30 個指標**（前端實際用的有 ~60 個）的 UI metadata dict（label/label_en/category/format/description/breakdown_compatible），跟 `metrics_registry.py` 完全獨立、沒有互相參照。且這個端點**從未被前端呼叫過**——是蓋好但沒接上的死碼。
+4. `frontend/src/hooks/queries/useMetricsRegistry.js` **已經存在**：一支設計完整的 React Query hook，含 1 小時快取、失敗時的 `LOCAL_METRICS_FALLBACK` 精簡備援清單，docstring 同樣寫著「避免前後端各自維護一份指標清單」——但**同樣從未被任何元件呼叫過**，是另一個蓋好沒接上的死碼。
+5. 前端真正在用的定義鏈：`frontend/src/constants/metricsRegistry.js`（545 行，~60 個指標，欄位涵蓋 `key/label_zh/label_en/category/format/isInverse/source/fb_field/action_type/formula/is_default`，其 docstring 稱是「feature-flag 控制的擴充功能」，但實際上 `components/Analytics/analyticsMetrics.js` 的 `buildUnifiedMetricGroups()` **在模組載入時就直接合併使用**，並未真的檢查 feature flag，docstring 已過時）→ 產出 `ALL_METRIC_GROUPS`，這是本次 session 稍早拆分 `Analytics.jsx`/`useAnalyticsMetricSelection.js` 時實際依賴的資料。
+
+**若要繼續，剩餘的真實工作量**
+1. 後端：把 `metrics_router.py` 的 `METRICS_REGISTRY` 從 ~30 個補齊到 ~60 個（逐一比對 `constants/metricsRegistry.js` 抄錄 label_zh/label_en/category/format/description，並與 `fb_ads/metrics_registry.py` 的 source/fb_field/action_type 交叉驗證），過程本身有手工轉錄出錯風險（標籤語言/格式錯置不容易發現，需要逐項比對驗證）。`breakdown_compatible` 欄位查證後全專案無任何消費端，屬於原本就沒接上的閒置 metadata，建議整併時直接捨棄而非替每個新指標捏造預設值。
+2. 前端：`analyticsMetrics.js` 的 `ALL_METRIC_GROUPS` 目前是模組載入時同步算好的靜態匯出，要真正接上 `useMetricsRegistry()`（網路請求，無法同步）必須改寫成 React hook（例如 `useAllMetricGroups()`），並更新所有消費端（`Analytics.jsx`、`useAnalyticsMetricSelection.js` 等，皆為本次 session 稍早才剛拆分完成的檔案）改用新 hook，需要重新驗證這些頁面的行為。
 
 **驗證**：前端指標下拉與後端計算欄位一致；改後端定義前端自動同步。
-**風險**：低-中（需確認前端所有引用點）。
+**風險**：中（原規劃寫「低-中」，但實測後端 registry 補齊有手工轉錄出錯風險，前端串接牽涉同步轉非同步的架構調整，非純粹的「串一個現成端點」）。
+
+**建議下次處理方式**：分兩個獨立、可分開驗收的子任務——(a) 先把後端 `metrics_router.py` 的 registry 補齊到 ~60 個並跟 `fb_ads/metrics_registry.py` 交叉驗證，不動前端，端點本身先做到正確完整；(b) 前端串接（`ALL_METRIC_GROUPS` 改 hook）另外排時間，跑一次 Analytics 頁面的完整手動驗證再上線。
 
 ---
 
@@ -430,7 +440,7 @@ repository = MetaAndromedaRepository()
 | 8 | P2-1 拆分巨型檔案 | 持續 | 有測試護航更佳 | 中 | 待處理 |
 | 9 | P2-3 補測試 | 持續 | — | 低 | 待處理 |
 | 10 | P2-2 導入 TS | 持續 | — | 低 | 待處理 |
-| 11 | P2-4 指標單一來源 | 1d | — | 低 | 待處理 |
+| 11 | P2-4 指標單一來源 | 1d（實測後修正：至少 2-3d，見該節 2026-08-10 盤點） | — | 中（原估低） | ⏸️ 已盤點暫緩 |
 
 **實際執行順序調整**：P0-1 實際上先於 P0-2/P0-3 完成（用戶指定順序）。原評估風險「中」，經完整實測（全新 DB 全鏈跑通、零 schema 落差、測試套件無回歸）後下修為「低」。下一步建議 P0-2、P0-3（快速降風險，工作量小）。P1 項目可與 P1-1/P1-2 合併分批。P2 為持續改善，穿插於功能開發間進行。
 
