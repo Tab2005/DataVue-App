@@ -114,7 +114,10 @@ META_ANDROMEDA_STORAGE_PUBLIC_BASE_URL=https://assets.sitetegy.com/meta-andromed
 
 ---
 
-### 2.4 Meta Andromeda 獨立 Worker（docs/24 Wave 2，選配但生產環境強烈建議）
+### 2.4 Meta Andromeda 獨立 Worker（docs/24 Wave 2 → Option D，本專案生產環境現行架構）
+
+> [!NOTE]
+> 2026-08-10 用語回填：本節原本標「選配但生產環境強烈建議」，但本專案的生產環境已於 2026-07-13 完成 [docs/28](../03_meta_andromeda/28_Meta_Andromeda_素材縮圖跨容器儲存問題與Worker集中化方案規劃.md) 規劃的 Option D（worker 集中化儲存）部署並驗證，`SERVICE_ROLE=web`/`worker` 拆分、素材完全由 worker 集中持有（含歷史檔案遷移）已是**現況**，不再是「選配」。以下步驟對本專案而言是重建/擴充部署時要照做的現行架構，而非可有可無的進階選項；其他採用本專案架構的部署方若流量小、想先求簡單，仍可參考 2.4.4 節的降級路徑（單一 `SERVICE_ROLE=all` process）。
 
 **背景**：Meta Andromeda 的素材評分與觀測匯入若跟 API 服務同一個 process，評分期間的 DB/檔案/ffmpeg 等阻塞工作會佔用 event loop，導致整站 API（含權限檢查）在批次評分時全部卡住無回應（根因與修復過程見 [docs/24](../03_meta_andromeda/24_Meta_Andromeda_評分管線Event_Loop阻塞修復與模組優化實作計劃.md)）。Wave 1 已用 `asyncio.to_thread` 止血，讓同 process 運行也不會卡死；本節的獨立 Worker 是進一步的架構隔離，讓評分負載完全離開 API 服務。
 
@@ -156,7 +159,7 @@ META_ANDROMEDA_STORAGE_PUBLIC_BASE_URL=https://assets.sitetegy.com/meta-andromed
    - `checks.internal_asset_worker.auth_configured == true`
 6. 呼叫 Worker 服務的 `/healthz`，確認 `internal_asset_worker.auth_configured == true`；若為 `filesystem`，`storage_root` 應指向實際掛載路徑。
 
-#### 2.4.4 降級路徑
+#### 2.4.4 降級路徑（本專案生產環境未採用，僅供小流量/求簡單的部署參考）
 
 若暫時不想拆 Worker（例如流量小、先求簡單），不設定 `SERVICE_ROLE`（維持預設 `all`）即可，行為與拆分前完全一致——Wave 1 的 `asyncio.to_thread` 止血已確保這種單 process 模式不會卡住 event loop，只是評分負載仍會佔用 Web 服務的資源。
 
