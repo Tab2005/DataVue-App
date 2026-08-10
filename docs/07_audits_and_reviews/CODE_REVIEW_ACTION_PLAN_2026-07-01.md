@@ -390,20 +390,31 @@ repository = MetaAndromedaRepository()
 
 ---
 
-### P2-3 補強測試覆蓋
+### P2-3 補強測試覆蓋 🔄 持續進行（原始補強清單已於 2026-08-10 全數補完）
 
-**現況**：後端 9 個測試檔（集中 auth/health/permissions/report/scheduler/meta_andromeda）；前端僅 4 個（全 MetaAndromeda 頁）。
+**現況（2026-07-01 當時）**：後端 9 個測試檔（集中 auth/health/permissions/report/scheduler/meta_andromeda）；前端僅 4 個（全 MetaAndromeda 頁）。此後測試數量已隨每個功能波次持續增加（本次動工前 2026-08-10 基準：後端 pytest 598 passed，前端 vitest 80 passed），本節「現況」數字僅供歷史脈絡參考，不再代表目前規模。
 
 **補強清單（依投報率排序）**
-| 目標 | 測試類型 | 重點 |
-|---|---|---|
-| 前端 `services/apiClient.js` | 單元 | 重試（502/503/504）、逾時、401 重導、ApiError |
-| 後端 `ga4_service` / `gsc_service` | 單元 | OAuth 交換、property 列舉、錯誤處理（mock google client）|
-| 後端 `services/facebook_service` | 單元 | token 加解密、insights 聚合 |
-| 前端關鍵 hooks（`useAnalyticsFilters` 等） | 單元 | 篩選狀態轉換 |
-| 後端 `core/config`（P1-3 後）| 單元 | env 覆蓋 / 型別驗證 |
+| 目標 | 測試類型 | 重點 | 狀態 |
+|---|---|---|---|
+| 前端 `services/apiClient.js` | 單元 | 重試（502/503/504）、逾時、401 重導、ApiError | ✅ 2026-08-10 完成 |
+| 後端 `ga4_service` / `gsc_service` | 單元 | OAuth 交換、property 列舉、錯誤處理（mock google client）| ✅ 2026-08-10 完成 |
+| 後端 `services/facebook_service` | 單元 | token 加解密、insights 聚合 | ✅ 2026-08-10 完成（範圍調整，見下） |
+| 前端關鍵 hooks（`useAnalyticsFilters` 等） | 單元 | 篩選狀態轉換 | ✅ 2026-08-10 完成 |
+| 後端 `core/config`（P1-3 後）| 單元 | env 覆蓋 / 型別驗證 | ✅ 已隨 P1-3 完成（`tests/test_config.py`，11 測試） |
 
-**基礎建設**：前端已有 vitest + testing-library；後端已有 pytest + conftest。補測試不需新框架。設定 CI 覆蓋率門檻（起步 40%，逐季提升）。
+**2026-08-10 執行說明**：
+
+1. **前端 `apiClient.js`**：新增 `frontend/src/services/__tests__/apiClient.test.js`（14 測試），涵蓋無 token/token 過期時的前置攔截、成功路徑（header 組裝、204、body 序列化）、伺服器 401 的清除+重導、502/503/504 重試（含重試次數耗盡）、逾時中止、以及 `ApiError` 對結構化/純字串/不可解析 JSON 三種錯誤 body 的解析。重試與逾時測試用 `vi.useFakeTimers()` + `advanceTimersByTimeAsync` 精確推進，避免真的等待 1-3 秒的重試延遲。
+2. **`ga4_service` / `gsc_service` 的 OAuth**：本節原始問題定位的兩個檔案已在 P1-1 真遷移到 `modules/ga4/client.py`（`GA4Client`）與 `modules/gsc/service.py`（`GSCService`）。新增 `tests/test_ga4_client_oauth.py`（17 測試）與 `tests/test_gsc_service_oauth.py`（13 測試），直接測試 `exchange_code`（多組 redirect_uri／有無 client_secret 的兩階段重試序列、失敗訊息組裝）、`get_credentials`（依 expiry 時間差／`creds.expired` 判斷是否刷新、刷新失敗時兩者行為不同——GA4 回 `None`，GSC 只記警告仍回傳舊 creds，讓 googleapiclient 自行重試）、`list_properties`/`list_sites`（無憑證/無帳號/正常彙整/API 例外）。這些方法過去只在轉發層測試裡被整包 mock 掉，從未驗證過真正實作。
+3. **`services/facebook_service`（範圍調整）**：該檔案 docstring 已明講是「Deprecated synchronous ... compatibility layer」，實際運行路徑是 `modules/fb_ads` 的 async services；直接對這個棄用相容層補測試投報率低。改為對「token 加解密」「insights 聚合」兩個關注點的**真正現行實作**補測試：
+   - Token 加解密：新增 `tests/test_token_manager.py`（12 測試），涵蓋 `TokenManager._encrypt`/`_decrypt` 的 Fernet round-trip（含 None/空字串/壞密文/同明文兩次加密結果不同但皆可解回）、`get_user_token`/`get_team_token` 的資料庫讀取解密與 fallback 規則（無 token 時降級用 Admin/Team Owner 的 token）。`get_user_token`/`get_team_token` 內部用 `SessionLocal()` 自建 session、不接受注入，測試用 `monkeypatch.setattr(modules.auth.service, "SessionLocal", ...)`（patch 呼叫端已綁定的名稱，而非 `database.SessionLocal` 本身）換成綁定同一個 `db` fixture connection 的 sessionmaker，讓內部另開的 session 與測試寫入的資料共用同一筆交易。
+   - Insights 聚合：新增 `tests/test_fb_ads_actions_parsing.py`（19 測試），涵蓋 `modules/fb_ads/actions_parsing.py` 的 `process_actions`/`get_video_action_value`/`calculate_change`/`format_kpi`/`format_charts`——這是 Facebook Graph API 回應攤平與 KPI/圖表衍生指標計算的純函式核心，新舊兩套服務（`services/facebook_service.py` 與 `modules/fb_ads/_base.py`）共用，過去完全沒有直接測試，只能靠端到端 API 回應間接驗證。
+4. **前端 hooks**：新增 `frontend/src/hooks/__tests__/useAnalyticsFilters.test.js`（13 測試），涵蓋狀態/關鍵字 include-exclude/觀測匯入三種篩選的組合行為，以及一個記錄真實行為而非規格假設的邊界案例（`filterKeyword` 的 `trim()` 只用於判斷是否為空白，比對時仍用未 trim 的原字串，因此帶前後空白的關鍵字不會被裁切後才比對）。
+
+**驗證**：後端 `pytest backend/tests/` 659 passed（598 + 61 新增：17+13+12+19），零回歸；前端 `npx vitest run` 107 passed（80 + 27 新增：14+13），零回歸；`npm run build` 通過。
+
+**P2-3 作為分類本身仍是「持續」項目**：本次只補完原始規劃的 5 個目標，往後任何新功能仍應視情況補測試，不代表整個 P2-3 類別已經「完成」。
 
 ---
 
@@ -444,7 +455,7 @@ repository = MetaAndromedaRepository()
 | 6 | P1-2 路由統一 | 2d | 可併 P1-1 | 低（已完成） | ✅ 2026-08-10 完成 |
 | 7 | P1-3 config → BaseSettings | 1-2d | — | 低（已完成） | ✅ 2026-08-10 完成 |
 | 8 | P2-1 拆分巨型檔案 | 持續 | 有測試護航更佳 | 中 | ✅ 已由 docs/33 執行完畢（2026-07-14～17 完成，2026-08-10 回填） |
-| 9 | P2-3 補測試 | 持續 | — | 低 | 待處理 |
+| 9 | P2-3 補測試 | 持續 | — | 低 | ✅ 原始 5 個目標已於 2026-08-10 補完（分類本身仍持續開放） |
 | 10 | P2-2 導入 TS | 持續 | — | 低 | 待處理 |
 | 11 | P2-4 指標單一來源 | 1d（實測後修正：至少 2-3d，見該節 2026-08-10 盤點） | — | 中（原估低） | ⏸️ 已盤點暫緩 |
 
