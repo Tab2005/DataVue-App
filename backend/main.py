@@ -209,7 +209,7 @@ async def general_exception_handler(request: Request, exc: Exception):
 # Router Registration
 # ============================================================
 
-from routers import admin, saved_views, permissions
+from routers import admin, saved_views
 from routers import debug, reports, line, analytics_ai
 from routers.metrics import router as metrics_router
 from modules.meta_andromeda.router import router as meta_andromeda_router
@@ -223,11 +223,12 @@ from modules.fb_ads.router import router as facebook_router
 from modules.users.router import router as users_router
 from modules.teams.router import router as teams_router
 from modules.teams.invites_router import router as invites_router
+from modules.permissions.router import router as permissions_router
 
 # Authentication & Users
 app.include_router(auth_router)
 app.include_router(users_router, prefix="/api/users", tags=["users"])
-app.include_router(permissions.router)
+app.include_router(permissions_router)
 
 # Collaboration & Structure
 app.include_router(teams_router, prefix="/api/teams", tags=["teams"])
