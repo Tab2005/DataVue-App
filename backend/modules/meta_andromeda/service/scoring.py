@@ -1,21 +1,21 @@
 """ScoringServiceMixin for Meta Andromeda service."""
 
-from ._shared import *  # noqa: F403
+from . import _shared
 
 
 class ScoringServiceMixin:
 
     @staticmethod
     def create_score_event(db, payload: dict) -> dict:
-        score_payload = runtime_adapter.build_score_submission(payload)
+        score_payload = _shared.runtime_adapter.build_score_submission(payload)
         if payload.get("request_context"):
             score_payload.setdefault("request_context", {}).update(payload["request_context"])
-        return repository.create_score_event(db, score_payload)
+        return _shared.repository.create_score_event(db, score_payload)
 
 
     @staticmethod
     def assign_score_runtime_job(db, score_event_id: str, runtime_job_id: str) -> dict:
-        return repository.assign_runtime_job(db, score_event_id, runtime_job_id)
+        return _shared.repository.assign_runtime_job(db, score_event_id, runtime_job_id)
 
 
     @staticmethod
@@ -26,9 +26,9 @@ class ScoringServiceMixin:
         delay_seconds: float = 1.0,
         event_type: str = "dispatch_requested",
     ) -> dict:
-        current = repository.get_review_queue_detail(db, score_event_id)
-        dispatch = queue_host_adapter.enqueue_score_event(score_event_id, delay_seconds=delay_seconds)
-        repository.log_worker_event(
+        current = _shared.repository.get_review_queue_detail(db, score_event_id)
+        dispatch = _shared.queue_host_adapter.enqueue_score_event(score_event_id, delay_seconds=delay_seconds)
+        _shared.repository.log_worker_event(
             db,
             score_event_id=score_event_id,
             event_type=event_type,
@@ -44,11 +44,11 @@ class ScoringServiceMixin:
         # queued（交由 sweeper 之後補派）——額外帶出 dispatch_accepted，讓
         # 呼叫端（如觀測匯入的自動評分流程）能感知這次派工是否真的成功，
         # 而不是誤以為「有回傳值就代表已經排進佇列」。
-        detail = repository.get_review_queue_detail(db, score_event_id)
+        detail = _shared.repository.get_review_queue_detail(db, score_event_id)
         detail["dispatch_accepted"] = dispatch["accepted"]
         return detail
 
 
     @staticmethod
     def get_score_detail(db, score_event_id: str) -> dict:
-        return repository.get_review_queue_detail(db, score_event_id)
+        return _shared.repository.get_review_queue_detail(db, score_event_id)

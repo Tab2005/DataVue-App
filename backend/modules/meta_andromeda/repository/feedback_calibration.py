@@ -1,18 +1,16 @@
 """FeedbackCalibration repository operations."""
 
-from ._shared import *  # noqa: F401,F403
-from ._stats import *  # noqa: F401,F403
-from .release_metrics import *  # noqa: F401,F403
+from . import _shared, _stats, release_metrics
 
 class FeedbackCalibrationMixin:
-    def list_feedback(self, db: Session, score_event_id: str):
-        score = db.query(MetaAndromedaScoreEvent).filter(MetaAndromedaScoreEvent.id == score_event_id).first()
+    def list_feedback(self, db: _shared.Session, score_event_id: str):
+        score = db.query(_shared.MetaAndromedaScoreEvent).filter(_shared.MetaAndromedaScoreEvent.id == score_event_id).first()
         if score is None:
             raise KeyError(score_event_id)
         feedback = (
-            db.query(MetaAndromedaFeedbackEvent)
-            .filter(MetaAndromedaFeedbackEvent.score_event_id == score_event_id)
-            .order_by(MetaAndromedaFeedbackEvent.created_at.asc())
+            db.query(_shared.MetaAndromedaFeedbackEvent)
+            .filter(_shared.MetaAndromedaFeedbackEvent.score_event_id == score_event_id)
+            .order_by(_shared.MetaAndromedaFeedbackEvent.created_at.asc())
             .all()
         )
         return {
@@ -31,12 +29,12 @@ class FeedbackCalibrationMixin:
             ],
         }
 
-    def submit_feedback(self, db: Session, score_event_id: str, reviewer_id: str, decision: str, reason_codes=None, comment=None):
-        score = db.query(MetaAndromedaScoreEvent).filter(MetaAndromedaScoreEvent.id == score_event_id).first()
+    def submit_feedback(self, db: _shared.Session, score_event_id: str, reviewer_id: str, decision: str, reason_codes=None, comment=None):
+        score = db.query(_shared.MetaAndromedaScoreEvent).filter(_shared.MetaAndromedaScoreEvent.id == score_event_id).first()
         if score is None:
             raise KeyError(score_event_id)
 
-        feedback = MetaAndromedaFeedbackEvent(
+        feedback = _shared.MetaAndromedaFeedbackEvent(
             score_event_id=score_event_id,
             reviewer_id=reviewer_id,
             decision=decision,
@@ -46,7 +44,7 @@ class FeedbackCalibrationMixin:
         score.reviewed = True
         score.feedback_count += 1
         score.latest_feedback_decision = decision
-        score.updated_at = datetime.now(timezone.utc)
+        score.updated_at = _shared.datetime.now(_shared.timezone.utc)
 
         # 分歧樣本自動標記為校準候選：reviewer 明確拒絕高分素材、或核准低分素材，代表人的判斷
         # 與模型判斷方向相反，值得後續人工複核是否要納入 prompt 校準（人工弱標籤，與市場成效
@@ -65,7 +63,7 @@ class FeedbackCalibrationMixin:
                 "decision": decision,
                 "overall_score": overall_score,
                 "reason_codes": reason_codes or [],
-                "flagged_at": datetime.now(timezone.utc).isoformat(),
+                "flagged_at": _shared.datetime.now(_shared.timezone.utc).isoformat(),
                 "note": "reviewer decision diverges from AI score direction; candidate for manual calibration review",
             }
             score.lineage = lineage
@@ -87,14 +85,14 @@ class FeedbackCalibrationMixin:
         }
 
     @staticmethod
-    def list_feedback_calibration_candidates(db: Session, limit: int = 50) -> list[dict]:
+    def list_feedback_calibration_candidates(db: _shared.Session, limit: int = 50) -> list[dict]:
         """Score events whose human review diverged from the AI's own score
         (submit_feedback's human_feedback_flag), surfaced for an operator to
         manually decide whether to fold into the next calibration round."""
         rows = (
-            db.query(MetaAndromedaScoreEvent)
-            .filter(MetaAndromedaScoreEvent.status == "completed")
-            .order_by(MetaAndromedaScoreEvent.updated_at.desc())
+            db.query(_shared.MetaAndromedaScoreEvent)
+            .filter(_shared.MetaAndromedaScoreEvent.status == "completed")
+            .order_by(_shared.MetaAndromedaScoreEvent.updated_at.desc())
             .limit(500)
             .all()
         )
@@ -115,21 +113,21 @@ class FeedbackCalibrationMixin:
         return candidates
 
     @staticmethod
-    def analyze_feedback_reason_codes(db: Session) -> dict:
+    def analyze_feedback_reason_codes(db: _shared.Session) -> dict:
         """Validate reviewer feedback against market ground truth: for each
         reason_code, how often did the score events it was attached to end up
         matching (or diverging from) their later-observed market band? This is
         "reviewer 說 hook_soft 的素材是否真的表現差" made concrete — it tells you
         whether to trust a given reason_code's signal or the model's own band.
         """
-        feedback_rows = db.query(MetaAndromedaFeedbackEvent).all()
+        feedback_rows = db.query(_shared.MetaAndromedaFeedbackEvent).all()
         if not feedback_rows:
             return {"total_feedback_events": 0, "reason_code_breakdown": {}}
 
         score_ids = {f.score_event_id for f in feedback_rows}
         cal_items = (
-            db.query(MetaAndromedaCalibrationItem)
-            .filter(MetaAndromedaCalibrationItem.score_event_id.in_(score_ids))
+            db.query(_shared.MetaAndromedaCalibrationItem)
+            .filter(_shared.MetaAndromedaCalibrationItem.score_event_id.in_(score_ids))
             .all()
         )
         band_by_score_id = {item.score_event_id: item for item in cal_items}
@@ -164,19 +162,19 @@ class FeedbackCalibrationMixin:
 
     def sync_calibration_dataset(
         self,
-        db: Session,
+        db: _shared.Session,
         window_kind: str,
         excluded_observed_ids: list[str],
     ) -> dict:
         # 1. 撈取該窗口的所有 Observed Creative
         observed_list = (
-            db.query(MetaAndromedaObservedCreative)
-            .filter(MetaAndromedaObservedCreative.observation_window_kind == window_kind)
+            db.query(_shared.MetaAndromedaObservedCreative)
+            .filter(_shared.MetaAndromedaObservedCreative.observation_window_kind == window_kind)
             .all()
         )
         
         import uuid
-        dataset_id = f"cal_ds_{datetime.now(timezone.utc).strftime('%Y%m%d')}_{uuid.uuid4().hex[:8]}"
+        dataset_id = f"cal_ds_{_shared.datetime.now(_shared.timezone.utc).strftime('%Y%m%d')}_{uuid.uuid4().hex[:8]}"
         synced_count = 0
         matched_count = 0
         error_item_count = 0
@@ -185,11 +183,11 @@ class FeedbackCalibrationMixin:
         skipped_insufficient_delivery = 0
         skipped_immature = 0
         band_score = {"low": 1, "mid": 2, "high": 3}
-        dataset = MetaAndromedaCalibrationDataset(
+        dataset = _shared.MetaAndromedaCalibrationDataset(
             id=dataset_id,
             window_kind=window_kind,
             status="no_data_to_sync",
-            label_policy_version=LABEL_POLICY_VERSION,
+            label_policy_version=_shared.LABEL_POLICY_VERSION,
             excluded_observed_ids=excluded_observed_ids or [],
             synced_count=0,
             summary={},
@@ -200,11 +198,11 @@ class FeedbackCalibrationMixin:
         # ObservedCreative 在 drift 與校準兩處算出一致的 observed_band；樣本不足時沿用
         # 上一期已持久化的門檻
         eligible_observed_list = [obs for obs in observed_list if obs.id not in excluded_observed_ids]
-        eligible_observed_list, _deduped_ad_count = _dedupe_observed_by_ad_id(eligible_observed_list)
-        label_thresholds = compute_label_thresholds(
+        eligible_observed_list, _deduped_ad_count = _stats._dedupe_observed_by_ad_id(eligible_observed_list)
+        label_thresholds = _shared.compute_label_thresholds(
             eligible_observed_list, db=db, scope_key="global", window_kind=window_kind
         )
-        persist_label_policy(db, "global", window_kind, label_thresholds)
+        _shared.persist_label_policy(db, "global", window_kind, label_thresholds)
 
         # 2. 篩選有偏差且未被排除的進行標記
         for obs in eligible_observed_list:
@@ -216,16 +214,16 @@ class FeedbackCalibrationMixin:
 
             # 曝光/觀測期間門檻：與 drift report 一致，小曝光或觀測期過短的樣本不進校準集
             impressions = int((obs.performance_snapshot or {}).get("impressions", 0) or 0)
-            if impressions < MIN_IMPRESSIONS_FOR_ACCURACY:
+            if impressions < release_metrics.MIN_IMPRESSIONS_FOR_ACCURACY:
                 skipped_insufficient_delivery += 1
                 continue
-            window_days = _window_days(obs.observation_window_start, obs.observation_window_end)
-            if window_days is not None and window_days < MIN_OBSERVATION_WINDOW_DAYS:
+            window_days = _stats._window_days(obs.observation_window_start, obs.observation_window_end)
+            if window_days is not None and window_days < release_metrics.MIN_OBSERVATION_WINDOW_DAYS:
                 skipped_immature += 1
                 continue
 
             # 尋找匹配的 Completed ScoreEvent（與 drift report 使用同一套 checksum→asset_uri 匹配邏輯）
-            pred = match_observed_to_prediction(db, obs)
+            pred = _shared.match_observed_to_prediction(db, obs)
 
             if not pred:
                 continue
@@ -240,13 +238,13 @@ class FeedbackCalibrationMixin:
                 continue
             matched_count += 1
 
-            real_band, label_detail = label_observed_band(obs.objective, obs.performance_snapshot, label_thresholds)
+            real_band, label_detail = _shared.label_observed_band(obs.objective, obs.performance_snapshot, label_thresholds)
 
             # 非轉換/lead 廣告（roas_band=null 為正確設計）不進入校準集，避免模型「正確不出 band」
             # 被誤判為預測錯誤而拉偏 prompt 校準方向
             pred_roas_eligible = (pred.roas_prediction or {}).get("eligible")
             if pred_roas_eligible is None:
-                pred_roas_eligible = resolve_objective_group(obs.objective) not in NON_ROAS_GROUPS
+                pred_roas_eligible = _shared.resolve_objective_group(obs.objective) not in _shared.NON_ROAS_GROUPS
             if not pred_roas_eligible or pred.roas_band is None:
                 skipped_not_band_eligible += 1
                 continue
@@ -258,19 +256,19 @@ class FeedbackCalibrationMixin:
             item_id = f"cal_item_{uuid.uuid4().hex[:12]}"
             if err > 0:
                 error_item_count += 1
-                lineage = deepcopy(obs.lineage or {})
+                lineage = _shared.deepcopy(obs.lineage or {})
                 lineage["calibration"] = {
                     "dataset_id": dataset_id,
-                    "synced_at": datetime.now(timezone.utc).isoformat(),
+                    "synced_at": _shared.datetime.now(_shared.timezone.utc).isoformat(),
                     "prediction_band": pred_band,
                     "observed_band": real_band,
                     "error": err,
-                    "label_policy_version": LABEL_POLICY_VERSION,
+                    "label_policy_version": _shared.LABEL_POLICY_VERSION,
                     "label_metric": label_detail["metric"],
                 }
                 obs.lineage = lineage
             db.add(
-                MetaAndromedaCalibrationItem(
+                _shared.MetaAndromedaCalibrationItem(
                     id=item_id,
                     dataset_id=dataset_id,
                     observed_creative_id=obs.id,
@@ -282,11 +280,11 @@ class FeedbackCalibrationMixin:
                     prediction_band=pred_band,
                     observed_band=real_band,
                     error=float(err),
-                    performance_snapshot=deepcopy(obs.performance_snapshot or {}),
-                    label_policy_version=LABEL_POLICY_VERSION,
-                    label_thresholds=deepcopy(label_thresholds),
+                    performance_snapshot=_shared.deepcopy(obs.performance_snapshot or {}),
+                    label_policy_version=_shared.LABEL_POLICY_VERSION,
+                    label_thresholds=_shared.deepcopy(label_thresholds),
                     baseline_overall_score=pred.overall_score,
-                    diagnostic_scores=deepcopy((pred.lineage or {}).get("diagnostic_scores") or {}),
+                    diagnostic_scores=_shared.deepcopy((pred.lineage or {}).get("diagnostic_scores") or {}),
                 )
             )
             synced_count += 1
@@ -302,7 +300,7 @@ class FeedbackCalibrationMixin:
             "skipped_insufficient_delivery": skipped_insufficient_delivery,
             "skipped_immature": skipped_immature,
             "deduped_ad_count": _deduped_ad_count,
-            "label_policy_version": LABEL_POLICY_VERSION,
+            "label_policy_version": _shared.LABEL_POLICY_VERSION,
         }
         db.commit()
 
@@ -311,7 +309,7 @@ class FeedbackCalibrationMixin:
             from ..calibration_stats import fit_confidence_calibration
             fit_confidence_calibration(db)
         except Exception as exc:
-            logger.warning("[MetaAndromeda] Confidence calibration refit failed: %s", exc)
+            _shared.logger.warning("[MetaAndromeda] Confidence calibration refit failed: %s", exc)
 
         return {
             "dataset_id": dataset_id,
@@ -319,5 +317,5 @@ class FeedbackCalibrationMixin:
             "error_item_count": error_item_count,
             "status": dataset.status,
             "item_count": synced_count,
-            "label_policy_version": LABEL_POLICY_VERSION,
+            "label_policy_version": _shared.LABEL_POLICY_VERSION,
         }

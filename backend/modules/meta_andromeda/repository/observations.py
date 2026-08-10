@@ -1,20 +1,18 @@
 """Observation repository operations."""
 
-from ._shared import *  # noqa: F401,F403
-from ._stats import *  # noqa: F401,F403
-from .release_metrics import *  # noqa: F401,F403
+from . import _shared
 
 SEED_REVIEW_QUEUE = [
     {
         "id": "ma_evt_20260605_001",
         "status": "completed",
         "runtime_job_id": "ma_score_ma_evt_20260605_001",
-        "created_at": datetime(2026, 6, 5, 9, 15, tzinfo=timezone.utc),
-        "queued_at": datetime(2026, 6, 5, 9, 15, tzinfo=timezone.utc),
-        "started_at": datetime(2026, 6, 5, 9, 15, 10, tzinfo=timezone.utc),
-        "completed_at": datetime(2026, 6, 5, 9, 18, tzinfo=timezone.utc),
+        "created_at": _shared.datetime(2026, 6, 5, 9, 15, tzinfo=_shared.timezone.utc),
+        "queued_at": _shared.datetime(2026, 6, 5, 9, 15, tzinfo=_shared.timezone.utc),
+        "started_at": _shared.datetime(2026, 6, 5, 9, 15, 10, tzinfo=_shared.timezone.utc),
+        "completed_at": _shared.datetime(2026, 6, 5, 9, 18, tzinfo=_shared.timezone.utc),
         "failed_at": None,
-        "updated_at": datetime(2026, 6, 5, 9, 18, tzinfo=timezone.utc),
+        "updated_at": _shared.datetime(2026, 6, 5, 9, 18, tzinfo=_shared.timezone.utc),
         "asset_uri": "storage://meta-andromeda/assets/creative_001.png",
         "asset_type": "image",
         "asset_id": "creative_001",
@@ -66,12 +64,12 @@ SEED_REVIEW_QUEUE = [
         "id": "ma_evt_20260605_002",
         "status": "completed",
         "runtime_job_id": "ma_score_ma_evt_20260605_002",
-        "created_at": datetime(2026, 6, 5, 8, 40, tzinfo=timezone.utc),
-        "queued_at": datetime(2026, 6, 5, 8, 40, tzinfo=timezone.utc),
-        "started_at": datetime(2026, 6, 5, 8, 40, 15, tzinfo=timezone.utc),
-        "completed_at": datetime(2026, 6, 5, 8, 43, tzinfo=timezone.utc),
+        "created_at": _shared.datetime(2026, 6, 5, 8, 40, tzinfo=_shared.timezone.utc),
+        "queued_at": _shared.datetime(2026, 6, 5, 8, 40, tzinfo=_shared.timezone.utc),
+        "started_at": _shared.datetime(2026, 6, 5, 8, 40, 15, tzinfo=_shared.timezone.utc),
+        "completed_at": _shared.datetime(2026, 6, 5, 8, 43, tzinfo=_shared.timezone.utc),
         "failed_at": None,
-        "updated_at": datetime(2026, 6, 5, 8, 43, tzinfo=timezone.utc),
+        "updated_at": _shared.datetime(2026, 6, 5, 8, 43, tzinfo=_shared.timezone.utc),
         "asset_uri": "storage://meta-andromeda/assets/creative_002.mp4",
         "asset_type": "video",
         "asset_id": "creative_002",
@@ -123,12 +121,12 @@ SEED_REVIEW_QUEUE = [
         "id": "ma_evt_20260605_003",
         "status": "queued",
         "runtime_job_id": "ma_score_ma_evt_20260605_003",
-        "created_at": datetime(2026, 6, 5, 8, 5, tzinfo=timezone.utc),
-        "queued_at": datetime(2026, 6, 5, 8, 5, tzinfo=timezone.utc),
+        "created_at": _shared.datetime(2026, 6, 5, 8, 5, tzinfo=_shared.timezone.utc),
+        "queued_at": _shared.datetime(2026, 6, 5, 8, 5, tzinfo=_shared.timezone.utc),
         "started_at": None,
         "completed_at": None,
         "failed_at": None,
-        "updated_at": datetime(2026, 6, 5, 8, 5, tzinfo=timezone.utc),
+        "updated_at": _shared.datetime(2026, 6, 5, 8, 5, tzinfo=_shared.timezone.utc),
         "asset_uri": "storage://meta-andromeda/assets/creative_003.png",
         "asset_type": "image",
         "asset_id": "creative_003",
@@ -166,7 +164,7 @@ SEED_FEEDBACK = [
         "decision": "revise",
         "reason_codes": ["hook_soft", "offer_late"],
         "comment": "Hook 可再更直接，優惠露出還可以提早。",
-        "created_at": datetime(2026, 6, 5, 8, 55, tzinfo=timezone.utc),
+        "created_at": _shared.datetime(2026, 6, 5, 8, 55, tzinfo=_shared.timezone.utc),
     }
 ]
 
@@ -266,12 +264,12 @@ SEED_DRIFT_REPORTS = [
 ]
 
 class ObservationMixin:
-    def ensure_seed_data(self, db: Session):
-        if db.query(MetaAndromedaScoreEvent).count() == 0:
+    def ensure_seed_data(self, db: _shared.Session):
+        if db.query(_shared.MetaAndromedaScoreEvent).count() == 0:
             for item in SEED_REVIEW_QUEUE:
-                asset = db.query(MetaAndromedaAsset).filter(MetaAndromedaAsset.id == item["asset_id"]).first()
+                asset = db.query(_shared.MetaAndromedaAsset).filter(_shared.MetaAndromedaAsset.id == item["asset_id"]).first()
                 if asset is None:
-                    asset = MetaAndromedaAsset(
+                    asset = _shared.MetaAndromedaAsset(
                         id=item["asset_id"],
                         asset_uri=item["asset_uri"],
                         storage_backend="seed",
@@ -287,31 +285,31 @@ class ObservationMixin:
                     )
                     db.add(asset)
 
-                db.add(MetaAndromedaScoreEvent(**item))
+                db.add(_shared.MetaAndromedaScoreEvent(**item))
 
             for item in SEED_FEEDBACK:
-                db.add(MetaAndromedaFeedbackEvent(**item))
+                db.add(_shared.MetaAndromedaFeedbackEvent(**item))
 
-        if db.query(MetaAndromedaReleaseRecord).count() == 0:
+        if db.query(_shared.MetaAndromedaReleaseRecord).count() == 0:
             for item in SEED_RELEASE_RECORDS:
-                db.add(MetaAndromedaReleaseRecord(**item))
+                db.add(_shared.MetaAndromedaReleaseRecord(**item))
 
-        if db.query(MetaAndromedaReleaseEvent).count() == 0:
+        if db.query(_shared.MetaAndromedaReleaseEvent).count() == 0:
             for item in SEED_RELEASE_EVENTS:
-                db.add(MetaAndromedaReleaseEvent(**item))
+                db.add(_shared.MetaAndromedaReleaseEvent(**item))
 
-        if db.query(MetaAndromedaDriftReport).count() == 0:
+        if db.query(_shared.MetaAndromedaDriftReport).count() == 0:
             for item in SEED_DRIFT_REPORTS:
-                db.add(MetaAndromedaDriftReport(**item))
+                db.add(_shared.MetaAndromedaDriftReport(**item))
 
         db.commit()
 
-    def get_asset_by_uri(self, db: Session, asset_uri: str) -> MetaAndromedaAsset | None:
+    def get_asset_by_uri(self, db: _shared.Session, asset_uri: str) -> _shared.MetaAndromedaAsset | None:
         """根據 asset_uri 查詢已上傳的 MetaAndromedaAsset"""
-        return db.query(MetaAndromedaAsset).filter(MetaAndromedaAsset.asset_uri == asset_uri).first()
+        return db.query(_shared.MetaAndromedaAsset).filter(_shared.MetaAndromedaAsset.asset_uri == asset_uri).first()
 
     @staticmethod
-    def _asset_to_dict(asset: MetaAndromedaAsset) -> dict:
+    def _asset_to_dict(asset: _shared.MetaAndromedaAsset) -> dict:
         return {
             "asset_uri": asset.asset_uri,
             "asset_id": asset.id,
@@ -326,7 +324,7 @@ class ObservationMixin:
             "uploaded_at": asset.uploaded_at.isoformat(),
         }
 
-    def find_stored_asset_by_checksum(self, db: Session, checksum_sha256: str) -> dict | None:
+    def find_stored_asset_by_checksum(self, db: _shared.Session, checksum_sha256: str) -> dict | None:
         """依 checksum 找出已成功存好的既有資產，供觀測匯入去重使用（docs/68 A2）：
         觀測匯入每次都是獨立下載，同一素材內容在不同觀測窗口重複匯入時位元組
         完全相同，若不去重會持續寫入重複檔案、灌爆資產表。只匹配
@@ -334,26 +332,26 @@ class ObservationMixin:
         不代表真實檔案存在，不能被當成可重用的儲存內容）。
         """
         asset = (
-            db.query(MetaAndromedaAsset)
+            db.query(_shared.MetaAndromedaAsset)
             .filter(
-                MetaAndromedaAsset.checksum_sha256 == checksum_sha256,
-                MetaAndromedaAsset.upload_status == "stored",
+                _shared.MetaAndromedaAsset.checksum_sha256 == checksum_sha256,
+                _shared.MetaAndromedaAsset.upload_status == "stored",
             )
-            .order_by(MetaAndromedaAsset.uploaded_at.desc())
+            .order_by(_shared.MetaAndromedaAsset.uploaded_at.desc())
             .first()
         )
         return self._asset_to_dict(asset) if asset else None
 
-    def create_uploaded_asset(self, db: Session, asset_record: dict):
-        asset = MetaAndromedaAsset(**asset_record)
+    def create_uploaded_asset(self, db: _shared.Session, asset_record: dict):
+        asset = _shared.MetaAndromedaAsset(**asset_record)
         db.add(asset)
         db.commit()
         db.refresh(asset)
         return self._asset_to_dict(asset)
 
-    def create_observed_creative(self, db: Session, observed_record: dict):
-        existing = db.query(MetaAndromedaObservedCreative).filter(
-            MetaAndromedaObservedCreative.id == observed_record["id"]
+    def create_observed_creative(self, db: _shared.Session, observed_record: dict):
+        existing = db.query(_shared.MetaAndromedaObservedCreative).filter(
+            _shared.MetaAndromedaObservedCreative.id == observed_record["id"]
         ).first()
 
         if existing:
@@ -364,7 +362,7 @@ class ObservationMixin:
             db.refresh(existing)
             observed = existing
         else:
-            observed = MetaAndromedaObservedCreative(**observed_record)
+            observed = _shared.MetaAndromedaObservedCreative(**observed_record)
             db.add(observed)
             db.commit()
             db.refresh(observed)
@@ -386,19 +384,19 @@ class ObservationMixin:
             "cta": observed.cta,
             "media_url": observed.media_url,
             "media_type": observed.media_type,
-            "performance_snapshot": deepcopy(observed.performance_snapshot or {}),
+            "performance_snapshot": _shared.deepcopy(observed.performance_snapshot or {}),
             "observation_window_kind": observed.observation_window_kind,
             "observation_window_start": observed.observation_window_start,
             "observation_window_end": observed.observation_window_end,
             "source_fetched_at": observed.source_fetched_at,
-            "lineage": deepcopy(observed.lineage or {}),
+            "lineage": _shared.deepcopy(observed.lineage or {}),
             "created_at": observed.created_at.isoformat() if observed.created_at else None,
         }
 
-    def get_observed_creative(self, db: Session, observed_creative_id: str):
+    def get_observed_creative(self, db: _shared.Session, observed_creative_id: str):
         observed = (
-            db.query(MetaAndromedaObservedCreative)
-            .filter(MetaAndromedaObservedCreative.id == observed_creative_id)
+            db.query(_shared.MetaAndromedaObservedCreative)
+            .filter(_shared.MetaAndromedaObservedCreative.id == observed_creative_id)
             .first()
         )
         if observed is None:
@@ -411,13 +409,13 @@ class ObservationMixin:
             "created_at": observed.created_at.isoformat() if observed.created_at else None,
         }
 
-    def get_latest_score_event_for_observation(self, db: Session, observed_creative_id: str):
+    def get_latest_score_event_for_observation(self, db: _shared.Session, observed_creative_id: str):
         score = (
-            db.query(MetaAndromedaScoreEvent)
+            db.query(_shared.MetaAndromedaScoreEvent)
             .filter(
-                MetaAndromedaScoreEvent.request_context["observed_creative_id"].as_string() == observed_creative_id
+                _shared.MetaAndromedaScoreEvent.request_context["observed_creative_id"].as_string() == observed_creative_id
             )
-            .order_by(MetaAndromedaScoreEvent.created_at.desc())
+            .order_by(_shared.MetaAndromedaScoreEvent.created_at.desc())
             .first()
         )
         if score is None:
@@ -425,9 +423,9 @@ class ObservationMixin:
             if not observed or not observed.get("asset_uri"):
                 return None
             score = (
-                db.query(MetaAndromedaScoreEvent)
-                .filter(MetaAndromedaScoreEvent.asset_uri == observed["asset_uri"])
-                .order_by(MetaAndromedaScoreEvent.created_at.desc())
+                db.query(_shared.MetaAndromedaScoreEvent)
+                .filter(_shared.MetaAndromedaScoreEvent.asset_uri == observed["asset_uri"])
+                .order_by(_shared.MetaAndromedaScoreEvent.created_at.desc())
                 .first()
             )
             if score is None:

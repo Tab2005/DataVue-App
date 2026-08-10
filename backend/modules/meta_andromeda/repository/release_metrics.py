@@ -1,6 +1,6 @@
 """Release and backtest metric calculations."""
 
-from ._shared import *  # noqa: F401,F403
+from . import _shared
 from ._stats import _compute_pairwise_ranking_accuracy, _spearman_r
 
 __all__ = [
@@ -24,19 +24,19 @@ class ReleaseGateError(ValueError):
         self.status_code = status_code
         self.details = details or {}
 def _release_min_pairwise_accuracy() -> float:
-    raw = os.getenv("META_ANDROMEDA_RELEASE_MIN_PAIRWISE_ACCURACY")
+    raw = _shared.os.getenv("META_ANDROMEDA_RELEASE_MIN_PAIRWISE_ACCURACY")
     if raw is None or raw == "":
-        return DEFAULT_RELEASE_MIN_PAIRWISE_ACCURACY
+        return _shared.DEFAULT_RELEASE_MIN_PAIRWISE_ACCURACY
     try:
         return float(raw)
     except ValueError:
-        logger.warning(
+        _shared.logger.warning(
             "[MetaAndromeda] Invalid META_ANDROMEDA_RELEASE_MIN_PAIRWISE_ACCURACY=%r; falling back to %.2f",
             raw,
-            DEFAULT_RELEASE_MIN_PAIRWISE_ACCURACY,
+            _shared.DEFAULT_RELEASE_MIN_PAIRWISE_ACCURACY,
         )
-        return DEFAULT_RELEASE_MIN_PAIRWISE_ACCURACY
-def _assert_release_gate(candidate: MetaAndromedaReleaseRecord, *, force: bool, note: str | None) -> dict:
+        return _shared.DEFAULT_RELEASE_MIN_PAIRWISE_ACCURACY
+def _assert_release_gate(candidate: _shared.MetaAndromedaReleaseRecord, *, force: bool, note: str | None) -> dict:
     threshold = _release_min_pairwise_accuracy()
     accuracy = candidate.pairwise_ranking_accuracy
     gate_payload = {
@@ -80,18 +80,18 @@ def _collect_release_metric_pairs(db, model_version: str) -> list[dict]:
     sample_count 與明細筆數對不上。
     """
     observed_list = [
-        obs for obs in db.query(MetaAndromedaObservedCreative).all()
+        obs for obs in db.query(_shared.MetaAndromedaObservedCreative).all()
         if float((obs.performance_snapshot or {}).get("spend", 0) or 0) > 0
     ]
     if not observed_list:
         return []
 
-    label_thresholds = compute_label_thresholds(observed_list)
+    label_thresholds = _shared.compute_label_thresholds(observed_list)
     band_score = {"low": 1, "mid": 2, "high": 3}
     pairs: list[dict] = []
 
     for obs in observed_list:
-        pred = match_observed_to_prediction(db, obs)
+        pred = _shared.match_observed_to_prediction(db, obs)
         if not pred:
             continue
         pred_lineage = pred.lineage or {}
@@ -102,10 +102,10 @@ def _collect_release_metric_pairs(db, model_version: str) -> list[dict]:
         if pred_lineage.get("scoring_mode") == "heuristic":
             continue
 
-        real_band, label_detail = label_observed_band(obs.objective, obs.performance_snapshot, label_thresholds)
+        real_band, label_detail = _shared.label_observed_band(obs.objective, obs.performance_snapshot, label_thresholds)
         pred_roas_eligible = (pred.roas_prediction or {}).get("eligible")
         if pred_roas_eligible is None:
-            pred_roas_eligible = resolve_objective_group(obs.objective) not in NON_ROAS_GROUPS
+            pred_roas_eligible = _shared.resolve_objective_group(obs.objective) not in _shared.NON_ROAS_GROUPS
         pred_band = pred.roas_band if pred_roas_eligible else None
         if pred_band is None or pred.overall_score is None or label_detail.get("value") is None:
             continue
@@ -181,7 +181,7 @@ def list_release_metric_pairs(db, model_version: str, *, sort: str = "mismatch",
     }
 def _collect_backtest_metric_pairs(db, backtest_run_id: str) -> list[dict]:
     score_rows = [
-        row for row in db.query(MetaAndromedaScoreEvent).all()
+        row for row in db.query(_shared.MetaAndromedaScoreEvent).all()
         if row.status == "completed"
         and (row.lineage or {}).get("scoring_purpose") == "backtest"
         and (row.lineage or {}).get("backtest_run_id") == backtest_run_id
@@ -196,15 +196,15 @@ def _collect_backtest_metric_pairs(db, backtest_run_id: str) -> list[dict]:
         if (row.request_context or {}).get("observed_creative_id")
     }
     observed_by_id = {
-        obs.id: obs for obs in db.query(MetaAndromedaObservedCreative)
-        .filter(MetaAndromedaObservedCreative.id.in_(observed_ids))
+        obs.id: obs for obs in db.query(_shared.MetaAndromedaObservedCreative)
+        .filter(_shared.MetaAndromedaObservedCreative.id.in_(observed_ids))
         .all()
     } if observed_ids else {}
     observed_list = [observed_by_id[oid] for oid in observed_ids if oid in observed_by_id]
     if not observed_list:
         return []
 
-    label_thresholds = compute_label_thresholds(observed_list)
+    label_thresholds = _shared.compute_label_thresholds(observed_list)
     band_score = {"low": 1, "mid": 2, "high": 3}
     pairs: list[dict] = []
     for score in score_rows:
@@ -212,7 +212,7 @@ def _collect_backtest_metric_pairs(db, backtest_run_id: str) -> list[dict]:
         obs = observed_by_id.get(obs_id)
         if not obs:
             continue
-        real_band, label_detail = label_observed_band(obs.objective, obs.performance_snapshot, label_thresholds)
+        real_band, label_detail = _shared.label_observed_band(obs.objective, obs.performance_snapshot, label_thresholds)
         pred_band = score.roas_band
         if pred_band is None or score.overall_score is None or label_detail.get("value") is None:
             continue

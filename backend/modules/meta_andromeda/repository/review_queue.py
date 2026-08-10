@@ -1,12 +1,10 @@
 """ReviewQueue repository operations."""
 
-from ._shared import *  # noqa: F401,F403
-from ._stats import *  # noqa: F401,F403
-from .release_metrics import *  # noqa: F401,F403
+from . import _shared
 
 class ReviewQueueMixin:
     @staticmethod
-    def _score_to_list_item(score: MetaAndromedaScoreEvent) -> dict:
+    def _score_to_list_item(score: _shared.MetaAndromedaScoreEvent) -> dict:
         rc = ReviewQueueMixin._safe_json_dict(score.request_context)
         return {
             "score_event_id": score.id,
@@ -24,7 +22,7 @@ class ReviewQueueMixin:
             "preview_url": score.preview_url,
             "request_mode": score.request_mode,
             "objective": score.objective,
-            "objective_group": resolve_objective_group(score.objective),
+            "objective_group": _shared.resolve_objective_group(score.objective),
             "placement_family": score.placement_family,
             "market": score.market,
             "prediction_mode": score.prediction_mode,
@@ -58,7 +56,7 @@ class ReviewQueueMixin:
         return {}
 
     @staticmethod
-    def _score_to_detail(score: MetaAndromedaScoreEvent) -> dict:
+    def _score_to_detail(score: _shared.MetaAndromedaScoreEvent) -> dict:
         payload = ReviewQueueMixin._score_to_list_item(score)
         payload.update(
             {
@@ -74,94 +72,94 @@ class ReviewQueueMixin:
         )
         return payload
 
-    def delete_score_event(self, db: Session, score_event_id: str) -> dict:
-        score = db.query(MetaAndromedaScoreEvent).filter(MetaAndromedaScoreEvent.id == score_event_id).first()
+    def delete_score_event(self, db: _shared.Session, score_event_id: str) -> dict:
+        score = db.query(_shared.MetaAndromedaScoreEvent).filter(_shared.MetaAndromedaScoreEvent.id == score_event_id).first()
         if score is None:
             raise KeyError(score_event_id)
-        db.query(MetaAndromedaCalibrationItem).filter(MetaAndromedaCalibrationItem.score_event_id == score_event_id).delete(synchronize_session=False)
-        db.query(MetaAndromedaFeedbackEvent).filter(MetaAndromedaFeedbackEvent.score_event_id == score_event_id).delete(synchronize_session=False)
-        db.query(MetaAndromedaWorkerEvent).filter(MetaAndromedaWorkerEvent.score_event_id == score_event_id).delete(synchronize_session=False)
-        db.query(MetaAndromedaDeadLetter).filter(MetaAndromedaDeadLetter.score_event_id == score_event_id).delete(synchronize_session=False)
+        db.query(_shared.MetaAndromedaCalibrationItem).filter(_shared.MetaAndromedaCalibrationItem.score_event_id == score_event_id).delete(synchronize_session=False)
+        db.query(_shared.MetaAndromedaFeedbackEvent).filter(_shared.MetaAndromedaFeedbackEvent.score_event_id == score_event_id).delete(synchronize_session=False)
+        db.query(_shared.MetaAndromedaWorkerEvent).filter(_shared.MetaAndromedaWorkerEvent.score_event_id == score_event_id).delete(synchronize_session=False)
+        db.query(_shared.MetaAndromedaDeadLetter).filter(_shared.MetaAndromedaDeadLetter.score_event_id == score_event_id).delete(synchronize_session=False)
         db.delete(score)
         db.commit()
         return {"deleted_score_event_id": score_event_id}
 
-    def batch_delete_score_events(self, db: Session, score_event_ids: list[str]) -> dict:
+    def batch_delete_score_events(self, db: _shared.Session, score_event_ids: list[str]) -> dict:
         existing = {
             row.id for row in
-            db.query(MetaAndromedaScoreEvent.id)
-            .filter(MetaAndromedaScoreEvent.id.in_(score_event_ids))
+            db.query(_shared.MetaAndromedaScoreEvent.id)
+            .filter(_shared.MetaAndromedaScoreEvent.id.in_(score_event_ids))
             .all()
         }
         not_found = [sid for sid in score_event_ids if sid not in existing]
         if not existing:
             return {"deleted_count": 0, "deleted_ids": [], "not_found_ids": not_found}
         ids = list(existing)
-        db.query(MetaAndromedaCalibrationItem).filter(MetaAndromedaCalibrationItem.score_event_id.in_(ids)).delete(synchronize_session=False)
-        db.query(MetaAndromedaFeedbackEvent).filter(MetaAndromedaFeedbackEvent.score_event_id.in_(ids)).delete(synchronize_session=False)
-        db.query(MetaAndromedaWorkerEvent).filter(MetaAndromedaWorkerEvent.score_event_id.in_(ids)).delete(synchronize_session=False)
-        db.query(MetaAndromedaDeadLetter).filter(MetaAndromedaDeadLetter.score_event_id.in_(ids)).delete(synchronize_session=False)
-        db.query(MetaAndromedaScoreEvent).filter(MetaAndromedaScoreEvent.id.in_(ids)).delete(synchronize_session=False)
+        db.query(_shared.MetaAndromedaCalibrationItem).filter(_shared.MetaAndromedaCalibrationItem.score_event_id.in_(ids)).delete(synchronize_session=False)
+        db.query(_shared.MetaAndromedaFeedbackEvent).filter(_shared.MetaAndromedaFeedbackEvent.score_event_id.in_(ids)).delete(synchronize_session=False)
+        db.query(_shared.MetaAndromedaWorkerEvent).filter(_shared.MetaAndromedaWorkerEvent.score_event_id.in_(ids)).delete(synchronize_session=False)
+        db.query(_shared.MetaAndromedaDeadLetter).filter(_shared.MetaAndromedaDeadLetter.score_event_id.in_(ids)).delete(synchronize_session=False)
+        db.query(_shared.MetaAndromedaScoreEvent).filter(_shared.MetaAndromedaScoreEvent.id.in_(ids)).delete(synchronize_session=False)
         db.commit()
         return {"deleted_count": len(ids), "deleted_ids": ids, "not_found_ids": not_found}
 
-    def list_review_queue(self, db: Session, status=None, has_observation=None, roas_band=None, limit=25, page=1, search=None, source=None, scoring_engine=None):
+    def list_review_queue(self, db: _shared.Session, status=None, has_observation=None, roas_band=None, limit=25, page=1, search=None, source=None, scoring_engine=None):
         from sqlalchemy import or_  # noqa: PLC0415
-        query = db.query(MetaAndromedaScoreEvent)
+        query = db.query(_shared.MetaAndromedaScoreEvent)
         if status:
-            query = query.filter(MetaAndromedaScoreEvent.status == status)
+            query = query.filter(_shared.MetaAndromedaScoreEvent.status == status)
         if roas_band:
-            query = query.filter(MetaAndromedaScoreEvent.roas_band == roas_band)
+            query = query.filter(_shared.MetaAndromedaScoreEvent.roas_band == roas_band)
         # 用 .as_string()（SQL 層 ->>，取出 text）而非裸的 ["key"]（->，取出 json/jsonb）：
         # PostgreSQL 的 json 型別沒有預設的 btree operator class，裸 JSON 運算式無法建
         # index；文字運算式才能建立可用的 expression index（見下方 migration），這是
         # 「篩選來源就逾時」的根因——status/roas_band/created_at 補了索引後，一旦查詢
         # 條件裡混入這種無法用索引的 JSON 判斷，PostgreSQL 還是得整表掃描評估。
-        observed_creative_id = MetaAndromedaScoreEvent.request_context["observed_creative_id"].as_string()
+        observed_creative_id = _shared.MetaAndromedaScoreEvent.request_context["observed_creative_id"].as_string()
         if source == "analytics":
             query = query.filter(observed_creative_id.isnot(None))
         elif source == "score_lab":
             query = query.filter(observed_creative_id.is_(None))
         if scoring_engine == "ai":
             query = query.filter(
-                MetaAndromedaScoreEvent.lineage["scoring_mode"].as_string() == "ai"
+                _shared.MetaAndromedaScoreEvent.lineage["scoring_mode"].as_string() == "ai"
             )
         elif scoring_engine == "heuristic":
             query = query.filter(
-                MetaAndromedaScoreEvent.lineage["scoring_mode"].as_string() == "heuristic"
+                _shared.MetaAndromedaScoreEvent.lineage["scoring_mode"].as_string() == "heuristic"
             )
         if has_observation is True:
             cal_exists = (
-                db.query(MetaAndromedaCalibrationItem.score_event_id)
-                .filter(MetaAndromedaCalibrationItem.score_event_id == MetaAndromedaScoreEvent.id)
-                .correlate(MetaAndromedaScoreEvent)
+                db.query(_shared.MetaAndromedaCalibrationItem.score_event_id)
+                .filter(_shared.MetaAndromedaCalibrationItem.score_event_id == _shared.MetaAndromedaScoreEvent.id)
+                .correlate(_shared.MetaAndromedaScoreEvent)
                 .exists()
             )
             query = query.filter(or_(cal_exists, observed_creative_id.isnot(None)))
         elif has_observation is False:
             cal_exists = (
-                db.query(MetaAndromedaCalibrationItem.score_event_id)
-                .filter(MetaAndromedaCalibrationItem.score_event_id == MetaAndromedaScoreEvent.id)
-                .correlate(MetaAndromedaScoreEvent)
+                db.query(_shared.MetaAndromedaCalibrationItem.score_event_id)
+                .filter(_shared.MetaAndromedaCalibrationItem.score_event_id == _shared.MetaAndromedaScoreEvent.id)
+                .correlate(_shared.MetaAndromedaScoreEvent)
                 .exists()
             )
             query = query.filter(~cal_exists, observed_creative_id.is_(None))
         if search:
             pat = f"%{search}%"
             ad_name_match = (
-                db.query(MetaAndromedaCalibrationItem.score_event_id)
-                .join(MetaAndromedaObservedCreative, MetaAndromedaCalibrationItem.observed_creative_id == MetaAndromedaObservedCreative.id)
-                .filter(MetaAndromedaObservedCreative.ad_name.ilike(pat))
-                .filter(MetaAndromedaCalibrationItem.score_event_id == MetaAndromedaScoreEvent.id)
-                .correlate(MetaAndromedaScoreEvent)
+                db.query(_shared.MetaAndromedaCalibrationItem.score_event_id)
+                .join(_shared.MetaAndromedaObservedCreative, _shared.MetaAndromedaCalibrationItem.observed_creative_id == _shared.MetaAndromedaObservedCreative.id)
+                .filter(_shared.MetaAndromedaObservedCreative.ad_name.ilike(pat))
+                .filter(_shared.MetaAndromedaCalibrationItem.score_event_id == _shared.MetaAndromedaScoreEvent.id)
+                .correlate(_shared.MetaAndromedaScoreEvent)
                 .exists()
             )
             query = query.filter(
                 or_(
-                    MetaAndromedaScoreEvent.id.ilike(pat),
-                    MetaAndromedaScoreEvent.objective.ilike(pat),
-                    MetaAndromedaScoreEvent.placement_family.ilike(pat),
-                    MetaAndromedaScoreEvent.market.ilike(pat),
+                    _shared.MetaAndromedaScoreEvent.id.ilike(pat),
+                    _shared.MetaAndromedaScoreEvent.objective.ilike(pat),
+                    _shared.MetaAndromedaScoreEvent.placement_family.ilike(pat),
+                    _shared.MetaAndromedaScoreEvent.market.ilike(pat),
                     ad_name_match,
                 )
             )
@@ -170,15 +168,15 @@ class ReviewQueueMixin:
         # 逐列反序列化 lineage JSON」，score_events 表隨匯入/評分持續增長後
         # 就是審核佇列偶發請求逾時（>30000ms）的主因。改成 SQL 層過濾：
         # 沒有 scoring_purpose 鍵（NULL）視為非 backtest，一併納入。
-        scoring_purpose = MetaAndromedaScoreEvent.lineage["scoring_purpose"].as_string()
+        scoring_purpose = _shared.MetaAndromedaScoreEvent.lineage["scoring_purpose"].as_string()
         query = query.filter(or_(scoring_purpose.is_(None), scoring_purpose != "backtest"))
 
         total = query.count()
         page = max(1, page)
         offset = (page - 1) * limit
-        total_pages = max(1, math.ceil(total / limit))
+        total_pages = max(1, _shared.math.ceil(total / limit))
         rows = (
-            query.order_by(MetaAndromedaScoreEvent.created_at.desc())
+            query.order_by(_shared.MetaAndromedaScoreEvent.created_at.desc())
             .offset(offset)
             .limit(limit)
             .all()
@@ -186,8 +184,8 @@ class ReviewQueueMixin:
         cal_ids: set[str] = set()
         if rows:
             matched = (
-                db.query(MetaAndromedaCalibrationItem.score_event_id)
-                .filter(MetaAndromedaCalibrationItem.score_event_id.in_([r.id for r in rows]))
+                db.query(_shared.MetaAndromedaCalibrationItem.score_event_id)
+                .filter(_shared.MetaAndromedaCalibrationItem.score_event_id.in_([r.id for r in rows]))
                 .all()
             )
             cal_ids = {m.score_event_id for m in matched}
@@ -201,12 +199,12 @@ class ReviewQueueMixin:
         if cal_ids:
             obs_rows = (
                 db.query(
-                    MetaAndromedaCalibrationItem.score_event_id,
-                    MetaAndromedaObservedCreative.ad_name,
-                    MetaAndromedaObservedCreative.media_url,
+                    _shared.MetaAndromedaCalibrationItem.score_event_id,
+                    _shared.MetaAndromedaObservedCreative.ad_name,
+                    _shared.MetaAndromedaObservedCreative.media_url,
                 )
-                .join(MetaAndromedaObservedCreative, MetaAndromedaCalibrationItem.observed_creative_id == MetaAndromedaObservedCreative.id)
-                .filter(MetaAndromedaCalibrationItem.score_event_id.in_(cal_ids))
+                .join(_shared.MetaAndromedaObservedCreative, _shared.MetaAndromedaCalibrationItem.observed_creative_id == _shared.MetaAndromedaObservedCreative.id)
+                .filter(_shared.MetaAndromedaCalibrationItem.score_event_id.in_(cal_ids))
                 .all()
             )
             ad_name_map = {r.score_event_id: r.ad_name for r in obs_rows if r.ad_name}
@@ -223,11 +221,11 @@ class ReviewQueueMixin:
         if direct_linked:
             direct_obs = (
                 db.query(
-                    MetaAndromedaObservedCreative.id,
-                    MetaAndromedaObservedCreative.ad_name,
-                    MetaAndromedaObservedCreative.media_url,
+                    _shared.MetaAndromedaObservedCreative.id,
+                    _shared.MetaAndromedaObservedCreative.ad_name,
+                    _shared.MetaAndromedaObservedCreative.media_url,
                 )
-                .filter(MetaAndromedaObservedCreative.id.in_(direct_linked.values()))
+                .filter(_shared.MetaAndromedaObservedCreative.id.in_(direct_linked.values()))
                 .all()
             )
             obs_ad_name = {o.id: o.ad_name for o in direct_obs if o.ad_name}
@@ -259,27 +257,27 @@ class ReviewQueueMixin:
             },
         }
 
-    def get_review_queue_detail(self, db: Session, score_event_id: str):
-        row = db.query(MetaAndromedaScoreEvent).filter(MetaAndromedaScoreEvent.id == score_event_id).first()
+    def get_review_queue_detail(self, db: _shared.Session, score_event_id: str):
+        row = db.query(_shared.MetaAndromedaScoreEvent).filter(_shared.MetaAndromedaScoreEvent.id == score_event_id).first()
         if row is None:
             raise KeyError(score_event_id)
         detail = self._score_to_detail(row)
         cal_item = (
-            db.query(MetaAndromedaCalibrationItem)
-            .filter(MetaAndromedaCalibrationItem.score_event_id == score_event_id)
+            db.query(_shared.MetaAndromedaCalibrationItem)
+            .filter(_shared.MetaAndromedaCalibrationItem.score_event_id == score_event_id)
             .first()
         )
         if cal_item:
             obs = (
-                db.query(MetaAndromedaObservedCreative)
-                .filter(MetaAndromedaObservedCreative.id == cal_item.observed_creative_id)
+                db.query(_shared.MetaAndromedaObservedCreative)
+                .filter(_shared.MetaAndromedaObservedCreative.id == cal_item.observed_creative_id)
                 .first()
             )
             detail["observation"] = {
                 "prediction_band": cal_item.prediction_band,
                 "observed_band": cal_item.observed_band,
                 "error": cal_item.error,
-                "performance_snapshot": deepcopy(cal_item.performance_snapshot or {}),
+                "performance_snapshot": _shared.deepcopy(cal_item.performance_snapshot or {}),
                 "ad_name": obs.ad_name if obs else None,
                 "ad_id": obs.ad_id if obs else None,
                 "observation_window_kind": obs.observation_window_kind if obs else None,
@@ -294,8 +292,8 @@ class ReviewQueueMixin:
             obs = None
             if linked_obs_id:
                 obs = (
-                    db.query(MetaAndromedaObservedCreative)
-                    .filter(MetaAndromedaObservedCreative.id == linked_obs_id)
+                    db.query(_shared.MetaAndromedaObservedCreative)
+                    .filter(_shared.MetaAndromedaObservedCreative.id == linked_obs_id)
                     .first()
                 )
             if obs and obs.performance_snapshot and float((obs.performance_snapshot or {}).get("spend", 0) or 0) > 0:
@@ -304,20 +302,20 @@ class ReviewQueueMixin:
                 # 單筆查詢無法計算動態百分位門檻，改用該 scope 已持久化的門檻（同 compute_label_thresholds
                 # 在樣本不足時的 fallback 順序），避免 NON_ROAS_GROUPS（曝光/點擊型）廣告因 ctr/cpc 門檻
                 # 缺值而被 label_observed_band() 一律判為 low
-                label_thresholds = compute_label_thresholds(
+                label_thresholds = _shared.compute_label_thresholds(
                     [obs],
                     db=db,
                     scope_key=obs.source_account_id or "global",
                     window_kind=obs.observation_window_kind,
                 )
-                real_band, _ = label_observed_band(obs.objective, obs.performance_snapshot, label_thresholds)
+                real_band, _ = _shared.label_observed_band(obs.objective, obs.performance_snapshot, label_thresholds)
                 _band_score = {"low": 1, "mid": 2, "high": 3}
                 err = float(abs(_band_score.get(pred_band, 1) - _band_score.get(real_band, 1))) if pred_band else None
                 detail["observation"] = {
                     "prediction_band": pred_band,
                     "observed_band": real_band,
                     "error": err,
-                    "performance_snapshot": deepcopy(obs.performance_snapshot or {}),
+                    "performance_snapshot": _shared.deepcopy(obs.performance_snapshot or {}),
                     "ad_name": obs.ad_name,
                     "ad_id": obs.ad_id,
                     "observation_window_kind": obs.observation_window_kind,
@@ -335,9 +333,9 @@ class ReviewQueueMixin:
         # 三方對照（人 vs 模型 vs 市場）：把 reviewer 的歷史回饋跟上面的 AI 預測/市場實績
         # 放在同一個 detail 裡，才看得出 reviewer 說的 hook_soft 之類的判斷是否真的準
         feedback_rows = (
-            db.query(MetaAndromedaFeedbackEvent)
-            .filter(MetaAndromedaFeedbackEvent.score_event_id == score_event_id)
-            .order_by(MetaAndromedaFeedbackEvent.created_at.asc())
+            db.query(_shared.MetaAndromedaFeedbackEvent)
+            .filter(_shared.MetaAndromedaFeedbackEvent.score_event_id == score_event_id)
+            .order_by(_shared.MetaAndromedaFeedbackEvent.created_at.asc())
             .all()
         )
         detail["feedback_history"] = [

@@ -2,66 +2,66 @@
 
 from __future__ import annotations
 
-from ._shared import *
+from . import _shared
 
-router = APIRouter()
+router = _shared.APIRouter()
 
 
 @router.get("/monitoring/summary")
 async def monitoring_summary(
-    _user=Depends(get_current_meta_andromeda_user),
-    _access: bool = Depends(require_meta_andromeda_module),
-    db=Depends(get_db),
+    _user=_shared.Depends(_shared.get_current_meta_andromeda_user),
+    _access: bool = _shared.Depends(_shared.require_meta_andromeda_module),
+    db=_shared.Depends(_shared.get_db),
 ):
     """Read-only monitoring summary endpoint for the fourth integration slice."""
-    return MetaAndromedaService.get_monitoring_summary(db)
+    return _shared.MetaAndromedaService.get_monitoring_summary(db)
 
 
-@router.get("/monitoring/score-events/{score_event_id}/timeline", response_model=MonitoringTimelineResponse)
+@router.get("/monitoring/score-events/{score_event_id}/timeline", response_model=_shared.MonitoringTimelineResponse)
 async def monitoring_timeline(
     score_event_id: str,
-    _user=Depends(get_current_meta_andromeda_user),
-    _access: bool = Depends(require_meta_andromeda_module),
-    db=Depends(get_db),
+    _user=_shared.Depends(_shared.get_current_meta_andromeda_user),
+    _access: bool = _shared.Depends(_shared.require_meta_andromeda_module),
+    db=_shared.Depends(_shared.get_db),
 ):
     try:
-        return MetaAndromedaService.get_monitoring_timeline(db, score_event_id)
+        return _shared.MetaAndromedaService.get_monitoring_timeline(db, score_event_id)
     except KeyError as exc:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
+        raise _shared.HTTPException(
+            status_code=_shared.status.HTTP_404_NOT_FOUND,
             detail=f"Score event not found: {score_event_id}",
         ) from exc
 
 
-@router.get("/monitoring/observed-accounts", response_model=ObservedAccountListResponse)
+@router.get("/monitoring/observed-accounts", response_model=_shared.ObservedAccountListResponse)
 async def list_observed_accounts(
-    _user=Depends(get_current_meta_andromeda_user),
-    _access: bool = Depends(require_meta_andromeda_module),
-    db=Depends(get_db),
+    _user=_shared.Depends(_shared.get_current_meta_andromeda_user),
+    _access: bool = _shared.Depends(_shared.require_meta_andromeda_module),
+    db=_shared.Depends(_shared.get_db),
 ):
     from ..repository import repository as _repo
     accounts = _repo.list_observed_accounts(db)
     return {"accounts": accounts, "total": len(accounts)}
 
 
-@router.get("/monitoring/drift-trend", response_model=DriftTrendResponse)
+@router.get("/monitoring/drift-trend", response_model=_shared.DriftTrendResponse)
 async def monitoring_drift_trend(
-    _user=Depends(get_current_meta_andromeda_user),
-    _access: bool = Depends(require_meta_andromeda_module),
-    db=Depends(get_db),
-    limit: int = Query(default=20, ge=1, le=100),
-    account_id: str | None = Query(default=None),
+    _user=_shared.Depends(_shared.get_current_meta_andromeda_user),
+    _access: bool = _shared.Depends(_shared.require_meta_andromeda_module),
+    db=_shared.Depends(_shared.get_db),
+    limit: int = _shared.Query(default=20, ge=1, le=100),
+    account_id: str | None = _shared.Query(default=None),
 ):
     from ..repository import repository as _repo
     entries = _repo.get_drift_trend(db, limit=limit, account_id=account_id)
     return {"entries": entries, "total": len(entries)}
 
 
-@router.get("/monitoring/scoring-profiles", response_model=ScoringProfileListResponse)
+@router.get("/monitoring/scoring-profiles", response_model=_shared.ScoringProfileListResponse)
 async def list_scoring_profiles(
-    _user=Depends(get_current_meta_andromeda_user),
-    _access: bool = Depends(require_meta_andromeda_module),
-    db=Depends(get_db),
+    _user=_shared.Depends(_shared.get_current_meta_andromeda_user),
+    _access: bool = _shared.Depends(_shared.require_meta_andromeda_module),
+    db=_shared.Depends(_shared.get_db),
 ):
     from ..repository import repository as _repo
     profiles = _repo.list_scoring_profiles(db)
@@ -70,50 +70,50 @@ async def list_scoring_profiles(
 
 @router.post(
     "/monitoring/scoring-profiles/{profile_name}/backtest",
-    response_model=ScoringProfileBacktestResponse,
+    response_model=_shared.ScoringProfileBacktestResponse,
 )
 async def backtest_scoring_profile(
     profile_name: str,
-    _user=Depends(get_current_meta_andromeda_user),
-    _access: bool = Depends(require_meta_andromeda_operate),
-    db=Depends(get_db),
+    _user=_shared.Depends(_shared.get_current_meta_andromeda_user),
+    _access: bool = _shared.Depends(_shared.require_meta_andromeda_operate),
+    db=_shared.Depends(_shared.get_db),
 ):
     """Re-score this profile's holdout set and record the result on the profile
     (bias_summary.holdout_backtest), gating whether /promote will accept it."""
-    return await MetaAndromedaService.run_holdout_backtest(db, profile_name)
+    return await _shared.MetaAndromedaService.run_holdout_backtest(db, profile_name)
 
 
 @router.post(
     "/monitoring/scoring-profiles/{profile_name}/promote",
-    response_model=ScoringProfilePromoteResponse,
+    response_model=_shared.ScoringProfilePromoteResponse,
 )
 async def promote_scoring_profile(
     profile_name: str,
-    force: bool = Query(False, description="Bypass the holdout backtest gate (not recommended)"),
-    _user=Depends(get_current_meta_andromeda_user),
-    _access: bool = Depends(require_meta_andromeda_operate),
-    db=Depends(get_db),
+    force: bool = _shared.Query(False, description="Bypass the holdout backtest gate (not recommended)"),
+    _user=_shared.Depends(_shared.get_current_meta_andromeda_user),
+    _access: bool = _shared.Depends(_shared.require_meta_andromeda_operate),
+    db=_shared.Depends(_shared.get_db),
 ):
     from ..repository import PromotionGateError, repository as _repo
     try:
         return _repo.promote_scoring_profile(db, profile_name, force=force)
     except KeyError as exc:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
+        raise _shared.HTTPException(
+            status_code=_shared.status.HTTP_404_NOT_FOUND,
             detail=str(exc),
         ) from exc
     except PromotionGateError as exc:
-        raise HTTPException(
-            status_code=status.HTTP_409_CONFLICT,
+        raise _shared.HTTPException(
+            status_code=_shared.status.HTTP_409_CONFLICT,
             detail={"code": exc.code, "message": exc.message},
         ) from exc
 
 
-@router.get("/monitoring/model-registry", response_model=ModelRegistryListResponse)
+@router.get("/monitoring/model-registry", response_model=_shared.ModelRegistryListResponse)
 async def list_model_registry(
-    _user=Depends(get_current_meta_andromeda_user),
-    _access: bool = Depends(require_meta_andromeda_module),
-    db=Depends(get_db),
+    _user=_shared.Depends(_shared.get_current_meta_andromeda_user),
+    _access: bool = _shared.Depends(_shared.require_meta_andromeda_module),
+    db=_shared.Depends(_shared.get_db),
 ):
     """List all model registry entries (interactive/production + backtest reference).
     Scoring/interactive model selection is changed via the release approve/rollback
@@ -123,11 +123,11 @@ async def list_model_registry(
     return {"entries": entries}
 
 
-@router.get("/monitoring/model-registry/effective", response_model=EffectiveScoringStatusResponse)
+@router.get("/monitoring/model-registry/effective", response_model=_shared.EffectiveScoringStatusResponse)
 async def get_effective_scoring_status(
-    _user=Depends(get_current_meta_andromeda_user),
-    _access: bool = Depends(require_meta_andromeda_module),
-    db=Depends(get_db),
+    _user=_shared.Depends(_shared.get_current_meta_andromeda_user),
+    _access: bool = _shared.Depends(_shared.require_meta_andromeda_module),
+    db=_shared.Depends(_shared.get_db),
 ):
     """目前實際生效的互動評分設定 vs. 資料庫 registry 標記的 production 列。
 
@@ -140,11 +140,11 @@ async def get_effective_scoring_status(
     return _repo.get_effective_scoring_status(db)
 
 
-@router.get("/monitoring/model-registry/validate-candidate", response_model=ModelCandidateValidationResponse)
+@router.get("/monitoring/model-registry/validate-candidate", response_model=_shared.ModelCandidateValidationResponse)
 async def validate_candidate_model(
-    model_id: str = Query(..., min_length=1),
-    _user=Depends(get_current_meta_andromeda_user),
-    _access: bool = Depends(require_meta_andromeda_module),
+    model_id: str = _shared.Query(..., min_length=1),
+    _user=_shared.Depends(_shared.get_current_meta_andromeda_user),
+    _access: bool = _shared.Depends(_shared.require_meta_andromeda_module),
 ):
     """換模型（不管是要改版本總覽的候選，還是要設 META_ANDROMEDA_SCORING_MODEL
     env var 覆寫）前先查：這個 model id 在 OpenRouter 是否真的存在、支不支援評分
@@ -152,15 +152,15 @@ async def validate_candidate_model(
     純查詢外部公開 API，不寫資料庫、不需要 operate 權限。"""
     from ..model_catalog import validate_candidate_model as _validate
 
-    return await asyncio.to_thread(_validate, model_id)
+    return await _shared.asyncio.to_thread(_validate, model_id)
 
 
-@router.put("/monitoring/model-registry/backtest-model", response_model=ModelRegistryEntryResponse)
+@router.put("/monitoring/model-registry/backtest-model", response_model=_shared.ModelRegistryEntryResponse)
 async def update_backtest_model(
-    payload: BacktestModelUpdateRequest,
-    _user=Depends(get_current_meta_andromeda_user),
-    _access: bool = Depends(require_meta_andromeda_operate),
-    db=Depends(get_db),
+    payload: _shared.BacktestModelUpdateRequest,
+    _user=_shared.Depends(_shared.get_current_meta_andromeda_user),
+    _access: bool = _shared.Depends(_shared.require_meta_andromeda_operate),
+    db=_shared.Depends(_shared.get_db),
 ):
     """Set which model evaluate_profile_on_holdout() re-scores holdout items with
     (docs/20 P2-3). Independent of the interactive/production model — changing this
@@ -173,14 +173,14 @@ async def update_backtest_model(
     return result
 
 
-@router.post("/maintenance/cleanup-stale-score-events", response_model=MaintenanceCleanupResponse)
+@router.post("/maintenance/cleanup-stale-score-events", response_model=_shared.MaintenanceCleanupResponse)
 async def cleanup_stale_score_events(
-    payload: MaintenanceCleanupRequest,
-    _user=Depends(get_current_meta_andromeda_user),
-    _access: bool = Depends(require_meta_andromeda_operate),
-    db=Depends(get_db),
+    payload: _shared.MaintenanceCleanupRequest,
+    _user=_shared.Depends(_shared.get_current_meta_andromeda_user),
+    _access: bool = _shared.Depends(_shared.require_meta_andromeda_operate),
+    db=_shared.Depends(_shared.get_db),
 ):
-    return MetaAndromedaService.cleanup_stale_score_events(
+    return _shared.MetaAndromedaService.cleanup_stale_score_events(
         db,
         older_than_minutes=payload.older_than_minutes,
         include_queued=payload.include_queued,
@@ -190,14 +190,14 @@ async def cleanup_stale_score_events(
     )
 
 
-@router.post("/drift:trigger", response_model=DriftReportResponse, status_code=status.HTTP_201_CREATED)
+@router.post("/drift:trigger", response_model=_shared.DriftReportResponse, status_code=_shared.status.HTTP_201_CREATED)
 async def trigger_drift_report(
-    payload: DriftTriggerRequest,
-    user=Depends(get_current_meta_andromeda_user),
-    _access: bool = Depends(require_meta_andromeda_operate),
-    db=Depends(get_db),
+    payload: _shared.DriftTriggerRequest,
+    user=_shared.Depends(_shared.get_current_meta_andromeda_user),
+    _access: bool = _shared.Depends(_shared.require_meta_andromeda_operate),
+    db=_shared.Depends(_shared.get_db),
 ):
-    return MetaAndromedaService.trigger_drift_report(
+    return _shared.MetaAndromedaService.trigger_drift_report(
         db,
         window_kind=payload.window_kind,
         triggered_by=getattr(user, "email", None) or "datavue_operator",
@@ -210,23 +210,23 @@ async def trigger_drift_report(
 
 @router.get("/monitoring/feedback/calibration-candidates")
 async def list_feedback_calibration_candidates(
-    _user=Depends(get_current_meta_andromeda_user),
-    _access: bool = Depends(require_meta_andromeda_module),
-    db=Depends(get_db),
+    _user=_shared.Depends(_shared.get_current_meta_andromeda_user),
+    _access: bool = _shared.Depends(_shared.require_meta_andromeda_module),
+    db=_shared.Depends(_shared.get_db),
 ):
     """Score events whose human review (approve/reject) diverged from the AI's
     own score direction — candidates an operator can manually fold into the
     next prompt calibration round."""
-    return MetaAndromedaService.list_feedback_calibration_candidates(db)
+    return _shared.MetaAndromedaService.list_feedback_calibration_candidates(db)
 
 
 @router.get("/monitoring/feedback/reason-code-analysis")
 async def analyze_feedback_reason_codes(
-    _user=Depends(get_current_meta_andromeda_user),
-    _access: bool = Depends(require_meta_andromeda_module),
-    db=Depends(get_db),
+    _user=_shared.Depends(_shared.get_current_meta_andromeda_user),
+    _access: bool = _shared.Depends(_shared.require_meta_andromeda_module),
+    db=_shared.Depends(_shared.get_db),
 ):
     """For each feedback reason_code, how often the reviewer's implied judgment
     (reject/revise = weak, approve = strong) agreed with the later-observed
     market band — validates whether a given reason_code is a trustworthy signal."""
-    return MetaAndromedaService.analyze_feedback_reason_codes(db)
+    return _shared.MetaAndromedaService.analyze_feedback_reason_codes(db)

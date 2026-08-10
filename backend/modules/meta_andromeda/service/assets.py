@@ -1,13 +1,13 @@
 """AssetServiceMixin for Meta Andromeda service."""
 
-from ._shared import *  # noqa: F403
+from . import _shared
 
 
 class AssetServiceMixin:
 
     @staticmethod
     def get_asset_by_uri(db, asset_uri: str):
-        return repository.get_asset_by_uri(db, asset_uri)
+        return _shared.repository.get_asset_by_uri(db, asset_uri)
 
 
     @staticmethod
@@ -29,14 +29,14 @@ class AssetServiceMixin:
             source_filename=source_filename,
             content_type=content_type,
         )
-        asset_record = storage_adapter.store_asset(
+        asset_record = _shared.storage_adapter.store_asset(
             file_bytes=file_bytes,
             asset_type=asset_type,
             source_filename=source_filename,
             uploaded_by=uploaded_by,
             content_type=content_type,
         )
-        return repository.create_uploaded_asset(db, asset_record=asset_record)
+        return _shared.repository.create_uploaded_asset(db, asset_record=asset_record)
 
 
     @staticmethod
@@ -47,7 +47,7 @@ class AssetServiceMixin:
 
         # 如果檔案本身就小於 400KB，直接保留原圖以保證最高精度與速度
         if len(file_bytes) < 400 * 1024:
-            logger.info("[MetaAndromeda] Image size is %d bytes (<400KB), skipping compression.", len(file_bytes))
+            _shared.logger.info("[MetaAndromeda] Image size is %d bytes (<400KB), skipping compression.", len(file_bytes))
             return file_bytes
 
         try:
@@ -75,7 +75,7 @@ class AssetServiceMixin:
                     new_height = max_size
                     new_width = int(width * (max_size / height))
                 
-                logger.info(
+                _shared.logger.info(
                     "[MetaAndromeda] Resizing image from %dx%d to %dx%d (max_size=%d)",
                     width, height, new_width, new_height, max_size
                 )
@@ -99,19 +99,19 @@ class AssetServiceMixin:
             img.save(out_buf, format=save_format, **save_kwargs)
             compressed_bytes = out_buf.getvalue()
             
-            logger.info(
+            _shared.logger.info(
                 "[MetaAndromeda] Image compressed. Before: %d bytes, After: %d bytes (Ratio: %.1f%%)",
                 len(file_bytes), len(compressed_bytes), (len(compressed_bytes) / len(file_bytes)) * 100
             )
             
             if len(compressed_bytes) >= len(file_bytes):
-                logger.info("[MetaAndromeda] Compressed image is larger or equal, keeping original.")
+                _shared.logger.info("[MetaAndromeda] Compressed image is larger or equal, keeping original.")
                 return file_bytes
                 
             return compressed_bytes
 
         except Exception as e:
-            logger.warning("[MetaAndromeda] Image compression failed: %s. Using original bytes.", e)
+            _shared.logger.warning("[MetaAndromeda] Image compression failed: %s. Using original bytes.", e)
             return file_bytes
 
 
@@ -124,9 +124,9 @@ class AssetServiceMixin:
         content_type: str | None,
     ) -> None:
         if not file_bytes:
-            raise MetaAndromedaValidationError("upload_empty_file", status_code=400)
-        if len(file_bytes) > settings.META_ANDROMEDA_UPLOAD_MAX_BYTES:
-            raise MetaAndromedaValidationError("upload_file_too_large", status_code=413)
+            raise _shared.MetaAndromedaValidationError("upload_empty_file", status_code=400)
+        if len(file_bytes) > _shared.settings.META_ANDROMEDA_UPLOAD_MAX_BYTES:
+            raise _shared.MetaAndromedaValidationError("upload_file_too_large", status_code=413)
 
         allowed = {
             "image": {
@@ -140,14 +140,14 @@ class AssetServiceMixin:
         }
         spec = allowed.get((asset_type or "").strip().lower())
         if spec is None:
-            raise MetaAndromedaValidationError("unsupported_asset_type", status_code=415)
+            raise _shared.MetaAndromedaValidationError("unsupported_asset_type", status_code=415)
 
         content_type_normalized = (content_type or "").split(";")[0].strip().lower()
-        ext = Path(source_filename or "").suffix.lower()
+        ext = _shared.Path(source_filename or "").suffix.lower()
         if ext not in spec["exts"]:
-            raise MetaAndromedaValidationError("upload_extension_not_allowed", status_code=415)
+            raise _shared.MetaAndromedaValidationError("upload_extension_not_allowed", status_code=415)
         if content_type_normalized not in spec["mimes"]:
-            raise MetaAndromedaValidationError("upload_mime_not_allowed", status_code=415)
+            raise _shared.MetaAndromedaValidationError("upload_mime_not_allowed", status_code=415)
 
 
     @staticmethod
@@ -155,7 +155,7 @@ class AssetServiceMixin:
         if not hostname:
             return False
         host = hostname.lower()
-        for allowed in settings.META_ANDROMEDA_ALLOWED_MEDIA_HOSTS:
+        for allowed in _shared.settings.META_ANDROMEDA_ALLOWED_MEDIA_HOSTS:
             normalized = allowed.lstrip(".")
             if host == normalized or host.endswith(f".{normalized}"):
                 return True

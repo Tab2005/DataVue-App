@@ -1,8 +1,6 @@
 """Release repository operations."""
 
-from ._shared import *  # noqa: F401,F403
-from ._stats import *  # noqa: F401,F403
-from .release_metrics import *  # noqa: F401,F403
+from . import _shared, release_metrics
 
 
 class PromotionGateError(Exception):
@@ -31,7 +29,7 @@ def _switch_model_registry_production(db, model_version: str) -> None:
         .first()
     )
     if target is None:
-        logger.warning(
+        _shared.logger.warning(
             "[MetaAndromeda] Release action referenced model_version '%s' with no matching "
             "model_registry_entries row — runtime will keep using whatever is currently "
             "is_current_production until a registry entry for this version is added.",
@@ -51,7 +49,7 @@ def _switch_model_registry_production(db, model_version: str) -> None:
 
 class ReleaseMixin:
     @staticmethod
-    def _backtest_run_to_dict(run: MetaAndromedaBacktestRun) -> dict:
+    def _backtest_run_to_dict(run: _shared.MetaAndromedaBacktestRun) -> dict:
         return {
             "run_id": run.id,
             "provider": run.provider,
@@ -67,31 +65,31 @@ class ReleaseMixin:
             "pairwise_ranking_accuracy": run.pairwise_ranking_accuracy,
             "mean_band_error": run.mean_band_error,
             "error_message": run.error_message,
-            "result_summary": deepcopy(run.result_summary or {}),
+            "result_summary": _shared.deepcopy(run.result_summary or {}),
             "created_at": run.created_at.isoformat() if run.created_at else None,
             "started_at": run.started_at.isoformat() if run.started_at else None,
             "completed_at": run.completed_at.isoformat() if run.completed_at else None,
             "updated_at": run.updated_at.isoformat() if run.updated_at else None,
         }
 
-    def get_release_overview(self, db: Session):
+    def get_release_overview(self, db: _shared.Session):
         # 若資料表為空，主動執行一次種子數據播種
-        if db.query(MetaAndromedaReleaseRecord).count() == 0:
+        if db.query(_shared.MetaAndromedaReleaseRecord).count() == 0:
             try:
                 self.ensure_seed_data(db)
             except Exception as e:
-                logger.error("[MetaAndromeda] Auto-seeding on release overview request failed: %s", e)
+                _shared.logger.error("[MetaAndromeda] Auto-seeding on release overview request failed: %s", e)
 
-        records = db.query(MetaAndromedaReleaseRecord).all()
+        records = db.query(_shared.MetaAndromedaReleaseRecord).all()
         
         # 安全獲取 record，避免 StopIteration 導致 500 錯誤
         current = next((item for item in records if item.record_kind == "current_production"), None)
         previous = next((item for item in records if item.record_kind == "previous_production"), None)
         candidates = [item for item in records if item.record_kind == "candidate"]
-        history = db.query(MetaAndromedaReleaseEvent).order_by(MetaAndromedaReleaseEvent.created_at.desc()).all()
+        history = db.query(_shared.MetaAndromedaReleaseEvent).order_by(_shared.MetaAndromedaReleaseEvent.created_at.desc()).all()
         latest_calibration = (
-            db.query(MetaAndromedaCalibrationDataset)
-            .order_by(MetaAndromedaCalibrationDataset.created_at.desc())
+            db.query(_shared.MetaAndromedaCalibrationDataset)
+            .order_by(_shared.MetaAndromedaCalibrationDataset.created_at.desc())
             .first()
         )
         
@@ -139,14 +137,14 @@ class ReleaseMixin:
                     if latest_calibration
                     else "No calibration dataset has been materialized yet."
                 ),
-                *model_registry.list_registry_notes(
+                *_shared.model_registry.list_registry_notes(
                     [current_dict["model_version"], previous_dict["model_version"], *[item.model_version for item in candidates]]
                 ),
             ],
         }
 
     @staticmethod
-    def _release_record_to_dict(record: MetaAndromedaReleaseRecord) -> dict:
+    def _release_record_to_dict(record: _shared.MetaAndromedaReleaseRecord) -> dict:
         payload = {
             "model_version": record.model_version,
             "release_status": record.release_status,
@@ -160,15 +158,15 @@ class ReleaseMixin:
         }
         if record.record_kind == "candidate":
             payload["created_at"] = record.created_at
-            payload["promotion_gate_summary"] = deepcopy(record.promotion_gate_summary or {})
+            payload["promotion_gate_summary"] = _shared.deepcopy(record.promotion_gate_summary or {})
         return payload
 
     @staticmethod
-    def _release_event_to_dict(event: MetaAndromedaReleaseEvent) -> dict:
+    def _release_event_to_dict(event: _shared.MetaAndromedaReleaseEvent) -> dict:
         note = event.note or ""
-        forced = note.startswith(RELEASE_FORCE_NOTE_PREFIX)
+        forced = note.startswith(_shared.RELEASE_FORCE_NOTE_PREFIX)
         if forced:
-            note = note[len(RELEASE_FORCE_NOTE_PREFIX):].strip()
+            note = note[len(_shared.RELEASE_FORCE_NOTE_PREFIX):].strip()
         return {
             "action": event.action,
             "model_version": event.model_version,
@@ -180,7 +178,7 @@ class ReleaseMixin:
 
     def create_release_candidate(
         self,
-        db: Session,
+        db: _shared.Session,
         *,
         model_version: str,
         provider: str,
@@ -207,8 +205,8 @@ class ReleaseMixin:
         讓操作者只想換模型時不必連帶處理 prompt/校準邏輯。
         """
         existing_entry = (
-            db.query(MetaAndromedaModelRegistryEntry)
-            .filter(MetaAndromedaModelRegistryEntry.model_version == model_version)
+            db.query(_shared.MetaAndromedaModelRegistryEntry)
+            .filter(_shared.MetaAndromedaModelRegistryEntry.model_version == model_version)
             .first()
         )
         if existing_entry is not None:
@@ -217,8 +215,8 @@ class ReleaseMixin:
                 f"（release_channel={existing_entry.release_channel}），請換一個名稱"
             )
         existing_record = (
-            db.query(MetaAndromedaReleaseRecord)
-            .filter(MetaAndromedaReleaseRecord.model_version == model_version)
+            db.query(_shared.MetaAndromedaReleaseRecord)
+            .filter(_shared.MetaAndromedaReleaseRecord.model_version == model_version)
             .first()
         )
         if existing_record is not None:
@@ -228,8 +226,8 @@ class ReleaseMixin:
             )
 
         current_production = (
-            db.query(MetaAndromedaModelRegistryEntry)
-            .filter(MetaAndromedaModelRegistryEntry.is_current_production == True)  # noqa: E712
+            db.query(_shared.MetaAndromedaModelRegistryEntry)
+            .filter(_shared.MetaAndromedaModelRegistryEntry.is_current_production == True)  # noqa: E712
             .first()
         )
         resolved_scoring_profile = (
@@ -237,9 +235,9 @@ class ReleaseMixin:
             or (current_production.scoring_profile if current_production else "creative_scoring_v2")
         )
 
-        now = datetime.now(timezone.utc)
+        now = _shared.datetime.now(_shared.timezone.utc)
         db.add(
-            MetaAndromedaModelRegistryEntry(
+            _shared.MetaAndromedaModelRegistryEntry(
                 model_version=model_version,
                 provider=provider,
                 provider_model=provider_model,
@@ -251,7 +249,7 @@ class ReleaseMixin:
             )
         )
         db.add(
-            MetaAndromedaReleaseRecord(
+            _shared.MetaAndromedaReleaseRecord(
                 record_kind="candidate",
                 model_version=model_version,
                 release_status="candidate",
@@ -266,7 +264,7 @@ class ReleaseMixin:
             )
         )
         db.add(
-            MetaAndromedaReleaseEvent(
+            _shared.MetaAndromedaReleaseEvent(
                 action="create_candidate",
                 model_version=model_version,
                 actor=actor,
@@ -289,25 +287,25 @@ class ReleaseMixin:
             "is_demo_data": True,
         }
 
-    def perform_release_action(self, db: Session, action: str, model_version: str, actor: str, note: str | None, force: bool = False):
-        current = db.query(MetaAndromedaReleaseRecord).filter(MetaAndromedaReleaseRecord.record_kind == "current_production").first()
-        previous = db.query(MetaAndromedaReleaseRecord).filter(MetaAndromedaReleaseRecord.record_kind == "previous_production").first()
+    def perform_release_action(self, db: _shared.Session, action: str, model_version: str, actor: str, note: str | None, force: bool = False):
+        current = db.query(_shared.MetaAndromedaReleaseRecord).filter(_shared.MetaAndromedaReleaseRecord.record_kind == "current_production").first()
+        previous = db.query(_shared.MetaAndromedaReleaseRecord).filter(_shared.MetaAndromedaReleaseRecord.record_kind == "previous_production").first()
         candidate = (
-            db.query(MetaAndromedaReleaseRecord)
+            db.query(_shared.MetaAndromedaReleaseRecord)
             .filter(
-                MetaAndromedaReleaseRecord.record_kind == "candidate",
-                MetaAndromedaReleaseRecord.model_version == model_version,
+                _shared.MetaAndromedaReleaseRecord.record_kind == "candidate",
+                _shared.MetaAndromedaReleaseRecord.model_version == model_version,
             )
             .first()
         )
 
-        created_at = datetime.now(timezone.utc).isoformat()
+        created_at = _shared.datetime.now(_shared.timezone.utc).isoformat()
         if action in {"approve", "reject"} and candidate is None:
             raise KeyError(model_version)
 
         gate_payload = {"forced": False}
         if action == "approve":
-            gate_payload = _assert_release_gate(candidate, force=force, note=note)
+            gate_payload = release_metrics._assert_release_gate(candidate, force=force, note=note)
             previous.model_version = current.model_version
             previous.release_status = "superseded"
             previous.approved_by = current.approved_by
@@ -369,8 +367,8 @@ class ReleaseMixin:
 
         event_note = note
         if action == "approve" and gate_payload.get("forced"):
-            event_note = f"{RELEASE_FORCE_NOTE_PREFIX} {note or ''}".strip()
-        event = MetaAndromedaReleaseEvent(
+            event_note = f"{_shared.RELEASE_FORCE_NOTE_PREFIX} {note or ''}".strip()
+        event = _shared.MetaAndromedaReleaseEvent(
             action=action,
             model_version=model_version,
             actor=actor,
@@ -393,15 +391,15 @@ class ReleaseMixin:
 
     @staticmethod
     def create_backtest_run(
-        db: Session,
+        db: _shared.Session,
         *,
         provider_model: str,
         sample_limit: int | None = None,
         note: str | None = None,
         provider: str = "openrouter",
     ) -> dict:
-        now = datetime.now(timezone.utc)
-        run = MetaAndromedaBacktestRun(
+        now = _shared.datetime.now(_shared.timezone.utc)
+        run = _shared.MetaAndromedaBacktestRun(
             provider=provider,
             provider_model=provider_model,
             status="queued",
@@ -416,10 +414,10 @@ class ReleaseMixin:
         return ReleaseMixin._backtest_run_to_dict(run)
 
     @staticmethod
-    def list_backtest_runs(db: Session, limit: int = 20) -> dict:
+    def list_backtest_runs(db: _shared.Session, limit: int = 20) -> dict:
         rows = (
-            db.query(MetaAndromedaBacktestRun)
-            .order_by(MetaAndromedaBacktestRun.created_at.desc())
+            db.query(_shared.MetaAndromedaBacktestRun)
+            .order_by(_shared.MetaAndromedaBacktestRun.created_at.desc())
             .limit(max(1, min(limit, 100)))
             .all()
         )
@@ -429,39 +427,39 @@ class ReleaseMixin:
         }
 
     @staticmethod
-    def get_backtest_run(db: Session, run_id: str) -> dict:
-        run = db.query(MetaAndromedaBacktestRun).filter(MetaAndromedaBacktestRun.id == run_id).first()
+    def get_backtest_run(db: _shared.Session, run_id: str) -> dict:
+        run = db.query(_shared.MetaAndromedaBacktestRun).filter(_shared.MetaAndromedaBacktestRun.id == run_id).first()
         if run is None:
             raise KeyError(run_id)
         return ReleaseMixin._backtest_run_to_dict(run)
 
     @staticmethod
-    def update_backtest_run(db: Session, run_id: str, **updates) -> dict:
-        run = db.query(MetaAndromedaBacktestRun).filter(MetaAndromedaBacktestRun.id == run_id).first()
+    def update_backtest_run(db: _shared.Session, run_id: str, **updates) -> dict:
+        run = db.query(_shared.MetaAndromedaBacktestRun).filter(_shared.MetaAndromedaBacktestRun.id == run_id).first()
         if run is None:
             raise KeyError(run_id)
         for key, value in updates.items():
             if hasattr(run, key):
                 setattr(run, key, value)
-        run.updated_at = datetime.now(timezone.utc)
+        run.updated_at = _shared.datetime.now(_shared.timezone.utc)
         db.add(run)
         db.commit()
         db.refresh(run)
         return ReleaseMixin._backtest_run_to_dict(run)
 
     @staticmethod
-    def complete_backtest_run_metrics(db: Session, run_id: str) -> dict:
-        run = db.query(MetaAndromedaBacktestRun).filter(MetaAndromedaBacktestRun.id == run_id).first()
+    def complete_backtest_run_metrics(db: _shared.Session, run_id: str) -> dict:
+        run = db.query(_shared.MetaAndromedaBacktestRun).filter(_shared.MetaAndromedaBacktestRun.id == run_id).first()
         if run is None:
             raise KeyError(run_id)
-        metrics = compute_backtest_run_metrics(db, run_id)
+        metrics = release_metrics.compute_backtest_run_metrics(db, run_id)
         run.sample_count = int(metrics.get("sample_count") or 0)
-        run.result_summary = deepcopy(metrics)
+        run.result_summary = _shared.deepcopy(metrics)
         if metrics.get("status") == "computed":
             run.pairwise_ranking_accuracy = metrics.get("pairwise_ranking_accuracy")
             run.mean_band_error = metrics.get("mean_band_error")
         run.status = "completed"
-        run.completed_at = datetime.now(timezone.utc)
+        run.completed_at = _shared.datetime.now(_shared.timezone.utc)
         run.updated_at = run.completed_at
         db.add(run)
         db.commit()
@@ -469,16 +467,16 @@ class ReleaseMixin:
         return ReleaseMixin._backtest_run_to_dict(run)
 
     @staticmethod
-    def refresh_release_metrics(db: Session, model_version: str) -> dict:
+    def refresh_release_metrics(db: _shared.Session, model_version: str) -> dict:
         """Compute real pairwise ranking accuracy / mean band error for `model_version`
         from historical drift-matched pairs and write it back onto whichever release
         record(s) reference this model_version (current/previous/candidate)."""
-        metrics = compute_release_metrics(db, model_version)
+        metrics = release_metrics.compute_release_metrics(db, model_version)
         if metrics["status"] != "computed":
             return metrics
 
-        records = db.query(MetaAndromedaReleaseRecord).filter(
-            MetaAndromedaReleaseRecord.model_version == model_version
+        records = db.query(_shared.MetaAndromedaReleaseRecord).filter(
+            _shared.MetaAndromedaReleaseRecord.model_version == model_version
         ).all()
         for record in records:
             record.pairwise_ranking_accuracy = metrics["pairwise_ranking_accuracy"]
@@ -490,5 +488,5 @@ class ReleaseMixin:
         return metrics
 
     @staticmethod
-    def list_release_metric_pairs(db: Session, model_version: str, *, sort: str = "mismatch", limit: int = 50) -> dict:
-        return list_release_metric_pairs(db, model_version, sort=sort, limit=limit)
+    def list_release_metric_pairs(db: _shared.Session, model_version: str, *, sort: str = "mismatch", limit: int = 50) -> dict:
+        return release_metrics.list_release_metric_pairs(db, model_version, sort=sort, limit=limit)

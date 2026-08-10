@@ -1,6 +1,6 @@
 """ObservationImportServiceMixin for Meta Andromeda service."""
 
-from ._shared import *  # noqa: F403
+from . import _shared
 
 
 class ObservationImportServiceMixin:
@@ -12,7 +12,7 @@ class ObservationImportServiceMixin:
         user_id: str,
         team_id: str | None = None,
     ):
-        return await fetch_observed_creative_candidate(
+        return await _shared.fetch_observed_creative_candidate(
             account_id=payload["account_id"],
             ad_id=payload["ad_id"],
             user_id=user_id,
@@ -30,13 +30,13 @@ class ObservationImportServiceMixin:
 
     @staticmethod
     def build_observed_creative_id(ad_id: str, observation_window_kind: str) -> str:
-        today = datetime.now(UTC).date()
+        today = _shared.datetime.now(_shared.UTC).date()
         return f"ma_obs_{today.strftime('%Y%m%d')}_{ad_id[-6:]}_{observation_window_kind}"
 
 
     @staticmethod
     def _set_observation_import_status(observed_creative_id: str, **updates) -> dict:
-        return set_import_status(observed_creative_id, **updates)
+        return _shared.set_import_status(observed_creative_id, **updates)
 
 
     @staticmethod
@@ -62,7 +62,7 @@ class ObservationImportServiceMixin:
         # docs/68 A2 的去重效果）、各建一個評分事件（放大 docs/68 A1 成本成兩次
         # AI 呼叫）。用既有的 import status store 查現況即可，TTL 1 小時內天然
         # 冪等，查詢成本極低；completed/failed 視為已結束，允許重新送出。
-        current = get_import_status(observed_creative_id)
+        current = _shared.get_import_status(observed_creative_id)
         if current.get("observation_status") in {"queued", "processing"}:
             return {
                 "observed_creative_id": observed_creative_id,
@@ -126,7 +126,7 @@ class ObservationImportServiceMixin:
         until = payload.get("until")
 
         try:
-            await prewarm_facebook_ads_report_cache(
+            await _shared.prewarm_facebook_ads_report_cache(
                 account_id=account_id,
                 user_id=user_id,
                 team_id=team_id,
@@ -135,7 +135,7 @@ class ObservationImportServiceMixin:
                 until=until,
             )
         except Exception as exc:
-            logger.warning(
+            _shared.logger.warning(
                 "[Observation Import] Batch cache pre-warm failed for account %s (%s): %s; "
                 "falling back to per-item fetch.",
                 account_id, observation_window_kind, exc,
@@ -180,19 +180,19 @@ class ObservationImportServiceMixin:
         ad_id: str,
         media_type: str,
     ) -> dict:
-        parsed = urlparse(media_url)
+        parsed = _shared.urlparse(media_url)
         if parsed.scheme != "https":
-            raise MetaAndromedaValidationError("observed_media_url_must_use_https", status_code=400)
+            raise _shared.MetaAndromedaValidationError("observed_media_url_must_use_https", status_code=400)
         if not MetaAndromedaService._is_allowed_media_host(parsed.hostname):
-            raise MetaAndromedaValidationError("observed_media_url_host_not_allowed", status_code=400)
+            raise _shared.MetaAndromedaValidationError("observed_media_url_host_not_allowed", status_code=400)
 
         # docs/68 B4：改用串流下載——超大檔案（或惡意 URL）過去會先把整個 body
         # 讀進記憶體才比對大小上限被拒絕，等於白白吃滿頻寬與記憶體，批次匯入
         # 時多個併發 job 疊加更嚴重。改為：Content-Length header 若已超限直接
         # 中止（連 body 都不讀）；沒有該 header（或伺服器謊報）則邊讀邊累計，
         # 一旦累計位元組超限立刻中止連線，不繼續讀完剩餘內容。
-        max_bytes = settings.META_ANDROMEDA_OBSERVED_DOWNLOAD_MAX_BYTES
-        async with httpx.AsyncClient(timeout=30.0, follow_redirects=True) as client:
+        max_bytes = _shared.settings.META_ANDROMEDA_OBSERVED_DOWNLOAD_MAX_BYTES
+        async with _shared.httpx.AsyncClient(timeout=30.0, follow_redirects=True) as client:
             async with client.stream("GET", media_url) as response:
                 response.raise_for_status()
 
@@ -203,7 +203,7 @@ class ObservationImportServiceMixin:
                     except ValueError:
                         declared_size = None
                     if declared_size is not None and declared_size > max_bytes:
-                        raise MetaAndromedaValidationError("observed_media_too_large", status_code=413)
+                        raise _shared.MetaAndromedaValidationError("observed_media_too_large", status_code=413)
 
                 content_type = response.headers.get("content-type", "").split(";")[0].strip() or None
 
@@ -211,18 +211,18 @@ class ObservationImportServiceMixin:
                 async for chunk in response.aiter_bytes():
                     downloaded.extend(chunk)
                     if len(downloaded) > max_bytes:
-                        raise MetaAndromedaValidationError("observed_media_too_large", status_code=413)
+                        raise _shared.MetaAndromedaValidationError("observed_media_too_large", status_code=413)
 
         file_bytes = bytes(downloaded)
         if media_type == "image" and content_type not in {"image/png", "image/jpeg", "image/webp"}:
-            raise MetaAndromedaValidationError("observed_media_mime_not_allowed", status_code=415)
+            raise _shared.MetaAndromedaValidationError("observed_media_mime_not_allowed", status_code=415)
         if media_type == "video" and content_type not in {"video/mp4", "video/quicktime"}:
-            raise MetaAndromedaValidationError("observed_media_mime_not_allowed", status_code=415)
-        path_name = Path(parsed.path).name
+            raise _shared.MetaAndromedaValidationError("observed_media_mime_not_allowed", status_code=415)
+        path_name = _shared.Path(parsed.path).name
         if path_name:
             source_filename = path_name
         else:
-            extension = guess_extension(content_type or "") if content_type else None
+            extension = _shared.guess_extension(content_type or "") if content_type else None
             if not extension:
                 extension = ".png" if media_type == "image" else ".mp4" if media_type == "video" else ".bin"
             source_filename = f"{ad_id}{extension}"
@@ -239,7 +239,7 @@ class ObservationImportServiceMixin:
     @staticmethod
     def _resolve_observed_uploader_id_sync(db, user_id: str) -> str:
         """同步版本：查詢 User 資料表，將外部 google_id 轉換為內部 User.id（純 DB I/O，見 docs/24 Wave 1）。"""
-        db_user = db.query(User).filter(User.google_id == user_id).first()
+        db_user = db.query(_shared.User).filter(_shared.User.google_id == user_id).first()
         return db_user.id if db_user else user_id
 
 
@@ -253,25 +253,25 @@ class ObservationImportServiceMixin:
         資產時直接沿用，連下載後的寫檔/S3 上傳都省下，也讓 docs/68 A1 的評分重用
         （find_reusable_ai_score_event）更容易透過同一個 asset_id 直接命中。
         """
-        checksum = hashlib.sha256(snapshot["file_bytes"]).hexdigest()
-        existing_asset = repository.find_stored_asset_by_checksum(db, checksum)
+        checksum = _shared.hashlib.sha256(snapshot["file_bytes"]).hexdigest()
+        existing_asset = _shared.repository.find_stored_asset_by_checksum(db, checksum)
         if existing_asset:
             return existing_asset
 
-        asset_record = storage_adapter.store_asset(
+        asset_record = _shared.storage_adapter.store_asset(
             file_bytes=snapshot["file_bytes"],
             asset_type=snapshot["asset_type"],
             source_filename=snapshot["source_filename"],
             uploaded_by=user_db_id,
             content_type=snapshot["content_type"],
         )
-        return repository.create_uploaded_asset(db, asset_record=asset_record)
+        return _shared.repository.create_uploaded_asset(db, asset_record=asset_record)
 
 
     @staticmethod
     def _create_observed_creative_record_sync(db, observed_record: dict) -> dict:
         """同步版本：寫入觀測素材紀錄（純 DB I/O，見 docs/24 Wave 1）。"""
-        return repository.create_observed_creative(db, observed_record=observed_record)
+        return _shared.repository.create_observed_creative(db, observed_record=observed_record)
 
 
     @staticmethod
@@ -287,7 +287,7 @@ class ObservationImportServiceMixin:
             user_id=user_id,
             team_id=team_id,
         )
-        candidate = ObservedCreativeCandidate.model_validate(candidate)
+        candidate = _shared.ObservedCreativeCandidate.model_validate(candidate)
 
         observed_creative_id = MetaAndromedaService.build_observed_creative_id(
             candidate.ad_id,
@@ -306,13 +306,13 @@ class ObservationImportServiceMixin:
                 # 必須放在素材下載「之後」：session 第一次查詢就會 checkout 連線並持有到
                 # commit/close，若先查 DB 再下載，整段下載期間（最長 30 秒）都佔住連線池，
                 # 批次匯入時會耗盡 QueuePool（2026-07-13 匯入失敗事故）。
-                user_db_id = await asyncio.to_thread(
+                user_db_id = await _shared.asyncio.to_thread(
                     MetaAndromedaService._resolve_observed_uploader_id_sync, db, user_id
                 )
-                stored_asset = await asyncio.to_thread(
+                stored_asset = await _shared.asyncio.to_thread(
                     MetaAndromedaService._store_observed_asset_sync, db, snapshot, user_db_id
                 )
-            except MetaAndromedaValidationError:
+            except _shared.MetaAndromedaValidationError:
                 raise
             except Exception as e:
                 import logging
@@ -322,7 +322,7 @@ class ObservationImportServiceMixin:
                     exc_info=True
                 )
 
-        observed_record = await asyncio.to_thread(
+        observed_record = await _shared.asyncio.to_thread(
             MetaAndromedaService._create_observed_creative_record_sync,
             db,
             {
@@ -354,7 +354,7 @@ class ObservationImportServiceMixin:
                     "campaign_id": candidate.campaign_id,
                     "adset_id": candidate.adset_id,
                     "ad_id": candidate.ad_id,
-                    "objective_group": resolve_objective_group(candidate.objective),
+                    "objective_group": _shared.resolve_objective_group(candidate.objective),
                     "media_degraded_reason": candidate.media_degraded_reason,
                 },
             },
@@ -418,7 +418,7 @@ class ObservationImportServiceMixin:
 
         from ..labeling import find_reusable_ai_score_event
 
-        db = SessionLocal()
+        db = _shared.SessionLocal()
         observed_creative_id = auto_score_payload.get("observed_creative_id") or "unknown_observation"
         asset_uri = auto_score_payload.get("asset_uri")
         asset_id = auto_score_payload.get("asset_id")
@@ -452,7 +452,7 @@ class ObservationImportServiceMixin:
                     score_status="completed",
                     runtime_job_id=existing.runtime_job_id,
                 )
-                logger.info(
+                _shared.logger.info(
                     "[Observation Import] Linked existing score event %s → observed_creative_id %s (skipped re-score, now linked to %d observations)",
                     existing.id,
                     observed_creative_id,
@@ -471,7 +471,7 @@ class ObservationImportServiceMixin:
             payload["request_context"]["origin"] = "analytics"
             created_score = MetaAndromedaService.create_score_event(db, payload)
             score_event_id = created_score["score_event_id"]
-            runtime_job_id = get_meta_andromeda_score_job_id(score_event_id)
+            runtime_job_id = _shared.get_meta_andromeda_score_job_id(score_event_id)
             MetaAndromedaService.assign_score_runtime_job(db, score_event_id, runtime_job_id)
             return "need_dispatch", {
                 "observed_creative_id": observed_creative_id,
@@ -479,7 +479,7 @@ class ObservationImportServiceMixin:
                 "runtime_job_id": runtime_job_id,
             }
         except Exception as exc:
-            logger.warning(
+            _shared.logger.warning(
                 "[Observation Import] Background auto score-event creation failed for observed_creative_id %s: %s",
                 observed_creative_id,
                 exc,
@@ -500,7 +500,7 @@ class ObservationImportServiceMixin:
         if not auto_score_payload:
             return None
 
-        kind, payload = await asyncio.to_thread(
+        kind, payload = await _shared.asyncio.to_thread(
             MetaAndromedaService._prepare_score_event_for_observation_sync, auto_score_payload
         )
         if kind != "need_dispatch":
@@ -510,7 +510,7 @@ class ObservationImportServiceMixin:
         score_event_id = payload["score_event_id"]
         runtime_job_id = payload["runtime_job_id"]
 
-        db = SessionLocal()
+        db = _shared.SessionLocal()
         try:
             queued_score = MetaAndromedaService.enqueue_score_event(
                 db,
@@ -520,12 +520,12 @@ class ObservationImportServiceMixin:
         finally:
             db.close()
 
-        logger.info(
+        _shared.logger.info(
             "[Observation Import] Background auto score-event queued for observed_creative_id %s: %s",
             observed_creative_id,
             score_event_id,
         )
-        await asyncio.to_thread(
+        await _shared.asyncio.to_thread(
             MetaAndromedaService._set_observation_import_status,
             observed_creative_id,
             score_event_id=score_event_id,
@@ -545,10 +545,10 @@ class ObservationImportServiceMixin:
         回傳 False 代表未派工（非 web 角色，或 web 角色但 Redis 不可用），
         呼叫端應退回在本 process 用 BackgroundTasks 執行。
         """
-        if settings.SERVICE_ROLE != "web":
+        if _shared.settings.SERVICE_ROLE != "web":
             return False
 
-        dispatch = queue_host_adapter.enqueue_observation_import_event(
+        dispatch = _shared.queue_host_adapter.enqueue_observation_import_event(
             payload, user_id=user_id, team_id=team_id
         )
         return bool(dispatch.get("accepted"))
@@ -560,7 +560,7 @@ class ObservationImportServiceMixin:
             payload["ad_id"],
             payload["observation_window_kind"],
         )
-        await asyncio.to_thread(
+        await _shared.asyncio.to_thread(
             MetaAndromedaService._set_observation_import_status,
             observed_creative_id,
             observation_status="queued",
@@ -568,15 +568,15 @@ class ObservationImportServiceMixin:
             score_status="pending_observation",
         )
 
-        async with _observation_import_semaphore.acquire():
-            await asyncio.to_thread(
+        async with _shared._observation_import_semaphore.acquire():
+            await _shared.asyncio.to_thread(
                 MetaAndromedaService._set_observation_import_status,
                 observed_creative_id,
                 observation_status="processing",
                 observation_message="Observation import processing",
                 score_status="pending_observation",
             )
-            db = SessionLocal()
+            db = _shared.SessionLocal()
             try:
                 response = await MetaAndromedaService.import_observed_facebook_ad(
                     db,
@@ -585,7 +585,7 @@ class ObservationImportServiceMixin:
                     team_id=team_id,
                 )
                 auto_score_payload = response.pop("_auto_score_payload", None)
-                await asyncio.to_thread(
+                await _shared.asyncio.to_thread(
                     MetaAndromedaService._set_observation_import_status,
                     observed_creative_id,
                     observation_status="completed",
@@ -598,19 +598,19 @@ class ObservationImportServiceMixin:
                 if auto_score_payload:
                     await MetaAndromedaService.create_and_enqueue_score_event_for_observation(auto_score_payload)
                 elif response.get("score_status") == "skipped_no_asset":
-                    await asyncio.to_thread(
+                    await _shared.asyncio.to_thread(
                         MetaAndromedaService._set_observation_import_status,
                         observed_creative_id,
                         score_status="skipped_no_asset",
                     )
             except Exception as exc:
-                logger.warning(
+                _shared.logger.warning(
                     "[Observation Import] Background observation import failed for %s: %s",
                     observed_creative_id,
                     exc,
                     exc_info=True,
                 )
-                await asyncio.to_thread(
+                await _shared.asyncio.to_thread(
                     MetaAndromedaService._set_observation_import_status,
                     observed_creative_id,
                     observation_status="failed",
@@ -623,8 +623,8 @@ class ObservationImportServiceMixin:
 
     @staticmethod
     def get_observed_facebook_ad_import_status(db, observed_creative_id: str) -> dict:
-        observed = repository.get_observed_creative(db, observed_creative_id)
-        memory_status = get_import_status(observed_creative_id)
+        observed = _shared.repository.get_observed_creative(db, observed_creative_id)
+        memory_status = _shared.get_import_status(observed_creative_id)
         if observed is None:
             if memory_status:
                 return {
@@ -648,7 +648,7 @@ class ObservationImportServiceMixin:
                 "updated_at": None,
             }
 
-        latest_score = repository.get_latest_score_event_for_observation(db, observed_creative_id)
+        latest_score = _shared.repository.get_latest_score_event_for_observation(db, observed_creative_id)
         memory_score_status = memory_status.get("score_status")
         if latest_score:
             score_status = latest_score.get("status")

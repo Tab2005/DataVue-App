@@ -1,8 +1,6 @@
 """Drift repository operations."""
 
-from ._shared import *  # noqa: F401,F403
-from ._stats import *  # noqa: F401,F403
-from .release_metrics import *  # noqa: F401,F403
+from . import _shared, _stats, release_metrics
 
 def _check_promoted_profile_degradation(db, accuracy: float, spearman_r: float, drift_status: str) -> None:
     """Compare this drift report's accuracy/ρ against the currently promoted
@@ -14,8 +12,8 @@ def _check_promoted_profile_degradation(db, accuracy: float, spearman_r: float, 
         return  # 樣本不足時 accuracy/ρ 本身不可信，不能拿來判定劣化
 
     promoted = (
-        db.query(MetaAndromedaScoringProfile)
-        .filter(MetaAndromedaScoringProfile.is_promoted == True)  # noqa: E712
+        db.query(_shared.MetaAndromedaScoringProfile)
+        .filter(_shared.MetaAndromedaScoringProfile.is_promoted == True)  # noqa: E712
         .first()
     )
     if promoted is None or not promoted.promotion_baseline:
@@ -37,13 +35,13 @@ def _check_promoted_profile_degradation(db, accuracy: float, spearman_r: float, 
     promoted.consecutive_degraded_periods = (promoted.consecutive_degraded_periods or 0) + 1
     if promoted.consecutive_degraded_periods >= 2:
         promoted.is_promoted = False
-        promoted.demoted_at = datetime.now(timezone.utc)
+        promoted.demoted_at = _shared.datetime.now(_shared.timezone.utc)
         promoted.demoted_reason = (
             f"連續 {promoted.consecutive_degraded_periods} 期表現劣於 promote 前基線"
             f"（baseline accuracy={baseline_accuracy:.3f}/ρ={baseline_spearman:.3f}，"
             f"本期 accuracy={accuracy:.3f}/ρ={spearman_r:.3f}）"
         )
-        logger.warning(
+        _shared.logger.warning(
             "[MetaAndromeda] Auto-demoted scoring profile '%s': %s",
             promoted.profile_name,
             promoted.demoted_reason,
@@ -58,7 +56,7 @@ def _check_promoted_profile_degradation(db, accuracy: float, spearman_r: float, 
 
 class DriftMixin:
     @staticmethod
-    def _drift_report_to_dict(report: MetaAndromedaDriftReport) -> dict:
+    def _drift_report_to_dict(report: _shared.MetaAndromedaDriftReport) -> dict:
         return {
             "drift_report_id": report.id,
             "window_kind": report.window_kind,
@@ -67,13 +65,13 @@ class DriftMixin:
             "severity": report.severity,
             "triggered_by": report.triggered_by,
             "note": report.note,
-            "report_payload": deepcopy(report.report_payload or {}),
+            "report_payload": _shared.deepcopy(report.report_payload or {}),
             "created_at": report.created_at.isoformat() if report.created_at else None,
         }
 
     def create_drift_report(
         self,
-        db: Session,
+        db: _shared.Session,
         window_kind: str,
         triggered_by: str | None = None,
         note: str | None = None,
@@ -85,16 +83,16 @@ class DriftMixin:
         if window_kind == "custom" and since and until:
             range_str = f"[{since} ~ {until}]"
             note = f"{note} {range_str}" if note else range_str
-            q = db.query(MetaAndromedaObservedCreative).filter(
-                MetaAndromedaObservedCreative.observation_window_end >= since,
-                MetaAndromedaObservedCreative.observation_window_start <= until,
+            q = db.query(_shared.MetaAndromedaObservedCreative).filter(
+                _shared.MetaAndromedaObservedCreative.observation_window_end >= since,
+                _shared.MetaAndromedaObservedCreative.observation_window_start <= until,
             )
         else:
-            q = db.query(MetaAndromedaObservedCreative).filter(
-                MetaAndromedaObservedCreative.observation_window_kind == window_kind,
+            q = db.query(_shared.MetaAndromedaObservedCreative).filter(
+                _shared.MetaAndromedaObservedCreative.observation_window_kind == window_kind,
             )
         if account_id:
-            q = q.filter(MetaAndromedaObservedCreative.source_account_id == account_id)
+            q = q.filter(_shared.MetaAndromedaObservedCreative.source_account_id == account_id)
         # 排除 spend=0 的記錄（未實際投放），避免污染 Spearman 相關計算
         observed_list = [
             obs for obs in q.all()
@@ -102,7 +100,7 @@ class DriftMixin:
         ]
         # 同一 ad_id 若因 custom 窗口區間重疊比對而重複出現，只保留 spend 最大的一筆，
         # 避免同一素材的成效被重複計入統計
-        observed_list, deduped_ad_count = _dedupe_observed_by_ad_id(observed_list)
+        observed_list, deduped_ad_count = _stats._dedupe_observed_by_ad_id(observed_list)
 
         matched_pairs = []
         correct_count = 0
@@ -115,15 +113,15 @@ class DriftMixin:
         # 確保同一批 ObservedCreative 在 drift 與校準兩處算出一致的 observed_band；樣本不足時
         # 沿用同 scope_key/window_kind 上一期已持久化的門檻，而非每次都退回全域固定值
         label_policy_scope = account_id or "global"
-        label_thresholds = compute_label_thresholds(
+        label_thresholds = _shared.compute_label_thresholds(
             observed_list, db=db, scope_key=label_policy_scope, window_kind=window_kind
         )
-        persist_label_policy(db, label_policy_scope, window_kind, label_thresholds)
+        _shared.persist_label_policy(db, label_policy_scope, window_kind, label_thresholds)
 
         # 2. 逐筆進行 Prediction 匹配與比對
         heuristic_fallback_count = 0
         for obs in observed_list:
-            pred = match_observed_to_prediction(db, obs)
+            pred = _shared.match_observed_to_prediction(db, obs)
             if not pred:
                 continue
 
@@ -137,7 +135,7 @@ class DriftMixin:
                 continue
 
             # 提取真實成效 Band（依 objective 路由至對應指標，使用本批次動態門檻）
-            real_band, label_detail = label_observed_band(
+            real_band, label_detail = _shared.label_observed_band(
                 obs.objective,
                 obs.performance_snapshot,
                 label_thresholds,
@@ -148,16 +146,16 @@ class DriftMixin:
             # 否則模型「正確地不出 band」會被誤記為預測錯誤，污染校準集與健康度判斷
             pred_roas_eligible = (pred.roas_prediction or {}).get("eligible")
             if pred_roas_eligible is None:
-                pred_roas_eligible = resolve_objective_group(obs.objective) not in NON_ROAS_GROUPS
+                pred_roas_eligible = _shared.resolve_objective_group(obs.objective) not in _shared.NON_ROAS_GROUPS
             pred_band = pred.roas_band if pred_roas_eligible else None
             band_eligible = pred_band is not None
 
             # 曝光/觀測期間門檻：小曝光廣告的 ROAS/CTR 噪音極大，觀測期間過短同樣不可靠，
             # 不該與大預算、足夠觀測天數的廣告同權重納入 accuracy
             impressions = int((obs.performance_snapshot or {}).get("impressions", 0) or 0)
-            sufficient_delivery = impressions >= MIN_IMPRESSIONS_FOR_ACCURACY
-            window_days = _window_days(obs.observation_window_start, obs.observation_window_end)
-            immature = window_days is not None and window_days < MIN_OBSERVATION_WINDOW_DAYS
+            sufficient_delivery = impressions >= release_metrics.MIN_IMPRESSIONS_FOR_ACCURACY
+            window_days = _stats._window_days(obs.observation_window_start, obs.observation_window_end)
+            immature = window_days is not None and window_days < release_metrics.MIN_OBSERVATION_WINDOW_DAYS
             accuracy_eligible = band_eligible and sufficient_delivery and not immature
 
             if accuracy_eligible:
@@ -189,7 +187,7 @@ class DriftMixin:
                 "primary_metric": label_detail["metric"],
                 "primary_metric_value": label_detail["value"],
                 "error": err,
-                "label_policy_version": LABEL_POLICY_VERSION,
+                "label_policy_version": _shared.LABEL_POLICY_VERSION,
                 "label_metric": label_detail["metric"],
                 "origin": origin,
                 "prompt_profile_used": pred_lineage.get("prompt_profile_used"),
@@ -224,7 +222,7 @@ class DriftMixin:
         # Spearman ρ：AI overall_score 排名 vs 主指標排名的相關性
         # 以各廣告的 primary_metric 判斷帳戶類型（purchase→ROAS, lead→CVR/CPL, 其他→CPA）
         # 混合 objective 帳戶以最多筆的指標群組為主
-        _metric_counter = Counter(
+        _metric_counter = _shared.Counter(
             p["primary_metric"] for p in matched_pairs
             if p.get("primary_metric") and p.get("primary_metric_value") is not None
         )
@@ -239,12 +237,12 @@ class DriftMixin:
         ]
         _scores = [float(p["overall_score"])        for p in _eligible]
         _perf   = [float(p["primary_metric_value"]) for p in _eligible]
-        spearman_r = _spearman_r(_scores, _perf) if len(_scores) >= 3 else 0.0
+        spearman_r = _stats._spearman_r(_scores, _perf) if len(_scores) >= 3 else 0.0
 
         # spend 加權版本：大預算素材的排序對齊更重要；輔助指標，不取代主判據 spearman_r
         _spends = [float(p["real_spend"]) for p in _eligible]
         spearman_r_spend_weighted = (
-            _spearman_r_weighted(_scores, _perf, _spends) if len(_scores) >= 3 else 0.0
+            _stats._spearman_r_weighted(_scores, _perf, _spends) if len(_scores) >= 3 else 0.0
         )
 
         # 主指標分布（用於象限判定的 P50 基準）
@@ -254,20 +252,20 @@ class DriftMixin:
             and p.get("primary_metric_value") is not None
         )
         perf_median = _perf_all[len(_perf_all) // 2] if _perf_all else 0.0
-        perf_std = statistics.stdev(_perf_all) if len(_perf_all) >= 2 else 0.0
+        perf_std = _shared.statistics.stdev(_perf_all) if len(_perf_all) >= 2 else 0.0
 
         # perf_is_high 應該回答「這期表現是否比上期好」，而非「中位數是否 >= 平均數」
         # （後者只反映分布偏態，右偏分布會永遠判 False，跟表現好壞無關）。
         # 優先與同帳戶上一期 perf_median 比較；沒有基準時才退回舊的分布判定法。
-        _prior_report_query = db.query(MetaAndromedaDriftReport).filter(
-            MetaAndromedaDriftReport.window_kind == window_kind,
-            MetaAndromedaDriftReport.drift_status != "insufficient_data",
+        _prior_report_query = db.query(_shared.MetaAndromedaDriftReport).filter(
+            _shared.MetaAndromedaDriftReport.window_kind == window_kind,
+            _shared.MetaAndromedaDriftReport.drift_status != "insufficient_data",
         )
         if account_id:
             _prior_report_query = _prior_report_query.filter(
-                MetaAndromedaDriftReport.report_payload["account_id"].as_string() == account_id
+                _shared.MetaAndromedaDriftReport.report_payload["account_id"].as_string() == account_id
             )
-        _prior_report = _prior_report_query.order_by(MetaAndromedaDriftReport.created_at.desc()).first()
+        _prior_report = _prior_report_query.order_by(_shared.MetaAndromedaDriftReport.created_at.desc()).first()
         _prior_perf_median = None
         if _prior_report and _prior_report.report_payload:
             _prior_perf_median = _prior_report.report_payload.get("perf_median")
@@ -279,8 +277,8 @@ class DriftMixin:
             perf_is_high = perf_median >= (sum(_perf_all) / len(_perf_all)) if _perf_all else False
             perf_baseline_method = "distribution_mean_fallback"
 
-        period_diagnosis = _classify_period_state(spearman_r, perf_is_high, dominant_metric)
-        metric_label = _METRIC_LABEL.get(dominant_metric, dominant_metric.upper())
+        period_diagnosis = _stats._classify_period_state(spearman_r, perf_is_high, dominant_metric)
+        metric_label = _stats._METRIC_LABEL.get(dominant_metric, dominant_metric.upper())
 
         # 4. 判定漂移健康度（主判據：Spearman ρ；輔助資訊：accuracy/MAE）
         # ρ 門檻本身無檢定支撐：n 太小時無論 ρ 高低都不具統計意義，一律標記
@@ -293,14 +291,14 @@ class DriftMixin:
 
             total_observed = len(observed_list)
             obs_with_asset = sum(1 for obs in observed_list if obs.asset_id or obs.asset_uri)
-            total_completed_scores = db.query(MetaAndromedaScoreEvent).filter(
-                MetaAndromedaScoreEvent.status == "completed"
+            total_completed_scores = db.query(_shared.MetaAndromedaScoreEvent).filter(
+                _shared.MetaAndromedaScoreEvent.status == "completed"
             ).count()
-            total_failed_scores = db.query(MetaAndromedaScoreEvent).filter(
-                MetaAndromedaScoreEvent.status == "failed"
+            total_failed_scores = db.query(_shared.MetaAndromedaScoreEvent).filter(
+                _shared.MetaAndromedaScoreEvent.status == "failed"
             ).count()
-            total_pending_scores = db.query(MetaAndromedaScoreEvent).filter(
-                MetaAndromedaScoreEvent.status.in_(["queued", "started", "processing"])
+            total_pending_scores = db.query(_shared.MetaAndromedaScoreEvent).filter(
+                _shared.MetaAndromedaScoreEvent.status.in_(["queued", "started", "processing"])
             ).count()
 
             summary = (
@@ -344,7 +342,7 @@ class DriftMixin:
             )
     
         # 5. 寫入資料庫
-        report = MetaAndromedaDriftReport(
+        report = _shared.MetaAndromedaDriftReport(
             window_kind=window_kind,
             drift_status=drift_status,
             summary=summary,
@@ -358,13 +356,13 @@ class DriftMixin:
                 "deduped_ad_count": deduped_ad_count,
                 "insufficient_delivery_total": insufficient_delivery_total,
                 "immature_total": immature_total,
-                "min_impressions_for_accuracy": MIN_IMPRESSIONS_FOR_ACCURACY,
-                "min_observation_window_days": MIN_OBSERVATION_WINDOW_DAYS,
+                "min_impressions_for_accuracy": release_metrics.MIN_IMPRESSIONS_FOR_ACCURACY,
+                "min_observation_window_days": release_metrics.MIN_OBSERVATION_WINDOW_DAYS,
                 "match_rate": round(total_matched / len(observed_list), 4) if observed_list else 0.0,
                 "obs_with_asset": sum(1 for obs in observed_list if obs.asset_id or obs.asset_uri),
-                "total_completed_scores": db.query(MetaAndromedaScoreEvent).filter(MetaAndromedaScoreEvent.status == "completed").count(),
-                "total_failed_scores": db.query(MetaAndromedaScoreEvent).filter(MetaAndromedaScoreEvent.status == "failed").count(),
-                "total_pending_scores": db.query(MetaAndromedaScoreEvent).filter(MetaAndromedaScoreEvent.status.in_(["queued", "started", "processing"])).count(),
+                "total_completed_scores": db.query(_shared.MetaAndromedaScoreEvent).filter(_shared.MetaAndromedaScoreEvent.status == "completed").count(),
+                "total_failed_scores": db.query(_shared.MetaAndromedaScoreEvent).filter(_shared.MetaAndromedaScoreEvent.status == "failed").count(),
+                "total_pending_scores": db.query(_shared.MetaAndromedaScoreEvent).filter(_shared.MetaAndromedaScoreEvent.status.in_(["queued", "started", "processing"])).count(),
                 "accuracy": round(accuracy, 4),
                 "mae": round(mae, 4),
                 "spearman_r": round(spearman_r, 4),
@@ -377,7 +375,7 @@ class DriftMixin:
                 "perf_baseline_method": perf_baseline_method,
                 "period_diagnosis": period_diagnosis,
                 "calibration_candidate_total": calibration_candidate_total,
-                "label_policy_version": LABEL_POLICY_VERSION,
+                "label_policy_version": _shared.LABEL_POLICY_VERSION,
                 "heuristic_fallback_total": heuristic_fallback_count,
                 "heuristic_fallback_rate": (
                     round(heuristic_fallback_count / (total_matched + heuristic_fallback_count), 4)

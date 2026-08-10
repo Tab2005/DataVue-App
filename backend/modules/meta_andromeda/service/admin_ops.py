@@ -1,6 +1,6 @@
 """AdminOpsServiceMixin for Meta Andromeda service."""
 
-from ._shared import *  # noqa: F403
+from . import _shared
 
 
 class AdminOpsServiceMixin:
@@ -84,36 +84,36 @@ class AdminOpsServiceMixin:
         source: str | None = None,
         scoring_engine: str | None = None,
     ) -> dict:
-        return repository.list_review_queue(db, status=status, has_observation=has_observation, roas_band=roas_band, limit=limit, page=page, search=search, source=source, scoring_engine=scoring_engine)
+        return _shared.repository.list_review_queue(db, status=status, has_observation=has_observation, roas_band=roas_band, limit=limit, page=page, search=search, source=source, scoring_engine=scoring_engine)
 
 
     @staticmethod
     def get_review_queue_detail(db, score_event_id: str) -> dict:
-        return repository.get_review_queue_detail(db, score_event_id)
+        return _shared.repository.get_review_queue_detail(db, score_event_id)
 
 
     @staticmethod
     def delete_score_event(db, score_event_id: str) -> dict:
-        return repository.delete_score_event(db, score_event_id)
+        return _shared.repository.delete_score_event(db, score_event_id)
 
 
     @staticmethod
     def batch_delete_score_events(db, score_event_ids: list[str]) -> dict:
-        return repository.batch_delete_score_events(db, score_event_ids)
+        return _shared.repository.batch_delete_score_events(db, score_event_ids)
 
 
     @staticmethod
     def get_monitoring_summary(db) -> dict:
-        summary = repository.get_monitoring_summary(db)
+        summary = _shared.repository.get_monitoring_summary(db)
         summary.setdefault("worker_host", {})
-        summary["worker_host"]["active_host"] = queue_host_adapter.get_active_host()
+        summary["worker_host"]["active_host"] = _shared.queue_host_adapter.get_active_host()
         summary["worker_host"]["host_strategy"] = "shared_queue_host_adapter"
         return summary
 
 
     @staticmethod
     def get_monitoring_timeline(db, score_event_id: str) -> dict:
-        return repository.get_score_event_timeline(db, score_event_id)
+        return _shared.repository.get_score_event_timeline(db, score_event_id)
 
 
     @staticmethod
@@ -126,7 +126,7 @@ class AdminOpsServiceMixin:
         until: str | None = None,
         account_id: str | None = None,
     ) -> dict:
-        return repository.create_drift_report(
+        return _shared.repository.create_drift_report(
             db,
             window_kind=window_kind,
             triggered_by=triggered_by,
@@ -139,7 +139,7 @@ class AdminOpsServiceMixin:
 
     @staticmethod
     def get_runtime_health(db) -> dict:
-        queue_host = queue_host_adapter.get_active_host()
+        queue_host = _shared.queue_host_adapter.get_active_host()
         checks: dict = {
             "database": "ok",
             "queue_host": queue_host,
@@ -149,13 +149,13 @@ class AdminOpsServiceMixin:
         status = "healthy"
 
         try:
-            repository.list_review_queue(db, limit=1)
+            _shared.repository.list_review_queue(db, limit=1)
         except Exception as exc:
             checks["database"] = f"error: {exc}"
             status = "unhealthy"
 
         try:
-            registry_entry = model_registry.get_entry()
+            registry_entry = _shared.model_registry.get_entry()
             checks["model_registry"] = {
                 "model_version": registry_entry.model_version,
                 "provider": registry_entry.provider,
@@ -166,32 +166,32 @@ class AdminOpsServiceMixin:
             checks["model_registry"] = f"error: {exc}"
             status = "unhealthy"
 
-        storage_backend = settings.META_ANDROMEDA_STORAGE_BACKEND
+        storage_backend = _shared.settings.META_ANDROMEDA_STORAGE_BACKEND
         storage_check: dict | str
         internal_worker_auth_configured = bool(
-            settings.META_ANDROMEDA_INTERNAL_WORKER_SHARED_SECRET
-            or settings.META_ANDROMEDA_INTERNAL_WORKER_TOKEN
+            _shared.settings.META_ANDROMEDA_INTERNAL_WORKER_SHARED_SECRET
+            or _shared.settings.META_ANDROMEDA_INTERNAL_WORKER_TOKEN
         )
 
         if storage_backend == "filesystem":
-            if settings.SERVICE_ROLE == "web":
+            if _shared.settings.SERVICE_ROLE == "web":
                 storage_check = {
                     "backend": "filesystem",
                     "mode": "worker_remote",
                     "local_root_required": False,
-                    "internal_worker_base_url": settings.META_ANDROMEDA_INTERNAL_WORKER_BASE_URL,
+                    "internal_worker_base_url": _shared.settings.META_ANDROMEDA_INTERNAL_WORKER_BASE_URL,
                 }
                 checks["internal_asset_worker"] = {
                     "required": True,
-                    "base_url": settings.META_ANDROMEDA_INTERNAL_WORKER_BASE_URL,
+                    "base_url": _shared.settings.META_ANDROMEDA_INTERNAL_WORKER_BASE_URL,
                     "auth_configured": internal_worker_auth_configured,
-                    "service_role": settings.SERVICE_ROLE,
+                    "service_role": _shared.settings.SERVICE_ROLE,
                 }
-                if not settings.META_ANDROMEDA_INTERNAL_WORKER_BASE_URL or not internal_worker_auth_configured:
+                if not _shared.settings.META_ANDROMEDA_INTERNAL_WORKER_BASE_URL or not internal_worker_auth_configured:
                     status = "degraded" if status == "healthy" else status
                     notes.append("filesystem storage on web role requires internal worker base URL and auth to be configured.")
             else:
-                storage_root = Path(settings.META_ANDROMEDA_STORAGE_ROOT)
+                storage_root = _shared.Path(_shared.settings.META_ANDROMEDA_STORAGE_ROOT)
                 probe_dir = storage_root if storage_root.exists() else storage_root.parent
                 writable = probe_dir.exists() and probe_dir.is_dir()
                 storage_check = {
@@ -200,43 +200,43 @@ class AdminOpsServiceMixin:
                     "probe_dir": str(probe_dir),
                     "writable_probe_present": writable,
                     "local_root_required": True,
-                    "mode": "local_holder" if settings.SERVICE_ROLE == "all" else "worker_holder",
+                    "mode": "local_holder" if _shared.settings.SERVICE_ROLE == "all" else "worker_holder",
                 }
                 checks["internal_asset_worker"] = {
-                    "required": settings.SERVICE_ROLE == "worker",
-                    "base_url": settings.META_ANDROMEDA_INTERNAL_WORKER_BASE_URL,
+                    "required": _shared.settings.SERVICE_ROLE == "worker",
+                    "base_url": _shared.settings.META_ANDROMEDA_INTERNAL_WORKER_BASE_URL,
                     "auth_configured": internal_worker_auth_configured,
-                    "service_role": settings.SERVICE_ROLE,
+                    "service_role": _shared.settings.SERVICE_ROLE,
                 }
                 if not writable:
                     status = "degraded" if status == "healthy" else status
                     notes.append("filesystem storage root is not present yet; upload path has not been validated on this host.")
-                if settings.SERVICE_ROLE == "worker" and not internal_worker_auth_configured:
+                if _shared.settings.SERVICE_ROLE == "worker" and not internal_worker_auth_configured:
                     status = "degraded" if status == "healthy" else status
                     notes.append("worker role serving filesystem assets requires internal worker auth to be configured.")
         elif storage_backend == "s3_compatible":
             missing = [
                 key
                 for key, value in {
-                    "bucket": settings.META_ANDROMEDA_STORAGE_S3_BUCKET,
-                    "region": settings.META_ANDROMEDA_STORAGE_S3_REGION,
-                    "access_key_id": settings.META_ANDROMEDA_STORAGE_S3_ACCESS_KEY_ID,
-                    "secret_access_key": settings.META_ANDROMEDA_STORAGE_S3_SECRET_ACCESS_KEY,
+                    "bucket": _shared.settings.META_ANDROMEDA_STORAGE_S3_BUCKET,
+                    "region": _shared.settings.META_ANDROMEDA_STORAGE_S3_REGION,
+                    "access_key_id": _shared.settings.META_ANDROMEDA_STORAGE_S3_ACCESS_KEY_ID,
+                    "secret_access_key": _shared.settings.META_ANDROMEDA_STORAGE_S3_SECRET_ACCESS_KEY,
                 }.items()
                 if not value
             ]
             try:
-                storage_adapter._build_s3_client()
+                _shared.storage_adapter._build_s3_client()
                 client_ready = True
             except Exception as exc:
                 client_ready = False
                 notes.append(f"s3_compatible client init failed: {exc}")
             storage_check = {
                 "backend": "s3_compatible",
-                "bucket": settings.META_ANDROMEDA_STORAGE_S3_BUCKET,
-                "region": settings.META_ANDROMEDA_STORAGE_S3_REGION,
-                "endpoint_url": settings.META_ANDROMEDA_STORAGE_S3_ENDPOINT_URL,
-                "key_prefix": settings.META_ANDROMEDA_STORAGE_KEY_PREFIX,
+                "bucket": _shared.settings.META_ANDROMEDA_STORAGE_S3_BUCKET,
+                "region": _shared.settings.META_ANDROMEDA_STORAGE_S3_REGION,
+                "endpoint_url": _shared.settings.META_ANDROMEDA_STORAGE_S3_ENDPOINT_URL,
+                "key_prefix": _shared.settings.META_ANDROMEDA_STORAGE_KEY_PREFIX,
                 "missing_required": missing,
                 "client_ready": client_ready,
             }
@@ -250,7 +250,7 @@ class AdminOpsServiceMixin:
 
         if queue_host in {"redis_stream", "database_queue"}:
             try:
-                redis = get_redis_client()
+                redis = _shared.get_redis_client()
                 if redis:
                     redis.ping()
                     checks["redis_runtime"] = "ok"
@@ -263,14 +263,14 @@ class AdminOpsServiceMixin:
 
         if queue_host == "external_webhook":
             callback_auth_configured = bool(
-                settings.META_ANDROMEDA_EXTERNAL_WORKER_SHARED_SECRET
-                or settings.META_ANDROMEDA_EXTERNAL_WORKER_TOKEN
+                _shared.settings.META_ANDROMEDA_EXTERNAL_WORKER_SHARED_SECRET
+                or _shared.settings.META_ANDROMEDA_EXTERNAL_WORKER_TOKEN
             )
             checks["external_worker"] = {
-                "dispatch_endpoint": settings.META_ANDROMEDA_EXTERNAL_QUEUE_ENDPOINT,
+                "dispatch_endpoint": _shared.settings.META_ANDROMEDA_EXTERNAL_QUEUE_ENDPOINT,
                 "callback_auth_configured": callback_auth_configured,
             }
-            if not settings.META_ANDROMEDA_EXTERNAL_QUEUE_ENDPOINT or not callback_auth_configured:
+            if not _shared.settings.META_ANDROMEDA_EXTERNAL_QUEUE_ENDPOINT or not callback_auth_configured:
                 status = "degraded" if status == "healthy" else status
                 notes.append("external worker mode requires both dispatch endpoint and callback auth to be configured.")
 
@@ -291,12 +291,12 @@ class AdminOpsServiceMixin:
 
     @staticmethod
     def get_release_overview(db) -> dict:
-        return repository.get_release_overview(db)
+        return _shared.repository.get_release_overview(db)
 
 
     @staticmethod
     def _clear_observation_import_status_entries(score_event_ids: set[str]) -> int:
-        return clear_import_status_by_score_event_ids(score_event_ids)
+        return _shared.clear_import_status_by_score_event_ids(score_event_ids)
 
 
     @staticmethod
@@ -310,24 +310,24 @@ class AdminOpsServiceMixin:
         limit: int = 500,
         reason: str = "maintenance_cleanup",
     ) -> dict:
-        older_than = older_than_minutes or settings.META_ANDROMEDA_STALE_PROCESSING_MINUTES
-        cutoff = datetime.now(UTC) - timedelta(minutes=older_than)
+        older_than = older_than_minutes or _shared.settings.META_ANDROMEDA_STALE_PROCESSING_MINUTES
+        cutoff = _shared.datetime.now(_shared.UTC) - _shared.timedelta(minutes=older_than)
         statuses = ["processing"]
         if include_queued:
             statuses.append("queued")
 
         rows = (
-            db.query(MetaAndromedaScoreEvent)
+            db.query(_shared.MetaAndromedaScoreEvent)
             .filter(
-                MetaAndromedaScoreEvent.status.in_(statuses),
-                MetaAndromedaScoreEvent.updated_at < cutoff,
+                _shared.MetaAndromedaScoreEvent.status.in_(statuses),
+                _shared.MetaAndromedaScoreEvent.updated_at < cutoff,
             )
-            .order_by(MetaAndromedaScoreEvent.updated_at.asc())
+            .order_by(_shared.MetaAndromedaScoreEvent.updated_at.asc())
             .limit(limit)
             .all()
         )
 
-        now = datetime.now(UTC)
+        now = _shared.datetime.now(_shared.UTC)
         cleaned_ids: list[str] = []
         scheduler_job_ids: list[str] = []
         deleted_worker_events = 0
@@ -335,18 +335,18 @@ class AdminOpsServiceMixin:
 
         for row in rows:
             cleaned_ids.append(row.id)
-            scheduler_job_ids.append(row.runtime_job_id or get_meta_andromeda_score_job_id(row.id))
+            scheduler_job_ids.append(row.runtime_job_id or _shared.get_meta_andromeda_score_job_id(row.id))
 
             if purge_worker_events:
                 deleted_worker_events += (
-                    db.query(MetaAndromedaWorkerEvent)
-                    .filter(MetaAndromedaWorkerEvent.score_event_id == row.id)
+                    db.query(_shared.MetaAndromedaWorkerEvent)
+                    .filter(_shared.MetaAndromedaWorkerEvent.score_event_id == row.id)
                     .delete(synchronize_session=False)
                 )
             if purge_dead_letters:
                 deleted_dead_letters += (
-                    db.query(MetaAndromedaDeadLetter)
-                    .filter(MetaAndromedaDeadLetter.score_event_id == row.id)
+                    db.query(_shared.MetaAndromedaDeadLetter)
+                    .filter(_shared.MetaAndromedaDeadLetter.score_event_id == row.id)
                     .delete(synchronize_session=False)
                 )
 
@@ -359,7 +359,7 @@ class AdminOpsServiceMixin:
 
             if not purge_worker_events:
                 db.add(
-                    MetaAndromedaWorkerEvent(
+                    _shared.MetaAndromedaWorkerEvent(
                         score_event_id=row.id,
                         event_type="maintenance_cancelled",
                         queue_host="maintenance",
@@ -380,8 +380,8 @@ class AdminOpsServiceMixin:
         removed_scheduler_jobs = 0
         for job_id in scheduler_job_ids:
             try:
-                if scheduler.get_job(job_id):
-                    scheduler.remove_job(job_id)
+                if _shared.scheduler.get_job(job_id):
+                    _shared.scheduler.remove_job(job_id)
                     removed_scheduler_jobs += 1
             except Exception:
                 continue
@@ -408,7 +408,7 @@ class AdminOpsServiceMixin:
 
     @staticmethod
     def list_feedback(db, score_event_id: str) -> dict:
-        return repository.list_feedback(db, score_event_id)
+        return _shared.repository.list_feedback(db, score_event_id)
 
 
     @staticmethod
@@ -420,7 +420,7 @@ class AdminOpsServiceMixin:
         reason_codes: list[str] | None = None,
         comment: str | None = None,
     ) -> dict:
-        return repository.submit_feedback(
+        return _shared.repository.submit_feedback(
             db,
             score_event_id=score_event_id,
             reviewer_id=reviewer_id,
@@ -432,13 +432,13 @@ class AdminOpsServiceMixin:
 
     @staticmethod
     def list_feedback_calibration_candidates(db) -> dict:
-        candidates = repository.list_feedback_calibration_candidates(db)
+        candidates = _shared.repository.list_feedback_calibration_candidates(db)
         return {"candidates": candidates, "total": len(candidates)}
 
 
     @staticmethod
     def analyze_feedback_reason_codes(db) -> dict:
-        return repository.analyze_feedback_reason_codes(db)
+        return _shared.repository.analyze_feedback_reason_codes(db)
 
 
     @staticmethod
@@ -450,7 +450,7 @@ class AdminOpsServiceMixin:
         note: str | None = None,
         force: bool = False,
     ) -> dict:
-        return repository.perform_release_action(
+        return _shared.repository.perform_release_action(
             db,
             action=action,
             model_version=model_version,
@@ -471,7 +471,7 @@ class AdminOpsServiceMixin:
         actor: str,
         note: str | None = None,
     ) -> dict:
-        return repository.create_release_candidate(
+        return _shared.repository.create_release_candidate(
             db,
             model_version=model_version,
             provider=provider,
@@ -501,7 +501,7 @@ class AdminOpsServiceMixin:
                 status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
                 detail={"message": "Candidate model is not usable for backtest.", "validation": validation, "issues": issues},
             )
-        run = repository.create_backtest_run(
+        run = _shared.repository.create_backtest_run(
             db,
             provider_model=provider_model,
             sample_limit=sample_limit,
@@ -511,22 +511,22 @@ class AdminOpsServiceMixin:
             from core.scheduler import add_meta_andromeda_backtest_run_job
             add_meta_andromeda_backtest_run_job(run["run_id"])
         except Exception as exc:
-            logger.warning("[MetaAndromeda] Failed to enqueue backtest run %s: %s", run["run_id"], exc)
+            _shared.logger.warning("[MetaAndromeda] Failed to enqueue backtest run %s: %s", run["run_id"], exc)
         return run
 
 
     @staticmethod
     def list_backtest_runs(db, limit: int = 20) -> dict:
-        return repository.list_backtest_runs(db, limit=limit)
+        return _shared.repository.list_backtest_runs(db, limit=limit)
 
 
     @staticmethod
     def get_backtest_run(db, run_id: str) -> dict:
-        return repository.get_backtest_run(db, run_id)
+        return _shared.repository.get_backtest_run(db, run_id)
 
 
     @staticmethod
-    def _build_backtest_score_payload(observed: MetaAndromedaObservedCreative, run: dict) -> dict:
+    def _build_backtest_score_payload(observed: _shared.MetaAndromedaObservedCreative, run: dict) -> dict:
         snapshot = observed.performance_snapshot or {}
         return {
             "asset_uri": observed.asset_uri,
@@ -552,16 +552,16 @@ class AdminOpsServiceMixin:
 
     @staticmethod
     async def run_backtest_run(run_id: str) -> dict:
-        db = SessionLocal()
+        db = _shared.SessionLocal()
         try:
-            run = repository.get_backtest_run(db, run_id)
+            run = _shared.repository.get_backtest_run(db, run_id)
             if run["status"] not in ("queued", "running"):
                 return run
 
             query = (
-                db.query(MetaAndromedaObservedCreative)
-                .filter(MetaAndromedaObservedCreative.asset_uri.isnot(None))
-                .order_by(MetaAndromedaObservedCreative.imported_at.desc())
+                db.query(_shared.MetaAndromedaObservedCreative)
+                .filter(_shared.MetaAndromedaObservedCreative.asset_uri.isnot(None))
+                .order_by(_shared.MetaAndromedaObservedCreative.imported_at.desc())
             )
             observed_rows = [
                 row for row in query.all()
@@ -571,8 +571,8 @@ class AdminOpsServiceMixin:
             if run.get("sample_limit"):
                 observed_rows = observed_rows[: int(run["sample_limit"])]
 
-            now = datetime.now(UTC)
-            repository.update_backtest_run(
+            now = _shared.datetime.now(_shared.UTC)
+            _shared.repository.update_backtest_run(
                 db,
                 run_id,
                 status="running",
@@ -583,13 +583,13 @@ class AdminOpsServiceMixin:
             success_count = 0
             failed_count = 0
             processed_count = 0
-            sleep_seconds = float(getattr(settings, "META_ANDROMEDA_BACKTEST_INTERVAL_SECONDS", 2) or 2)
+            sleep_seconds = float(getattr(_shared.settings, "META_ANDROMEDA_BACKTEST_INTERVAL_SECONDS", 2) or 2)
 
             for observed in observed_rows:
                 created = None
                 try:
                     existing = [
-                        row for row in db.query(MetaAndromedaScoreEvent).all()
+                        row for row in db.query(_shared.MetaAndromedaScoreEvent).all()
                         if row.status == "completed"
                         and (row.lineage or {}).get("scoring_purpose") == "backtest"
                         and (row.lineage or {}).get("backtest_run_id") == run_id
@@ -600,12 +600,12 @@ class AdminOpsServiceMixin:
                         continue
 
                     payload = MetaAndromedaService._build_backtest_score_payload(observed, run)
-                    score_payload = runtime_adapter.build_score_submission(payload)
+                    score_payload = _shared.runtime_adapter.build_score_submission(payload)
                     score_payload["request_context"] = payload["request_context"]
-                    created = repository.create_score_event(db, score_payload)
-                    repository.mark_score_processing(db, created["score_event_id"])
-                    current = repository.get_review_queue_detail(db, created["score_event_id"])
-                    result_payload = await asyncio.to_thread(runtime_adapter.generate_score_result, current)
+                    created = _shared.repository.create_score_event(db, score_payload)
+                    _shared.repository.mark_score_processing(db, created["score_event_id"])
+                    current = _shared.repository.get_review_queue_detail(db, created["score_event_id"])
+                    result_payload = await _shared.asyncio.to_thread(_shared.runtime_adapter.generate_score_result, current)
                     lineage = dict(result_payload.get("lineage") or {})
                     lineage.update({
                         "scoring_purpose": "backtest",
@@ -613,16 +613,16 @@ class AdminOpsServiceMixin:
                         "backtest_provider_model": run["provider_model"],
                     })
                     result_payload["lineage"] = lineage
-                    repository.mark_score_completed(db, created["score_event_id"], result_payload)
+                    _shared.repository.mark_score_completed(db, created["score_event_id"], result_payload)
                     success_count += 1
                 except Exception as exc:
                     failed_count += 1
                     if created:
-                        repository.mark_score_failed(db, created["score_event_id"], str(exc))
-                    logger.warning("[MetaAndromeda] Backtest run %s failed item %s: %s", run_id, getattr(observed, "id", None), exc)
+                        _shared.repository.mark_score_failed(db, created["score_event_id"], str(exc))
+                    _shared.logger.warning("[MetaAndromeda] Backtest run %s failed item %s: %s", run_id, getattr(observed, "id", None), exc)
                 finally:
                     processed_count += 1
-                    repository.update_backtest_run(
+                    _shared.repository.update_backtest_run(
                         db,
                         run_id,
                         processed_count=processed_count,
@@ -630,20 +630,20 @@ class AdminOpsServiceMixin:
                         failed_count=failed_count,
                     )
                     if sleep_seconds > 0:
-                        await asyncio.sleep(sleep_seconds)
+                        await _shared.asyncio.sleep(sleep_seconds)
 
-            return repository.complete_backtest_run_metrics(db, run_id)
+            return _shared.repository.complete_backtest_run_metrics(db, run_id)
         except Exception as exc:
             try:
-                repository.update_backtest_run(
+                _shared.repository.update_backtest_run(
                     db,
                     run_id,
                     status="failed",
                     error_message=str(exc),
-                    completed_at=datetime.now(UTC),
+                    completed_at=_shared.datetime.now(_shared.UTC),
                 )
             except Exception:
-                logger.exception("[MetaAndromeda] Failed to mark backtest run failed: %s", run_id)
+                _shared.logger.exception("[MetaAndromeda] Failed to mark backtest run failed: %s", run_id)
             raise
         finally:
             db.close()
@@ -651,27 +651,27 @@ class AdminOpsServiceMixin:
 
     @staticmethod
     def refresh_release_metrics(db, model_version: str) -> dict:
-        return repository.refresh_release_metrics(db, model_version)
+        return _shared.repository.refresh_release_metrics(db, model_version)
 
 
     @staticmethod
     def list_release_metric_pairs(db, model_version: str, *, sort: str = "mismatch", limit: int = 50) -> dict:
-        return repository.list_release_metric_pairs(db, model_version, sort=sort, limit=limit)
+        return _shared.repository.list_release_metric_pairs(db, model_version, sort=sort, limit=limit)
 
 
     @staticmethod
     def list_scoring_profiles(db) -> dict:
-        return {"profiles": repository.list_scoring_profiles(db), "total": len(repository.list_scoring_profiles(db))}
+        return {"profiles": _shared.repository.list_scoring_profiles(db), "total": len(_shared.repository.list_scoring_profiles(db))}
 
 
     @staticmethod
     def promote_scoring_profile(db, profile_name: str, force: bool = False) -> dict:
-        return repository.promote_scoring_profile(db, profile_name, force=force)
+        return _shared.repository.promote_scoring_profile(db, profile_name, force=force)
 
 
     @staticmethod
     async def run_holdout_backtest(db, profile_name: str) -> dict:
-        return await repository.run_holdout_backtest(db, profile_name)
+        return await _shared.repository.run_holdout_backtest(db, profile_name)
 
 
     @staticmethod
@@ -680,7 +680,7 @@ class AdminOpsServiceMixin:
         window_kind: str,
         excluded_observed_ids: list[str],
     ) -> dict:
-        result = repository.sync_calibration_dataset(
+        result = _shared.repository.sync_calibration_dataset(
             db,
             window_kind=window_kind,
             excluded_observed_ids=excluded_observed_ids,
@@ -692,7 +692,7 @@ class AdminOpsServiceMixin:
         if error_item_count >= 10 and dataset_id:
             try:
                 from core.scheduler import add_meta_andromeda_calibration_job
-                base_profile = repository.get_active_base_profile_name(db)
+                base_profile = _shared.repository.get_active_base_profile_name(db)
                 add_meta_andromeda_calibration_job(dataset_id, base_profile)
             except Exception as exc:
                 import logging as _logging

@@ -1,13 +1,11 @@
 """ProfileRegistry repository operations."""
 
-from ._shared import *  # noqa: F401,F403
-from ._stats import *  # noqa: F401,F403
-from .release_metrics import *  # noqa: F401,F403
+from . import _shared
 from .release import PromotionGateError
 
 class ProfileRegistryMixin:
     @staticmethod
-    def get_active_base_profile_name(db: Session) -> str:
+    def get_active_base_profile_name(db: _shared.Session) -> str:
         """Resolve the scoring-profile name currently used by the runtime.
 
         This is a profile_name in meta_andromeda_scoring_profiles, NOT a
@@ -18,19 +16,19 @@ class ProfileRegistryMixin:
         registry's configured scoring_profile.
         """
         promoted = (
-            db.query(MetaAndromedaScoringProfile)
-            .filter(MetaAndromedaScoringProfile.is_promoted == True)  # noqa: E712
+            db.query(_shared.MetaAndromedaScoringProfile)
+            .filter(_shared.MetaAndromedaScoringProfile.is_promoted == True)  # noqa: E712
             .first()
         )
         if promoted is not None:
             return promoted.profile_name
-        return model_registry.get_entry().scoring_profile
+        return _shared.model_registry.get_entry().scoring_profile
 
     @staticmethod
-    def list_scoring_profiles(db: Session) -> list[dict]:
+    def list_scoring_profiles(db: _shared.Session) -> list[dict]:
         rows = (
-            db.query(MetaAndromedaScoringProfile)
-            .order_by(MetaAndromedaScoringProfile.created_at.desc())
+            db.query(_shared.MetaAndromedaScoringProfile)
+            .order_by(_shared.MetaAndromedaScoringProfile.created_at.desc())
             .all()
         )
         return [
@@ -51,9 +49,9 @@ class ProfileRegistryMixin:
         ]
 
     @staticmethod
-    def promote_scoring_profile(db: Session, profile_name: str, force: bool = False) -> dict:
-        target = db.query(MetaAndromedaScoringProfile).filter(
-            MetaAndromedaScoringProfile.profile_name == profile_name
+    def promote_scoring_profile(db: _shared.Session, profile_name: str, force: bool = False) -> dict:
+        target = db.query(_shared.MetaAndromedaScoringProfile).filter(
+            _shared.MetaAndromedaScoringProfile.profile_name == profile_name
         ).first()
         if target is None:
             raise KeyError(f"Scoring profile not found: {profile_name}")
@@ -80,11 +78,11 @@ class ProfileRegistryMixin:
         elif target.source == "calibration_auto" and force:
             backtest_gate_bypassed = True
 
-        db.query(MetaAndromedaScoringProfile).filter(
-            MetaAndromedaScoringProfile.is_promoted == True  # noqa: E712
+        db.query(_shared.MetaAndromedaScoringProfile).filter(
+            _shared.MetaAndromedaScoringProfile.is_promoted == True  # noqa: E712
         ).update({"is_promoted": False, "promoted_at": None}, synchronize_session=False)
 
-        now = datetime.now(timezone.utc)
+        now = _shared.datetime.now(_shared.timezone.utc)
         target.is_promoted = True
         target.promoted_at = now
         target.consecutive_degraded_periods = 0
@@ -115,10 +113,10 @@ class ProfileRegistryMixin:
         }
 
     @staticmethod
-    def list_model_registry_entries(db: Session) -> list[dict]:
+    def list_model_registry_entries(db: _shared.Session) -> list[dict]:
         rows = (
-            db.query(MetaAndromedaModelRegistryEntry)
-            .order_by(MetaAndromedaModelRegistryEntry.created_at.desc())
+            db.query(_shared.MetaAndromedaModelRegistryEntry)
+            .order_by(_shared.MetaAndromedaModelRegistryEntry.created_at.desc())
             .all()
         )
         return [
@@ -135,7 +133,7 @@ class ProfileRegistryMixin:
         ]
 
     @staticmethod
-    def get_effective_scoring_status(db: Session) -> dict:
+    def get_effective_scoring_status(db: _shared.Session) -> dict:
         """比較「目前實際生效的互動評分設定」與「資料庫 registry 表裡標記為
         production 的那一列」，供監控頁面標示兩者是否一致。
 
@@ -146,11 +144,11 @@ class ProfileRegistryMixin:
         解析出的值（而非重複 get_entry() 內部的 if/elif 分支條件）來判斷是否
         有覆寫，可以不用跟著 get_entry() 的覆寫邏輯同步維護、更不容易漏改。
         """
-        resolved = model_registry.get_entry()  # purpose="interactive"：實際評分請求會用的設定
+        resolved = _shared.model_registry.get_entry()  # purpose="interactive"：實際評分請求會用的設定
 
         db_production = (
-            db.query(MetaAndromedaModelRegistryEntry)
-            .filter(MetaAndromedaModelRegistryEntry.is_current_production == True)  # noqa: E712
+            db.query(_shared.MetaAndromedaModelRegistryEntry)
+            .filter(_shared.MetaAndromedaModelRegistryEntry.is_current_production == True)  # noqa: E712
             .first()
         )
 
@@ -171,16 +169,16 @@ class ProfileRegistryMixin:
             "db_production_provider": db_production.provider if db_production else None,
             "db_production_provider_model": db_production.provider_model if db_production else None,
             "is_overridden": is_overridden,
-            "scoring_provider_setting": settings.META_ANDROMEDA_SCORING_PROVIDER,
+            "scoring_provider_setting": _shared.settings.META_ANDROMEDA_SCORING_PROVIDER,
             # 顯示 os.getenv 的原始值（無 default），跟 model_registry.get_entry() 判斷
             # 「是否明確覆寫」用的是同一個值——否則沒設 env var 時這裡會顯示 config.py 的
             # 隱含預設值，讓人誤以為那是造成 is_overridden 的原因。
-            "scoring_model_setting": os.getenv("META_ANDROMEDA_SCORING_MODEL", ""),
-            "scoring_model_version_env_set": bool(os.getenv("META_ANDROMEDA_SCORING_MODEL_VERSION")),
+            "scoring_model_setting": _shared.os.getenv("META_ANDROMEDA_SCORING_MODEL", ""),
+            "scoring_model_version_env_set": bool(_shared.os.getenv("META_ANDROMEDA_SCORING_MODEL_VERSION")),
         }
 
     @staticmethod
-    def set_backtest_reference_model(db: Session, provider: str, provider_model: str) -> dict:
+    def set_backtest_reference_model(db: _shared.Session, provider: str, provider_model: str) -> dict:
         """Upsert the single registry row tagged release_channel='backtest_reference' —
         the model evaluate_profile_on_holdout uses instead of falling back to
         current_production (docs/20 P2-3). Scoring/interactive model selection is
@@ -188,13 +186,13 @@ class ProfileRegistryMixin:
         approve/rollback workflow (drift + backtest checks) so this can't create a
         second, conflicting way to change what's live for real users."""
         entry = (
-            db.query(MetaAndromedaModelRegistryEntry)
-            .filter(MetaAndromedaModelRegistryEntry.release_channel == "backtest_reference")
+            db.query(_shared.MetaAndromedaModelRegistryEntry)
+            .filter(_shared.MetaAndromedaModelRegistryEntry.release_channel == "backtest_reference")
             .first()
         )
         current_production = (
-            db.query(MetaAndromedaModelRegistryEntry)
-            .filter(MetaAndromedaModelRegistryEntry.is_current_production == True)  # noqa: E712
+            db.query(_shared.MetaAndromedaModelRegistryEntry)
+            .filter(_shared.MetaAndromedaModelRegistryEntry.is_current_production == True)  # noqa: E712
             .first()
         )
         scoring_profile = current_production.scoring_profile if current_production else "creative_scoring_v2"
@@ -204,7 +202,7 @@ class ProfileRegistryMixin:
             entry.provider_model = provider_model
             entry.scoring_profile = scoring_profile
         else:
-            entry = MetaAndromedaModelRegistryEntry(
+            entry = _shared.MetaAndromedaModelRegistryEntry(
                 model_version="backtest_reference_model",
                 provider=provider,
                 provider_model=provider_model,

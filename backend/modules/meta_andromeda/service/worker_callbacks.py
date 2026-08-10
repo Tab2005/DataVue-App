@@ -1,25 +1,24 @@
 """WorkerCallbackServiceMixin for Meta Andromeda service."""
 
 from . import _shared
-from ._shared import *  # noqa: F403
 
 
 class WorkerCallbackServiceMixin:
 
     @staticmethod
     def _build_external_worker_signature(raw_body: bytes) -> str | None:
-        secret = settings.META_ANDROMEDA_EXTERNAL_WORKER_SHARED_SECRET
+        secret = _shared.settings.META_ANDROMEDA_EXTERNAL_WORKER_SHARED_SECRET
         if not secret:
             return None
-        return hmac.new(secret.encode("utf-8"), raw_body, hashlib.sha256).hexdigest()
+        return _shared.hmac.new(secret.encode("utf-8"), raw_body, _shared.hashlib.sha256).hexdigest()
 
 
     @staticmethod
     def _build_internal_worker_signature(raw_body: bytes) -> str | None:
-        secret = settings.META_ANDROMEDA_INTERNAL_WORKER_SHARED_SECRET
+        secret = _shared.settings.META_ANDROMEDA_INTERNAL_WORKER_SHARED_SECRET
         if not secret:
             return None
-        return hmac.new(secret.encode("utf-8"), raw_body, hashlib.sha256).hexdigest()
+        return _shared.hmac.new(secret.encode("utf-8"), raw_body, _shared.hashlib.sha256).hexdigest()
 
 
     @staticmethod
@@ -36,9 +35,9 @@ class WorkerCallbackServiceMixin:
             "source_filename": source_filename,
             "uploaded_by": uploaded_by or "",
             "content_type": content_type or "",
-            "file_sha256": hashlib.sha256(file_bytes).hexdigest(),
+            "file_sha256": _shared.hashlib.sha256(file_bytes).hexdigest(),
         }
-        return json.dumps(payload, separators=(",", ":"), sort_keys=True).encode("utf-8")
+        return _shared.json.dumps(payload, separators=(",", ":"), sort_keys=True).encode("utf-8")
 
 
     @staticmethod
@@ -48,15 +47,15 @@ class WorkerCallbackServiceMixin:
         worker_token: str | None = None,
     ) -> None:
         expected_signature = MetaAndromedaService._build_internal_worker_signature(raw_body)
-        expected_token = settings.META_ANDROMEDA_INTERNAL_WORKER_TOKEN
+        expected_token = _shared.settings.META_ANDROMEDA_INTERNAL_WORKER_TOKEN
 
         if expected_signature:
-            if not signature or not hmac.compare_digest(signature, expected_signature):
+            if not signature or not _shared.hmac.compare_digest(signature, expected_signature):
                 raise PermissionError("invalid_internal_worker_signature")
             return
 
         if expected_token:
-            if not worker_token or not hmac.compare_digest(worker_token, expected_token):
+            if not worker_token or not _shared.hmac.compare_digest(worker_token, expected_token):
                 raise PermissionError("invalid_internal_worker_token")
             return
 
@@ -70,15 +69,15 @@ class WorkerCallbackServiceMixin:
         worker_token: str | None = None,
     ) -> None:
         expected_signature = MetaAndromedaService._build_external_worker_signature(raw_body)
-        expected_token = settings.META_ANDROMEDA_EXTERNAL_WORKER_TOKEN
+        expected_token = _shared.settings.META_ANDROMEDA_EXTERNAL_WORKER_TOKEN
 
         if expected_signature:
-            if not signature or not hmac.compare_digest(signature, expected_signature):
+            if not signature or not _shared.hmac.compare_digest(signature, expected_signature):
                 raise PermissionError("invalid_worker_signature")
             return
 
         if expected_token:
-            if not worker_token or not hmac.compare_digest(worker_token, expected_token):
+            if not worker_token or not _shared.hmac.compare_digest(worker_token, expected_token):
                 raise PermissionError("invalid_worker_token")
             return
 
@@ -87,10 +86,10 @@ class WorkerCallbackServiceMixin:
 
     @staticmethod
     def _ensure_external_processing_state(db, score_event_id: str) -> dict:
-        current = repository.get_review_queue_detail(db, score_event_id)
+        current = _shared.repository.get_review_queue_detail(db, score_event_id)
         if current["status"] == "queued":
-            claimed = repository.mark_score_processing(db, score_event_id)
-            return claimed or repository.get_review_queue_detail(db, score_event_id)
+            claimed = _shared.repository.mark_score_processing(db, score_event_id)
+            return claimed or _shared.repository.get_review_queue_detail(db, score_event_id)
         return current
 
 
@@ -109,7 +108,7 @@ class WorkerCallbackServiceMixin:
         receipt_id: str | None,
     ) -> bool:
         return (
-            repository.find_worker_event(
+            _shared.repository.find_worker_event(
                 db,
                 score_event_id=score_event_id,
                 event_type=MetaAndromedaService._external_worker_event_name(event_type),
@@ -124,7 +123,7 @@ class WorkerCallbackServiceMixin:
     def _normalize_external_result_payload(result_payload: dict) -> dict:
         normalized = dict(result_payload)
         model_version = normalized.get("model_version")
-        registry_entry = model_registry.get_entry(model_version=model_version)
+        registry_entry = _shared.model_registry.get_entry(model_version=model_version)
         normalized.setdefault("status", "completed")
         normalized.setdefault("prediction_mode", "diagnostic_plus_roas")
         normalized.setdefault("feature_manifest_id", registry_entry.feature_manifest_id)
@@ -150,13 +149,13 @@ class WorkerCallbackServiceMixin:
 
     @staticmethod
     def handle_external_worker_callback(db, score_event_id: str, payload: dict) -> dict:
-        current = repository.get_review_queue_detail(db, score_event_id)
+        current = _shared.repository.get_review_queue_detail(db, score_event_id)
         queue_host = payload.get("queue_host") or "external_webhook"
         runtime_job_id = payload.get("runtime_job_id") or current.get("runtime_job_id")
         if runtime_job_id and current.get("runtime_job_id") != runtime_job_id:
             if current.get("status") in {"completed", "failed"}:
                 return current
-            current = repository.assign_runtime_job(db, score_event_id, runtime_job_id)
+            current = _shared.repository.assign_runtime_job(db, score_event_id, runtime_job_id)
 
         event_type = payload["event_type"]
         attempt_count = payload.get("attempt_count") or current.get("attempt_count", 0)
@@ -174,10 +173,10 @@ class WorkerCallbackServiceMixin:
             runtime_job_id=runtime_job_id,
             receipt_id=payload.get("receipt_id"),
         ):
-            return repository.get_review_queue_detail(db, score_event_id)
+            return _shared.repository.get_review_queue_detail(db, score_event_id)
 
         if event_type == "accepted":
-            repository.log_worker_event(
+            _shared.repository.log_worker_event(
                 db,
                 score_event_id=score_event_id,
                 event_type="external_worker_accepted",
@@ -188,13 +187,13 @@ class WorkerCallbackServiceMixin:
                 message="external worker accepted dispatch",
                 event_payload=worker_payload,
             )
-            return repository.get_review_queue_detail(db, score_event_id)
+            return _shared.repository.get_review_queue_detail(db, score_event_id)
 
         if event_type == "processing":
             if current["status"] in {"completed", "failed"}:
                 return current
             processing = MetaAndromedaService._ensure_external_processing_state(db, score_event_id)
-            repository.log_worker_event(
+            _shared.repository.log_worker_event(
                 db,
                 score_event_id=score_event_id,
                 event_type="external_worker_processing",
@@ -214,8 +213,8 @@ class WorkerCallbackServiceMixin:
                 return current
             MetaAndromedaService._ensure_external_processing_state(db, score_event_id)
             normalized_result = MetaAndromedaService._normalize_external_result_payload(payload["result_payload"])
-            completed = repository.mark_score_completed(db, score_event_id, normalized_result)
-            repository.log_worker_event(
+            completed = _shared.repository.mark_score_completed(db, score_event_id, normalized_result)
+            _shared.repository.log_worker_event(
                 db,
                 score_event_id=score_event_id,
                 event_type="external_worker_completed",
@@ -233,9 +232,9 @@ class WorkerCallbackServiceMixin:
                 return current
             processing = MetaAndromedaService._ensure_external_processing_state(db, score_event_id)
             error_message = payload.get("error_message") or "external_worker_failed"
-            if payload.get("retryable") and processing["attempt_count"] < settings.META_ANDROMEDA_SCORE_MAX_ATTEMPTS:
-                queued = repository.requeue_score_event(db, score_event_id, error_message)
-                repository.log_worker_event(
+            if payload.get("retryable") and processing["attempt_count"] < _shared.settings.META_ANDROMEDA_SCORE_MAX_ATTEMPTS:
+                queued = _shared.repository.requeue_score_event(db, score_event_id, error_message)
+                _shared.repository.log_worker_event(
                     db,
                     score_event_id=score_event_id,
                     event_type="external_worker_retry_scheduled",
@@ -251,12 +250,12 @@ class WorkerCallbackServiceMixin:
                     score_event_id=score_event_id,
                     runtime_job_id=queued["runtime_job_id"],
                     delay_seconds=payload.get("retry_delay_seconds")
-                    or settings.META_ANDROMEDA_SCORE_RETRY_DELAY_SECONDS,
+                    or _shared.settings.META_ANDROMEDA_SCORE_RETRY_DELAY_SECONDS,
                     event_type="external_worker_retry_dispatch_requested",
                 )
 
-            failed = repository.mark_score_failed(db, score_event_id, error_message)
-            repository.log_worker_event(
+            failed = _shared.repository.mark_score_failed(db, score_event_id, error_message)
+            _shared.repository.log_worker_event(
                 db,
                 score_event_id=score_event_id,
                 event_type="external_worker_failed",
@@ -267,7 +266,7 @@ class WorkerCallbackServiceMixin:
                 message=error_message,
                 event_payload=worker_payload,
             )
-            repository.create_dead_letter(
+            _shared.repository.create_dead_letter(
                 db,
                 score_event_id=score_event_id,
                 queue_host=queue_host,
@@ -277,7 +276,7 @@ class WorkerCallbackServiceMixin:
                 final_error_message=error_message,
                 dead_letter_payload=worker_payload,
             )
-            repository.log_worker_event(
+            _shared.repository.log_worker_event(
                 db,
                 score_event_id=score_event_id,
                 event_type="external_worker_dead_lettered",
@@ -304,10 +303,10 @@ class WorkerCallbackServiceMixin:
         """
         db = _shared.SessionLocal()
         try:
-            current = repository.mark_score_processing(db, score_event_id)
+            current = _shared.repository.mark_score_processing(db, score_event_id)
             if current is None:
-                return None, repository.get_review_queue_detail(db, score_event_id)
-            repository.log_worker_event(
+                return None, _shared.repository.get_review_queue_detail(db, score_event_id)
+            _shared.repository.log_worker_event(
                 db,
                 score_event_id=score_event_id,
                 event_type="processing_started",
@@ -318,7 +317,7 @@ class WorkerCallbackServiceMixin:
                 message="worker started",
                 event_payload={
                     "queue_host": queue_host,
-                    "max_concurrency": settings.META_ANDROMEDA_SCORE_MAX_CONCURRENCY,
+                    "max_concurrency": _shared.settings.META_ANDROMEDA_SCORE_MAX_CONCURRENCY,
                 },
             )
             return current, None
@@ -338,10 +337,10 @@ class WorkerCallbackServiceMixin:
         """
         db = _shared.SessionLocal()
         try:
-            latest = repository.get_review_queue_detail(db, score_event_id)
-            if latest["attempt_count"] < settings.META_ANDROMEDA_SCORE_MAX_ATTEMPTS:
-                queued = repository.requeue_score_event(db, score_event_id, error_message)
-                repository.log_worker_event(
+            latest = _shared.repository.get_review_queue_detail(db, score_event_id)
+            if latest["attempt_count"] < _shared.settings.META_ANDROMEDA_SCORE_MAX_ATTEMPTS:
+                queued = _shared.repository.requeue_score_event(db, score_event_id, error_message)
+                _shared.repository.log_worker_event(
                     db,
                     score_event_id=score_event_id,
                     event_type="retry_scheduled",
@@ -350,12 +349,12 @@ class WorkerCallbackServiceMixin:
                     status="queued",
                     attempt_count=queued["attempt_count"],
                     message=error_message,
-                    event_payload={"retry_delay_seconds": settings.META_ANDROMEDA_SCORE_RETRY_DELAY_SECONDS},
+                    event_payload={"retry_delay_seconds": _shared.settings.META_ANDROMEDA_SCORE_RETRY_DELAY_SECONDS},
                 )
                 return "retry", queued
 
-            failed = repository.mark_score_failed(db, score_event_id, error_message)
-            repository.log_worker_event(
+            failed = _shared.repository.mark_score_failed(db, score_event_id, error_message)
+            _shared.repository.log_worker_event(
                 db,
                 score_event_id=score_event_id,
                 event_type="failed",
@@ -366,7 +365,7 @@ class WorkerCallbackServiceMixin:
                 message=error_message,
                 event_payload={"queue_host": queue_host},
             )
-            repository.create_dead_letter(
+            _shared.repository.create_dead_letter(
                 db,
                 score_event_id=score_event_id,
                 queue_host=queue_host,
@@ -380,7 +379,7 @@ class WorkerCallbackServiceMixin:
                     "runtime_job_id": failed["runtime_job_id"],
                 },
             )
-            repository.log_worker_event(
+            _shared.repository.log_worker_event(
                 db,
                 score_event_id=score_event_id,
                 event_type="dead_lettered",
@@ -401,8 +400,8 @@ class WorkerCallbackServiceMixin:
         """同步版本：DB 標記評分完成 + 寫入 worker event（純 DB I/O，見 docs/24 Wave 1）。"""
         db = _shared.SessionLocal()
         try:
-            completed = repository.mark_score_completed(db, score_event_id, result)
-            repository.log_worker_event(
+            completed = _shared.repository.mark_score_completed(db, score_event_id, result)
+            _shared.repository.log_worker_event(
                 db,
                 score_event_id=score_event_id,
                 event_type="completed",
@@ -420,28 +419,28 @@ class WorkerCallbackServiceMixin:
 
     @staticmethod
     async def process_score_event(score_event_id: str, queue_host: str = "unknown") -> dict:
-        async with _score_event_semaphore.acquire():
-            current, not_found_detail = await asyncio.to_thread(
+        async with _shared._score_event_semaphore.acquire():
+            current, not_found_detail = await _shared.asyncio.to_thread(
                 MetaAndromedaService._mark_score_processing_sync, score_event_id, queue_host
             )
             if current is None:
                 return not_found_detail
 
             try:
-                result = await asyncio.wait_for(
-                    runtime_adapter.generate_score_result(current),
-                    timeout=settings.META_ANDROMEDA_SCORE_TIMEOUT_SECONDS,
+                result = await _shared.asyncio.wait_for(
+                    _shared.runtime_adapter.generate_score_result(current),
+                    timeout=_shared.settings.META_ANDROMEDA_SCORE_TIMEOUT_SECONDS,
                 )
-            except asyncio.TimeoutError:
-                error_message = f"score runtime timed out after {settings.META_ANDROMEDA_SCORE_TIMEOUT_SECONDS:.2f}s"
+            except _shared.asyncio.TimeoutError:
+                error_message = f"score runtime timed out after {_shared.settings.META_ANDROMEDA_SCORE_TIMEOUT_SECONDS:.2f}s"
             except Exception as exc:
                 error_message = str(exc)
             else:
-                return await asyncio.to_thread(
+                return await _shared.asyncio.to_thread(
                     MetaAndromedaService._complete_score_event_sync, score_event_id, queue_host, result
                 )
 
-            kind, payload = await asyncio.to_thread(
+            kind, payload = await _shared.asyncio.to_thread(
                 MetaAndromedaService._prepare_score_retry_or_failure,
                 score_event_id,
                 queue_host,
@@ -457,7 +456,7 @@ class WorkerCallbackServiceMixin:
                     db,
                     score_event_id=score_event_id,
                     runtime_job_id=queued["runtime_job_id"],
-                    delay_seconds=settings.META_ANDROMEDA_SCORE_RETRY_DELAY_SECONDS,
+                    delay_seconds=_shared.settings.META_ANDROMEDA_SCORE_RETRY_DELAY_SECONDS,
                     event_type="retry_dispatch_requested",
                 )
             finally:

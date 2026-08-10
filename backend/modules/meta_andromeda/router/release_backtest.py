@@ -2,31 +2,31 @@
 
 from __future__ import annotations
 
-from ._shared import *
+from . import _shared
 
-router = APIRouter()
+router = _shared.APIRouter()
 
 
-@router.get("/release/overview", response_model=ReleaseOverviewResponse)
+@router.get("/release/overview", response_model=_shared.ReleaseOverviewResponse)
 async def release_overview(
-    _user=Depends(get_current_meta_andromeda_user),
-    _access: bool = Depends(require_meta_andromeda_module),
-    db=Depends(get_db),
+    _user=_shared.Depends(_shared.get_current_meta_andromeda_user),
+    _access: bool = _shared.Depends(_shared.require_meta_andromeda_module),
+    db=_shared.Depends(_shared.get_db),
 ):
     """Read-only release overview endpoint for the fifth integration slice."""
-    return MetaAndromedaService.get_release_overview(db)
+    return _shared.MetaAndromedaService.get_release_overview(db)
 
 
-@router.post("/backtest/runs", response_model=BacktestRunResponse, status_code=status.HTTP_201_CREATED)
+@router.post("/backtest/runs", response_model=_shared.BacktestRunResponse, status_code=_shared.status.HTTP_201_CREATED)
 async def create_backtest_run(
-    payload: BacktestRunCreateRequest,
-    _user=Depends(get_current_meta_andromeda_user),
-    _access: bool = Depends(require_meta_andromeda_operate),
-    db=Depends(get_db),
+    payload: _shared.BacktestRunCreateRequest,
+    _user=_shared.Depends(_shared.get_current_meta_andromeda_user),
+    _access: bool = _shared.Depends(_shared.require_meta_andromeda_operate),
+    db=_shared.Depends(_shared.get_db),
 ):
     """Create an isolated model backtest run. Backtest score events are marked
     with scoring_purpose=backtest and excluded from live review/monitoring/release metrics."""
-    return MetaAndromedaService.create_backtest_run(
+    return _shared.MetaAndromedaService.create_backtest_run(
         db,
         provider_model=payload.provider_model,
         sample_limit=payload.sample_limit,
@@ -34,38 +34,38 @@ async def create_backtest_run(
     )
 
 
-@router.get("/backtest/runs", response_model=BacktestRunListResponse)
+@router.get("/backtest/runs", response_model=_shared.BacktestRunListResponse)
 async def list_backtest_runs(
-    _user=Depends(get_current_meta_andromeda_user),
-    _access: bool = Depends(require_meta_andromeda_release),
-    db=Depends(get_db),
-    limit: int = Query(default=20, ge=1, le=100),
+    _user=_shared.Depends(_shared.get_current_meta_andromeda_user),
+    _access: bool = _shared.Depends(_shared.require_meta_andromeda_release),
+    db=_shared.Depends(_shared.get_db),
+    limit: int = _shared.Query(default=20, ge=1, le=100),
 ):
-    return MetaAndromedaService.list_backtest_runs(db, limit=limit)
+    return _shared.MetaAndromedaService.list_backtest_runs(db, limit=limit)
 
 
-@router.get("/backtest/runs/{run_id}", response_model=BacktestRunResponse)
+@router.get("/backtest/runs/{run_id}", response_model=_shared.BacktestRunResponse)
 async def get_backtest_run(
     run_id: str,
-    _user=Depends(get_current_meta_andromeda_user),
-    _access: bool = Depends(require_meta_andromeda_release),
-    db=Depends(get_db),
+    _user=_shared.Depends(_shared.get_current_meta_andromeda_user),
+    _access: bool = _shared.Depends(_shared.require_meta_andromeda_release),
+    db=_shared.Depends(_shared.get_db),
 ):
     try:
-        return MetaAndromedaService.get_backtest_run(db, run_id)
+        return _shared.MetaAndromedaService.get_backtest_run(db, run_id)
     except KeyError as exc:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
+        raise _shared.HTTPException(
+            status_code=_shared.status.HTTP_404_NOT_FOUND,
             detail=f"Backtest run not found: {run_id}",
         ) from exc
 
 
-@router.post("/release/candidates", response_model=ReleaseCandidateResponse, status_code=status.HTTP_201_CREATED)
+@router.post("/release/candidates", response_model=_shared.ReleaseCandidateResponse, status_code=_shared.status.HTTP_201_CREATED)
 async def create_release_candidate(
-    payload: ReleaseCandidateCreateRequest,
-    user=Depends(get_current_meta_andromeda_user),
-    _access: bool = Depends(require_meta_andromeda_release),
-    db=Depends(get_db),
+    payload: _shared.ReleaseCandidateCreateRequest,
+    user=_shared.Depends(_shared.get_current_meta_andromeda_user),
+    _access: bool = _shared.Depends(_shared.require_meta_andromeda_release),
+    db=_shared.Depends(_shared.get_db),
 ):
     """新增一筆候選版本，讓正式評分模型也能像回測模型一樣自由指定要試哪個
     model_version——過去唯一能建立 candidate 的地方是一次性種子資料，approve/
@@ -83,21 +83,21 @@ async def create_release_candidate(
             note=payload.note,
         )
     except ReleaseCandidateExistsError as exc:
-        raise HTTPException(
-            status_code=status.HTTP_409_CONFLICT,
+        raise _shared.HTTPException(
+            status_code=_shared.status.HTTP_409_CONFLICT,
             detail=str(exc),
         ) from exc
 
 
-@router.post("/release/approve", response_model=ReleaseActionResponse)
+@router.post("/release/approve", response_model=_shared.ReleaseActionResponse)
 async def approve_release(
-    payload: ReleaseActionRequest,
-    user=Depends(get_current_meta_andromeda_user),
-    _access: bool = Depends(require_meta_andromeda_release),
-    db=Depends(get_db),
+    payload: _shared.ReleaseActionRequest,
+    user=_shared.Depends(_shared.get_current_meta_andromeda_user),
+    _access: bool = _shared.Depends(_shared.require_meta_andromeda_release),
+    db=_shared.Depends(_shared.get_db),
 ):
     try:
-        return MetaAndromedaService.perform_release_action(
+        return _shared.MetaAndromedaService.perform_release_action(
             db,
             action="approve",
             model_version=payload.model_version,
@@ -106,29 +106,29 @@ async def approve_release(
             force=payload.force,
         )
     except KeyError as exc:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
+        raise _shared.HTTPException(
+            status_code=_shared.status.HTTP_404_NOT_FOUND,
             detail=f"Release candidate not found: {payload.model_version}",
         ) from exc
     except Exception as exc:
         from ..repository import ReleaseGateError
         if isinstance(exc, ReleaseGateError):
-            raise HTTPException(
+            raise _shared.HTTPException(
                 status_code=exc.status_code,
                 detail={"code": exc.code, "message": exc.message, "details": exc.details},
             ) from exc
         raise
 
 
-@router.post("/release/reject", response_model=ReleaseActionResponse)
+@router.post("/release/reject", response_model=_shared.ReleaseActionResponse)
 async def reject_release(
-    payload: ReleaseActionRequest,
-    user=Depends(get_current_meta_andromeda_user),
-    _access: bool = Depends(require_meta_andromeda_release),
-    db=Depends(get_db),
+    payload: _shared.ReleaseActionRequest,
+    user=_shared.Depends(_shared.get_current_meta_andromeda_user),
+    _access: bool = _shared.Depends(_shared.require_meta_andromeda_release),
+    db=_shared.Depends(_shared.get_db),
 ):
     try:
-        return MetaAndromedaService.perform_release_action(
+        return _shared.MetaAndromedaService.perform_release_action(
             db,
             action="reject",
             model_version=payload.model_version,
@@ -136,20 +136,20 @@ async def reject_release(
             note=payload.note,
         )
     except KeyError as exc:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
+        raise _shared.HTTPException(
+            status_code=_shared.status.HTTP_404_NOT_FOUND,
             detail=f"Release candidate not found: {payload.model_version}",
         ) from exc
 
 
-@router.post("/release/rollback", response_model=ReleaseActionResponse)
+@router.post("/release/rollback", response_model=_shared.ReleaseActionResponse)
 async def rollback_release(
-    payload: ReleaseActionRequest,
-    user=Depends(get_current_meta_andromeda_user),
-    _access: bool = Depends(require_meta_andromeda_release),
-    db=Depends(get_db),
+    payload: _shared.ReleaseActionRequest,
+    user=_shared.Depends(_shared.get_current_meta_andromeda_user),
+    _access: bool = _shared.Depends(_shared.require_meta_andromeda_release),
+    db=_shared.Depends(_shared.get_db),
 ):
-    return MetaAndromedaService.perform_release_action(
+    return _shared.MetaAndromedaService.perform_release_action(
         db,
         action="rollback",
         model_version=payload.model_version,
@@ -160,33 +160,33 @@ async def rollback_release(
 
 @router.post(
     "/release/{model_version}/refresh-metrics",
-    response_model=ReleaseMetricsRefreshResponse,
+    response_model=_shared.ReleaseMetricsRefreshResponse,
 )
 async def refresh_release_metrics(
     model_version: str,
-    _user=Depends(get_current_meta_andromeda_user),
-    _access: bool = Depends(require_meta_andromeda_release),
-    db=Depends(get_db),
+    _user=_shared.Depends(_shared.get_current_meta_andromeda_user),
+    _access: bool = _shared.Depends(_shared.require_meta_andromeda_release),
+    db=_shared.Depends(_shared.get_db),
 ):
     """Compute real pairwise ranking accuracy / mean band error for this model_version
     from drift-matched history and write it onto any release record referencing it,
     clearing its is_demo_data flag once enough data exists."""
-    return MetaAndromedaService.refresh_release_metrics(db, model_version)
+    return _shared.MetaAndromedaService.refresh_release_metrics(db, model_version)
 
 
 @router.get(
     "/release/{model_version}/metric-pairs",
-    response_model=ReleaseMetricPairsResponse,
+    response_model=_shared.ReleaseMetricPairsResponse,
 )
 async def list_release_metric_pairs(
     model_version: str,
-    sort: str = Query(default="mismatch"),
-    limit: int = Query(default=50, ge=1, le=500),
-    _user=Depends(get_current_meta_andromeda_user),
-    _access: bool = Depends(require_meta_andromeda_release),
-    db=Depends(get_db),
+    sort: str = _shared.Query(default="mismatch"),
+    limit: int = _shared.Query(default=50, ge=1, le=500),
+    _user=_shared.Depends(_shared.get_current_meta_andromeda_user),
+    _access: bool = _shared.Depends(_shared.require_meta_andromeda_release),
+    db=_shared.Depends(_shared.get_db),
 ):
     """配對明細（docs/32 任務 1.1）：release 指標背後的逐筆「觀測素材 × AI 評分」
     對照，與 refresh-metrics 的 sample_count 同一份配對邏輯。預設 mismatch 排序
     讓「高分低效」浮最上面，供人工歸因抽樣。"""
-    return MetaAndromedaService.list_release_metric_pairs(db, model_version, sort=sort, limit=limit)
+    return _shared.MetaAndromedaService.list_release_metric_pairs(db, model_version, sort=sort, limit=limit)

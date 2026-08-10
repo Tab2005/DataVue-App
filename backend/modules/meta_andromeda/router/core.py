@@ -2,45 +2,45 @@
 
 from __future__ import annotations
 
-from ._shared import *
+from . import _shared
 
-router = APIRouter()
+router = _shared.APIRouter()
 
 
-@router.get("/ping", response_model=PingResponse)
+@router.get("/ping", response_model=_shared.PingResponse)
 async def ping(
-    _user=Depends(get_current_meta_andromeda_user),
-    _access: bool = Depends(require_meta_andromeda_module),
+    _user=_shared.Depends(_shared.get_current_meta_andromeda_user),
+    _access: bool = _shared.Depends(_shared.require_meta_andromeda_module),
 ):
     """Minimal health endpoint for the first integration slice."""
-    return MetaAndromedaService.get_ping_payload()
+    return _shared.MetaAndromedaService.get_ping_payload()
 
 
-@router.get("/overview", response_model=OverviewResponse)
+@router.get("/overview", response_model=_shared.OverviewResponse)
 async def overview(
-    _user=Depends(get_current_meta_andromeda_user),
-    _access: bool = Depends(require_meta_andromeda_module),
-    db=Depends(get_db),
+    _user=_shared.Depends(_shared.get_current_meta_andromeda_user),
+    _access: bool = _shared.Depends(_shared.require_meta_andromeda_module),
+    db=_shared.Depends(_shared.get_db),
 ):
     """Read-only overview endpoint for the second integration slice."""
-    return MetaAndromedaService.get_overview_payload()
+    return _shared.MetaAndromedaService.get_overview_payload()
 
 
-@router.get("/runtime-health", response_model=RuntimeHealthResponse, include_in_schema=False)
-@router.get("/runtime/health", response_model=RuntimeHealthResponse)
+@router.get("/runtime-health", response_model=_shared.RuntimeHealthResponse, include_in_schema=False)
+@router.get("/runtime/health", response_model=_shared.RuntimeHealthResponse)
 async def runtime_health(
-    _user=Depends(get_current_meta_andromeda_user),
-    _access: bool = Depends(require_meta_andromeda_module),
-    db=Depends(get_db),
+    _user=_shared.Depends(_shared.get_current_meta_andromeda_user),
+    _access: bool = _shared.Depends(_shared.require_meta_andromeda_module),
+    db=_shared.Depends(_shared.get_db),
 ):
     """Shared-runtime readiness summary for Meta Andromeda on the current host."""
-    return MetaAndromedaService.get_runtime_health(db)
+    return _shared.MetaAndromedaService.get_runtime_health(db)
 
 
-@router.get("/runtime/ai-ready", response_model=AiReadyResponse)
+@router.get("/runtime/ai-ready", response_model=_shared.AiReadyResponse)
 async def runtime_ai_ready(
-    _user=Depends(get_current_meta_andromeda_user),
-    _access: bool = Depends(require_meta_andromeda_module),
+    _user=_shared.Depends(_shared.get_current_meta_andromeda_user),
+    _access: bool = _shared.Depends(_shared.require_meta_andromeda_module),
 ):
     """輕量連線確認：檢查 AI 評分設定是否正常，不實際呼叫 AI 模型。"""
     from core.config import settings
@@ -61,7 +61,7 @@ async def runtime_ai_ready(
     api_key_configured = bool(db_key) or bool(settings.OPENROUTER_API_KEY)
 
     if provider == "heuristic":
-        return AiReadyResponse(
+        return _shared.AiReadyResponse(
             ready=False,
             provider="heuristic",
             api_key_configured=False,
@@ -71,14 +71,14 @@ async def runtime_ai_ready(
 
     if provider == "openrouter" or provider == "auto":
         if not api_key_configured:
-            return AiReadyResponse(
+            return _shared.AiReadyResponse(
                 ready=False,
                 provider=provider,
                 api_key_configured=False,
                 allow_fallback=allow_fallback,
                 warning="未設定 OpenRouter API Key，批次評分將使用啟發式備用模式，評分準確度較低。",
             )
-        return AiReadyResponse(
+        return _shared.AiReadyResponse(
             ready=True,
             provider=provider,
             api_key_configured=True,
@@ -86,7 +86,7 @@ async def runtime_ai_ready(
             warning=None,
         )
 
-    return AiReadyResponse(
+    return _shared.AiReadyResponse(
         ready=False,
         provider=provider,
         api_key_configured=api_key_configured,

@@ -1,6 +1,7 @@
 """Meta Andromeda service facade."""
 
-from ._shared import *  # noqa: F403
+from ._shared import MetaAndromedaValidationError, queue_host_adapter
+
 from . import admin_ops as _admin_ops
 from . import assets as _assets
 from . import observation_import as _observation_import
@@ -27,4 +28,4 @@ for _module in (_admin_ops, _assets, _observation_import, _scoring, _worker_call
     _module.MetaAndromedaService = MetaAndromedaService
 
 
-__all__ = ["MetaAndromedaService", "MetaAndromedaValidationError"]
+__all__ = ["MetaAndromedaService", "MetaAndromedaValidationError", "queue_host_adapter"]

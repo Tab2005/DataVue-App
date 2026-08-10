@@ -1,6 +1,6 @@
 """Pure statistics helpers for Meta Andromeda repository."""
 
-from ._shared import *  # noqa: F401,F403
+from . import _shared
 
 __all__ = [
     "_window_days",
@@ -16,8 +16,8 @@ __all__ = [
 
 def _window_days(start_str: str | None, end_str: str | None) -> int | None:
     try:
-        start = date.fromisoformat((start_str or "")[:10])
-        end = date.fromisoformat((end_str or "")[:10])
+        start = _shared.date.fromisoformat((start_str or "")[:10])
+        end = _shared.date.fromisoformat((end_str or "")[:10])
         return (end - start).days + 1
     except (TypeError, ValueError):
         return None

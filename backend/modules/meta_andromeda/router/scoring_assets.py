@@ -2,20 +2,20 @@
 
 from __future__ import annotations
 
-from ._shared import *
+from . import _shared
 
-router = APIRouter()
+router = _shared.APIRouter()
 
 
 @router.get("/assets/preview")
 async def preview_asset(
-    uri: str = Query(...),
-    db=Depends(get_db),
+    uri: str = _shared.Query(...),
+    db=_shared.Depends(_shared.get_db),
 ):
     """
     提供素材的即時預覽與下載路由，安全地代理並提供檔案給前端。
     """
-    asset = MetaAndromedaService.get_asset_by_uri(db, uri)
+    asset = _shared.MetaAndromedaService.get_asset_by_uri(db, uri)
     if not asset:
         from database.models.meta_andromeda import MetaAndromedaAsset
         asset = db.query(MetaAndromedaAsset).filter(
@@ -25,8 +25,8 @@ async def preview_asset(
         ).first()
 
     if not asset:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
+        raise _shared.HTTPException(
+            status_code=_shared.status.HTTP_404_NOT_FOUND,
             detail=f"Asset not found for URI: {uri}",
         )
 
@@ -41,35 +41,35 @@ async def preview_asset(
     db.close()
 
     if storage_backend == "filesystem":
-        if settings.SERVICE_ROLE == "all":
-            return build_asset_response(asset)
+        if _shared.settings.SERVICE_ROLE == "all":
+            return _shared.build_asset_response(asset)
         try:
-            return await _facade_attr("proxy_asset_preview_response", proxy_asset_preview_response)(uri)
-        except MetaAndromedaInternalWorkerGatewayError as exc:
-            raise HTTPException(status_code=exc.status_code, detail=exc.detail) from exc
+            return await _shared._facade_attr("proxy_asset_preview_response", _shared.proxy_asset_preview_response)(uri)
+        except _shared.MetaAndromedaInternalWorkerGatewayError as exc:
+            raise _shared.HTTPException(status_code=exc.status_code, detail=exc.detail) from exc
 
     if storage_backend == "s3_compatible":
-        return build_asset_response(asset)
+        return _shared.build_asset_response(asset)
 
-    raise HTTPException(
-        status_code=status.HTTP_400_BAD_REQUEST,
+    raise _shared.HTTPException(
+        status_code=_shared.status.HTTP_400_BAD_REQUEST,
         detail=f"Unsupported storage backend: {storage_backend}",
     )
 
 
-@router.post("/assets:upload", response_model=AssetUploadResponse, status_code=status.HTTP_201_CREATED)
+@router.post("/assets:upload", response_model=_shared.AssetUploadResponse, status_code=_shared.status.HTTP_201_CREATED)
 async def upload_asset(
-    asset_type: str = Form(...),
-    source_filename: str = Form(...),
-    file: UploadFile = File(...),
-    user=Depends(get_current_meta_andromeda_user),
-    _access: bool = Depends(require_meta_andromeda_operate),
-    db=Depends(get_db),
+    asset_type: str = _shared.Form(...),
+    source_filename: str = _shared.Form(...),
+    file: _shared.UploadFile = _shared.File(...),
+    user=_shared.Depends(_shared.get_current_meta_andromeda_user),
+    _access: bool = _shared.Depends(_shared.require_meta_andromeda_operate),
+    db=_shared.Depends(_shared.get_db),
 ):
     file_bytes = await file.read()
     try:
-        if settings.SERVICE_ROLE == "all":
-            return MetaAndromedaService.upload_asset(
+        if _shared.settings.SERVICE_ROLE == "all":
+            return _shared.MetaAndromedaService.upload_asset(
                 db,
                 file_bytes=file_bytes,
                 asset_type=asset_type,
@@ -84,32 +84,32 @@ async def upload_asset(
         # 跟 preview_asset 是同一個成因（見該函式的註解與 2026-08-07 事故）。
         uploaded_by = getattr(user, "id", None)
         db.close()
-        return await _facade_attr("proxy_asset_upload_response", proxy_asset_upload_response)(
+        return await _shared._facade_attr("proxy_asset_upload_response", _shared.proxy_asset_upload_response)(
             asset_type=asset_type,
             source_filename=source_filename,
             file_bytes=file_bytes,
             uploaded_by=uploaded_by,
             content_type=file.content_type,
         )
-    except MetaAndromedaValidationError as exc:
-        raise HTTPException(status_code=exc.status_code, detail=exc.detail) from exc
+    except _shared.MetaAndromedaValidationError as exc:
+        raise _shared.HTTPException(status_code=exc.status_code, detail=exc.detail) from exc
 
 
-@router.post("/scores", response_model=ReviewQueueDetailResponse, status_code=status.HTTP_201_CREATED)
+@router.post("/scores", response_model=_shared.ReviewQueueDetailResponse, status_code=_shared.status.HTTP_201_CREATED)
 async def create_score(
-    payload: ScoreSubmitRequest,
-    _user=Depends(get_current_meta_andromeda_user),
-    _access: bool = Depends(require_meta_andromeda_operate),
-    db=Depends(get_db),
+    payload: _shared.ScoreSubmitRequest,
+    _user=_shared.Depends(_shared.get_current_meta_andromeda_user),
+    _access: bool = _shared.Depends(_shared.require_meta_andromeda_operate),
+    db=_shared.Depends(_shared.get_db),
 ):
-    created = MetaAndromedaService.create_score_event(db, payload.model_dump())
-    runtime_job_id = get_meta_andromeda_score_job_id(created["score_event_id"])
-    queued = MetaAndromedaService.assign_score_runtime_job(
+    created = _shared.MetaAndromedaService.create_score_event(db, payload.model_dump())
+    runtime_job_id = _shared.get_meta_andromeda_score_job_id(created["score_event_id"])
+    queued = _shared.MetaAndromedaService.assign_score_runtime_job(
         db,
         created["score_event_id"],
         runtime_job_id,
     )
-    return MetaAndromedaService.enqueue_score_event(
+    return _shared.MetaAndromedaService.enqueue_score_event(
         db,
         score_event_id=created["score_event_id"],
         runtime_job_id=runtime_job_id,
@@ -118,38 +118,38 @@ async def create_score(
 
 @router.post(
     "/worker/score-events/{score_event_id}/callbacks",
-    response_model=ExternalWorkerCallbackResponse,
+    response_model=_shared.ExternalWorkerCallbackResponse,
 )
 async def external_worker_callback(
     score_event_id: str,
-    payload: ExternalWorkerCallbackRequest,
-    request: Request,
-    x_meta_andromeda_worker_signature: str | None = Header(default=None, alias="X-Meta-Andromeda-Worker-Signature"),
-    x_meta_andromeda_worker_token: str | None = Header(default=None, alias="X-Meta-Andromeda-Worker-Token"),
-    db=Depends(get_db),
+    payload: _shared.ExternalWorkerCallbackRequest,
+    request: _shared.Request,
+    x_meta_andromeda_worker_signature: str | None = _shared.Header(default=None, alias="X-Meta-Andromeda-Worker-Signature"),
+    x_meta_andromeda_worker_token: str | None = _shared.Header(default=None, alias="X-Meta-Andromeda-Worker-Token"),
+    db=_shared.Depends(_shared.get_db),
 ):
     try:
-        MetaAndromedaService.verify_external_worker_callback(
+        _shared.MetaAndromedaService.verify_external_worker_callback(
             await request.body(),
             signature=x_meta_andromeda_worker_signature,
             worker_token=x_meta_andromeda_worker_token,
         )
     except PermissionError as exc:
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail=str(exc)) from exc
+        raise _shared.HTTPException(status_code=_shared.status.HTTP_401_UNAUTHORIZED, detail=str(exc)) from exc
 
     try:
-        updated = MetaAndromedaService.handle_external_worker_callback(
+        updated = _shared.MetaAndromedaService.handle_external_worker_callback(
             db,
             score_event_id=score_event_id,
             payload=payload.model_dump(),
         )
     except KeyError as exc:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
+        raise _shared.HTTPException(
+            status_code=_shared.status.HTTP_404_NOT_FOUND,
             detail=f"Score event not found: {score_event_id}",
         ) from exc
     except ValueError as exc:
-        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(exc)) from exc
+        raise _shared.HTTPException(status_code=_shared.status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(exc)) from exc
 
     return {
         "accepted": True,
@@ -160,52 +160,52 @@ async def external_worker_callback(
     }
 
 
-@router.get("/scores/{score_event_id}", response_model=ReviewQueueDetailResponse)
+@router.get("/scores/{score_event_id}", response_model=_shared.ReviewQueueDetailResponse)
 async def get_score(
     score_event_id: str,
-    _user=Depends(get_current_meta_andromeda_user),
-    _access: bool = Depends(require_meta_andromeda_module),
-    db=Depends(get_db),
+    _user=_shared.Depends(_shared.get_current_meta_andromeda_user),
+    _access: bool = _shared.Depends(_shared.require_meta_andromeda_module),
+    db=_shared.Depends(_shared.get_db),
 ):
     try:
-        return MetaAndromedaService.get_score_detail(db, score_event_id)
+        return _shared.MetaAndromedaService.get_score_detail(db, score_event_id)
     except KeyError as exc:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
+        raise _shared.HTTPException(
+            status_code=_shared.status.HTTP_404_NOT_FOUND,
             detail=f"Score event not found: {score_event_id}",
         ) from exc
 
 
-@router.get("/scores/{score_event_id}/feedback", response_model=FeedbackListResponse)
+@router.get("/scores/{score_event_id}/feedback", response_model=_shared.FeedbackListResponse)
 async def get_feedback(
     score_event_id: str,
-    _user=Depends(get_current_meta_andromeda_user),
-    _access: bool = Depends(require_meta_andromeda_module),
-    db=Depends(get_db),
+    _user=_shared.Depends(_shared.get_current_meta_andromeda_user),
+    _access: bool = _shared.Depends(_shared.require_meta_andromeda_module),
+    db=_shared.Depends(_shared.get_db),
 ):
     try:
-        return MetaAndromedaService.list_feedback(db, score_event_id)
+        return _shared.MetaAndromedaService.list_feedback(db, score_event_id)
     except KeyError as exc:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
+        raise _shared.HTTPException(
+            status_code=_shared.status.HTTP_404_NOT_FOUND,
             detail=f"Score event not found: {score_event_id}",
         ) from exc
 
 
 @router.post(
     "/scores/{score_event_id}/feedback",
-    response_model=FeedbackEntryResponse,
-    status_code=status.HTTP_201_CREATED,
+    response_model=_shared.FeedbackEntryResponse,
+    status_code=_shared.status.HTTP_201_CREATED,
 )
 async def submit_feedback(
     score_event_id: str,
-    payload: FeedbackSubmitRequest,
-    user=Depends(get_current_meta_andromeda_user),
-    _access: bool = Depends(require_meta_andromeda_feedback),
-    db=Depends(get_db),
+    payload: _shared.FeedbackSubmitRequest,
+    user=_shared.Depends(_shared.get_current_meta_andromeda_user),
+    _access: bool = _shared.Depends(_shared.require_meta_andromeda_feedback),
+    db=_shared.Depends(_shared.get_db),
 ):
     try:
-        return MetaAndromedaService.submit_feedback(
+        return _shared.MetaAndromedaService.submit_feedback(
             db,
             score_event_id=score_event_id,
             reviewer_id=payload.reviewer_id or getattr(user, "email", None) or "datavue_user",
@@ -214,7 +214,7 @@ async def submit_feedback(
             comment=payload.comment,
         )
     except KeyError as exc:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
+        raise _shared.HTTPException(
+            status_code=_shared.status.HTTP_404_NOT_FOUND,
             detail=f"Score event not found: {score_event_id}",
         ) from exc

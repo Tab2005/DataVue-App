@@ -1,12 +1,10 @@
 """Monitoring repository operations."""
 
-from ._shared import *  # noqa: F401,F403
-from ._stats import *  # noqa: F401,F403
-from .release_metrics import *  # noqa: F401,F403
+from . import _shared, _stats
 
 class MonitoringMixin:
     @staticmethod
-    def _worker_event_to_dict(event: MetaAndromedaWorkerEvent) -> dict:
+    def _worker_event_to_dict(event: _shared.MetaAndromedaWorkerEvent) -> dict:
         return {
             "worker_event_id": event.id,
             "score_event_id": event.score_event_id,
@@ -16,12 +14,12 @@ class MonitoringMixin:
             "status": event.status,
             "attempt_count": event.attempt_count,
             "message": event.message,
-            "event_payload": deepcopy(event.event_payload or {}),
+            "event_payload": _shared.deepcopy(event.event_payload or {}),
             "created_at": event.created_at.isoformat() if event.created_at else None,
         }
 
     @staticmethod
-    def _dead_letter_to_dict(dead_letter: MetaAndromedaDeadLetter) -> dict:
+    def _dead_letter_to_dict(dead_letter: _shared.MetaAndromedaDeadLetter) -> dict:
         return {
             "dead_letter_id": dead_letter.id,
             "score_event_id": dead_letter.score_event_id,
@@ -30,13 +28,13 @@ class MonitoringMixin:
             "final_error_message": dead_letter.final_error_message,
             "failure_stage": dead_letter.failure_stage,
             "attempt_count": dead_letter.attempt_count,
-            "dead_letter_payload": deepcopy(dead_letter.dead_letter_payload or {}),
+            "dead_letter_payload": _shared.deepcopy(dead_letter.dead_letter_payload or {}),
             "created_at": dead_letter.created_at.isoformat() if dead_letter.created_at else None,
         }
 
-    def get_monitoring_summary(self, db: Session):
+    def get_monitoring_summary(self, db: _shared.Session):
         score_rows = [
-            row for row in db.query(MetaAndromedaScoreEvent).all()
+            row for row in db.query(_shared.MetaAndromedaScoreEvent).all()
             if (row.lineage or {}).get("scoring_purpose") != "backtest"
         ]
         total = len(score_rows)
@@ -45,40 +43,40 @@ class MonitoringMixin:
         failed = sum(1 for row in score_rows if row.status == "failed")
         retrying = sum(1 for row in score_rows if row.attempt_count > 1)
         completed = len(completed_rows)
-        observed_total = db.query(MetaAndromedaObservedCreative).count()
+        observed_total = db.query(_shared.MetaAndromedaObservedCreative).count()
         observed_with_asset = (
-            db.query(MetaAndromedaObservedCreative)
+            db.query(_shared.MetaAndromedaObservedCreative)
             .filter(
-                (MetaAndromedaObservedCreative.asset_id.isnot(None))
-                | (MetaAndromedaObservedCreative.asset_uri.isnot(None))
+                (_shared.MetaAndromedaObservedCreative.asset_id.isnot(None))
+                | (_shared.MetaAndromedaObservedCreative.asset_uri.isnot(None))
             )
             .count()
         )
-        feedback_events = db.query(MetaAndromedaFeedbackEvent).count()
+        feedback_events = db.query(_shared.MetaAndromedaFeedbackEvent).count()
         worker_events = (
-            db.query(MetaAndromedaWorkerEvent)
-            .order_by(MetaAndromedaWorkerEvent.created_at.desc())
+            db.query(_shared.MetaAndromedaWorkerEvent)
+            .order_by(_shared.MetaAndromedaWorkerEvent.created_at.desc())
             .limit(10)
             .all()
         )
         dead_letters = (
-            db.query(MetaAndromedaDeadLetter)
-            .order_by(MetaAndromedaDeadLetter.created_at.desc())
+            db.query(_shared.MetaAndromedaDeadLetter)
+            .order_by(_shared.MetaAndromedaDeadLetter.created_at.desc())
             .limit(5)
             .all()
         )
         drift_reports = (
-            db.query(MetaAndromedaDriftReport)
-            .order_by(MetaAndromedaDriftReport.created_at.desc())
+            db.query(_shared.MetaAndromedaDriftReport)
+            .order_by(_shared.MetaAndromedaDriftReport.created_at.desc())
             .limit(5)
             .all()
         )
         latest_calibration = (
-            db.query(MetaAndromedaCalibrationDataset)
-            .order_by(MetaAndromedaCalibrationDataset.created_at.desc())
+            db.query(_shared.MetaAndromedaCalibrationDataset)
+            .order_by(_shared.MetaAndromedaCalibrationDataset.created_at.desc())
             .first()
         )
-        def _to_naive(dt: datetime) -> datetime | None:
+        def _to_naive(dt: _shared.datetime) -> _shared.datetime | None:
             if dt is None:
                 return None
             if dt.tzinfo is not None:
@@ -87,7 +85,7 @@ class MonitoringMixin:
 
         latency_samples = []
         queue_markers = []
-        now = datetime.now(timezone.utc).replace(tzinfo=None)
+        now = _shared.datetime.now(_shared.timezone.utc).replace(tzinfo=None)
         for row in score_rows:
             queued_at_naive = _to_naive(row.queued_at)
             started_at_naive = _to_naive(row.started_at)
@@ -112,7 +110,7 @@ class MonitoringMixin:
 
         latency_samples.sort()
         if latency_samples:
-            p95_index = max(0, min(len(latency_samples) - 1, math.ceil(len(latency_samples) * 0.95) - 1))
+            p95_index = max(0, min(len(latency_samples) - 1, _shared.math.ceil(len(latency_samples) * 0.95) - 1))
             latency_metrics = {
                 "avg": int(sum(latency_samples) / len(latency_samples)),
                 "p95": latency_samples[p95_index],
@@ -142,7 +140,7 @@ class MonitoringMixin:
             if _latest_state and _prev_state and _latest_state != _prev_state:
                 _latest_label = _latest_diag.get("label", _latest_state)
                 _prev_label   = _prev_diag.get("label", _prev_state)
-                _transition_msg = _TRANSITION_MESSAGES.get(
+                _transition_msg = _stats._TRANSITION_MESSAGES.get(
                     (_prev_state, _latest_state),
                     "投放環境象限發生切換，請留意是否需要調整投放策略。",
                 )
@@ -153,7 +151,7 @@ class MonitoringMixin:
                     "from_state": _prev_state,
                     "to_state": _latest_state,
                 })
-        latest_drift_payload = deepcopy(drift_reports[0].report_payload) if drift_reports else {}
+        latest_drift_payload = _shared.deepcopy(drift_reports[0].report_payload) if drift_reports else {}
         latest_matched = int(latest_drift_payload.get("total_matched") or 0)
         latest_observed = int(latest_drift_payload.get("total_observed") or 0)
         latest_calibration_candidates = int(latest_drift_payload.get("calibration_candidate_total") or 0)
@@ -181,12 +179,12 @@ class MonitoringMixin:
             "worker_host": {
                 "recent_events": [self._worker_event_to_dict(item) for item in worker_events],
                 "dead_letters": [self._dead_letter_to_dict(item) for item in dead_letters],
-                "dead_letter_count": db.query(MetaAndromedaDeadLetter).count(),
+                "dead_letter_count": db.query(_shared.MetaAndromedaDeadLetter).count(),
             },
             "prediction_distribution": {
-                "high": db.query(MetaAndromedaScoreEvent).filter(MetaAndromedaScoreEvent.roas_band == "high").count(),
-                "mid": db.query(MetaAndromedaScoreEvent).filter(MetaAndromedaScoreEvent.roas_band == "mid").count(),
-                "low": db.query(MetaAndromedaScoreEvent).filter(MetaAndromedaScoreEvent.roas_band == "low").count(),
+                "high": db.query(_shared.MetaAndromedaScoreEvent).filter(_shared.MetaAndromedaScoreEvent.roas_band == "high").count(),
+                "mid": db.query(_shared.MetaAndromedaScoreEvent).filter(_shared.MetaAndromedaScoreEvent.roas_band == "mid").count(),
+                "low": db.query(_shared.MetaAndromedaScoreEvent).filter(_shared.MetaAndromedaScoreEvent.roas_band == "low").count(),
             },
             "active_alerts": active_alerts,
             "latest_drift_reports": [self._drift_report_to_dict(item) for item in drift_reports],
@@ -195,34 +193,34 @@ class MonitoringMixin:
                 f"Observed creatives persisted in DataVue DB: {observed_total} (observation pipeline only)",
                 f"Feedback events persisted in DataVue DB: {feedback_events}",
                 f"Retry-involved score events: {retrying}",
-                f"Calibration label policy version: {LABEL_POLICY_VERSION}",
-                f"Active scoring registry target: {model_registry.get_entry().model_version}",
+                f"Calibration label policy version: {_shared.LABEL_POLICY_VERSION}",
+                f"Active scoring registry target: {_shared.model_registry.get_entry().model_version}",
                 "Observation pipeline metrics exclude manual Score Lab uploads unless they are explicitly matched by a drift report.",
                 "Monitoring timeline and drift trigger are now available from the shared DataVue host.",
             ],
         }
 
-    def get_score_event_timeline(self, db: Session, score_event_id: str):
-        score = db.query(MetaAndromedaScoreEvent).filter(MetaAndromedaScoreEvent.id == score_event_id).first()
+    def get_score_event_timeline(self, db: _shared.Session, score_event_id: str):
+        score = db.query(_shared.MetaAndromedaScoreEvent).filter(_shared.MetaAndromedaScoreEvent.id == score_event_id).first()
         if score is None:
             raise KeyError(score_event_id)
 
         worker_events = (
-            db.query(MetaAndromedaWorkerEvent)
-            .filter(MetaAndromedaWorkerEvent.score_event_id == score_event_id)
-            .order_by(MetaAndromedaWorkerEvent.created_at.asc())
+            db.query(_shared.MetaAndromedaWorkerEvent)
+            .filter(_shared.MetaAndromedaWorkerEvent.score_event_id == score_event_id)
+            .order_by(_shared.MetaAndromedaWorkerEvent.created_at.asc())
             .all()
         )
         dead_letters = (
-            db.query(MetaAndromedaDeadLetter)
-            .filter(MetaAndromedaDeadLetter.score_event_id == score_event_id)
-            .order_by(MetaAndromedaDeadLetter.created_at.asc())
+            db.query(_shared.MetaAndromedaDeadLetter)
+            .filter(_shared.MetaAndromedaDeadLetter.score_event_id == score_event_id)
+            .order_by(_shared.MetaAndromedaDeadLetter.created_at.asc())
             .all()
         )
         feedback = (
-            db.query(MetaAndromedaFeedbackEvent)
-            .filter(MetaAndromedaFeedbackEvent.score_event_id == score_event_id)
-            .order_by(MetaAndromedaFeedbackEvent.created_at.asc())
+            db.query(_shared.MetaAndromedaFeedbackEvent)
+            .filter(_shared.MetaAndromedaFeedbackEvent.score_event_id == score_event_id)
+            .order_by(_shared.MetaAndromedaFeedbackEvent.created_at.asc())
             .all()
         )
         return {
@@ -244,20 +242,20 @@ class MonitoringMixin:
         }
 
     @staticmethod
-    def list_observed_accounts(db: Session) -> list[dict]:
+    def list_observed_accounts(db: _shared.Session) -> list[dict]:
         from sqlalchemy import func
         rows = (
             db.query(
-                MetaAndromedaObservedCreative.source_account_id,
-                MetaAndromedaObservedCreative.source_platform,
-                func.count(MetaAndromedaObservedCreative.id).label("total_creatives"),
-                func.max(MetaAndromedaObservedCreative.created_at).label("last_imported_at"),
+                _shared.MetaAndromedaObservedCreative.source_account_id,
+                _shared.MetaAndromedaObservedCreative.source_platform,
+                func.count(_shared.MetaAndromedaObservedCreative.id).label("total_creatives"),
+                func.max(_shared.MetaAndromedaObservedCreative.created_at).label("last_imported_at"),
             )
             .group_by(
-                MetaAndromedaObservedCreative.source_account_id,
-                MetaAndromedaObservedCreative.source_platform,
+                _shared.MetaAndromedaObservedCreative.source_account_id,
+                _shared.MetaAndromedaObservedCreative.source_platform,
             )
-            .order_by(func.max(MetaAndromedaObservedCreative.created_at).desc())
+            .order_by(func.max(_shared.MetaAndromedaObservedCreative.created_at).desc())
             .all()
         )
         return [
@@ -271,22 +269,22 @@ class MonitoringMixin:
         ]
 
     @staticmethod
-    def get_drift_trend(db: Session, limit: int = 20, account_id: str | None = None) -> list[dict]:
+    def get_drift_trend(db: _shared.Session, limit: int = 20, account_id: str | None = None) -> list[dict]:
         # 只取有足夠資料完成象限診斷的報告，排除：
         # 1. insufficient_data（配對數 < 5，無法計算 ρ）
         # 2. insufficient_sample（配對數 >= 5 但 Spearman 樣本 < 15，ρ 不具統計意義）
         # 3. Phase 1 之前的舊報告（report_payload 無 period_diagnosis）
-        query = db.query(MetaAndromedaDriftReport).filter(
-            MetaAndromedaDriftReport.drift_status.notin_(["insufficient_data", "insufficient_sample"])
+        query = db.query(_shared.MetaAndromedaDriftReport).filter(
+            _shared.MetaAndromedaDriftReport.drift_status.notin_(["insufficient_data", "insufficient_sample"])
         )
         # account_id 隔離：在 DB 層過濾，確保無 account_id 的舊報告不會洩漏
         if account_id:
             query = query.filter(
-                MetaAndromedaDriftReport.report_payload["account_id"].as_string() == account_id
+                _shared.MetaAndromedaDriftReport.report_payload["account_id"].as_string() == account_id
             )
         rows = (
             query
-            .order_by(MetaAndromedaDriftReport.created_at.desc())
+            .order_by(_shared.MetaAndromedaDriftReport.created_at.desc())
             .limit(limit * 3)
             .all()
         )

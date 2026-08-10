@@ -19,7 +19,10 @@ class _SessionProxy:
 
 
 def _bind_background_import_session(monkeypatch, db):
-    monkeypatch.setattr(observation_import_module, "SessionLocal", lambda: _SessionProxy(db))
+    # docs/33 第 7 波：observation_import.py 改用 from . import _shared 明確
+    # 存取（不再 wildcard import），SessionLocal 只在 _shared 本身的命名空間
+    # 存在，改 patch 那裡才會被 _shared.SessionLocal() 呼叫看到。
+    monkeypatch.setattr(meta_andromeda_service_shared_module, "SessionLocal", lambda: _SessionProxy(db))
 
 
 @pytest.mark.unit
@@ -155,7 +158,7 @@ async def test_meta_andromeda_batch_import_calls_prewarm_exactly_once_before_dis
         return True  # 模擬派工成功給 worker，不需要真的跑完整匯入流程
 
     monkeypatch.setattr(
-        "modules.meta_andromeda.service.observation_import.prewarm_facebook_ads_report_cache",
+        "modules.meta_andromeda.service._shared.prewarm_facebook_ads_report_cache",
         fake_prewarm,
     )
     monkeypatch.setattr(
@@ -226,7 +229,7 @@ def test_meta_andromeda_batch_import_reuses_single_item_idempotency(
         return None
 
     monkeypatch.setattr(
-        "modules.meta_andromeda.service.observation_import.prewarm_facebook_ads_report_cache",
+        "modules.meta_andromeda.service._shared.prewarm_facebook_ads_report_cache",
         fake_prewarm,
     )
 
@@ -1527,12 +1530,12 @@ async def test_meta_andromeda_download_observed_asset_rejects_by_content_length_
         chunks=[b"x" * 50, b"x" * 50, b"x" * 50],
     )
     monkeypatch.setattr(
-        observation_import_module.httpx,
+        meta_andromeda_service_shared_module.httpx,
         "AsyncClient",
         lambda *a, **kw: _FakeAsyncClientForDownload(fake_response),
     )
 
-    with pytest.raises(observation_import_module.MetaAndromedaValidationError) as exc_info:
+    with pytest.raises(meta_andromeda_service_module.MetaAndromedaValidationError) as exc_info:
         await observation_import_module.MetaAndromedaService._download_observed_asset_snapshot(
             media_url="https://scontent.xx.fbcdn.net/oversized.png",
             ad_id="120000000000900",
@@ -1555,12 +1558,12 @@ async def test_meta_andromeda_download_observed_asset_aborts_mid_stream_without_
         chunks=[b"x" * 60, b"x" * 60, b"x" * 60, b"x" * 60],  # 累計到第 2 塊就已超過 100 bytes
     )
     monkeypatch.setattr(
-        observation_import_module.httpx,
+        meta_andromeda_service_shared_module.httpx,
         "AsyncClient",
         lambda *a, **kw: _FakeAsyncClientForDownload(fake_response),
     )
 
-    with pytest.raises(observation_import_module.MetaAndromedaValidationError) as exc_info:
+    with pytest.raises(meta_andromeda_service_module.MetaAndromedaValidationError) as exc_info:
         await observation_import_module.MetaAndromedaService._download_observed_asset_snapshot(
             media_url="https://scontent.xx.fbcdn.net/oversized.png",
             ad_id="120000000000901",
@@ -1585,7 +1588,7 @@ async def test_meta_andromeda_download_observed_asset_succeeds_under_limit(monke
         chunks=[b"png-bytes-part-1", b"png-bytes-part-2"],
     )
     monkeypatch.setattr(
-        observation_import_module.httpx,
+        meta_andromeda_service_shared_module.httpx,
         "AsyncClient",
         lambda *a, **kw: _FakeAsyncClientForDownload(fake_response),
     )
