@@ -1,139 +1,123 @@
-"""
-Auth Module - Router
-認證相關的 API 端點
-
-此模組提供用戶認證和 Token 狀態相關的 API。
-
-使用方式:
-    from modules.auth.router import router as auth_router
-    app.include_router(auth_router, prefix="/api/auth")
-"""
-
-from fastapi import APIRouter, Depends, HTTPException
-from sqlalchemy.orm import Session
+from fastapi import APIRouter, Depends, HTTPException, status, Request
+from pydantic import BaseModel
 from typing import Optional
 from datetime import datetime, timezone
-
-from database import User, Team, TeamMember
-from .dependencies import get_db, get_current_user, get_current_active_user
-from .service import TokenManager
-
-router = APIRouter(
-    prefix="/api/auth",
-    tags=["auth"]
+import logging
+from sqlalchemy.orm import Session
+from database import User, Team
+from dependencies import get_db
+from modules.auth.service import TokenManager
+from services.integration_service import (
+    get_user_integration,
+    get_decrypted_access_token,
 )
+from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
+from core.security import verify_google_token_and_get_sub
+
+logger = logging.getLogger(__name__)
+router = APIRouter(prefix="/api/auth", tags=["auth"])
+
+security = HTTPBearer()
+
+# 速率限制（由 limiter.py 初始化）
+from limiter import limiter
 
 
-# ============================================================
-# User Profile Endpoints
-# ============================================================
+def _get_google_user_id(credentials: HTTPAuthorizationCredentials = Depends(security)) -> str:
+    """從 Bearer Token 提取並驗證 Google User ID（sub）"""
+    try:
+        return verify_google_token_and_get_sub(credentials.credentials)
+    except ValueError as e:
+        logger.error(f"Google Token Verification Failed: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail=f"Token verification failed: {e}"
+        )
 
-@router.get("/me")
-def get_current_user_profile(
-    current_user: User = Depends(get_current_user)
+class ExchangeRequest(BaseModel):
+    app_id: str
+    app_secret: str
+    short_token: str
+    team_id: Optional[str] = None
+
+@router.post("/exchange-token")
+@limiter.limit("10/minute")
+def exchange_token_endpoint(
+    request: Request,
+    body: ExchangeRequest,
+    user_id: str = Depends(_get_google_user_id)
 ):
-    """
-    取得當前用戶的基本資訊。
-    
-    Returns:
-        用戶 ID、Email、Name、角色、Super Admin 狀態等
-    """
-    return {
-        "id": current_user.id,
-        "google_id": current_user.google_id,
-        "email": current_user.email,
-        "name": current_user.name,
-        "role": current_user.role.value if current_user.role else None,
-        "status": current_user.status.value if current_user.status else None,
-        "is_super_admin": current_user.is_super_admin,
-        "created_at": current_user.created_at.isoformat() if current_user.created_at else None,
-        "last_login": current_user.last_login.isoformat() if current_user.last_login else None,
-    }
-
+    """Exchange short-lived token for long-lived token."""
+    success, message = TokenManager.exchange_for_long_lived_token(
+        body.app_id, 
+        body.app_secret, 
+        body.short_token,
+        user_id,
+        team_id=body.team_id
+    )
+    if not success:
+        raise HTTPException(status_code=400, detail=message)
+    return {"message": message}
 
 @router.get("/token-status")
+@limiter.limit("30/minute")
 def get_token_status(
-    current_user: User = Depends(get_current_user),
+    request: Request,
     db: Session = Depends(get_db),
-    team_id: Optional[str] = None
+    team_id: Optional[str] = None,
+    user_id: str = Depends(_get_google_user_id)
 ):
     """
-    取得用戶或團隊的 Facebook Token 狀態。
-    
-    Args:
-        team_id: 如果指定，檢查團隊 Token；否則檢查個人 Token
-        
-    Returns:
-        Token 是否已設定、是否過期、過期時間等
+    查詢目前使用者或指定團隊的 Facebook Token 狀態。
+
+    查詢優先順序：
+    1. 若提供 team_id → 查詢 Team 表的 fb_access_token / token_expires_at
+    2. 若無 team_id → 先查 UserIntegration 表；若無則 fallback 到 User 表舊欄位
     """
-    if team_id:
-        # 檢查團隊 Token
-        team = db.query(Team).filter(Team.id == team_id).first()
-        if not team:
-            raise HTTPException(status_code=404, detail="Team not found")
-        
-        # 檢查用戶是否為團隊成員
-        is_member = db.query(TeamMember).filter(
-            TeamMember.team_id == team_id,
-            TeamMember.user_id == current_user.id
-        ).first()
-        
-        if not is_member and not current_user.is_super_admin:
-            raise HTTPException(status_code=403, detail="Not a member of this team")
-        
-        has_token = bool(team.fb_access_token)
-        expires_at = team.token_expires_at
-        target_name = team.name
-        target_type = "team"
-    else:
-        # 檢查個人 Token
-        has_token = bool(current_user.fb_access_token)
-        expires_at = current_user.token_expires_at
-        target_name = current_user.name or current_user.email
-        target_type = "user"
-    
-    # 計算過期狀態
-    is_expired = False
-    expires_in_days = None
-    
-    if expires_at:
-        now = datetime.now(timezone.utc)
-        # 確保 expires_at 有時區資訊
-        if expires_at.tzinfo is None:
-            expires_at = expires_at.replace(tzinfo=timezone.utc)
-        
-        is_expired = expires_at < now
-        if not is_expired:
+    try:
+        token_exists = False
+        expires_at = None
+        is_expired = True
+        days_remaining = None
+
+        if team_id:
+            # 查詢團隊 Token（存在 Team 表）
+            team = db.query(Team).filter(Team.id == team_id).first()
+            if team and team.fb_access_token:
+                token_exists = True
+                expires_at = team.token_expires_at
+        else:
+            # 先從 google_id 解析出 User UUID（UserIntegration 使用 UUID，非 google sub）
+            user = db.query(User).filter(User.google_id == user_id).first()
+            if user:
+                # 1. 優先查詢新版 UserIntegration 表（使用 User UUID）
+                integration = get_user_integration(db, user.id, "facebook")
+                if integration and integration.access_token:
+                    token_exists = True
+                    expires_at = integration.token_expiry
+                # 2. Fallback：查詢舊版 User 表欄位
+                elif user.fb_access_token:
+                    token_exists = True
+                    expires_at = user.token_expires_at
+
+        if expires_at:
+            if expires_at.tzinfo is None:
+                expires_at = expires_at.replace(tzinfo=timezone.utc)
+            now = datetime.now(timezone.utc)
             delta = expires_at - now
-            expires_in_days = delta.days
-    
-    return {
-        "type": target_type,
-        "name": target_name,
-        "has_token": has_token,
-        "is_expired": is_expired,
-        "expires_at": expires_at.isoformat() if expires_at else None,
-        "expires_in_days": expires_in_days
-    }
+            days_remaining = delta.days
+            is_expired = days_remaining < 0
+        elif token_exists:
+            # Token 存在但無過期時間，視為有效
+            is_expired = False
 
-
-@router.get("/ai-settings")
-def get_ai_settings(
-    current_user: User = Depends(get_current_user)
-):
-    """
-    取得當前用戶的 AI 設定。
-    
-    Returns:
-        AI 提供者、模型、是否已設定 API Key 等
-    """
-    settings = TokenManager.get_ai_settings(current_user.google_id)
-    if not settings:
         return {
-            "ai_provider": "zeabur",
-            "ai_model": "deepseek/deepseek-v4-flash",
-            "has_zeabur_key": False,
-            "has_gemini_key": False,
-            "has_openrouter_key": False,
+            "token_exists": token_exists,
+            "expires_at": expires_at.isoformat() if expires_at else None,
+            "days_remaining": days_remaining,
+            "is_expired": is_expired,
+            "provider": "facebook",
         }
-    return settings
+    except Exception as e:
+        logger.error(f"Token Status Error: {e}")
+        raise HTTPException(status_code=500, detail=f"Internal Server Error: {e}")

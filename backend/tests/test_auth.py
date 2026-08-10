@@ -64,10 +64,10 @@ def test_token_status_no_integration_returns_false(client, db):
     db.commit()
 
     with patch(
-        "routers.auth.verify_google_token_and_get_sub",
+        "modules.auth.router.verify_google_token_and_get_sub",
         return_value=MOCK_USER_ID,
     ), patch(
-        "routers.auth.get_user_integration",
+        "modules.auth.router.get_user_integration",
         return_value=None,  # 沒有整合記錄
     ):
         response = client.get(
@@ -105,10 +105,10 @@ def test_token_status_with_valid_integration_returns_true(client, db):
     mock_integration.token_expiry = future_expiry
 
     with patch(
-        "routers.auth.verify_google_token_and_get_sub",
+        "modules.auth.router.verify_google_token_and_get_sub",
         return_value=MOCK_USER_ID,
     ), patch(
-        "routers.auth.get_user_integration",
+        "modules.auth.router.get_user_integration",
         return_value=mock_integration,
     ):
         response = client.get(
@@ -146,10 +146,10 @@ def test_token_status_with_expired_integration(client, db):
     mock_integration.token_expiry = past_expiry
 
     with patch(
-        "routers.auth.verify_google_token_and_get_sub",
+        "modules.auth.router.verify_google_token_and_get_sub",
         return_value=MOCK_USER_ID,
     ), patch(
-        "routers.auth.get_user_integration",
+        "modules.auth.router.get_user_integration",
         return_value=mock_integration,
     ):
         response = client.get(
