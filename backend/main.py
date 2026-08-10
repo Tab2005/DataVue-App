@@ -211,7 +211,7 @@ async def general_exception_handler(request: Request, exc: Exception):
 
 from routers import admin, saved_views
 from routers import debug, line, analytics_ai
-from routers.metrics import router as metrics_router
+from modules.fb_ads.metrics_router import router as metrics_router
 from modules.meta_andromeda.router import router as meta_andromeda_router
 from modules.contribution import router as contribution_router
 from modules.ga4.router import router as ga4_router
