@@ -209,7 +209,6 @@ async def general_exception_handler(request: Request, exc: Exception):
 # Router Registration
 # ============================================================
 
-from routers import admin
 from routers import debug, analytics_ai
 from modules.fb_ads.metrics_router import router as metrics_router
 from modules.meta_andromeda.router import router as meta_andromeda_router
@@ -227,6 +226,7 @@ from modules.permissions.router import router as permissions_router
 from modules.reports.router import router as reports_router
 from modules.saved_views.router import router as saved_views_router
 from modules.line.router import router as line_router
+from modules.admin.router import router as admin_router, emergency_router as admin_emergency_router
 
 # Authentication & Users
 app.include_router(auth_router)
@@ -256,8 +256,8 @@ app.include_router(contribution_router, prefix="/api/contribution", tags=["contr
 app.include_router(metrics_router)
 
 # Administration
-app.include_router(admin.router)
-app.include_router(admin.emergency_router)
+app.include_router(admin_router)
+app.include_router(admin_emergency_router)
 
 # Debug Router (Controlled by environment)
 DEBUG_MODE = os.getenv("DEBUG_MODE", "false").lower() == "true"
