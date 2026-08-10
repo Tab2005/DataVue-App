@@ -1,73 +1,39 @@
-import os
-import json
+"""
+AI Service (相容轉發層)
+
+此檔案的實作已於 docs/07_audits_and_reviews/CODE_REVIEW_ACTION_PLAN_2026-07-01.md
+P1-1 真遷移搬移至 `modules/ai_hub/service.py`（`AIService`）。
+
+保留本檔案是為了不破壞既有呼叫端（`modules/ai_hub/router.py`、
+`tests/test_analytics_ai.py`、`tests/test_ga4_insights_wave2.py`）的
+`from ai_service import AIService` 匯入路徑與方法簽名。新代碼請直接
+import `modules.ai_hub.service`，不要在本檔案新增邏輯。
+"""
 from typing import Optional, Dict, Any, Generator
 
-# New Zeabur AI Hub client
-from services.ai.zeabur_client import ZeaburAIClient
-from services.ai.openrouter_client import OpenRouterClient
+from modules.ai_hub.service import AIService as _AIService
 
 
 class AIService:
-    """
-    Service for interacting with AI models.
-    Supports Dual-Mode:
-    1. OpenRouter Mode (openrouter): Uses OpenRouter API aggregator (defaulting to DeepSeek)
-    2. Zeabur Mode (zeabur): Uses OpenAI-compatible API via Zeabur AI Hub (supports 10+ models)
-    """
+    """薄轉發層：所有方法皆呼叫 `modules/ai_hub` 的對應實作，本身不含邏輯。"""
 
-    # Available providers
-    PROVIDERS = {
-        "openrouter": {
-            "name": "OpenRouter",
-            "description": "使用 OpenRouter API 聚合服務",
-            "requires_sdk": False
-        },
-        "zeabur": {
-            "name": "Zeabur AI Hub",
-            "description": "透過 Zeabur 統一介面，支援多種模型 (Gemini, Claude, GPT 等)",
-            "requires_sdk": False
-        }
-    }
+    PROVIDERS = _AIService.PROVIDERS
 
     @staticmethod
     def get_available_providers() -> Dict[str, Dict]:
-        """Get list of available AI providers"""
-        return AIService.PROVIDERS.copy()
+        return _AIService.get_available_providers()
 
     @staticmethod
     def get_available_models(provider: str = "zeabur", remote: bool = False, api_key: Optional[str] = None) -> Dict[str, Dict]:
-        """Get available models for a provider"""
-        if provider == "zeabur":
-            client = AIService.get_zeabur_client(api_key=api_key)
-            if client:
-                return client.get_available_models(remote=remote)
-            return ZeaburAIClient.MODELS
-        elif provider == "openrouter":
-            client = AIService.get_openrouter_client(api_key=api_key)
-            if client:
-                return client.get_available_models(remote=remote)
-            return OpenRouterClient.MODELS
-        return {}
+        return _AIService.get_available_models(provider, remote=remote, api_key=api_key)
 
     @staticmethod
-    def get_openrouter_client(api_key: Optional[str] = None) -> Optional[OpenRouterClient]:
-        """Initialize OpenRouter Client."""
-        try:
-            return OpenRouterClient(api_key=api_key)
-        except Exception as e:
-            print(f"Error initializing OpenRouter Client: {e}")
-            return None
+    def get_openrouter_client(api_key: Optional[str] = None):
+        return _AIService.get_openrouter_client(api_key=api_key)
 
     @staticmethod
-    def get_zeabur_client(api_key: Optional[str] = None) -> Optional[ZeaburAIClient]:
-        """
-        Initialize Zeabur AI Hub Client (OpenAI-compatible).
-        """
-        try:
-            return ZeaburAIClient(api_key=api_key)
-        except Exception as e:
-            print(f"Error initializing Zeabur Client: {e}")
-            return None
+    def get_zeabur_client(api_key: Optional[str] = None):
+        return _AIService.get_zeabur_client(api_key=api_key)
 
     @staticmethod
     def test_connection(
@@ -75,25 +41,7 @@ class AIService:
         provider: str = "zeabur",
         model: str = "gemini-2.5-flash"
     ) -> bool:
-        """
-        Test if the AI service is reachable.
-        """
-        if provider == "zeabur":
-            client = AIService.get_zeabur_client(api_key)
-            if not client:
-                return False
-            return client.test_connection(model=model)
-        elif provider == "openrouter":
-            client = AIService.get_openrouter_client(api_key)
-            if not client:
-                return False
-            try:
-                res = client.test_connection()
-                return res.get("success", False)
-            except Exception as e:
-                print(f"OpenRouter Connection Failed: {e}")
-                return False
-        return False
+        return _AIService.test_connection(api_key=api_key, provider=provider, model=model)
 
     @staticmethod
     def analyze_data(
@@ -106,408 +54,13 @@ class AIService:
         period: str = "weekly",
         module_type: str = "fb_ads"
     ) -> Generator[str, None, None]:
-        """
-        Analyzes the provided data using the LLM.
-        Returns a generator for streaming response.
-        """
-
-        # 共用 markdown 格式規範（任務 2.3 follow-up）：所有 prompt 都引用此段，
-        # 確保前端 ReactMarkdown + remark-gfm 能正確渲染，視覺一致。
-        markdown_format_spec = """
-        嚴格的 Markdown 格式規範（前端用 ReactMarkdown 渲染，必須遵守才能正確顯示）：
-        - 必須用 `## 二級標題` 開頭分節（**不要**用 `###` 或更大，**不要**用粗體偽裝標題）
-        - 列點必須用 `- ` 開頭（**禁止**用 `<br>` 連接，**禁止**用全形 `·` 或 `、` 拼湊偽清單）
-        - 比較資料用 markdown 表格（`| col1 | col2 |` 格式），**禁止**用 inline 文字拼湊
-        - 關鍵數字與組名用 `**粗體**`，**禁止**用其他格式強調
-        - 段落之間用**空一行**分隔，**禁止**用 `<br>` 或 `  `（雙空格）當換行
-        - 條列與表格上下都要空一行
-        - **完全禁止**使用任何 HTML 標籤（`<br>` `<sub>` 等）
-        - 表情符號僅在分節標題開頭可加一個（✅ ⚠️ ❓），內文不要濫用
-        """
-
-        # Build system prompt based on report type, period and module type
-        if report_type == "contribution_analysis":
-            # MMM 廣告活動貢獻衡量白話解讀（docs/21 任務 2.3）
-            system_prompt = f"""
-            您是一位資深行銷顧問，正在向一位「不懂統計」的行銷主管口頭報告 MMM 廣告活動貢獻分析的結果。
-            您的目標是把 MMM 引擎算出的 results / diagnostics 翻成白話文，讓對方可以據此討論預算配置。
-
-            最重要的硬性規則（違反即為錯誤）：
-            1. **禁止統計術語直出**：當您需要提到「共線性 / 中位數 / 區間 / R² / 邊際報酬 / 雜訊天花板 / 基線」等詞時，必須立刻用一句白話比喻接在後面，讓對方真的能理解。比喻方向：
-               - 共線性 → 「這兩組活動總是一起加減預算，模型分不清功勞是誰的」
-               - 中位數 / 區間 → 「我們跑了五次重新估計，大約落在這個範圍，不是單一精確值」
-               - R² → 「模型解釋了幾成的轉換變化」
-               - 邊際報酬 → 「現在再多投一些錢，大約能多帶來幾筆訂單」
-               - 雜訊天花板 → 「就算模型完美，雜訊讓預測最多也只能到這個準度」
-               - 基線 → 「就算完全不投廣告，也會自然發生的那部分」
-            2. **區間語氣**：貢獻一律以「大約 X%～Y% 之間」呈現，**禁止**寫成單一精確數字。邊際也是「大概多帶來幾筆」而非「精確 N 筆」。
-            3. **存疑組必須明說**：被標為「存疑 / DOUBTFUL」的組別，請明確寫出「這組的數字目前不可信，建議先不要據此做預算決策」。
-            4. **禁止線性外推**：談到邊際報酬時必須提醒「這是在目前花費水位附近的估計，不代表加十倍預算就有十倍效果」。
-            5. **只引用 payload 內的數字**：禁止編造 payload 沒有的活動、占比或金額。
-            6. **禁止 LaTeX 符號**（不要寫 \\rightarrow、\\Delta 等），改用 → 或一般文字。
-            7. **語言**：繁體中文（台灣市場用語，例如「工作」「曝光」）。
-
-            {markdown_format_spec}
-
-            報告結構（依此順序產出四段，每段都用 `##` 開頭）：
-            ```markdown
-            ## 一句話總結
-            （1-2 句話講最重要的一件事）
-
-            ## 功勞被高估 / 被低估的組別
-            - **G1 主力常態**：自報占比 49%，MMM 貢獻大約 50%–55% 之間（簡述）
-            - **G2 官網檔期**：自報占比 23%，MMM 貢獻大約 40%–45% 之間（簡述，且標註「收割嫌疑」或「真實引擎」）
-            - 表格總覽（用 markdown 表格總結所有組別的對照）：
-
-            | 組別 | 自報占比 | MMM 貢獻 | 解讀 |
-            |---|---|---|---|
-            | G1 主力 | 49% | 50%–55% | 略高估 |
-            | G2 官網 | 23% | 40%–45% | 收割嫌疑 |
-
-            ## 下一塊錢建議投給誰
-            **首選：G2 官網檔期**（理由：邊際報酬最高，但需註明共線性警告）。
-            若首選被標存疑，必須寫「但因共線性，結論待釐清」。
-
-            ## 這份分析要保留的地方
-            - Holdout R² = 0.10（偏低 → 「模型解釋力有限，結論需保守」）
-            - G1 與 G3 共線 r=0.77（→ 「這兩組總是同步加減，預算結論待釐清」）
-            ```
-            """
-        elif report_type == "ga4_insights":
-            # GA4 即時轉換洞察白話解讀（docs/22 第 2 波任務 2.4）
-            # payload 的 kind 決定四個頁籤各自的解讀重點：
-            #   intraday_hourly → 今天到目前為止跟平常比正不正常
-            #   daily_channel   → 渠道助攻/主攻、預算調整該看什麼
-            #   landing_page    → 哪些頁面白白流失客人
-            #   item            → 哪些商品值得加碼曝光
-            kind = data.get("kind", "")
-            # docs/34 第二波：「收單」欄位的真實意義依帳戶的 GA4 報表歸因模式而定
-            # （data_driven＝路徑加權功勞、last_click＝單純最後一次接觸），
-            # 這裡把前端傳來的 attribution_model 轉成給 AI 的白話備註，
-            # 避免不管什麼設定都用「結帳前臨門一腳」這個 last-click 專屬比喻。
-            attribution_model = data.get("attribution_model") if kind == "daily_channel" else None
-            attribution_close_metaphor = {
-                "data_driven": "主攻渠道是系統判斷在整趟購物旅程中貢獻比較大的（不是只看最後一次點擊）",
-                "last_click": "主攻渠道是客人結帳前最後一次點擊進來的",
-            }.get(attribution_model, "主攻渠道是系統判斷對這次購買貢獻比較大的（不一定是最後一次點擊）")
-
-            # docs/46：渠道篩選範圍要明確告訴 AI，否則模型不知道 payload 裡的
-            # 到達頁/商品列表已經是篩選過某個渠道的子集，容易誤用「整體/全店」
-            # 的語氣下結論（例如把某渠道的轉換率當成全站轉換率描述）。跟
-            # attribution_model 同一套做法：從 payload 讀欄位、轉成白話備註後
-            # 塞進硬性規則，而不是只靠前端 context 字串（避免被模型忽略）。
-            channel_dimension_labels = {
-                "default_channel_group": "工作階段主要管道群組",
-                "source_medium": "工作階段來源/媒介",
-                "source": "工作階段來源",
-                "medium": "工作階段媒介",
-                "campaign": "工作階段廣告活動",
-            }
-            channel_scope_note = None
-            if kind in ("landing_page", "item") and data.get("channel_dimension"):
-                dimension_label = channel_dimension_labels.get(data.get("channel_dimension"), data.get("channel_dimension"))
-                if data.get("channel_group"):
-                    channel_scope_note = (
-                        f"這份 payload 已經用「{dimension_label}」篩選成自訂分組「{data.get('channel_group')}」，"
-                        "只代表這個分組的表現，不是全店/全渠道的數字。"
-                    )
-                elif data.get("channel_value"):
-                    channel_scope_note = (
-                        f"這份 payload 已經用「{dimension_label}」篩選成「{data.get('channel_value')}」，"
-                        "只代表這個渠道值的表現，不是全店/全渠道的數字。"
-                    )
-                # docs/45：商品渠道篩選刻意只套用在瀏覽/加購/購買主指標，
-                # views_growth_rate（成長率）與潛力標記維持全渠道口徑，兩者
-                # 混在同一列容易讓 AI 誤以為成長率也是該渠道的表現，要點破。
-                if channel_scope_note and kind == "item":
-                    channel_scope_note += (
-                        "但 views_growth_rate（瀏覽成長）與 is_potential（潛力商品）"
-                        "維持全渠道口徑、不受此篩選影響，不要把成長率當成這個渠道自己的成長。"
-                    )
-
-            kind_focus = {
-                "intraday_hourly": (
-                    "今天到目前為止的數字跟平常同時段比起來正不正常、需不需要緊張。"
-                    "若 is_anomaly 為 true，說明是「多」還是「少」，以及可能跟哪類原因有關"
-                    "（廣告投放中斷、網站追蹤碼壞掉、檔期效應），但不要下絕對結論。"
-                ),
-                "daily_channel": (
-                    "哪些渠道是負責把新客人帶進門的（開發型，永遠是使用者第一次造訪這個管道的硬計數），"
-                    f"哪些渠道拿到比較多轉換功勞（收單型，{attribution_close_metaphor}）。"
-                    "預算要往上加或往下砍時，這兩種渠道各自該注意什麼。"
-                ),
-                "landing_page": (
-                    "哪些頁面流量很大但客人幾乎都沒有轉換、等於白白流失客人，"
-                    "值得優先檢查頁面內容或載入速度。頁面已依商品頁/文章頁/功能頁/其他分類，"
-                    "分類間轉換率量級不同屬正常（例如文章頁本來就很少直接轉換），"
-                    "比較應在同分類內進行，不要拿文章頁跟商品頁的轉換率直接比。"
-                ),
-                "item": (
-                    "哪些商品瀏覽量正在成長、加購意願也高，但目前曝光還不夠，"
-                    "值得加碼推廣（例如放進首頁或加大廣告預算）。潛力標記是跟「全店」比較，"
-                    "不是跟同分類的商品比；不同分類的加購率/購買率量級不同屬正常，"
-                    "不要拿服飾類跟 3C 類的加購率直接比。"
-                ),
-                "item_landing_cross": (
-                    "每個商品都配對了瀏覽量最高的「主要到達頁」，重點是比較兩個數字：商品本身的"
-                    "瀏覽後購買率，跟這個到達頁的轉換率。若 page_underperforms_item 為 true，代表"
-                    "「到達頁轉換率偏低、但商品本身瀏覽後購買率不低」——這通常代表問題出在頁面"
-                    "（設計、載入速度、頁面上的呈現方式），不是商品本身不吸引人，優先建議檢查頁面而"
-                    "不是檢查商品；沒有 primary_landing_page（無對應到達頁）的商品純粹是資料不足，"
-                    "不要過度解讀。"
-                ),
-            }.get(kind, "把數據翻成白話文，讓不懂 GA4 的人也能看懂重點。")
-
-            system_prompt = f"""
-            您是一位正在向不懂 GA4 的店長／行銷窗口口頭報告的顧問，任務是把 payload 內的
-            GA4 數據翻成一般人聽得懂的白話文。
-
-            最重要的硬性規則（違反即為錯誤）：
-            1. **禁止術語直出**：「工作階段 / 參與率 / 歸因 / 基線」等統計或 GA4 術語一旦出現，
-               必須立刻用生活化比喻接在後面解釋。例如：
-               - 工作階段 → 「一個人來逛一次網站，逛到離開算一個工作階段」（注意「工作階段」
-                 四個字要完整寫出，不要縮寫或誤寫成「仕階段」等變體）
-               - 參與率 → 「逛超過一定時間或有實際動作（不是滑過去就走）的比例」
-               - 歸因 → 「這筆訂單該算誰的功勞」
-               - 基線 → 「平常同一個時段大概會有的數字」
-               - 助攻/主攻（渠道對照專用）→ 「助攻渠道是先把客人帶進門的，{attribution_close_metaphor}」
-            2. **只准引用 payload 內的數字**，禁止推測或編造 payload 沒有的數據。
-            3. **比較語氣**：談到異常或落差時一律用「比平常同時段多/少了大約 X」的比較語氣，
-               並附上預期區間（若 payload 有 baseline/expected 區間），**不要下絕對結論**
-               （例如不要說「這代表廣告一定出問題了」，而是「可能跟…有關，建議檢查看看」）。
-            4. **本頁重點**：{kind_focus}
-            {f"4-1. **渠道篩選範圍（務必在「一句話總結」開頭先講清楚）**：{channel_scope_note}" if channel_scope_note else ""}
-            5. **結尾固定 1–2 個「今天可以做的一件事」行動建議**，具體且可執行。
-               若本頁是渠道對照（daily_channel），結尾額外補一句：「想知道各渠道的真實增量貢獻，
-               可以到貢獻分析頁看更深入的分析」。
-            6. **語言**：繁體中文（台灣市場用語）。
-            7. **禁止 LaTeX 符號**（不要寫 \\rightarrow、\\Delta 等），改用 → 或一般文字。
-
-            {markdown_format_spec}
-
-            報告結構（依此順序產出三段，每段都用 `##` 開頭）：
-            ```markdown
-            ## 一句話總結
-            （1-2 句話講清楚本頁最重要的一件事，用**粗體**標關鍵數字）
-
-            ## 細節解讀
-            （依「本頁重點」逐項說明，只引用 payload 內的數字，異常一律用比較語氣）
-
-            ## 今天可以做的一件事
-            1. （具體、可執行的行動建議）
-            ```
-            """
-        elif report_type == "analytics_table":
-            # 成效分析頁「AI 廣告分析」（docs/58）：跟 weekly_summary 的差別是
-            # 這裡沒有固定的報表結構，欄位完全由使用者在頁面上勾選的指標決定
-            # （data.selected_metrics），硬性規則要求 AI 只講這些欄位，避免
-            # 沿用其他 report_type 那種寫死「花費/ROAS/成交數」的範例，導致
-            # 換了指標一樣被帶著講這三個字。
-            selected_metrics = data.get("selected_metrics") or []
-            metric_labels = "、".join(m.get("label", m.get("key", "")) for m in selected_metrics)
-
-            system_prompt = f"""
-            您是一位資深的 Facebook 廣告顧問，正在協助客戶解讀成效分析報表裡「使用者自己勾選」的指標欄位。
-
-            最重要的硬性規則（違反即為錯誤）：
-            1. **只分析 `selected_metrics` 列出的指標**（本次使用者勾選的是：{metric_labels or "（無，使用者尚未勾選任何指標欄位）"}）。
-               這些欄位以外的指標（例如花費、ROAS、購買次數等）**一律不要提及、不要假設一定要談**，
-               除非它們本身就出現在 `selected_metrics` 裡。
-            2. 若 `selected_metrics` 為空，直接說明「目前沒有勾選任何指標，請先在表格上方勾選要分析的指標欄位」，
-               不要嘗試分析 `summary`/`rows` 裡的其他資料。
-            3. `summary` 是整體加總/加權平均後的口徑（例如 CTR 是用加總後的點擊/曝光重新算，不是逐列平均），
-               `rows` 是目前畫面排序下的前幾筆明細，可以指名道姓點出表現最好/最差的幾個活動/組合/廣告。
-            4. **只准引用 payload 內的數字**，禁止推測或編造沒有的數據。
-            5. **語言**：繁體中文（台灣市場用語）。
-            6. **禁止 LaTeX 符號**（不要寫 \\rightarrow、\\Delta 等），改用 → 或一般文字。
-
-            {markdown_format_spec}
-
-            報告結構（依此順序產出三段，每段都用 `##` 開頭）：
-            ```markdown
-            ## 一句話總結
-            （1-2 句話講清楚這幾個指標目前的整體狀況，用**粗體**標關鍵數字）
-
-            ## 指標表現解讀
-            （逐一針對 `selected_metrics` 裡的每個指標，說明數字狀況，並視資料量指出表現最好/最差的幾筆）
-
-            ## 可以做的一件事
-            1. （具體、可執行的行動建議，只根據已分析的指標）
-            ```
-            """
-        elif report_type == "weekly_summary":
-            period_labels = {
-                "daily": "日報 (Daily)",
-                "weekly": "週報 (Weekly)",
-                "monthly": "月報 (Monthly)"
-            }
-            label = period_labels.get(period, "績效")
-            
-            # --- Module-Specific Focus ---
-            if module_type == "ga4":
-                # GA4 Prompt
-                system_prompt = f"""
-                您是一位資深的 網站分析師 與 增長顧問，正在協助客戶撰寫一份 GA4 {label}分析報告。
-                您的目標是根據提供的數據，產出一份專業且具備深度洞察的摘要。
-
-                {markdown_format_spec}
-
-                報告結構（依此順序產出四段，每段都用 `##` 開頭）：
-                ```markdown
-                ## 數據總覽（{label}核心指標）
-                （總結網站流量、使用者、工作階段與品質指標，並與前期對比，用 **粗體** 標關鍵數字）
-
-                ## 流量來源分析
-                - **來源 A**：工作階段大約 X–Y 之間，轉換率 Z%
-                - **來源 B**：…
-
-                | 來源 | 工作階段 | 轉換率 | 趨勢 |
-                |---|---|---|---|
-                | Organic | … | … | 上升/下降 |
-                | Paid | … | … | 上升/下降 |
-
-                ## 轉換與收益分析
-                （重點說明哪個事件/頁面表現最好，與前期對比）
-
-                ## 優化行動建議
-                1. 針對 X 流量來源的具體建議
-                2. 針對 Y 頁面轉換的具體建議
-                3. 針對 Z 漏斗的具體建議
-                ```
-
-                語氣：專業、銳利、數據導向。
-                """
-            else:
-                # Facebook Ads Prompt (Default)
-                period_focus = ""
-                if period == "daily":
-                    period_focus = "請特別關注昨日與前日的數據波動、預算消耗情況，以及是否需要立即進行開關調整或排除異常。"
-                elif period == "weekly":
-                    period_focus = "請著重於本週與上週的趨勢對比、廣告組合（Ad Sets）的表現差異，以及下一階段的預算分配建議。"
-                elif period == "monthly":
-                    period_focus = "請從戰略角度分析本月整體 ROI、不同廣告創意（Creative）的長期表現趨勢，並提供下個月的整體投放策略建議。"
-
-                system_prompt = f"""
-                您是一位資深的 Facebook 廣告顧問，正在協助客戶撰寫一份{label}分析報告。
-                您的目標是根據提供的數據，產出一份專業且具備深度洞察的摘要。
-
-                {markdown_format_spec}
-
-                報告結構（依此順序產出四段，每段都用 `##` 開頭）：
-                ```markdown
-                ## 執行摘要（{label}總結）
-                （2-3 句話總整體表現：花費、ROAS、成交數，並與前期對比）
-
-                ## 亮點分析
-                - **活動/組合 A**：ROAS 大約 X–Y 之間，CPA 表現穩定
-                - **活動/組合 B**：…
-
-                ## 優化空間與異常檢測
-                {period_focus}
-                （以 `- ` 列點呈現問題與異常）
-
-                ## 後續行動建議
-                1. 針對 X 活動的具體建議（含預算調整）
-                2. 針對 Y 受眾的測試建議
-                3. 針對 Z 素材的替換建議
-                ```
-
-                語氣：專業、鼓勵、數據導向。
-                語言：繁體中文 (Traditional Chinese)。
-                """
-        else:
-            system_prompt = """
-            You are an expert Facebook Ads Analyst (Senior Media Buyer).
-            Your task is to analyze the provided ad performance data and generate a professional diagnosis report.
-            
-            Structure your response in these 3 sections:
-            
-            ### 🔴 Critical Issues (紅燈警示)
-            Identify ads or ad sets that are wasting budget (High CPA, Low ROAS, Saturation).
-            
-            ### 🟢 Opportunities (綠燈機會)
-            Identify high-performing assets that deserve more budget.
-            
-            ### 💡 Strategic Advice (策略建議)
-            Give 1-2 high-level actionable suggestions based on the funnel data.
-            
-            Tone: Professional, Concise, Action-oriented.
-            Language: Traditional Chinese (繁體中文).
-            """
-        
-        user_message = f"""
-        Context: {context}
-        
-        Data:
-        {json.dumps(data, indent=2, ensure_ascii=False)}
-        """
-
-        # Use appropriate provider
-        if provider == "zeabur":
-            yield from AIService._analyze_with_zeabur(
-                system_prompt=system_prompt,
-                user_message=user_message,
-                api_key=api_key,
-                model=model
-            )
-        else:
-            yield from AIService._analyze_with_openrouter(
-                system_prompt=system_prompt,
-                user_message=user_message,
-                api_key=api_key,
-                model=model
-            )
-
-    @staticmethod
-    def _analyze_with_zeabur(
-        system_prompt: str,
-        user_message: str,
-        api_key: Optional[str],
-        model: str
-    ) -> Generator[str, None, None]:
-        """Use Zeabur AI Hub (OpenAI-compatible) for analysis"""
-        client = AIService.get_zeabur_client(api_key)
-        if not client:
-            yield "Error: No valid API Key or AI Service configured."
-            return
-
-        try:
-            response = client.generate_content(
-                prompt=user_message,
-                model=model,
-                system_prompt=system_prompt,
-                stream=True
-            )
-            
-            for chunk in response:
-                yield chunk
-                
-        except Exception as e:
-            yield f"\n[System Error during Analysis: {str(e)}]"
-
-    @staticmethod
-    def _analyze_with_openrouter(
-        system_prompt: str,
-        user_message: str,
-        api_key: Optional[str],
-        model: str
-    ) -> Generator[str, None, None]:
-        """Use OpenRouter client for analysis"""
-        client = AIService.get_openrouter_client(api_key)
-        if not client:
-            yield "Error: No valid API Key or AI Service configured."
-            return
-
-        try:
-            model_to_use = model or "deepseek/deepseek-v4-flash"
-            response_stream = client.generate_content_stream(
-                prompt=user_message,
-                model=model_to_use,
-                system_prompt=system_prompt
-            )
-            
-            for chunk in response_stream:
-                yield chunk
-                    
-        except Exception as e:
-            yield f"\n[System Error during Analysis: {str(e)}]"
+        return _AIService.analyze_data(
+            data=data,
+            context=context,
+            api_key=api_key,
+            provider=provider,
+            model=model,
+            report_type=report_type,
+            period=period,
+            module_type=module_type,
+        )

@@ -569,7 +569,7 @@ def test_save_ai_summary_endpoint(client, db, sample_user):
 # ─── ai_service.py：ga4_insights prompt 分支 ───────────────────────
 @pytest.mark.unit
 def test_ai_service_ga4_insights_prompt_switches_focus_by_kind(mocker):
-    from ai_service import AIService
+    from modules.ai_hub.service import AIService
 
     captured = {}
 
@@ -594,7 +594,7 @@ def test_ai_service_ga4_insights_prompt_switches_focus_by_kind(mocker):
 @pytest.mark.unit
 def test_ai_service_ga4_insights_prompt_avoids_last_click_metaphor_for_data_driven(mocker):
     """Data-driven 屬性不該被套用「結帳前臨門一腳」這類 last-click 專屬比喻。"""
-    from ai_service import AIService
+    from modules.ai_hub.service import AIService
 
     captured = {}
 
@@ -619,7 +619,7 @@ def test_ai_service_ga4_insights_prompt_avoids_last_click_metaphor_for_data_driv
 @pytest.mark.unit
 def test_ai_service_ga4_insights_prompt_keeps_last_click_metaphor_for_last_click(mocker):
     """Last-click 屬性維持「最後一次點擊」語意，不能被 data_driven 用語覆蓋。"""
-    from ai_service import AIService
+    from modules.ai_hub.service import AIService
 
     captured = {}
 

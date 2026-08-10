@@ -30,7 +30,8 @@ modules/ai_hub/
 
 ```python
 from fastapi import FastAPI
-from modules.ai_hub import router as ai_router, AIService
+from modules.ai_hub.router import router as ai_router
+from modules.ai_hub.service import AIService
 
 app = FastAPI()
 
@@ -48,7 +49,7 @@ success = AIService.test_connection(
 ### 使用意圖分類器
 
 ```python
-from modules.ai_hub import AIIntentClassifier
+from modules.ai_hub.intent_classifier import AIIntentClassifier
 
 classifier = AIIntentClassifier(api_key="key", provider="gemini")
 result = classifier.classify_queries([
@@ -71,7 +72,7 @@ print(result)
 ### 直接使用客戶端
 
 ```python
-from modules.ai_hub import ZeaburAIClient, GoogleGeminiClient
+from modules.ai_hub.clients import ZeaburAIClient, OpenRouterClient
 
 # Zeabur (OpenAI 相容)
 zeabur = ZeaburAIClient(api_key="key")

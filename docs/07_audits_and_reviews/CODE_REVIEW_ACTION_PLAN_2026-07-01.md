@@ -201,18 +201,18 @@ psycopg2.errors.StringDataRightTruncation: value too long for type character var
 
 ## P1 — 架構收斂
 
-### P1-1 ga4 / gsc / ai_hub 空殼模組決策 ⚠️ 部分完成（2026-08-10）——service 層仍未解決
+### P1-1 ga4 / gsc / ai_hub 空殼模組決策 ✅ 已完成（2026-08-10）
 
-**2026-08-10 進度更新**：這次執行 P1-2 時查證發現，本節描述的問題其實是**兩層獨立的假模組化**：router 層（`modules/X/router.py` 只轉發 `routers/X.py`）與 service 層（`modules/X/service.py` 只轉發根目錄 `X_service.py`，本節原始問題定位所指）。這次只解決了 router 層：
-- **ga4**：service 層其實已在 docs/22 第 0 波（本次之前的既有工作）真遷移完成——`modules/ga4/service.py`／`modules/ga4/client.py` 是真實實作，`ga4_service.GA4Service` 才是保留給舊呼叫端的薄轉發層，並非本節所述的空殼。router 層則確認是真空殼（`modules/ga4/router.py` 原本 14 行純轉發 `routers/ga4.py`），已於 P1-2 解決（見下）。
-- **gsc**：service 層**仍是空殼**——`modules/gsc/service.py`（28 行）仍是 `from gsc_service import GSCService` 的純轉發，根目錄 `gsc_service.py`（338 行）才是實作，本節問題**未解決**。router 層已於 P1-2 解決。
-- **ai_hub**：service 層**仍是空殼**——`modules/ai_hub/service.py`（24 行）仍是 `from ai_service import AIService` 的純轉發，根目錄 `ai_service.py`（263 行）才是實作，本節問題**未解決**。router 層已於 P1-2 解決。
+**2026-08-10 進度更新**：這次執行 P1-2 時查證發現，本節描述的問題其實是**兩層獨立的假模組化**：router 層（`modules/X/router.py` 只轉發 `routers/X.py`）與 service 層（`modules/X/service.py` 只轉發根目錄 `X_service.py`，本節原始問題定位所指）。P1-2 當時只解決了 router 層：
+- **ga4**：service 層其實已在 docs/22 第 0 波（本次之前的既有工作）真遷移完成——`modules/ga4/service.py`／`modules/ga4/client.py` 是真實實作，`ga4_service.GA4Service` 才是保留給舊呼叫端的薄轉發層，並非本節所述的空殼。router 層則確認是真空殼（`modules/ga4/router.py` 原本 14 行純轉發 `routers/ga4.py`），已於 P1-2 解決。
+- **gsc**：service 層原本**仍是空殼**（`modules/gsc/service.py` 28 行純轉發 `gsc_service.GSCService`），**已於本次（2026-08-10）補做真遷移**：實作（`exchange_code`／`get_credentials`／`list_sites`／`get_analytics`，含 Redis/記憶體快取與分頁邏輯）搬入 `modules/gsc/service.py`，根目錄 `gsc_service.py` 改為薄轉發層（比照 `ga4_service.py` 的既有寫法）。搬移時移除了一個確認未使用的 `TokenManager` import。
+- **ai_hub**：service 層原本**仍是空殼**（`modules/ai_hub/service.py` 24 行純轉發 `ai_service.AIService`），**已於本次（2026-08-10）補做真遷移**：實作（`analyze_data` 各 report_type 的 prompt 組裝、`_analyze_with_zeabur`/`_analyze_with_openrouter` 等）搬入 `modules/ai_hub/service.py`，根目錄 `ai_service.py` 改為薄轉發層。`tests/test_analytics_ai.py`、`tests/test_ga4_insights_wave2.py` 中 6 處對 `AIService._analyze_with_zeabur` 的 `mocker.patch.object` 因為是 patch 內部方法（非公開 API），若繼續 import 薄轉發層會 patch 不到真正被呼叫的那個類別（薄轉發層的 `analyze_data` 直接整包轉發給真實類別，內部對 `_analyze_with_zeabur` 的呼叫解析的是真實類別自己模組內的名稱，patch 薄轉發層上的同名屬性不會生效），因此改為直接 `from modules.ai_hub.service import AIService`。
 - **auth**：不在本節原始範圍內（本節從未提及 auth），是 P1-2 執行過程中另外發現的獨立問題（`modules/auth/router.py` 是分歧死碼而非轉發 shim），已在 P1-2 一併解決，詳見該節。
 
-**尚待處理**：gsc、ai_hub 的 service 層真遷移（方案 A，見下）仍是開放項目，需要另外排時間處理，屬於中風險（import 面積大，但機械性替換）。
+**兩個模組的 `modules/X/__init__.py` 均額外修正一個真實的循環匯入風險**：兩者原本都 eager import `.router`（`from .router import router`），一旦根目錄 shim（`gsc_service.py`/`ai_service.py`）改為 `from modules.X.service import ...`，就會形成 `X_service.py` → `modules.X`（觸發 `__init__.py`）→ `.router`（`from X_service import ...`）→ 回到仍在初始化中的 `X_service.py` 的循環匯入。修法比照既有的 `modules/ga4/__init__.py`：拿掉 eager import，只留 `__all__` 標記，consumer 一律走子模組路徑匯入（`from modules.gsc.router import router`／`from modules.ai_hub.service import AIService` 等）。已用 grep 確認全專案沒有任何真實程式碼依賴這兩個套件的「套件層級」匯入（僅各自 `__init__.py`／`README.md` 的範例程式碼，已一併更新）。
 
-**問題定位**
-`modules/ga4/service.py`、`modules/gsc/service.py`、`modules/ai_hub/service.py` 僅 `from ga4_service import GA4Service` 這類 re-export；實作仍在根目錄 `ga4_service.py`(642)、`gsc_service.py`(338)、`ai_service.py`(263)。且 `routers/ga4.py` 直接 `from ga4_service import`（繞過模組）。屬「假模組化」。
+**問題定位**（原始，現已解決）
+`modules/ga4/service.py`、`modules/gsc/service.py`、`modules/ai_hub/service.py` 僅 `from ga4_service import GA4Service` 這類 re-export；實作原本仍在根目錄 `ga4_service.py`(642)、`gsc_service.py`(338)、`ai_service.py`(263，實測搬移時為 513 行)。且 `routers/ga4.py` 直接 `from ga4_service import`（繞過模組）。屬「假模組化」。
 
 **修改方案（建議選 A：真遷移）**
 
@@ -229,8 +229,8 @@ psycopg2.errors.StringDataRightTruncation: value too long for type character var
 **方案 B — 撤殼（若短期無力遷移）**
 - 刪除三個 `modules/*/service.py` 空殼，router 明確 import 根目錄服務，並在 README 標註「這些為舊式服務，尚未模組化」。避免結構誤導。
 
-**驗證**：`pytest backend/tests/` 全綠；啟動 app 無 ImportError；`grep` 確認無殘留舊路徑（方案 A 過渡期除外）。
-**風險**：中（import 面積大，但機械性替換）。建議一次處理一個模組（先 ga4 → gsc → ai_hub）。
+**驗證**（2026-08-10 實測）：`python -c "import main"` 無 ImportError；`pytest backend/tests/` 598 passed，零回歸。
+**風險**：中（import 面積大，但機械性替換）。實際處理順序：ga4 已於 docs/22 完成 → gsc → ai_hub（router 層於 P1-2、service 層於本次）。
 
 ---
 
@@ -434,7 +434,7 @@ repository = MetaAndromedaRepository()
 | 2 | P0-2 `/health` 拆分 | 0.5d | — | 低（已驗證） | ✅ 2026-07-02 完成 |
 | 3 | P0-3 移除除錯/一次性腳本 | 0.5d | — | 低（已驗證） | ✅ 2026-07-02 完成 |
 | 4 | P1-4 部署拓撲 + Redis 狀態 | 2-3d | 決定 queue host | 低（已驗證） | ✅ 2026-07-03 完成 |
-| 5 | P1-1 空殼模組真遷移（ga4→gsc→ai_hub）| 2d | — | 中 | ⚠️ 部分完成（router 層已於 2026-08-10 隨 P1-2 解決；gsc/ai_hub 的 service 層仍待處理） |
+| 5 | P1-1 空殼模組真遷移（ga4→gsc→ai_hub）| 2d | — | 中 | ✅ 2026-08-10 完成（router 層隨 P1-2 解決；gsc/ai_hub 的 service 層於本次補完） |
 | 6 | P1-2 路由統一 | 2d | 可併 P1-1 | 低（已完成） | ✅ 2026-08-10 完成 |
 | 7 | P1-3 config → BaseSettings | 1-2d | — | 低（已完成） | ✅ 2026-08-10 完成 |
 | 8 | P2-1 拆分巨型檔案 | 持續 | 有測試護航更佳 | 中 | 待處理 |

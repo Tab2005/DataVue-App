@@ -30,7 +30,7 @@ SAMPLE_PAYLOAD = {
 # ─── ai_service.py：analytics_table prompt 分支 ─────────────────────
 @pytest.mark.unit
 def test_ai_service_analytics_table_prompt_includes_selected_metric_labels(mocker):
-    from ai_service import AIService
+    from modules.ai_hub.service import AIService
 
     captured = {}
 
@@ -58,7 +58,7 @@ def test_ai_service_analytics_table_prompt_includes_selected_metric_labels(mocke
 @pytest.mark.unit
 def test_ai_service_analytics_table_prompt_handles_empty_selected_metrics(mocker):
     """使用者還沒勾選任何指標時，prompt 要明確要求 AI 說明而不是亂分析其他欄位。"""
-    from ai_service import AIService
+    from modules.ai_hub.service import AIService
 
     captured = {}
 
@@ -82,7 +82,7 @@ def test_ai_service_analytics_table_prompt_handles_empty_selected_metrics(mocker
 def test_ai_service_analytics_table_prompt_does_not_force_spend_roas(mocker):
     """跟 weekly_summary 的差別：不能沿用寫死「花費/ROAS/成交數」的範例，
     否則使用者只勾 CTR 時，AI 還是會被範例帶著講花費/ROAS。"""
-    from ai_service import AIService
+    from modules.ai_hub.service import AIService
 
     captured = {}
 
