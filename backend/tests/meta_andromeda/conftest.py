@@ -16,6 +16,7 @@ import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
+from core.config import settings
 import modules.meta_andromeda.service as meta_andromeda_service_module
 import modules.meta_andromeda.service._shared as meta_andromeda_service_shared_module
 import modules.meta_andromeda.queue_host as meta_andromeda_queue_host_module

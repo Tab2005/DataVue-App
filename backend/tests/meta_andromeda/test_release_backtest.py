@@ -123,25 +123,25 @@ def test_meta_andromeda_release_metrics_refresh_handles_insufficient_data(monkey
 def test_get_active_host_web_role_never_dispatches_locally(monkeypatch):
     """docs/24 Wave 2：web 角色下 get_active_host() 絕不能回 apscheduler/local_async，
     否則評分負載又會跑回 web process 的 event loop，等於沒拆分。"""
-    monkeypatch.setenv("SERVICE_ROLE", "web")
+    monkeypatch.setattr(settings, "SERVICE_ROLE", "web")
 
     # 明確設定的 redis_stream/database_queue/external_webhook 原樣尊重
-    monkeypatch.setenv("META_ANDROMEDA_QUEUE_HOST", "database_queue")
+    monkeypatch.setattr(settings, "META_ANDROMEDA_QUEUE_HOST", "database_queue")
     assert meta_andromeda_queue_host_module.queue_host_adapter.get_active_host() == "database_queue"
 
-    monkeypatch.setenv("META_ANDROMEDA_QUEUE_HOST", "external_webhook")
+    monkeypatch.setattr(settings, "META_ANDROMEDA_QUEUE_HOST", "external_webhook")
     assert meta_andromeda_queue_host_module.queue_host_adapter.get_active_host() == "external_webhook"
 
     # auto / apscheduler / local_async 一律收斂成 redis_stream（Redis 可用時）
     redis_mock = Mock()
     monkeypatch.setattr(meta_andromeda_queue_host_module, "get_redis_client", lambda: redis_mock)
     for configured in ("auto", "apscheduler", "local_async"):
-        monkeypatch.setenv("META_ANDROMEDA_QUEUE_HOST", configured)
+        monkeypatch.setattr(settings, "META_ANDROMEDA_QUEUE_HOST", configured)
         assert meta_andromeda_queue_host_module.queue_host_adapter.get_active_host() == "redis_stream"
 
     # Redis 不可用時退回 database_queue，讓 worker 的 sweeper 補派工
     monkeypatch.setattr(meta_andromeda_queue_host_module, "get_redis_client", lambda: None)
-    monkeypatch.setenv("META_ANDROMEDA_QUEUE_HOST", "auto")
+    monkeypatch.setattr(settings, "META_ANDROMEDA_QUEUE_HOST", "auto")
     assert meta_andromeda_queue_host_module.queue_host_adapter.get_active_host() == "database_queue"
 
 
@@ -496,7 +496,11 @@ def test_meta_andromeda_created_candidate_can_be_approved_to_production(meta_and
     provider_model」而不是被 env 覆寫後的值。"""
     from modules.meta_andromeda.model_registry import model_registry, invalidate_registry_cache
 
-    monkeypatch.setenv("META_ANDROMEDA_SCORING_PROVIDER", "auto")
+    monkeypatch.setattr(settings, "META_ANDROMEDA_SCORING_PROVIDER", "auto")
+    # META_ANDROMEDA_SCORING_MODEL 這個 escape hatch 是 model_registry.get_entry()
+    # 特意直接讀 os.getenv()（無 default）而不是 settings.META_ANDROMEDA_SCORING_MODEL，
+    # 用來跟 config.py 的隱含預設值區分「是否明確覆寫」，故這裡仍要用 setenv 而非
+    # monkeypatch.setattr(settings, ...)。
     monkeypatch.setenv("META_ANDROMEDA_SCORING_MODEL", "")
 
     class SessionProxy:
@@ -554,7 +558,11 @@ def test_effective_scoring_status_reports_no_override_when_env_matches_db(meta_a
     db.commit()
 
     # 清空所有可能生效的 env override，讓 get_entry() 原樣回傳 DB 該列
-    monkeypatch.setenv("META_ANDROMEDA_SCORING_PROVIDER", "auto")
+    monkeypatch.setattr(settings, "META_ANDROMEDA_SCORING_PROVIDER", "auto")
+    # META_ANDROMEDA_SCORING_MODEL 這個 escape hatch 是 model_registry.get_entry()
+    # 特意直接讀 os.getenv()（無 default）而不是 settings.META_ANDROMEDA_SCORING_MODEL，
+    # 用來跟 config.py 的隱含預設值區分「是否明確覆寫」，故這裡仍要用 setenv 而非
+    # monkeypatch.setattr(settings, ...)。
     monkeypatch.setenv("META_ANDROMEDA_SCORING_MODEL", "")
     monkeypatch.delenv("META_ANDROMEDA_SCORING_MODEL_VERSION", raising=False)
 
@@ -602,7 +610,9 @@ def test_effective_scoring_status_flags_override_from_env_model(meta_andromeda_a
     ))
     db.commit()
 
-    monkeypatch.setenv("META_ANDROMEDA_SCORING_PROVIDER", "auto")
+    monkeypatch.setattr(settings, "META_ANDROMEDA_SCORING_PROVIDER", "auto")
+    # 同上：META_ANDROMEDA_SCORING_MODEL 這個 escape hatch 直接讀 os.getenv()，
+    # 不是 settings.META_ANDROMEDA_SCORING_MODEL，故用 setenv。
     monkeypatch.setenv("META_ANDROMEDA_SCORING_MODEL", "some-org/env-forced-model:free")
     monkeypatch.delenv("META_ANDROMEDA_SCORING_MODEL_VERSION", raising=False)
 

@@ -488,8 +488,8 @@ async def test_non_roas_group_end_to_end_ai_band_flows_through_to_detail(
     # 可能在更早的測試中 cache 過舊的 prompt）
     invalidate_prompt_cache()
 
-    monkeypatch.setenv("OPENROUTER_API_KEY", "test-openrouter-key")
-    monkeypatch.setenv("META_ANDROMEDA_SCORING_PROVIDER", "openrouter")
+    monkeypatch.setattr(settings, "OPENROUTER_API_KEY_ENV", "test-openrouter-key")
+    monkeypatch.setattr(settings, "META_ANDROMEDA_SCORING_PROVIDER", "openrouter")
 
     def fake_init(self, api_key=None):
         self.api_key = api_key or "test-openrouter-key"

@@ -13,9 +13,9 @@ def test_meta_andromeda_ping_returns_payload(meta_andromeda_access):
 
 @pytest.mark.unit
 def test_meta_andromeda_upload_persists_file_to_storage_root(meta_andromeda_access, db, tmp_path, monkeypatch):
-    monkeypatch.setenv("META_ANDROMEDA_STORAGE_ROOT", str(tmp_path))
-    monkeypatch.setenv("META_ANDROMEDA_INTERNAL_WORKER_BASE_URL", "http://meta-andromeda-worker.zeabur.internal")
-    monkeypatch.setenv("META_ANDROMEDA_INTERNAL_WORKER_TOKEN", "worker-token")
+    monkeypatch.setattr(settings, "META_ANDROMEDA_STORAGE_ROOT", str(tmp_path))
+    monkeypatch.setattr(settings, "META_ANDROMEDA_INTERNAL_WORKER_BASE_URL", "http://meta-andromeda-worker.zeabur.internal")
+    monkeypatch.setattr(settings, "META_ANDROMEDA_INTERNAL_WORKER_TOKEN", "worker-token")
     _install_internal_worker_httpx_proxy(monkeypatch, db)
 
     response = meta_andromeda_access.post(
@@ -38,14 +38,14 @@ def test_meta_andromeda_upload_persists_file_to_storage_root(meta_andromeda_acce
 
 @pytest.mark.unit
 def test_meta_andromeda_upload_supports_s3_compatible_storage(meta_andromeda_access, db, monkeypatch):
-    monkeypatch.setenv("META_ANDROMEDA_STORAGE_BACKEND", "s3_compatible")
-    monkeypatch.setenv("META_ANDROMEDA_STORAGE_S3_BUCKET", "meta-andromeda-assets")
-    monkeypatch.setenv("META_ANDROMEDA_STORAGE_S3_REGION", "ap-northeast-1")
-    monkeypatch.setenv("META_ANDROMEDA_STORAGE_S3_ENDPOINT_URL", "https://minio.example.com")
-    monkeypatch.setenv("META_ANDROMEDA_STORAGE_KEY_PREFIX", "shared/meta-andromeda")
-    monkeypatch.setenv("META_ANDROMEDA_STORAGE_PUBLIC_BASE_URL", "https://cdn.example.com/meta-andromeda")
-    monkeypatch.setenv("META_ANDROMEDA_INTERNAL_WORKER_BASE_URL", "http://meta-andromeda-worker.zeabur.internal")
-    monkeypatch.setenv("META_ANDROMEDA_INTERNAL_WORKER_TOKEN", "worker-token")
+    monkeypatch.setattr(settings, "META_ANDROMEDA_STORAGE_BACKEND", "s3_compatible")
+    monkeypatch.setattr(settings, "META_ANDROMEDA_STORAGE_S3_BUCKET", "meta-andromeda-assets")
+    monkeypatch.setattr(settings, "META_ANDROMEDA_STORAGE_S3_REGION", "ap-northeast-1")
+    monkeypatch.setattr(settings, "META_ANDROMEDA_STORAGE_S3_ENDPOINT_URL", "https://minio.example.com")
+    monkeypatch.setattr(settings, "META_ANDROMEDA_STORAGE_KEY_PREFIX", "shared/meta-andromeda")
+    monkeypatch.setattr(settings, "META_ANDROMEDA_STORAGE_PUBLIC_BASE_URL", "https://cdn.example.com/meta-andromeda")
+    monkeypatch.setattr(settings, "META_ANDROMEDA_INTERNAL_WORKER_BASE_URL", "http://meta-andromeda-worker.zeabur.internal")
+    monkeypatch.setattr(settings, "META_ANDROMEDA_INTERNAL_WORKER_TOKEN", "worker-token")
     _install_internal_worker_httpx_proxy(monkeypatch, db)
 
     captured = {}
@@ -86,10 +86,10 @@ def test_meta_andromeda_upload_supports_s3_compatible_storage(meta_andromeda_acc
 def test_meta_andromeda_preview_proxies_filesystem_asset_from_internal_worker(meta_andromeda_access, db, tmp_path, monkeypatch):
     # SERVICE_ROLE=all 時預覽直接本地回應（不經 worker 代理）；要驗證
     # 「經內部 worker 代理」路徑必須切到 web 角色（見 scoring_assets.py）。
-    monkeypatch.setenv("SERVICE_ROLE", "web")
-    monkeypatch.setenv("META_ANDROMEDA_STORAGE_ROOT", str(tmp_path))
-    monkeypatch.setenv("META_ANDROMEDA_INTERNAL_WORKER_BASE_URL", "http://meta-andromeda-worker.zeabur.internal")
-    monkeypatch.setenv("META_ANDROMEDA_INTERNAL_WORKER_TOKEN", "worker-token")
+    monkeypatch.setattr(settings, "SERVICE_ROLE", "web")
+    monkeypatch.setattr(settings, "META_ANDROMEDA_STORAGE_ROOT", str(tmp_path))
+    monkeypatch.setattr(settings, "META_ANDROMEDA_INTERNAL_WORKER_BASE_URL", "http://meta-andromeda-worker.zeabur.internal")
+    monkeypatch.setattr(settings, "META_ANDROMEDA_INTERNAL_WORKER_TOKEN", "worker-token")
     _install_internal_worker_httpx_proxy(monkeypatch, db)
 
     upload_response = meta_andromeda_access.post(
@@ -111,10 +111,10 @@ def test_meta_andromeda_preview_proxies_filesystem_asset_from_internal_worker(me
 @pytest.mark.unit
 def test_meta_andromeda_preview_returns_404_when_internal_worker_returns_404(meta_andromeda_access, db, tmp_path, monkeypatch):
     # 同上：只有非 all 角色才會走 proxy_asset_preview_response 代理路徑。
-    monkeypatch.setenv("SERVICE_ROLE", "web")
-    monkeypatch.setenv("META_ANDROMEDA_STORAGE_ROOT", str(tmp_path))
-    monkeypatch.setenv("META_ANDROMEDA_INTERNAL_WORKER_BASE_URL", "http://meta-andromeda-worker.zeabur.internal")
-    monkeypatch.setenv("META_ANDROMEDA_INTERNAL_WORKER_TOKEN", "worker-token")
+    monkeypatch.setattr(settings, "SERVICE_ROLE", "web")
+    monkeypatch.setattr(settings, "META_ANDROMEDA_STORAGE_ROOT", str(tmp_path))
+    monkeypatch.setattr(settings, "META_ANDROMEDA_INTERNAL_WORKER_BASE_URL", "http://meta-andromeda-worker.zeabur.internal")
+    monkeypatch.setattr(settings, "META_ANDROMEDA_INTERNAL_WORKER_TOKEN", "worker-token")
     _install_internal_worker_httpx_proxy(monkeypatch, db)
 
     upload_response = meta_andromeda_access.post(
@@ -151,10 +151,10 @@ def test_meta_andromeda_preview_releases_db_connection_before_proxy_call(
     代理呼叫發生。"""
     from fastapi import Response
 
-    monkeypatch.setenv("SERVICE_ROLE", "web")
-    monkeypatch.setenv("META_ANDROMEDA_STORAGE_ROOT", str(tmp_path))
-    monkeypatch.setenv("META_ANDROMEDA_INTERNAL_WORKER_BASE_URL", "http://meta-andromeda-worker.zeabur.internal")
-    monkeypatch.setenv("META_ANDROMEDA_INTERNAL_WORKER_TOKEN", "worker-token")
+    monkeypatch.setattr(settings, "SERVICE_ROLE", "web")
+    monkeypatch.setattr(settings, "META_ANDROMEDA_STORAGE_ROOT", str(tmp_path))
+    monkeypatch.setattr(settings, "META_ANDROMEDA_INTERNAL_WORKER_BASE_URL", "http://meta-andromeda-worker.zeabur.internal")
+    monkeypatch.setattr(settings, "META_ANDROMEDA_INTERNAL_WORKER_TOKEN", "worker-token")
     _install_internal_worker_httpx_proxy(monkeypatch, db)
 
     upload_response = meta_andromeda_access.post(
@@ -197,10 +197,10 @@ def test_meta_andromeda_upload_releases_db_connection_before_proxy_call(
     require_meta_andromeda_operate 依賴已經用同一個 session 查過使用者與
     權限，連線早已 checkout。應該在代理上傳給 worker（檔案可能比縮圖大
     很多，等待更久）之前就先釋放，而不是握到整個上傳完成才放。"""
-    monkeypatch.setenv("SERVICE_ROLE", "web")
-    monkeypatch.setenv("META_ANDROMEDA_STORAGE_ROOT", str(tmp_path))
-    monkeypatch.setenv("META_ANDROMEDA_INTERNAL_WORKER_BASE_URL", "http://meta-andromeda-worker.zeabur.internal")
-    monkeypatch.setenv("META_ANDROMEDA_INTERNAL_WORKER_TOKEN", "worker-token")
+    monkeypatch.setattr(settings, "SERVICE_ROLE", "web")
+    monkeypatch.setattr(settings, "META_ANDROMEDA_STORAGE_ROOT", str(tmp_path))
+    monkeypatch.setattr(settings, "META_ANDROMEDA_INTERNAL_WORKER_BASE_URL", "http://meta-andromeda-worker.zeabur.internal")
+    monkeypatch.setattr(settings, "META_ANDROMEDA_INTERNAL_WORKER_TOKEN", "worker-token")
     _install_internal_worker_httpx_proxy(monkeypatch, db)
 
     call_order = []
@@ -232,8 +232,8 @@ def test_meta_andromeda_upload_releases_db_connection_before_proxy_call(
 
 @pytest.mark.unit
 def test_meta_andromeda_internal_asset_route_rejects_missing_auth(db, tmp_path, monkeypatch):
-    monkeypatch.setenv("META_ANDROMEDA_STORAGE_ROOT", str(tmp_path))
-    monkeypatch.setenv("META_ANDROMEDA_INTERNAL_WORKER_TOKEN", "worker-token")
+    monkeypatch.setattr(settings, "META_ANDROMEDA_STORAGE_ROOT", str(tmp_path))
+    monkeypatch.setattr(settings, "META_ANDROMEDA_INTERNAL_WORKER_TOKEN", "worker-token")
 
     asset_record = meta_andromeda_storage_module.storage_adapter.store_asset(
         file_bytes=b"internal-image-bytes",
@@ -261,7 +261,7 @@ def test_meta_andromeda_internal_asset_route_rejects_missing_auth(db, tmp_path, 
 
 @pytest.mark.unit
 def test_meta_andromeda_internal_upload_route_rejects_missing_auth(db, monkeypatch):
-    monkeypatch.setenv("META_ANDROMEDA_INTERNAL_WORKER_TOKEN", "worker-token")
+    monkeypatch.setattr(settings, "META_ANDROMEDA_INTERNAL_WORKER_TOKEN", "worker-token")
 
     test_app = FastAPI()
     test_app.include_router(meta_andromeda_internal_router)
@@ -287,8 +287,8 @@ def test_meta_andromeda_internal_upload_route_rejects_missing_auth(db, monkeypat
 
 @pytest.mark.unit
 def test_meta_andromeda_upload_rejects_empty_file(meta_andromeda_access, db, monkeypatch):
-    monkeypatch.setenv("META_ANDROMEDA_INTERNAL_WORKER_BASE_URL", "http://meta-andromeda-worker.zeabur.internal")
-    monkeypatch.setenv("META_ANDROMEDA_INTERNAL_WORKER_TOKEN", "worker-token")
+    monkeypatch.setattr(settings, "META_ANDROMEDA_INTERNAL_WORKER_BASE_URL", "http://meta-andromeda-worker.zeabur.internal")
+    monkeypatch.setattr(settings, "META_ANDROMEDA_INTERNAL_WORKER_TOKEN", "worker-token")
     _install_internal_worker_httpx_proxy(monkeypatch, db)
 
     response = meta_andromeda_access.post(
@@ -375,9 +375,9 @@ async def test_meta_andromeda_storage_image_is_encoded_and_sent_as_data_uri(
     from modules.meta_andromeda.runtime import runtime_adapter
     from services.ai.openrouter_client import OpenRouterClient
 
-    monkeypatch.setenv("META_ANDROMEDA_STORAGE_ROOT", str(tmp_path))
-    monkeypatch.setenv("OPENROUTER_API_KEY", "test-openrouter-key")
-    monkeypatch.setenv("META_ANDROMEDA_SCORING_PROVIDER", "openrouter")
+    monkeypatch.setattr(settings, "META_ANDROMEDA_STORAGE_ROOT", str(tmp_path))
+    monkeypatch.setattr(settings, "OPENROUTER_API_KEY_ENV", "test-openrouter-key")
+    monkeypatch.setattr(settings, "META_ANDROMEDA_SCORING_PROVIDER", "openrouter")
 
     storage_key = "uploads/test/base64-vision.png"
     stored_path = tmp_path / storage_key
@@ -517,7 +517,7 @@ def test_meta_andromeda_resolve_openrouter_key_falls_back_when_no_per_user_key(d
         resolve_openrouter_api_key_for_asset,
     )
 
-    monkeypatch.setenv("OPENROUTER_API_KEY", "env-fallback-key")
+    monkeypatch.setattr(settings, "OPENROUTER_API_KEY_ENV", "env-fallback-key")
 
     asset_without_uploader = MetaAndromedaAsset(
         id="asset_a4_no_uploader",
@@ -560,7 +560,7 @@ def test_meta_andromeda_prepare_asset_context_blocks_path_traversal_outside_stor
 
     storage_root = tmp_path / "storage_root"
     storage_root.mkdir()
-    monkeypatch.setenv("META_ANDROMEDA_STORAGE_ROOT", str(storage_root))
+    monkeypatch.setattr(settings, "META_ANDROMEDA_STORAGE_ROOT", str(storage_root))
 
     # storage root 之外放一個真實檔案，storage_key 用 ../ 試圖跳出去讀它。
     outside_secret = tmp_path / "outside_secret.png"

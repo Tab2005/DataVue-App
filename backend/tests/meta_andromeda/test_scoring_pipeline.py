@@ -3,8 +3,8 @@ from .conftest import *  # noqa: F401,F403
 
 @pytest.mark.unit
 def test_meta_andromeda_runtime_health_reports_missing_internal_asset_worker_config_on_web_filesystem(meta_andromeda_access, monkeypatch):
-    monkeypatch.setenv("SERVICE_ROLE", "web")
-    monkeypatch.setenv("META_ANDROMEDA_STORAGE_BACKEND", "filesystem")
+    monkeypatch.setattr(settings, "SERVICE_ROLE", "web")
+    monkeypatch.setattr(settings, "META_ANDROMEDA_STORAGE_BACKEND", "filesystem")
     monkeypatch.delenv("META_ANDROMEDA_INTERNAL_WORKER_BASE_URL", raising=False)
     monkeypatch.delenv("META_ANDROMEDA_INTERNAL_WORKER_SHARED_SECRET", raising=False)
     monkeypatch.delenv("META_ANDROMEDA_INTERNAL_WORKER_TOKEN", raising=False)
@@ -46,8 +46,8 @@ def test_meta_andromeda_runtime_health_returns_shared_runtime_summary(meta_andro
 
 @pytest.mark.unit
 def test_meta_andromeda_score_submit_supports_database_queue_host(meta_andromeda_access, monkeypatch):
-    monkeypatch.setenv("META_ANDROMEDA_QUEUE_HOST", "database_queue")
-    monkeypatch.setenv("META_ANDROMEDA_SCORE_LOCAL_ASYNC_FALLBACK", "false")
+    monkeypatch.setattr(settings, "META_ANDROMEDA_QUEUE_HOST", "database_queue")
+    monkeypatch.setattr(settings, "META_ANDROMEDA_SCORE_LOCAL_ASYNC_FALLBACK", False)
 
     response = meta_andromeda_access.post(
         "/api/meta-andromeda/scores",
@@ -74,9 +74,9 @@ def test_meta_andromeda_score_submit_supports_database_queue_host(meta_andromeda
 
 @pytest.mark.unit
 def test_meta_andromeda_score_submit_supports_external_webhook_queue_host(meta_andromeda_access, monkeypatch):
-    monkeypatch.setenv("META_ANDROMEDA_QUEUE_HOST", "external_webhook")
-    monkeypatch.setenv("META_ANDROMEDA_EXTERNAL_QUEUE_ENDPOINT", "https://queue.example.com/enqueue")
-    monkeypatch.setenv("META_ANDROMEDA_EXTERNAL_QUEUE_SIGNING_SECRET", "secret-123")
+    monkeypatch.setattr(settings, "META_ANDROMEDA_QUEUE_HOST", "external_webhook")
+    monkeypatch.setattr(settings, "META_ANDROMEDA_EXTERNAL_QUEUE_ENDPOINT", "https://queue.example.com/enqueue")
+    monkeypatch.setattr(settings, "META_ANDROMEDA_EXTERNAL_QUEUE_SIGNING_SECRET", "secret-123")
 
     response_mock = Mock()
     response_mock.status_code = 202
@@ -124,7 +124,7 @@ def test_meta_andromeda_score_submit_supports_external_webhook_queue_host(meta_a
 
 @pytest.mark.unit
 def test_meta_andromeda_external_worker_callback_completes_score(meta_andromeda_access, db, monkeypatch):
-    monkeypatch.setenv("META_ANDROMEDA_EXTERNAL_WORKER_SHARED_SECRET", "worker-secret")
+    monkeypatch.setattr(settings, "META_ANDROMEDA_EXTERNAL_WORKER_SHARED_SECRET", "worker-secret")
 
     queued_response = meta_andromeda_access.post(
         "/api/meta-andromeda/scores",
@@ -185,8 +185,8 @@ def test_meta_andromeda_external_worker_callback_completes_score(meta_andromeda_
 
 @pytest.mark.unit
 def test_meta_andromeda_external_worker_callback_retryable_failure_requeues(meta_andromeda_access, db, monkeypatch):
-    monkeypatch.setenv("META_ANDROMEDA_EXTERNAL_WORKER_SHARED_SECRET", "worker-secret")
-    monkeypatch.setenv("META_ANDROMEDA_SCORE_MAX_ATTEMPTS", "3")
+    monkeypatch.setattr(settings, "META_ANDROMEDA_EXTERNAL_WORKER_SHARED_SECRET", "worker-secret")
+    monkeypatch.setattr(settings, "META_ANDROMEDA_SCORE_MAX_ATTEMPTS", 3)
 
     queued_response = meta_andromeda_access.post(
         "/api/meta-andromeda/scores",
@@ -252,8 +252,8 @@ def test_meta_andromeda_external_worker_callback_retryable_failure_requeues(meta
 
 @pytest.mark.unit
 def test_meta_andromeda_score_submit_supports_redis_stream_queue_host(meta_andromeda_access, monkeypatch):
-    monkeypatch.setenv("META_ANDROMEDA_QUEUE_HOST", "redis_stream")
-    monkeypatch.setenv("META_ANDROMEDA_REDIS_STREAM_KEY", "meta_andromeda:test_queue")
+    monkeypatch.setattr(settings, "META_ANDROMEDA_QUEUE_HOST", "redis_stream")
+    monkeypatch.setattr(settings, "META_ANDROMEDA_REDIS_STREAM_KEY", "meta_andromeda:test_queue")
 
     redis_mock = Mock()
     redis_mock.xadd = Mock(return_value="1749388800000-0")
@@ -287,10 +287,10 @@ def test_meta_andromeda_score_submit_supports_redis_stream_queue_host(meta_andro
 
 @pytest.mark.unit
 def test_meta_andromeda_redis_stream_consumer_acks_messages(meta_andromeda_access, db, monkeypatch):
-    monkeypatch.setenv("META_ANDROMEDA_QUEUE_HOST", "redis_stream")
-    monkeypatch.setenv("META_ANDROMEDA_REDIS_STREAM_KEY", "meta_andromeda:test_queue")
-    monkeypatch.setenv("META_ANDROMEDA_REDIS_STREAM_GROUP", "meta_andromeda:test_group")
-    monkeypatch.setenv("META_ANDROMEDA_REDIS_STREAM_CONSUMER", "meta_andromeda:test_consumer")
+    monkeypatch.setattr(settings, "META_ANDROMEDA_QUEUE_HOST", "redis_stream")
+    monkeypatch.setattr(settings, "META_ANDROMEDA_REDIS_STREAM_KEY", "meta_andromeda:test_queue")
+    monkeypatch.setattr(settings, "META_ANDROMEDA_REDIS_STREAM_GROUP", "meta_andromeda:test_group")
+    monkeypatch.setattr(settings, "META_ANDROMEDA_REDIS_STREAM_CONSUMER", "meta_andromeda:test_consumer")
 
     class SessionProxy:
         def __init__(self, session):
@@ -360,11 +360,11 @@ def test_meta_andromeda_redis_stream_reclaim_reschedules_stale_pending_messages(
     db,
     monkeypatch,
 ):
-    monkeypatch.setenv("META_ANDROMEDA_QUEUE_HOST", "redis_stream")
-    monkeypatch.setenv("META_ANDROMEDA_REDIS_STREAM_KEY", "meta_andromeda:test_queue")
-    monkeypatch.setenv("META_ANDROMEDA_REDIS_STREAM_GROUP", "meta_andromeda:test_group")
-    monkeypatch.setenv("META_ANDROMEDA_REDIS_STREAM_CONSUMER", "meta_andromeda:test_consumer")
-    monkeypatch.setenv("META_ANDROMEDA_REDIS_STREAM_RECLAIM_IDLE_MS", "15000")
+    monkeypatch.setattr(settings, "META_ANDROMEDA_QUEUE_HOST", "redis_stream")
+    monkeypatch.setattr(settings, "META_ANDROMEDA_REDIS_STREAM_KEY", "meta_andromeda:test_queue")
+    monkeypatch.setattr(settings, "META_ANDROMEDA_REDIS_STREAM_GROUP", "meta_andromeda:test_group")
+    monkeypatch.setattr(settings, "META_ANDROMEDA_REDIS_STREAM_CONSUMER", "meta_andromeda:test_consumer")
+    monkeypatch.setattr(settings, "META_ANDROMEDA_REDIS_STREAM_RECLAIM_IDLE_MS", 15000)
 
     class SessionProxy:
         def __init__(self, session):
@@ -432,7 +432,7 @@ def test_meta_andromeda_redis_stream_reclaim_reschedules_stale_pending_messages(
 
 @pytest.mark.asyncio
 async def test_meta_andromeda_score_submit_queues_then_completes(meta_andromeda_access, db, monkeypatch):
-    monkeypatch.setenv("META_ANDROMEDA_SCORING_PROVIDER", "auto")
+    monkeypatch.setattr(settings, "META_ANDROMEDA_SCORING_PROVIDER", "auto")
     response = meta_andromeda_access.post(
         "/api/meta-andromeda/scores",
         json={
@@ -467,9 +467,9 @@ async def test_meta_andromeda_score_submit_queues_then_completes(meta_andromeda_
 
 @pytest.mark.asyncio
 async def test_meta_andromeda_score_retries_then_completes(meta_andromeda_access, db, monkeypatch):
-    monkeypatch.setenv("META_ANDROMEDA_SCORE_MAX_ATTEMPTS", "3")
-    monkeypatch.setenv("META_ANDROMEDA_SCORE_RETRY_DELAY_SECONDS", "0")
-    monkeypatch.setenv("META_ANDROMEDA_SCORE_LOCAL_ASYNC_FALLBACK", "false")
+    monkeypatch.setattr(settings, "META_ANDROMEDA_SCORE_MAX_ATTEMPTS", 3)
+    monkeypatch.setattr(settings, "META_ANDROMEDA_SCORE_RETRY_DELAY_SECONDS", 0.0)
+    monkeypatch.setattr(settings, "META_ANDROMEDA_SCORE_LOCAL_ASYNC_FALLBACK", False)
 
     class SessionProxy:
         def __init__(self, session):
@@ -527,8 +527,8 @@ async def test_meta_andromeda_score_retries_then_completes(meta_andromeda_access
 
 @pytest.mark.asyncio
 async def test_meta_andromeda_score_timeout_marks_failed(meta_andromeda_access, db, monkeypatch):
-    monkeypatch.setenv("META_ANDROMEDA_SCORE_TIMEOUT_SECONDS", "0.01")
-    monkeypatch.setenv("META_ANDROMEDA_SCORE_MAX_ATTEMPTS", "1")
+    monkeypatch.setattr(settings, "META_ANDROMEDA_SCORE_TIMEOUT_SECONDS", 0.01)
+    monkeypatch.setattr(settings, "META_ANDROMEDA_SCORE_MAX_ATTEMPTS", 1)
 
     class SessionProxy:
         def __init__(self, session):
@@ -582,7 +582,7 @@ async def test_meta_andromeda_asset_prep_does_not_block_event_loop(meta_andromed
     阻塞 I/O，並在同一段時間內跑一個心跳 coroutine；若素材準備仍卡在 loop 上，
     心跳會完全停擺，heartbeat 次數會遠低於預期次數。
     """
-    monkeypatch.setenv("META_ANDROMEDA_SCORING_PROVIDER", "heuristic")
+    monkeypatch.setattr(settings, "META_ANDROMEDA_SCORING_PROVIDER", "heuristic")
 
     def blocking_prepare(score_payload):
         time.sleep(0.3)
@@ -769,7 +769,7 @@ def test_meta_andromeda_mark_score_processing_claim_is_single_shot(meta_andromed
 def test_meta_andromeda_external_worker_completed_callback_is_idempotent(meta_andromeda_access, db, monkeypatch):
     from database.models.meta_andromeda import MetaAndromedaWorkerEvent
 
-    monkeypatch.setenv("META_ANDROMEDA_EXTERNAL_WORKER_SHARED_SECRET", "worker-secret")
+    monkeypatch.setattr(settings, "META_ANDROMEDA_EXTERNAL_WORKER_SHARED_SECRET", "worker-secret")
 
     queued_response = meta_andromeda_access.post(
         "/api/meta-andromeda/scores",
@@ -843,7 +843,7 @@ def test_meta_andromeda_external_worker_stale_failed_callback_does_not_override_
     db,
     monkeypatch,
 ):
-    monkeypatch.setenv("META_ANDROMEDA_EXTERNAL_WORKER_SHARED_SECRET", "worker-secret")
+    monkeypatch.setattr(settings, "META_ANDROMEDA_EXTERNAL_WORKER_SHARED_SECRET", "worker-secret")
 
     queued_response = meta_andromeda_access.post(
         "/api/meta-andromeda/scores",
@@ -924,8 +924,8 @@ async def test_meta_andromeda_openrouter_invalid_schema_falls_back_to_heuristic(
     repository.mark_score_processing(db, score_event_id)
     current = repository.get_review_queue_detail(db, score_event_id)
 
-    monkeypatch.setenv("OPENROUTER_API_KEY", "test-openrouter-key")
-    monkeypatch.setenv("META_ANDROMEDA_SCORING_PROVIDER", "openrouter")
+    monkeypatch.setattr(settings, "OPENROUTER_API_KEY_ENV", "test-openrouter-key")
+    monkeypatch.setattr(settings, "META_ANDROMEDA_SCORING_PROVIDER", "openrouter")
 
     def fake_init(self, api_key=None):
         self.api_key = api_key or "test-openrouter-key"

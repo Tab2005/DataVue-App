@@ -247,45 +247,32 @@ psycopg2.errors.StringDataRightTruncation: value too long for type character var
 
 ---
 
-### P1-3 config.py 遷移至 Pydantic BaseSettings
+### P1-3 config.py 遷移至 Pydantic BaseSettings ✅ 已完成（2026-08-10）
 
 **問題定位**
 `core/config.py` 全部 `@property` + `os.getenv`，無型別驗證、每次存取重複解析、40+ 個 `META_ANDROMEDA_*` 擠在單一類別。
 
-**修改方案**
+**實際採用的方案（與原規劃的差異）**
 
-1. 導入 `pydantic-settings`（Pydantic v2）。把 Meta Andromeda 設定抽成巢狀子設定：
+原規劃建議把 `META_ANDROMEDA_*` 抽成巢狀 `MetaAndromedaSettings` 子設定，再靠相容 `@property` 代理到 `settings.META_ANDROMEDA_SCORE_MAX_CONCURRENCY` 等既有呼叫點。實際執行時改採**扁平設計**：所有欄位仍直接掛在 `Settings`（不拆子模型），因為：
+1. 全 repo 對 `settings.META_ANDROMEDA_*` 的呼叫點數量龐大，巢狀化 + 相容代理層屬於「兩套並存」的過渡態，本身就是額外風險來源；扁平設計讓所有既有呼叫點**零改動**即可運作。
+2. 換來的驗證效益（型別轉換、建構時報錯）與巢狀化無關，扁平 `BaseSettings` 一樣拿得到。
 
-```python
-from pydantic_settings import BaseSettings, SettingsConfigDict
-from pydantic import Field
+**已完成的變更**
 
-class MetaAndromedaSettings(BaseSettings):
-    model_config = SettingsConfigDict(env_prefix="META_ANDROMEDA_")
-    scoring_provider: str = "auto"
-    scoring_model: str = "nvidia/nemotron-3-nano-omni-30b-a3b-reasoning:free"
-    score_max_concurrency: int = Field(2, ge=1)
-    observation_max_concurrency: int = Field(5, ge=1)
-    upload_max_bytes: int = 15 * 1024 * 1024
-    # ...其餘 META_ANDROMEDA_* 對應欄位
+1. `core/config.py` 全面改寫為 `Settings(BaseSettings)`（`pydantic-settings` 已是既有依賴，之前未被使用）：所有純值欄位（`GOOGLE_CLIENT_ID`、`META_ANDROMEDA_SCORE_MAX_ATTEMPTS` 等 60+ 個）改為宣告式欄位＋型別；衍生值（`is_postgres`／`is_development`／`super_admin_emails`／`GOOGLE_AI_API_KEY`／`OPENROUTER_API_KEY`／`META_ANDROMEDA_ALLOWED_MEDIA_HOSTS`）維持 `@property`，邏輯不變（只是引用的來源從「呼叫 os.getenv 的 property」變成「宣告好的欄位」，程式碼幾乎沒動）。
+2. 舊版 `max(N, int(os.getenv(...)))` 下限保護、`.strip().lower()` 正規化，改用 `@field_validator` 精確複製既有 clamp/正規化語意（例如 `META_ANDROMEDA_WEEKLY_LOOP_HOUR` clamp 到 0-23、`SERVICE_ROLE` 正規化小寫），行為零差異。
+3. `META_ANDROMEDA_STORAGE_ROOT` 的動態預設值（未設定時退回 `backend/storage/meta_andromeda`）改用 `model_post_init` 於建構後補值一次。
+4. `GOOGLE_AI_API_KEY`／`OPENROUTER_API_KEY` 這兩個「多來源 fallback」欄位，因為對外暴露的屬性名稱要跟原始 env 變數同名，改用 `validation_alias` 掛一個內部 `_ENV` 後綴的原始欄位（如 `OPENROUTER_API_KEY_ENV`），公開屬性維持原名的 `@property` 做 fallback 合併，外部呼叫端完全不用改。
+5. `model_config = SettingsConfigDict(validate_assignment=True)`：**這是本次遷移能落地的關鍵**——遷移前發現全套件有 89 處測試靠 `monkeypatch.setenv()` 在測試中途覆寫設定值，這依賴舊版「每次存取都重新讀 os.environ」的 property 設計；`BaseSettings` 標準用法是建構時讀一次，改用後這 89 處會全數變成無效覆寫（測試不報錯但也沒真的套用，比直接測試失敗更危險）。開啟 `validate_assignment=True` 後，改把這 89 處全部從 `monkeypatch.setenv("VAR", value)` 改寫為 `monkeypatch.setattr(settings, "FIELD", typed_value)`，型別轉換／正規化／clamp 邏輯在重新賦值時一樣會套用，效果與舊版即時讀 env 一致，且 pytest 的 `monkeypatch` 對任意物件屬性一樣會在測試結束後自動還原。
+6. 過程中發現一個例外：`modules/meta_andromeda/model_registry.py::get_entry()` 與 `repository/profiles_registry.py::get_effective_scoring_status()` 對 `META_ANDROMEDA_SCORING_MODEL`／`META_ANDROMEDA_SCORING_MODEL_VERSION` 刻意直接呼叫 `os.getenv()`（無 default），目的是跟 `settings` 的隱含預設值區分「是否明確覆寫」——這 3 處測試改寫時保留原本的 `monkeypatch.setenv()`，不能改成 `monkeypatch.setattr(settings, ...)`（改了會讓那個 escape hatch 判斷失效）。
+7. 新增 `tests/test_config.py`（11 個測試）：預設值、非數字字串在建構時報 `ValidationError`（取代舊版未捕捉例外的行為）、assignment 時 clamp/正規化仍套用、兩個 fallback 鏈、`super_admin_emails`／`META_ANDROMEDA_ALLOWED_MEDIA_HOSTS` 解析、`META_ANDROMEDA_STORAGE_ROOT` 動態預設、`validate_required()`。
 
-class Settings(BaseSettings):
-    model_config = SettingsConfigDict(env_file=".env", extra="ignore")
-    GOOGLE_CLIENT_ID: str = ""
-    ENCRYPTION_KEY: str = ""
-    DATABASE_URL: str | None = None
-    meta_andromeda: MetaAndromedaSettings = MetaAndromedaSettings()
-
-    @property
-    def is_postgres(self) -> bool:
-        return bool(self.DATABASE_URL)
-```
-
-2. **保留相容存取**：現有大量呼叫 `settings.META_ANDROMEDA_SCORE_MAX_CONCURRENCY`。過渡期在 `Settings` 加 `@property` 代理到巢狀值，或用一支 codemod 全域改為 `settings.meta_andromeda.score_max_concurrency`。建議先加代理 property，之後再逐步改呼叫點。
-3. 保留 `GOOGLE_AI_API_KEY` 的 fallback 鏈（用 `@model_validator` 或 property 實作），並加註解說明優先序。
-
-**驗證**：新增 `test_config.py` 驗證預設值、env 覆蓋、型別轉換（如 `SCORE_MAX_CONCURRENCY=abc` 應報錯而非靜默）；全站啟動無迴歸。
-**風險**：中（存取點多）。務必先建代理相容層，避免一次性大改。
+**驗證結果**
+- ✅ `pytest backend/tests/`：598 passed（原 587 + 新增 11），無既有測試迴歸。
+- ✅ 遷移前完整跑過一次全套件，確認曝露的 30 個失敗全部來自「89 處 `monkeypatch.setenv` 失效」這個已知風險，逐一改寫後全部修復；改寫後再次全跑確認無新增失敗。
+- ✅ `python -c "import main"`：FastAPI app 與既有 seed/migration 啟動流程正常。
+- 風險：低（純內部重構，未改變任何欄位的預設值、行為語意或對外呼叫介面；`from core.config import settings` 呼叫端完全未變動）。
 
 ---
 
@@ -414,7 +401,7 @@ repository = MetaAndromedaRepository()
 | 4 | P1-4 部署拓撲 + Redis 狀態 | 2-3d | 決定 queue host | 低（已驗證） | ✅ 2026-07-03 完成 |
 | 5 | P1-1 空殼模組真遷移（ga4→gsc→ai_hub）| 2d | — | 中 | 待處理 |
 | 6 | P1-2 路由統一 | 2d | 可併 P1-1 | 低 | 待處理 |
-| 7 | P1-3 config → BaseSettings | 1-2d | — | 中 | 待處理 |
+| 7 | P1-3 config → BaseSettings | 1-2d | — | 低（已完成） | ✅ 2026-08-10 完成 |
 | 8 | P2-1 拆分巨型檔案 | 持續 | 有測試護航更佳 | 中 | 待處理 |
 | 9 | P2-3 補測試 | 持續 | — | 低 | 待處理 |
 | 10 | P2-2 導入 TS | 持續 | — | 低 | 待處理 |

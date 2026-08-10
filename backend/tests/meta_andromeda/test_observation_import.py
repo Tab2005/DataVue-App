@@ -27,9 +27,9 @@ def test_meta_andromeda_observation_import_stream_dispatch_and_consume(monkeypat
     """docs/24 Wave 2 端對端：enqueue_observation_import_event() 產生的 stream 訊息，
     consume_redis_stream_batch() 能正確依 kind 分流到 add_meta_andromeda_observation_import_job()，
     而不是誤當評分事件處理。"""
-    monkeypatch.setenv("META_ANDROMEDA_REDIS_STREAM_KEY", "meta_andromeda:test_obs_queue")
-    monkeypatch.setenv("META_ANDROMEDA_REDIS_STREAM_GROUP", "meta_andromeda:test_obs_group")
-    monkeypatch.setenv("META_ANDROMEDA_REDIS_STREAM_CONSUMER", "meta_andromeda:test_obs_consumer")
+    monkeypatch.setattr(settings, "META_ANDROMEDA_REDIS_STREAM_KEY", "meta_andromeda:test_obs_queue")
+    monkeypatch.setattr(settings, "META_ANDROMEDA_REDIS_STREAM_GROUP", "meta_andromeda:test_obs_group")
+    monkeypatch.setattr(settings, "META_ANDROMEDA_REDIS_STREAM_CONSUMER", "meta_andromeda:test_obs_consumer")
 
     redis_mock = Mock()
     xadd_calls = []
@@ -91,7 +91,7 @@ def test_meta_andromeda_observation_import_stream_dispatch_and_consume(monkeypat
 def test_meta_andromeda_import_endpoint_dispatches_to_worker_in_web_role(meta_andromeda_access, monkeypatch):
     """docs/24 Wave 2：web 角色下匯入端點應該經 Redis stream 派工給 worker，
     不在本 process 執行 run_observed_facebook_ad_import_job。"""
-    monkeypatch.setenv("SERVICE_ROLE", "web")
+    monkeypatch.setattr(settings, "SERVICE_ROLE", "web")
 
     redis_mock = Mock()
     xadd_calls = []
@@ -1520,7 +1520,7 @@ async def test_meta_andromeda_download_observed_asset_rejects_by_content_length_
     """docs/68 B4 修復驗證：Content-Length 已宣告超過上限時應直接中止，
     完全不消費 body（不呼叫 aiter_bytes 的任何一塊），而不是像修復前那樣
     先把整個檔案讀進記憶體才拒絕。"""
-    monkeypatch.setenv("META_ANDROMEDA_OBSERVED_DOWNLOAD_MAX_BYTES", "100")
+    monkeypatch.setattr(settings, "META_ANDROMEDA_OBSERVED_DOWNLOAD_MAX_BYTES", 100)
 
     fake_response = _FakeStreamResponse(
         headers={"content-length": "999999", "content-type": "image/png"},
@@ -1548,7 +1548,7 @@ async def test_meta_andromeda_download_observed_asset_rejects_by_content_length_
 async def test_meta_andromeda_download_observed_asset_aborts_mid_stream_without_content_length(monkeypatch):
     """docs/68 B4 修復驗證：伺服器沒給 Content-Length（或謊報）時，邊讀邊
     累計位元組，一旦超限立刻中止，不繼續讀完剩餘的 chunk。"""
-    monkeypatch.setenv("META_ANDROMEDA_OBSERVED_DOWNLOAD_MAX_BYTES", "100")
+    monkeypatch.setattr(settings, "META_ANDROMEDA_OBSERVED_DOWNLOAD_MAX_BYTES", 100)
 
     fake_response = _FakeStreamResponse(
         headers={"content-type": "image/png"},  # 無 content-length
@@ -1577,7 +1577,7 @@ async def test_meta_andromeda_download_observed_asset_aborts_mid_stream_without_
 async def test_meta_andromeda_download_observed_asset_succeeds_under_limit(monkeypatch):
     """docs/68 B4 修復驗證：串流化後，正常大小的檔案仍能完整組回原始
     bytes，行為與修復前一致（回歸驗證，非新增能力）。"""
-    monkeypatch.setenv("META_ANDROMEDA_OBSERVED_DOWNLOAD_MAX_BYTES", "1000")
+    monkeypatch.setattr(settings, "META_ANDROMEDA_OBSERVED_DOWNLOAD_MAX_BYTES", 1000)
 
     expected_bytes = b"png-bytes-part-1" + b"png-bytes-part-2"
     fake_response = _FakeStreamResponse(
