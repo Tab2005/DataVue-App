@@ -377,7 +377,7 @@ repository = MetaAndromedaRepository()
 
 ---
 
-### P2-2 前端漸進導入 TypeScript
+### P2-2 前端漸進導入 TypeScript 🔄 基礎建設完成，持續進行（2026-08-10 起步）
 
 **方案**
 1. Vite 已支援 TS，只需加 `typescript`、`tsconfig.json`（`allowJs: true`, `strict: false` 起步），不必一次改完。
@@ -385,8 +385,20 @@ repository = MetaAndromedaRepository()
 3. 先為後端 API 回應定義 interface（可依 OpenAPI schema 產生），讓 `apiClient` 泛型化 `request<T>()`。
 4. ESLint 加 `@typescript-eslint`，CI 逐步收緊 `strict`。
 
-**驗證**：`npm run build` 通過；先轉 `apiClient.ts` 並確保現有頁面無型別報錯。
-**風險**：低（`allowJs` 讓 js/ts 共存）。
+**2026-08-10 已完成的變更**：
+
+1. **建置基礎設施**：新增 `typescript`（`~6.0.3`，刻意鎖在 `typescript-eslint` 支援的 `<6.1.0` 範圍內，而非直接裝最新的 7.x）、`typescript-eslint`（`^8.66.0`）為 dev dependency；新增 `tsconfig.json`（`allowJs: true`／`checkJs: false`／`strict: false` 起步，`moduleResolution: "Bundler"`、`jsx: "react-jsx"`、`noEmit: true`——實際轉譯仍交給 Vite/esbuild，`tsc` 只負責型別檢查）；新增 `src/vite-env.d.ts`（`/// <reference types="vite/client" />`，讓 `import.meta.env` 有型別）；`package.json` 新增 `typecheck` script（`tsc --noEmit`）。`eslint.config.js` 新增 `**/*.{ts,tsx}` 專屬區塊套用 `typescript-eslint` 的非型別感知 recommended 規則集（不指定 `project`，避免每次 lint 都跑一次完整型別分析拖慢速度；型別正確性交給 CI 另外跑的 `npm run typecheck`）。
+2. **`apiClient.js` → `apiClient.ts`**（依方案第 3 點試點檔案）：`request()` 改為泛型 `request<T>()`，新增 `ApiRequestOptions` 介面；`ApiError` 類別的 `statusCode`/`path`/`code` 欄位加上型別宣告；`apiClient.get/post/put/patch/delete` 五個方法都改為泛型，呼叫端可選擇性指定回應型別（如 `apiClient.get<ReportResponse>(...)`），不指定則退回 `unknown`。`catch` 區塊用 `error instanceof Error` 窄化型別，取代原本隱含 `any` 的存取方式。
+3. **另外轉了 2 個非元件檔案**（`src/hooks/` 與 `src/utils/`，元件層 `.jsx` 暫不動）：
+   - `src/utils/auth.ts`：新增 `JwtPayload` 介面，`getAuthToken`/`isTokenExpired`/`getTokenRemainingTime`/`getAuthHeaders`/`clearAuthToken` 皆補上簽名。
+   - `src/hooks/useAnalyticsFilters.ts`：新增 `AnalyticsRow`／`AnalyticsFilterMode`／`ObservationImportFilter`／`ObservationImportState` 型別，`useAnalyticsFilters` 的參數與內部 `applyFilters` 純函式都加上型別。
+4. 三個轉檔皆用 `git mv` 保留檔案歷史；既有消費端（`App.jsx`、`aiService.js`、`metaAndromedaWorkflowService.js`、`useTokenRefresh.js`、`Analytics.jsx` 等）皆為 extensionless import，轉檔後零修改即可繼續解析。
+
+**驗證**（2026-08-10 實測）：`npx tsc --noEmit` 零錯誤；`npm run build` 通過；`npx vitest run` 107 passed（沿用既有 `apiClient.test.js`/`useAnalyticsFilters.test.js`，未因轉檔而變動斷言，零回歸）；`npx eslint` 對三個新轉檔案本身零錯誤（既有 `*.test.js` 檔案的 `no-undef`（vitest 全域變數未設定）與 `renderWithOutlet.jsx` 的 fast-refresh 警告皆為轉檔前既有問題，非本次引入）。
+
+**尚未做的部分（維持「漸進」，不強行一次做完）**：`src/types/` 目錄（後端 API 回應的 interface）本次未建立——只在 `apiClient.ts` 內部用泛型參數開放呼叫端自行指定型別，尚未依 OpenAPI schema 產生共用型別定義；其餘 hooks/services 檔案與所有元件（`.jsx`）維持原樣；CI 尚未加入 `npm run typecheck` 或收緊 `strict`。
+
+**風險**：低（`allowJs` 讓 js/ts 共存，已用完整建置+測試+型別檢查驗證零回歸）。
 
 ---
 
@@ -456,7 +468,7 @@ repository = MetaAndromedaRepository()
 | 7 | P1-3 config → BaseSettings | 1-2d | — | 低（已完成） | ✅ 2026-08-10 完成 |
 | 8 | P2-1 拆分巨型檔案 | 持續 | 有測試護航更佳 | 中 | ✅ 已由 docs/33 執行完畢（2026-07-14～17 完成，2026-08-10 回填） |
 | 9 | P2-3 補測試 | 持續 | — | 低 | ✅ 原始 5 個目標已於 2026-08-10 補完（分類本身仍持續開放） |
-| 10 | P2-2 導入 TS | 持續 | — | 低 | 待處理 |
+| 10 | P2-2 導入 TS | 持續 | — | 低 | 🔄 2026-08-10 基礎建設+3 檔案完成（持續開放，見該節） |
 | 11 | P2-4 指標單一來源 | 1d（實測後修正：至少 2-3d，見該節 2026-08-10 盤點） | — | 中（原估低） | ⏸️ 已盤點暫緩 |
 
 **實際執行順序調整**：P0-1 實際上先於 P0-2/P0-3 完成（用戶指定順序）。原評估風險「中」，經完整實測（全新 DB 全鏈跑通、零 schema 落差、測試套件無回歸）後下修為「低」。下一步建議 P0-2、P0-3（快速降風險，工作量小）。P1 項目可與 P1-1/P1-2 合併分批。P2 為持續改善，穿插於功能開發間進行。

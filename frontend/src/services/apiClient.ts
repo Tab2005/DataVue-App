@@ -25,13 +25,28 @@ const RETRY_CONFIG = {
 /**
  * 延遲輔助函式
  */
-const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+
+type HttpMethod = 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE';
+
+export interface ApiRequestOptions {
+    body?: unknown;
+    headers?: Record<string, string>;
+    skipAuth?: boolean;
+    timeout?: number;
+    /** 內部重試計數，呼叫端不需自行提供 */
+    _retryCount?: number;
+}
 
 /**
  * 自訂 API 錯誤類別
  */
 export class ApiError extends Error {
-    constructor(message, statusCode, path) {
+    statusCode: number;
+    path: string;
+    code?: string | null;
+
+    constructor(message: string, statusCode: number, path: string) {
         super(message);
         this.name = 'ApiError';
         this.statusCode = statusCode;
@@ -42,7 +57,7 @@ export class ApiError extends Error {
 /**
  * 重導向至登入頁
  */
-function redirectToLogin(reason) {
+function redirectToLogin(reason: string): void {
     console.warn(`[ApiClient] 重導向至登入頁：${reason}`);
     const currentPath = window.location.pathname + window.location.search;
     if (currentPath !== '/login' && currentPath !== '/') {
@@ -54,16 +69,16 @@ function redirectToLogin(reason) {
 /**
  * 統一 API 請求函式
  *
- * @param {string} method - HTTP 方法（GET, POST, PUT, PATCH, DELETE）
- * @param {string} path - API 路徑（如 /api/users/me）
- * @param {object} options - 額外選項
- * @param {object} [options.body] - 請求 body（會自動 JSON.stringify）
- * @param {object} [options.headers] - 額外 headers
- * @param {boolean} [options.skipAuth=false] - 是否跳過認證 header
- * @param {number} [options.timeout=30000] - 逾時毫秒數
- * @returns {Promise<any>} - 解析後的 JSON 回應
+ * @param method - HTTP 方法（GET, POST, PUT, PATCH, DELETE）
+ * @param path - API 路徑（如 /api/users/me）
+ * @param options - 額外選項
+ * @returns 解析後的 JSON 回應
  */
-async function request(method, path, options = {}) {
+async function request<T = unknown>(
+    method: HttpMethod,
+    path: string,
+    options: ApiRequestOptions = {}
+): Promise<T> {
     const {
         body,
         headers: extraHeaders = {},
@@ -90,7 +105,7 @@ async function request(method, path, options = {}) {
     const teamId = localStorage.getItem('selected_team_id');
 
     // 建構 headers
-    const headers = {
+    const headers: Record<string, string> = {
         'Content-Type': 'application/json',
         ...(!skipAuth && {
             Authorization: `Bearer ${getAuthToken()}`,
@@ -99,17 +114,17 @@ async function request(method, path, options = {}) {
         ...extraHeaders,
     };
 
-    // 建構請求設定
-    const fetchOptions = {
-        method,
-        headers,
-        ...(body !== undefined && { body: JSON.stringify(body) }),
-    };
-
     // 逾時處理
     const controller = new AbortController();
     const timeoutId = setTimeout(() => controller.abort(), timeout);
-    fetchOptions.signal = controller.signal;
+
+    // 建構請求設定
+    const fetchOptions: RequestInit = {
+        method,
+        headers,
+        signal: controller.signal,
+        ...(body !== undefined && { body: JSON.stringify(body) }),
+    };
 
     requestCount++;
 
@@ -131,14 +146,14 @@ async function request(method, path, options = {}) {
         ) {
             console.warn(`[ApiClient] ${response.status} 觸發重試 (${_retryCount + 1}/${RETRY_CONFIG.maxRetries}): ${path}`);
             await sleep(RETRY_CONFIG.retryDelay * (_retryCount + 1));
-            return request(method, path, { ...options, _retryCount: _retryCount + 1 });
+            return request<T>(method, path, { ...options, _retryCount: _retryCount + 1 });
         }
 
         // 其他錯誤回應
         if (!response.ok) {
             errorCount++;
             let errorMessage = `HTTP ${response.status}`;
-            let errorCode = null;
+            let errorCode: string | null = null;
             try {
                 const errorData = await response.json();
                 const detail = errorData.detail || errorData.error || errorData.message;
@@ -160,14 +175,14 @@ async function request(method, path, options = {}) {
 
         // 204 No Content
         if (response.status === 204) {
-            return null;
+            return null as T;
         }
 
-        return response.json();
+        return (await response.json()) as T;
     } catch (error) {
         clearTimeout(timeoutId);
 
-        if (error.name === 'AbortError') {
+        if (error instanceof Error && error.name === 'AbortError') {
             errorCount++;
             throw new ApiError(`請求逾時（>${timeout}ms）`, 0, path);
         }
@@ -180,11 +195,16 @@ async function request(method, path, options = {}) {
  * 統一 API Client 物件
  */
 const apiClient = {
-    get: (path, options) => request('GET', path, options),
-    post: (path, body, options) => request('POST', path, { body, ...options }),
-    put: (path, body, options) => request('PUT', path, { body, ...options }),
-    patch: (path, body, options) => request('PATCH', path, { body, ...options }),
-    delete: (path, options) => request('DELETE', path, options),
+    get: <T = unknown>(path: string, options?: ApiRequestOptions) =>
+        request<T>('GET', path, options),
+    post: <T = unknown>(path: string, body?: unknown, options?: ApiRequestOptions) =>
+        request<T>('POST', path, { body, ...options }),
+    put: <T = unknown>(path: string, body?: unknown, options?: ApiRequestOptions) =>
+        request<T>('PUT', path, { body, ...options }),
+    patch: <T = unknown>(path: string, body?: unknown, options?: ApiRequestOptions) =>
+        request<T>('PATCH', path, { body, ...options }),
+    delete: <T = unknown>(path: string, options?: ApiRequestOptions) =>
+        request<T>('DELETE', path, options),
 
     /** 取得請求統計 */
     getStats: () => ({ requestCount, errorCount }),

@@ -1,12 +1,17 @@
 const TOKEN_KEY = 'google_token';
 const TOKEN_EXPIRY_KEY = 'google_token_expiry';
 
+export interface JwtPayload {
+    exp?: number;
+    [claim: string]: unknown;
+}
+
 /**
  * 解析 JWT Payload（不需要驗證簽名，僅讀取宣告）
- * @param {string} token - JWT token 字串
- * @returns {object|null} - 解析後的 payload 或 null
+ * @param token - JWT token 字串
+ * @returns 解析後的 payload 或 null
  */
-export function parseJwtPayload(token) {
+export function parseJwtPayload(token: string): JwtPayload | null {
     try {
         const parts = token.split('.');
         if (parts.length !== 3) return null;
@@ -22,9 +27,9 @@ export function parseJwtPayload(token) {
 
 /**
  * 儲存認證 Token 並同時儲存過期時間
- * @param {string} token - Google ID Token
+ * @param token - Google ID Token
  */
-export function saveAuthToken(token) {
+export function saveAuthToken(token: string): void {
     localStorage.setItem(TOKEN_KEY, token);
     // 從 JWT payload 讀取過期時間
     const payload = parseJwtPayload(token);
@@ -35,18 +40,17 @@ export function saveAuthToken(token) {
 
 /**
  * 取得儲存的認證 Token
- * @returns {string|null}
  */
-export const getAuthToken = () => {
+export const getAuthToken = (): string | null => {
     return localStorage.getItem(TOKEN_KEY);
 };
 
 /**
  * 檢查 Token 是否已過期
- * @param {string} [token] - 若未提供則使用 localStorage 中的 Token
- * @returns {boolean} - true 表示已過期或無法確認
+ * @param token - 若未提供則使用 localStorage 中的 Token
+ * @returns true 表示已過期或無法確認
  */
-export function isTokenExpired(token) {
+export function isTokenExpired(token?: string): boolean {
     const expiryStr = localStorage.getItem(TOKEN_EXPIRY_KEY);
 
     if (!expiryStr) {
@@ -63,19 +67,19 @@ export function isTokenExpired(token) {
 
 /**
  * 取得 Token 剩餘有效時間（毫秒）
- * @returns {number} - 剩餘毫秒數，<=0 表示已過期，-1 表示無法確認
+ * @returns 剩餘毫秒數，<=0 表示已過期，-1 表示無法確認
  */
-export function getTokenRemainingTime() {
+export function getTokenRemainingTime(): number {
     const expiryStr = localStorage.getItem(TOKEN_EXPIRY_KEY);
     if (!expiryStr) return -1;
     return parseInt(expiryStr, 10) - Date.now();
 }
 
-export const getAuthHeaders = () => {
+export const getAuthHeaders = (): Record<string, string> => {
     const token = getAuthToken();
     const teamId = localStorage.getItem('selected_team_id');
 
-    const headers = {
+    const headers: Record<string, string> = {
         'Authorization': `Bearer ${token}`,
         'Content-Type': 'application/json',
     };
@@ -90,7 +94,7 @@ export const getAuthHeaders = () => {
 /**
  * 清除認證 Token（登出時使用）
  */
-export const clearAuthToken = () => {
+export const clearAuthToken = (): void => {
     localStorage.removeItem(TOKEN_KEY);
     localStorage.removeItem(TOKEN_EXPIRY_KEY);
     sessionStorage.removeItem('redirectAfterLogin');
