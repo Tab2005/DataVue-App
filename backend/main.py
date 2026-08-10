@@ -210,7 +210,7 @@ async def general_exception_handler(request: Request, exc: Exception):
 # ============================================================
 
 from routers import users, teams, invites, admin, saved_views, permissions
-from routers import facebook, debug, reports, line, analytics_ai
+from routers import debug, reports, line, analytics_ai
 from routers.metrics import router as metrics_router
 from modules.meta_andromeda.router import router as meta_andromeda_router
 from modules.contribution import router as contribution_router
@@ -219,6 +219,7 @@ from modules.ga4.insights_router import router as ga4_insights_router
 from modules.gsc.router import router as gsc_router
 from modules.ai_hub.router import router as ai_router
 from modules.auth.router import router as auth_router
+from modules.fb_ads.router import router as facebook_router
 
 # Authentication & Users
 app.include_router(auth_router)
@@ -230,7 +231,7 @@ app.include_router(teams.router, prefix="/api/teams", tags=["teams"])
 app.include_router(invites.router, prefix="/api", tags=["invites"])
 
 # Business Routers (Data Sources)
-app.include_router(facebook.router)
+app.include_router(facebook_router)
 app.include_router(gsc_router)
 app.include_router(ga4_router)
 app.include_router(ga4_insights_router, prefix="/api/ga4/insights", tags=["ga4_insights"])
