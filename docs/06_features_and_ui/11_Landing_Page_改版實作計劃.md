@@ -1,8 +1,27 @@
 # Landing Page 改版實作計劃
 
 > 建立日期：2026-06-30
-> 最後更新：2026-06-30
-> 狀態：**已完成實作**
+> 最後更新：2026-08-10
+> 狀態：**已被取代（歷史文件，非現行 Landing Page 現況）**
+
+---
+
+## ⚠️ 2026-08-10 回填：本計劃已於實作後被完全替換，本文件內容為歷史紀錄
+
+本文件描述的改版**確實有被實作**（commit `12dfaba`：`feat(landing): 完成 Landing Page 改版實作`），並在此後又經過一次視覺升級（commit `2e8d1b3`：`style(landing): 升級 Landing 頁面視覺為 Data Nexus 風格`）。但這整套多元件實作**後續被完全移除**：
+
+- commit `78d2ac6`（`refactor: 整理 Landing Page，移除舊 Landing 組件並更新樣式`）一次刪除了本文件「四、新元件檔案清單」列出的全部 11 個檔案（`Navbar.jsx`/`Hero.jsx`/`LogoBar.jsx`/`Features.jsx`/`PainPoints.jsx`/`MetaAndromeda.jsx`/`Audience.jsx`/`SocialProof.jsx`/`HowItWorks.jsx`/`FinalCTA.jsx`/`Footer.jsx`），`frontend/src/components/Landing/` 目錄現已不存在。
+- commit `db78327`（`style/feat: 新增 Landing 專屬樣式與更新 Landing 頁面`）補上現行的 `frontend/src/pages/Landing.css`，定型出目前的版本。
+
+**目前實際的 Landing Page**（`frontend/src/pages/Landing.jsx`，141 行）是完全不同的極簡單檔設計，只有三段：
+
+1. **Navbar + Hero**（合併在同一個 `<section>`）：主標題「把分散的行銷數據，變成可執行的戰略。」+ 右側資料流視覺卡（FB/GSC/GA4 三個平台指標 + AI 診斷卡）。
+2. **核心模組**（`#modules`）：四張卡片（搜尋意圖解碼／廣告成效校準／流量路徑分析／自動週報輸出），非本文件規劃的「五大數據支柱 Tab 切換」形式。
+3. **運作流程**（`#workflow`）：Connect → Normalize → Compare → Diagnose → Report 五步驟時間軸，非本文件規劃的四步驟 HowItWorks。
+
+本文件規劃的 **LogoBar、MetaAndromeda（AI 引擎獨立 Section）、SocialProof（用戶評語）、FinalCTA（全寬召喚 Banner）、Footer FAQ** 皆不存在於現行版本；「七、後續追蹤」留下的三個未解問題（真實用戶評語來源、LogoBar 動態數字串接 API、Meta Andromeda CTA 導向）也隨這次整體替換一併失去意義，非待辦。
+
+若之後要再次改版 Landing Page，應以現行 `frontend/src/pages/Landing.jsx`／`Landing.css` 為基準另立新計劃文件，不建議延續本文件的規格（結構已完全不同）。以下原始內容保留作為歷史紀錄。
 
 ---
 
