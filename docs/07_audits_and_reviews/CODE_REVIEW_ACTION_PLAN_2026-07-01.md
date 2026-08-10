@@ -201,7 +201,15 @@ psycopg2.errors.StringDataRightTruncation: value too long for type character var
 
 ## P1 — 架構收斂
 
-### P1-1 ga4 / gsc / ai_hub 空殼模組決策
+### P1-1 ga4 / gsc / ai_hub 空殼模組決策 ⚠️ 部分完成（2026-08-10）——service 層仍未解決
+
+**2026-08-10 進度更新**：這次執行 P1-2 時查證發現，本節描述的問題其實是**兩層獨立的假模組化**：router 層（`modules/X/router.py` 只轉發 `routers/X.py`）與 service 層（`modules/X/service.py` 只轉發根目錄 `X_service.py`，本節原始問題定位所指）。這次只解決了 router 層：
+- **ga4**：service 層其實已在 docs/22 第 0 波（本次之前的既有工作）真遷移完成——`modules/ga4/service.py`／`modules/ga4/client.py` 是真實實作，`ga4_service.GA4Service` 才是保留給舊呼叫端的薄轉發層，並非本節所述的空殼。router 層則確認是真空殼（`modules/ga4/router.py` 原本 14 行純轉發 `routers/ga4.py`），已於 P1-2 解決（見下）。
+- **gsc**：service 層**仍是空殼**——`modules/gsc/service.py`（28 行）仍是 `from gsc_service import GSCService` 的純轉發，根目錄 `gsc_service.py`（338 行）才是實作，本節問題**未解決**。router 層已於 P1-2 解決。
+- **ai_hub**：service 層**仍是空殼**——`modules/ai_hub/service.py`（24 行）仍是 `from ai_service import AIService` 的純轉發，根目錄 `ai_service.py`（263 行）才是實作，本節問題**未解決**。router 層已於 P1-2 解決。
+- **auth**：不在本節原始範圍內（本節從未提及 auth），是 P1-2 執行過程中另外發現的獨立問題（`modules/auth/router.py` 是分歧死碼而非轉發 shim），已在 P1-2 一併解決，詳見該節。
+
+**尚待處理**：gsc、ai_hub 的 service 層真遷移（方案 A，見下）仍是開放項目，需要另外排時間處理，屬於中風險（import 面積大，但機械性替換）。
 
 **問題定位**
 `modules/ga4/service.py`、`modules/gsc/service.py`、`modules/ai_hub/service.py` 僅 `from ga4_service import GA4Service` 這類 re-export；實作仍在根目錄 `ga4_service.py`(642)、`gsc_service.py`(338)、`ai_service.py`(263)。且 `routers/ga4.py` 直接 `from ga4_service import`（繞過模組）。屬「假模組化」。
@@ -226,24 +234,41 @@ psycopg2.errors.StringDataRightTruncation: value too long for type character var
 
 ---
 
-### P1-2 路由統一到 modules/*/router.py
+### P1-2 路由統一到 modules/*/router.py ✅ 已完成（2026-08-10）
 
 **問題定位**
 路由組織分裂：`modules/*/router.py`（auth/ga4/gsc/meta_andromeda）與 `routers/`（users/teams/invites/admin/ai/saved_views/permissions/facebook/reports/line/metrics）並存。
 
-**修改方案（漸進，低風險）**
-1. 訂定目標：所有 router 收斂到 `modules/<domain>/router.py`。對應關係：
-   - `routers/users.py` → `modules/auth/`（或新增 `modules/users/`）
-   - `routers/teams.py`、`routers/invites.py`、`routers/permissions.py` → `modules/teams/` / `modules/permissions/`
-   - `routers/ai.py` → `modules/ai_hub/router.py`
-   - `routers/reports.py` → `modules/reports/router.py`
-   - `routers/facebook.py` → `modules/fb_ads/router.py`
-   - `routers/metrics.py`、`routers/saved_views.py`、`routers/line.py`、`routers/admin.py` → 各自 domain 模組
-2. 每次搬一個 router：移動檔案 → 更新 `main.py` 的 import（L201-232）→ 保持 `prefix`/`tags` 不變（API 路徑零變動）。
-3. `main.py` 的 router 註冊區塊維持集中，僅改 import 來源。
+**實作前發現：router 層的 P1-1 重疊（僅 router 層，service 層未動）**
 
-**驗證**：對照 OpenAPI（`/docs`）搬移前後的路徑清單完全一致；`test_*` 全綠。
-**風險**：低（純檔案位移，API 契約不變）。可與 P1-1 合併分批進行。
+動手前查證發現 `modules/ga4/router.py`、`modules/gsc/router.py`、`modules/ai_hub/router.py` 早已存在，但都只是 14~16 行的轉發 shim（`from routers.X import router`），main.py 實際註冊的是根層 `routers/ga4.py`（133 行）、`routers/gsc.py`（783 行）、`routers/ai.py`（311 行）——這是 P1-1「ga4/gsc/ai_hub 空殼模組」問題在 router 層的具體表現（P1-1 原始問題定位其實指的是 service 層，見該節 2026-08-10 更新的釐清）。`modules/auth/router.py` 則不是 shim，是一份**分歧的死碼**：提供 `/me`、`/token-status`（較簡易版）、`/ai-settings`，從未被註冊；查證後確認這兩個端點功能其實已在別處以不同路徑提供（`/api/users/me`、`/api/ai/settings`），前端也從未呼叫過 `/api/auth/me` 或 `/api/auth/ai-settings`，純屬遺留死碼、非遺漏功能。裁定：ga4/gsc/ai_hub 三個 router shim 改用真正內容取代；auth 用根層 `routers/auth.py`（真正在跑的 `/exchange-token`、`/token-status`）取代死碼版本。**注意：這只解決了 router 層，gsc 與 ai_hub 的 service 層轉發 shim（P1-1 的原始範圍）仍未處理，詳見 P1-1 節。**
+
+**已完成的變更**
+
+依檔案大小由小到大逐一搬移，每個檔案都：核對內部是否只用絕對匯入（`from database import ...`、`from dependencies import ...` 等，確認搬移不影響 import 解析）→ 廣泛搜尋消費端（含測試檔裡的字串型別 mock patch 目標，如 `"routers.gsc.GSCService.get_analytics"`，這類 import 敘述以外的用法容易漏抓）→ 搬移檔案 → 更新 `main.py` import → 刪除根層舊檔 → 核對 OpenAPI 路徑與搬移前逐一比對 → 跑全套件測試。
+
+搬移對照：
+- `routers/ga4.py`（133 行）→ `modules/ga4/router.py`（取代 shim）
+- `routers/gsc.py`（783 行）→ `modules/gsc/router.py`（取代 shim）
+- `routers/ai.py`（311 行）→ `modules/ai_hub/router.py`（取代 shim）
+- `routers/auth.py`（124 行）→ `modules/auth/router.py`（取代分歧死碼，見上）
+- `routers/facebook.py`（222 行）→ 新建 `modules/fb_ads/router.py`
+- `routers/users.py`（107 行）→ 新建 `modules/users/router.py`
+- `routers/teams.py`（254 行）+ `routers/invites.py`（140 行）→ 新建 `modules/teams/`（`router.py` + `invites_router.py`）
+- `routers/permissions.py`（300 行）→ 新建 `modules/permissions/router.py`
+- `routers/reports.py`（511 行）→ 新建 `modules/reports/router.py`
+- `routers/metrics.py`（225 行，含獨立一份 `METRICS_REGISTRY` dict）→ `modules/fb_ads/metrics_router.py`（放進 fb_ads 而非新建 `modules/metrics/`，因為緊接著要在 P2-4 跟 `modules/fb_ads/metrics_registry.py` 整併）
+- `routers/saved_views.py`（245 行）→ 新建 `modules/saved_views/router.py`
+- `routers/line.py`（90 行）→ 新建 `modules/line/router.py`
+- `routers/admin.py`（208 行，含 `router` 與 `emergency_router` 兩個 APIRouter）→ 新建 `modules/admin/router.py`
+
+`routers/analytics_ai.py`、`routers/debug.py` 不在原規劃清單內，維持原地不動。
+
+**驗證結果**
+- ✅ 每個檔案搬移後都用 `app.openapi()['paths']` 逐一核對該 domain 的路徑清單與搬移前完全一致（共驗證 13 次）。
+- ✅ 每次搬移後都跑 `pytest backend/tests/`，全程維持 598 passed，共驗證 14 次（含 auth 過程中發現 `tests/test_auth.py` 3 處字串 mock patch 目標遺漏，修正後才回到全綠）。
+- ✅ 每個檔案分開 commit 並個別推送，共 8 個 commit，任一步出錯都可精確定位到單一檔案。
+- 風險：低（純檔案位移 + import 路徑更新，未改動任何端點邏輯；`main.py` 的 router 註冊順序與 prefix/tags 完全不變）。
 
 ---
 
@@ -399,8 +424,8 @@ repository = MetaAndromedaRepository()
 | 2 | P0-2 `/health` 拆分 | 0.5d | — | 低（已驗證） | ✅ 2026-07-02 完成 |
 | 3 | P0-3 移除除錯/一次性腳本 | 0.5d | — | 低（已驗證） | ✅ 2026-07-02 完成 |
 | 4 | P1-4 部署拓撲 + Redis 狀態 | 2-3d | 決定 queue host | 低（已驗證） | ✅ 2026-07-03 完成 |
-| 5 | P1-1 空殼模組真遷移（ga4→gsc→ai_hub）| 2d | — | 中 | 待處理 |
-| 6 | P1-2 路由統一 | 2d | 可併 P1-1 | 低 | 待處理 |
+| 5 | P1-1 空殼模組真遷移（ga4→gsc→ai_hub）| 2d | — | 中 | ⚠️ 部分完成（router 層已於 2026-08-10 隨 P1-2 解決；gsc/ai_hub 的 service 層仍待處理） |
+| 6 | P1-2 路由統一 | 2d | 可併 P1-1 | 低（已完成） | ✅ 2026-08-10 完成 |
 | 7 | P1-3 config → BaseSettings | 1-2d | — | 低（已完成） | ✅ 2026-08-10 完成 |
 | 8 | P2-1 拆分巨型檔案 | 持續 | 有測試護航更佳 | 中 | 待處理 |
 | 9 | P2-3 補測試 | 持續 | — | 低 | 待處理 |
