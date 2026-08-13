@@ -15,6 +15,7 @@ docs/
 ├── 05_gsc/                  # Google Search Console 數據與 AI 搜尋擴充
 ├── 06_features_and_ui/      # 週報、Landing Page 與 UI/UX 改版計畫
 ├── 07_audits_and_reviews/   # 代碼審查 (Code Review) 與安全性審計報告
+├── 08_business/             # 商業模式、定價與推廣策略規劃
 ├── impl/                    # 歷史修復與單元測試框架實作記錄
 ├── optimization/            # 歷史性能優化與重構紀錄 (P0 ~ P4)
 └── legacy/                  # 舊版規格參考檔案與技術留存
@@ -100,6 +101,13 @@ docs/
 - [33_大型檔案拆分重構實作計劃.md](07_audits_and_reviews/33_大型檔案拆分重構實作計劃.md) - 代碼模組化拆分
 - [69_全專案未完成規劃與缺口盤點.md](07_audits_and_reviews/69_全專案未完成規劃與缺口盤點.md) - 全 docs 目錄未完成項目盤點清單（2026-08-07）
 - [archive/](07_audits_and_reviews/archive/) - 過時歷史快照（`CODE_AUDIT_*.md`、`CODE_REVIEW_*.md`、`OPTIMIZATION_REPORT.md`）：內容提到的架構（如單檔 `backend/database.py`）已不存在，僅供追溯歷史脈絡，非現行待辦
+
+---
+
+### 8. 💼 商業模式與推廣 (`docs/08_business/`)
+產品定位、定價架構、商業化阻斷點與獲客策略（非技術文件）。
+
+- [72_商業模式與推廣策略規劃.md](08_business/72_商業模式與推廣策略規劃.md) - 現況商業盤點、三大商業化阻斷點（Meta App Review／Google OAuth 驗證／計費分級）、代理商垂直 SaaS 定價提案與分階段推廣策略（2026-08-12，**待審閱**）
 
 ---
 
