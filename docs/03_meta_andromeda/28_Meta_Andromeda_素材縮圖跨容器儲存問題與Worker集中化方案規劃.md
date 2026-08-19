@@ -3,6 +3,7 @@
 - **日期**：2026-07-10
 - **性質**：事故記錄 + 架構規劃（暫時修法已實作，完整方案待評估是否動工）
 - **狀態**：暫時修法（方案 C）已完成，未 commit；完整方案（方案 D）已完成 D1-D4 程式實作，待部署驗證與後續 commit
+- **2026-08-19 追記**：方案 D 已於 2026-07-13 上線為正式生產架構（見 docs/71 §一「部署架構要點」），但第二節記錄的方案 C 暫修——「評估紀錄」列表/明細 API 無條件用 `ObservedCreative.media_url`（原始 FB CDN 網址，會過期）覆蓋 `preview_url`——在方案 D 上線後未被收回，導致成效分析匯入的縮圖持續指向會過期的網址，即使該筆素材早已透過方案 D 正確、永久存好。已修正為只在 `asset_uri` 缺值時才退回 media_url（見 `backend/modules/meta_andromeda/repository/review_queue.py` 的 `list_review_queue()`/`get_review_queue_detail()`），使其行為與 Score Lab 上傳一致。本節（二）內容予以保留作歷史記錄，「已知限制」提到的縮圖過期風險即為本次修正對象。
 - **依據**：
   - docs/24（Andromeda 評分管線拆出 `meta-andromeda-worker` process，Wave 2 把觀測匯入負載一併搬去 worker）
   - docs/25（背景工作負載統一 Worker 架構規劃，本文件延續其「web 永遠不跑重活、worker 集中背景負載」的分工原則）

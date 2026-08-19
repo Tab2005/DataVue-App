@@ -275,21 +275,21 @@ def test_meta_andromeda_review_queue_detail_returns_selected_item(meta_andromeda
 
 
 @pytest.mark.unit
-def test_meta_andromeda_review_queue_falls_back_to_observed_media_url_for_preview(meta_andromeda_access, db):
-    """成效分析匯入的素材，score_event.preview_url 一律是 null（本地 storage 縮圖代理
-    在 backend/worker 分離部署下讀不到 worker 寫的檔案，見 2026-07-10 事故）。list 跟
-    detail 兩個端點都應該退回用 ObservedCreative.media_url（原始 Facebook CDN 網址）
-    當 preview_url，讓前端縮圖直接從那邊載，不用等本地 storage 修好。"""
+def test_meta_andromeda_review_queue_prefers_stored_asset_uri_over_observed_media_url(meta_andromeda_access, db):
+    """2026-08-19 修正：docs/28 方案 D（worker 集中化儲存）已是生產架構，成效分析匯入
+    素材下載成功、asset_uri 有值時，list 跟 detail 兩個端點都不該再覆蓋成
+    ObservedCreative.media_url（原始 Facebook CDN 網址，會過期）——應保留 preview_url
+    為空，讓前端 resolvePreviewUrl() 改用 asset_uri 走本地縮圖代理（永久有效）。"""
     from database.models.meta_andromeda import MetaAndromedaObservedCreative, MetaAndromedaScoreEvent
 
     obs = MetaAndromedaObservedCreative(
-        id="obs_preview_fallback_test",
-        asset_uri="storage://meta-andromeda/uploads/preview_fallback.jpg",
-        media_url="https://scontent.xx.fbcdn.net/v/preview_fallback.jpg",
+        id="obs_preview_asset_uri_test",
+        asset_uri="storage://meta-andromeda/uploads/preview_asset_uri.jpg",
+        media_url="https://scontent.xx.fbcdn.net/v/preview_asset_uri.jpg",
         source_platform="facebook_ads",
         source_account_id="act_12345",
-        ad_id="ad_preview_fallback",
-        ad_name="Preview Fallback Ad",
+        ad_id="ad_preview_asset_uri",
+        ad_name="Preview Asset URI Ad",
         placement_family="feed",
         market="TW",
         media_type="image",
@@ -302,35 +302,35 @@ def test_meta_andromeda_review_queue_falls_back_to_observed_media_url_for_previe
     db.add(obs)
 
     score_evt = MetaAndromedaScoreEvent(
-        id="score_preview_fallback_test",
+        id="score_preview_asset_uri_test",
         status="completed",
-        asset_uri="storage://meta-andromeda/uploads/preview_fallback.jpg",
+        asset_uri="storage://meta-andromeda/uploads/preview_asset_uri.jpg",
         asset_type="image",
         preview_url=None,
         request_mode="auto",
         objective="OUTCOME_SALES",
         placement_family="feed",
         market="TW",
-        request_context={"origin": "analytics", "observed_creative_id": "obs_preview_fallback_test"},
+        request_context={"origin": "analytics", "observed_creative_id": "obs_preview_asset_uri_test"},
     )
     db.add(score_evt)
     db.commit()
 
     list_response = meta_andromeda_access.get(
         "/api/meta-andromeda/review-queue",
-        params={"search": "score_preview_fallback_test", "limit": 30},
+        params={"search": "score_preview_asset_uri_test", "limit": 30},
     )
     assert list_response.status_code == 200
     items = list_response.json()["items"]
-    assert any(
-        item["score_event_id"] == "score_preview_fallback_test"
-        and item["preview_url"] == "https://scontent.xx.fbcdn.net/v/preview_fallback.jpg"
-        for item in items
-    )
+    matched = next(item for item in items if item["score_event_id"] == "score_preview_asset_uri_test")
+    assert matched["asset_uri"] == "storage://meta-andromeda/uploads/preview_asset_uri.jpg"
+    assert matched["preview_url"] is None
 
-    detail_response = meta_andromeda_access.get("/api/meta-andromeda/review-queue/score_preview_fallback_test")
+    detail_response = meta_andromeda_access.get("/api/meta-andromeda/review-queue/score_preview_asset_uri_test")
     assert detail_response.status_code == 200
-    assert detail_response.json()["preview_url"] == "https://scontent.xx.fbcdn.net/v/preview_fallback.jpg"
+    detail_payload = detail_response.json()
+    assert detail_payload["asset_uri"] == "storage://meta-andromeda/uploads/preview_asset_uri.jpg"
+    assert detail_payload["preview_url"] is None
 
 
 @pytest.mark.unit

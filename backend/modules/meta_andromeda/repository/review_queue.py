@@ -190,11 +190,21 @@ class ReviewQueueMixin:
             )
             cal_ids = {m.score_event_id for m in matched}
         ad_name_map: dict[str, str] = {}
-        # 成效分析匯入的素材，preview_url 欄位一律是 null（見 _score_to_list_item）——
-        # backend/worker 各自有獨立的 filesystem storage volume，worker 下載/寫入的檔案
-        # backend 讀不到，本地 asset_uri 的縮圖代理端點會 404。ObservedCreative.media_url
-        # 存的是原始 Facebook CDN 網址，直接讓前端從那邊載縮圖，繞過本地 storage 這層
-        # （2026-07-10 事故後新增）。
+        # score.preview_url 欄位一律是 null（見 _score_to_list_item）。原本無條件用
+        # ObservedCreative.media_url（原始 Facebook CDN 網址，會過期）頂替，是backend/
+        # worker 分離部署下本地縮圖代理讀不到 worker 寫的檔案時的暫時修法（2026-07-10
+        # 事故後新增，方案 C，docs/28）。
+        #
+        # 2026-08-19 修正：docs/28 方案 D（worker 集中化儲存）已於 2026-07-13 上線為生產
+        # 架構，backend 對 filesystem 資產一律代理到 worker（見 router/scoring_assets.py
+        # preview_asset()），本地縮圖代理已能正常讀到 worker 寫入的檔案，Score Lab 上傳
+        # 的縮圖走的正是同一條代理路徑、也確實穩定可用。原本這裡無條件覆蓋 preview_url，
+        # 導致每一筆成效分析匯入的縮圖都繼續指向會過期的 FB CDN 網址，即使該筆已經有永久
+        # 存好的 asset_uri 也一樣——改成只在 asset_uri 缺值時才退回 media_url。
+        # 註：MetaAndromedaScoreEvent.asset_uri 欄位是 nullable=False，素材下載失敗時
+        # import_observed_facebook_ad() 根本不會建立 score event（score_status 停在
+        # skipped_no_asset），因此就目前的建立路徑而言不會有 asset_uri 為空的 score
+        # event；這裡的判斷純粹是防禦性寫法，避免未來建立路徑改變時縮圖整個讀不到。
         preview_url_map: dict[str, str] = {}
         if cal_ids:
             obs_rows = (
@@ -241,7 +251,7 @@ class ReviewQueueMixin:
             item = self._score_to_list_item(row)
             item["has_observation"] = (row.id in cal_ids) or bool(rc.get("observed_creative_id"))
             item["ad_name"] = ad_name_map.get(row.id)
-            if not item.get("preview_url"):
+            if not item.get("preview_url") and not item.get("asset_uri"):
                 item["preview_url"] = preview_url_map.get(row.id)
             items.append(item)
         return {
@@ -325,9 +335,10 @@ class ReviewQueueMixin:
             else:
                 detail["observation"] = None
 
-        # 成效分析匯入的素材本地縮圖代理讀不到（見上面 list_review_queue 的說明），
-        # 用 ObservedCreative.media_url（原始 Facebook CDN 網址）當備援 preview_url
-        if obs and obs.media_url and not detail.get("preview_url"):
+        # 2026-08-19 修正（見上面 list_review_queue 的完整說明）：只在 asset_uri 缺值時
+        # 才退回 ObservedCreative.media_url（原始 Facebook CDN 網址，會過期）當備援
+        # preview_url，asset_uri 存在時交由本地縮圖代理（已走 worker 集中化儲存）處理。
+        if obs and obs.media_url and not detail.get("preview_url") and not detail.get("asset_uri"):
             detail["preview_url"] = obs.media_url
 
         # 三方對照（人 vs 模型 vs 市場）：把 reviewer 的歷史回饋跟上面的 AI 預測/市場實績
