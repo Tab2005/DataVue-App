@@ -1,6 +1,6 @@
 import React from 'react';
 import { GoogleLogin } from '@react-oauth/google';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, Link } from 'react-router-dom';
 
 const Login = () => {
     const navigate = useNavigate();
@@ -57,20 +57,37 @@ const Login = () => {
                 borderRadius: 'var(--radius-xl)',
                 backgroundColor: 'var(--bg-secondary)',
                 boxShadow: '0 4px 12px rgba(0,0,0,0.1)',
-                textAlign: 'center'
+                textAlign: 'center',
+                maxWidth: '420px',
+                width: '90%'
             }}>
-                <h1 style={{ marginBottom: '24px' }}>Welcome Back</h1>
-                <p style={{ marginBottom: '32px', color: 'var(--text-secondary)' }}>
-                    Please sign in to access the dashboard.
+                <h1 style={{ marginBottom: '12px' }}>歡迎使用 DataVue</h1>
+                <p style={{ marginBottom: '28px', color: 'var(--text-secondary)', fontSize: '0.95rem' }}>
+                    請使用 Google 帳號登入以進入分析儀表板
                 </p>
 
-                <div style={{ display: 'flex', justifyContent: 'center' }}>
+                <div style={{ display: 'flex', justifyContent: 'center', marginBottom: '24px' }}>
                     <GoogleLogin
                         onSuccess={handleSuccess}
                         onError={handleError}
                         theme="filled_black"
                         shape="pill"
                     />
+                </div>
+
+                <div style={{
+                    marginTop: '24px',
+                    paddingTop: '16px',
+                    borderTop: '1px solid var(--border-color, rgba(255,255,255,0.1))',
+                    fontSize: '0.8rem',
+                    color: 'var(--text-secondary)',
+                    display: 'flex',
+                    justifyContent: 'center',
+                    gap: '16px'
+                }}>
+                    <Link to="/privacy" style={{ color: 'inherit', textDecoration: 'underline' }}>隱私權政策</Link>
+                    <span>•</span>
+                    <Link to="/terms" style={{ color: 'inherit', textDecoration: 'underline' }}>服務條款</Link>
                 </div>
             </div>
         </div>

@@ -136,6 +136,40 @@ export default function Landing() {
           ))}
         </ol>
       </section>
+
+      <footer className="dv-entry__footer">
+        <div className="dv-entry__footer-inner">
+          <div className="dv-entry__footer-brand">
+            <div className="dv-entry__brand">
+              <span className="dv-entry__brand-mark">D</span>
+              <span>DataVue</span>
+            </div>
+            <p className="dv-entry__footer-tagline">全方位行銷數據分析與決策支援平台</p>
+          </div>
+          <div className="dv-entry__footer-links">
+            <div className="dv-entry__footer-col">
+              <h4>平台導覽</h4>
+              <a href="#modules">核心模組</a>
+              <a href="#workflow">運作流程</a>
+              <Link to="/login">登入系統</Link>
+            </div>
+            <div className="dv-entry__footer-col">
+              <h4>法規與條款</h4>
+              <Link to="/privacy">隱私權政策 (Privacy)</Link>
+              <Link to="/terms">服務條款 (Terms)</Link>
+            </div>
+            <div className="dv-entry__footer-col">
+              <h4>聯絡支援</h4>
+              <a href="mailto:support@sitetegy.com">support@sitetegy.com</a>
+              <span className="dv-entry__footer-subtext">網域: datavue.sitetegy.com</span>
+            </div>
+          </div>
+        </div>
+        <div className="dv-entry__footer-bottom">
+          <p>&copy; {new Date().getFullYear()} DataVue (sitetegy.com). All rights reserved.</p>
+        </div>
+      </footer>
     </main>
   );
 }
+

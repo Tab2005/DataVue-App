@@ -34,6 +34,8 @@ const MetaAndromedaMonitoring = lazy(() => import('./pages/MetaAndromedaMonitori
 const MetaAndromedaRelease = lazy(() => import('./pages/MetaAndromedaRelease'));
 const MetaAndromedaScoreLab = lazy(() => import('./pages/MetaAndromedaScoreLab'));
 const ContributionAnalysis = lazy(() => import('./pages/ContributionAnalysis'));
+const PrivacyPolicy = lazy(() => import('./pages/PrivacyPolicy'));
+const TermsOfService = lazy(() => import('./pages/TermsOfService'));
 
 /**
  * 內層 App 元件（需在 Router 內部才能使用 useNavigate）
@@ -62,6 +64,8 @@ function AppInner() {
       <Routes>
               <Route path="/" element={<Landing />} />
               <Route path="/login" element={<Login />} />
+              <Route path="/privacy" element={<PrivacyPolicy />} />
+              <Route path="/terms" element={<TermsOfService />} />
               <Route path="/invite/:code" element={<InvitePage />} />
               <Route path="/reports/share/:token" element={<SharedReport />} />
               <Route path="/ga4-insights/share/:token" element={<SharedGA4Insight />} />
