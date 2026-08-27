@@ -84,13 +84,13 @@ export default function TermsOfService() {
             如果您對本服務條款有任何疑問，請透過以下方式與我們聯繫：
           </p>
           <ul>
-            <li><strong>客服信箱</strong>：<a href="mailto:support@sitetegy.com" style={{ color: 'var(--legal-cyan)' }}>support@sitetegy.com</a></li>
+            <li><strong>客服信箱</strong>：<a href="mailto:info@sitetegy.com" style={{ color: 'var(--legal-cyan)' }}>info@sitetegy.com</a></li>
             <li><strong>官方網站</strong>：<code>datavue.sitetegy.com</code></li>
           </ul>
         </article>
 
         <footer className="dv-legal__footer">
-          &copy; {new Date().getFullYear()} DataVue (sitetegy.com). All rights reserved.
+          &copy; {new Date().getFullYear()} DataVue (<a href="https://sitetegy.com" target="_blank" rel="noopener noreferrer">站略數位科技</a>). All rights reserved.
         </footer>
       </main>
     </div>

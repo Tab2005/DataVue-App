@@ -85,12 +85,12 @@ export default function PrivacyPolicy() {
           <ul>
             <li><strong>服務名稱</strong>：DataVue</li>
             <li><strong>官方網域</strong>：<code>datavue.sitetegy.com</code></li>
-            <li><strong>客服與隱私支援信箱</strong>：<a href="mailto:support@sitetegy.com" style={{ color: 'var(--legal-cyan)' }}>support@sitetegy.com</a></li>
+            <li><strong>客服與隱私支援信箱</strong>：<a href="mailto:info@sitetegy.com" style={{ color: 'var(--legal-cyan)' }}>info@sitetegy.com</a></li>
           </ul>
         </article>
 
         <footer className="dv-legal__footer">
-          &copy; {new Date().getFullYear()} DataVue (sitetegy.com). All rights reserved.
+          &copy; {new Date().getFullYear()} DataVue (<a href="https://sitetegy.com" target="_blank" rel="noopener noreferrer">站略數位科技</a>). All rights reserved.
         </footer>
       </main>
     </div>

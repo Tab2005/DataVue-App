@@ -557,3 +557,13 @@
   font-size: 0.82rem;
 }
 
+.dv-entry__footer-bottom a {
+  color: var(--entry-muted);
+  text-decoration: underline;
+  transition: color 0.2s;
+}
+
+.dv-entry__footer-bottom a:hover {
+  color: var(--entry-cyan);
+}
+

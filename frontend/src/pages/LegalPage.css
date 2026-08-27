@@ -154,6 +154,16 @@
   font-size: 0.85rem;
 }
 
+.dv-legal__footer a {
+  color: var(--legal-muted);
+  text-decoration: underline;
+  transition: color 0.2s;
+}
+
+.dv-legal__footer a:hover {
+  color: var(--legal-cyan);
+}
+
 @media (max-width: 680px) {
   .dv-legal__content {
     padding: 24px 20px;

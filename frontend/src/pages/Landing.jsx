@@ -160,13 +160,15 @@ export default function Landing() {
             </div>
             <div className="dv-entry__footer-col">
               <h4>聯絡支援</h4>
-              <a href="mailto:support@sitetegy.com">support@sitetegy.com</a>
+              <a href="mailto:info@sitetegy.com">info@sitetegy.com</a>
               <span className="dv-entry__footer-subtext">網域: datavue.sitetegy.com</span>
             </div>
           </div>
         </div>
         <div className="dv-entry__footer-bottom">
-          <p>&copy; {new Date().getFullYear()} DataVue (sitetegy.com). All rights reserved.</p>
+          <p>
+            &copy; {new Date().getFullYear()} DataVue (<a href="https://sitetegy.com" target="_blank" rel="noopener noreferrer">站略數位科技</a>). All rights reserved.
+          </p>
         </div>
       </footer>
     </main>
