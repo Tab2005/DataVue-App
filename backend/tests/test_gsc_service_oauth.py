@@ -11,7 +11,7 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from modules.gsc.service import GSCService
+from modules.gsc.service import GSCService, _safe_decrypt
 
 
 def _make_response(status_code, json_data):
@@ -45,8 +45,8 @@ class TestGSCServiceExchangeCode:
         success, message = GSCService.exchange_code(user, "auth-code", db)
 
         assert success is True
-        assert user.gsc_access_token == "AT"
-        assert user.gsc_refresh_token == "RT"
+        assert _safe_decrypt(user.gsc_access_token) == "AT"
+        assert _safe_decrypt(user.gsc_refresh_token) == "RT"
         db.commit.assert_called_once()
         assert mock_post.call_count == 1
 
@@ -148,7 +148,7 @@ class TestGSCServiceGetCredentials:
 
         assert result is fake_creds
         fake_creds.refresh.assert_called_once()
-        assert user.gsc_access_token == "refreshed-token"
+        assert _safe_decrypt(user.gsc_access_token) == "refreshed-token"
         db.commit.assert_called_once()
 
     def test_refreshes_when_already_expired(self, mocker):

@@ -14,7 +14,7 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from modules.ga4.client import GA4Client
+from modules.ga4.client import GA4Client, _safe_decrypt
 
 
 def _make_response(status_code, json_data):
@@ -61,8 +61,8 @@ class TestGA4ClientExchangeCode:
         success, message = GA4Client.exchange_code(user, "auth-code", db)
 
         assert success is True
-        assert user.ga4_access_token == "AT"
-        assert user.ga4_refresh_token == "RT"
+        assert _safe_decrypt(user.ga4_access_token) == "AT"
+        assert _safe_decrypt(user.ga4_refresh_token) == "RT"
         db.commit.assert_called_once()
         assert mock_post.call_count == 1
 
@@ -180,7 +180,7 @@ class TestGA4ClientGetCredentials:
 
         assert result is fake_creds
         fake_creds.refresh.assert_called_once()
-        assert user.ga4_access_token == "refreshed-token"
+        assert _safe_decrypt(user.ga4_access_token) == "refreshed-token"
         db.commit.assert_called_once()
 
     def test_refreshes_when_already_expired(self, mocker):

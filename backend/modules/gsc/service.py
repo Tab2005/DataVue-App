@@ -22,6 +22,31 @@ from sqlalchemy.orm import Session
 from database import User
 from cache import generate_cache_key, get_cached, set_cached, analytics_cache
 from redis_cache import get_cached_redis, set_cached_redis
+from core.security import encrypt_value, decrypt_value
+
+
+def _safe_encrypt(value):
+    """加密 token；沒有值或加密失敗（例如 ENCRYPTION_KEY 未設定）時回傳原始值，避免寫入失敗。"""
+    if not value:
+        return value
+    try:
+        encrypted = encrypt_value(value)
+        return encrypted if encrypted is not None else value
+    except Exception as e:
+        logger.error("[GSC] Token 加密失敗（儲存明文）: %s", e)
+        return value
+
+
+def _safe_decrypt(value):
+    """解密 token；失敗時視為既有的明文舊資料，直接回傳原始值（相容輪替加密前寫入的紀錄）。"""
+    if not value:
+        return value
+    try:
+        decrypted = decrypt_value(value)
+        return decrypted if decrypted is not None else value
+    except Exception as e:
+        logger.debug("[GSC] Token 解密失敗（視為明文舊資料）: %s", e)
+        return value
 
 
 class GSCService:
@@ -113,21 +138,11 @@ class GSCService:
             tokens = response.json()
 
             # Update User
-            user.gsc_access_token = tokens.get("access_token")
-
-            if not success:
-                error_detail = response.json() if response else {"error": "Unknown"}
-                logger.error("Token exchange failed, error body: %s", error_detail)
-                return False, f"Google Auth Error: {error_detail.get('error')} - {error_detail.get('error_description')}"
-
-            tokens = response.json()
-
-            # Update User
-            user.gsc_access_token = tokens.get("access_token")
+            user.gsc_access_token = _safe_encrypt(tokens.get("access_token"))
             # Refresh token might not be returned if not requested (access_type=offline)
             # or if user already approved properly.
             if "refresh_token" in tokens:
-                user.gsc_refresh_token = tokens.get("refresh_token")
+                user.gsc_refresh_token = _safe_encrypt(tokens.get("refresh_token"))
 
             user.gsc_expires_at = datetime.utcnow() + timedelta(seconds=tokens.get("expires_in", 3600))
 
@@ -151,8 +166,8 @@ class GSCService:
         if not user.gsc_access_token or not user.gsc_refresh_token:
             return None
 
-        token = user.gsc_access_token
-        refresh_token = user.gsc_refresh_token
+        token = _safe_decrypt(user.gsc_access_token)
+        refresh_token = _safe_decrypt(user.gsc_refresh_token)
 
         # 取得 expiry 時間（如果有的話）
         expiry = user.gsc_expires_at if hasattr(user, 'gsc_expires_at') else None
@@ -181,7 +196,7 @@ class GSCService:
                 logger.info("[GSC] Token refreshed successfully")
                 # 回寫新 token 到資料庫
                 from datetime import datetime, timedelta
-                user.gsc_access_token = creds.token
+                user.gsc_access_token = _safe_encrypt(creds.token)
                 user.gsc_expires_at = datetime.utcnow() + timedelta(seconds=3600)
                 db.commit()
                 logger.info("[GSC] New token saved to database")

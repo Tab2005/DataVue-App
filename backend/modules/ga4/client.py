@@ -20,6 +20,31 @@ from google.analytics.data_v1beta.types import Dimension, Metric, RunRealtimeRep
 from sqlalchemy.orm import Session
 
 from database import User
+from core.security import encrypt_value, decrypt_value
+
+
+def _safe_encrypt(value):
+    """加密 token；沒有值或加密失敗（例如 ENCRYPTION_KEY 未設定）時回傳原始值，避免寫入失敗。"""
+    if not value:
+        return value
+    try:
+        encrypted = encrypt_value(value)
+        return encrypted if encrypted is not None else value
+    except Exception as e:
+        print(f"[GA4] Token 加密失敗（儲存明文）: {e}")
+        return value
+
+
+def _safe_decrypt(value):
+    """解密 token；失敗時視為既有的明文舊資料，直接回傳原始值（相容輪替加密前寫入的紀錄）。"""
+    if not value:
+        return value
+    try:
+        decrypted = decrypt_value(value)
+        return decrypted if decrypted is not None else value
+    except Exception as e:
+        print(f"[GA4] Token 解密失敗（視為明文舊資料）: {e}")
+        return value
 
 # Scopes required for GA4
 SCOPES = [
@@ -124,9 +149,9 @@ class GA4Client:
             tokens = response.json()
 
             # Update User with GA4 tokens
-            user.ga4_access_token = tokens.get("access_token")
+            user.ga4_access_token = _safe_encrypt(tokens.get("access_token"))
             if "refresh_token" in tokens:
-                user.ga4_refresh_token = tokens.get("refresh_token")
+                user.ga4_refresh_token = _safe_encrypt(tokens.get("refresh_token"))
             user.ga4_expires_at = datetime.utcnow() + timedelta(seconds=tokens.get("expires_in", 3600))
 
             db.commit()
@@ -156,8 +181,8 @@ class GA4Client:
         if not user.ga4_access_token or not user.ga4_refresh_token:
             return None
 
-        token = user.ga4_access_token
-        refresh_token = user.ga4_refresh_token
+        token = _safe_decrypt(user.ga4_access_token)
+        refresh_token = _safe_decrypt(user.ga4_refresh_token)
 
         # 取得 expiry 時間（如果有的話）
         expiry = user.ga4_expires_at if hasattr(user, 'ga4_expires_at') else None
@@ -190,7 +215,7 @@ class GA4Client:
                 print("[GA4] Token refreshed successfully")
                 # 回寫新 token 到資料庫
                 if db:
-                    user.ga4_access_token = creds.token
+                    user.ga4_access_token = _safe_encrypt(creds.token)
                     user.ga4_expires_at = datetime.utcnow() + timedelta(seconds=3600)
                     db.commit()
                     print("[GA4] New token saved to database")
