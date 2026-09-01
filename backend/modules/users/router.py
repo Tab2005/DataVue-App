@@ -1,7 +1,7 @@
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 from typing import List
-from database import User, UserRole
+from database import User, UserRole, UserStatus
 from schemas import UserResponse, UserCreate, UserUpdate
 from dependencies import get_db, get_admin_user, get_current_user
 
@@ -73,10 +73,16 @@ def update_user(
     db_user = db.query(User).filter(User.id == user_id).first()
     if not db_user:
         raise HTTPException(status_code=404, detail="User not found")
-    
+
     # Prevent Admin from demoting themselves if they are the last admin?
     # (Simplified for now: just update)
-    
+
+    if user_update.status == UserStatus.SUSPENDED:
+        if db_user.id == admin.id:
+            raise HTTPException(status_code=400, detail="Cannot suspend yourself")
+        if db_user.is_super_admin:
+            raise HTTPException(status_code=400, detail="Cannot suspend a super admin")
+
     if user_update.role:
         db_user.role = user_update.role
     if user_update.status:

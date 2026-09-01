@@ -34,7 +34,14 @@ const translations = {
         confirm_delete: 'Are you sure? This action is irreversible.',
         role_super: 'SUPER ADMIN',
         role_user: 'USER',
-        delete_title: 'Force Delete User'
+        delete_title: 'Force Delete User',
+        th_status: 'Status',
+        status_active: 'Active',
+        status_suspended: 'Suspended',
+        suspend_title: 'Suspend User',
+        activate_title: 'Reactivate User',
+        confirm_suspend: 'Suspend this user? They will be unable to log in until reactivated.',
+        confirm_activate: 'Reactivate this user?'
     },
     zh: {
         title: '超級管理員後台',
@@ -66,7 +73,14 @@ const translations = {
         confirm_delete: '您確定嗎？此操作無法復原。',
         role_super: '超級管理員',
         role_user: '一般用戶',
-        delete_title: '強制刪除用戶'
+        delete_title: '強制刪除用戶',
+        th_status: '狀態',
+        status_active: '啟用中',
+        status_suspended: '已停用',
+        suspend_title: '停用帳號',
+        activate_title: '重新啟用',
+        confirm_suspend: '確定要停用這個帳號嗎？停用後該使用者將無法登入，直到重新啟用為止。',
+        confirm_activate: '確定要重新啟用這個帳號嗎？'
     }
 };
 
@@ -125,12 +139,13 @@ const useAdminData = (language) => {
         return () => window.removeEventListener('resize', handleResize);
     }, []);
 
-    const handleDeleteUser = async (userId) => {
-        if (!window.confirm(t.confirm_delete)) return;
+    const handleToggleUserStatus = async (userId, currentStatus) => {
+        const nextStatus = currentStatus === 'suspended' ? 'active' : 'suspended';
+        const confirmMessage = nextStatus === 'suspended' ? t.confirm_suspend : t.confirm_activate;
+        if (!window.confirm(confirmMessage)) return;
         try {
-            await AdminService.deleteUser(userId);
-            setUsers(prev => prev.filter(u => u.id !== userId));
-            setStats(prev => ({ ...prev, user_count: prev.user_count - 1 }));
+            const updated = await AdminService.updateUserStatus(userId, nextStatus);
+            setUsers(prev => prev.map(u => (u.id === userId ? { ...u, status: updated.status } : u)));
         } catch (err) {
             alert(err instanceof Error ? err.message : String(err));
         }
@@ -179,7 +194,7 @@ const useAdminData = (language) => {
         setTeamPage,
         userData,
         teamData,
-        handleDeleteUser
+        handleToggleUserStatus
     };
 };
 

@@ -100,7 +100,7 @@ const AdminDashboard = () => {
                         setSearch={adminData.setUserSearch}
                         loading={adminData.loading}
                         isMobile={adminData.isMobile}
-                        onDeleteUser={adminData.handleDeleteUser}
+                        onToggleStatus={adminData.handleToggleUserStatus}
                         styles={styles}
                         t={t}
                     />

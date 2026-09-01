@@ -104,13 +104,19 @@ export const createAdminStyles = (isMobile) => ({
     },
     badge: (role) => {
         const isSuper = role === 'SUPER ADMIN';
+        const isSuspended = role === 'SUSPENDED';
+        const palette = isSuper
+            ? { bg: 'rgba(234, 179, 8, 0.1)', fg: '#eab308' }
+            : isSuspended
+                ? { bg: 'rgba(239, 68, 68, 0.1)', fg: '#ef4444' }
+                : { bg: 'rgba(107, 114, 128, 0.1)', fg: '#9ca3af' };
         return {
             padding: '4px 8px',
             borderRadius: '9999px',
             fontSize: '0.75rem',
             fontWeight: '600',
-            backgroundColor: isSuper ? 'rgba(234, 179, 8, 0.1)' : 'rgba(107, 114, 128, 0.1)',
-            color: isSuper ? '#eab308' : '#9ca3af',
+            backgroundColor: palette.bg,
+            color: palette.fg,
             display: 'inline-block'
         };
     },

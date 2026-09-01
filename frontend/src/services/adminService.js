@@ -17,9 +17,14 @@ const deleteUser = async (userId) => {
     return true;
 };
 
+const updateUserStatus = async (userId, status) => {
+    return apiClient.put(`/api/users/${userId}`, { status });
+};
+
 export const AdminService = {
     getStats,
     getAllUsers,
     getAllTeams,
-    deleteUser
+    deleteUser,
+    updateUserStatus
 };

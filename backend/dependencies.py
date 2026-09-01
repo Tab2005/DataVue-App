@@ -63,6 +63,10 @@ def get_current_user(
             picture=id_info.get("picture", ""),
         )
 
+        if user.status == UserStatus.SUSPENDED:
+            logger.warning(f"[Auth] Suspended user attempted access: {user.email}")
+            raise HTTPException(status_code=403, detail="此帳號已被停用，請聯繫管理員")
+
         sync_super_admin_status(db=db, user=user)
 
         if is_new:

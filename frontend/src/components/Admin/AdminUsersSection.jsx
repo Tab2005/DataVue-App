@@ -1,9 +1,27 @@
 import React from 'react';
-import { FaShieldAlt, FaTrash, FaUsers } from 'react-icons/fa';
+import { FaBan, FaCheckCircle, FaShieldAlt, FaUsers } from 'react-icons/fa';
 import AdminPagination from './AdminPagination';
 import AdminSectionHeader from './AdminSectionHeader';
 
-const AdminUsersMobile = ({ users, onDeleteUser, styles, t }) => {
+const isSuspended = (user) => user.status === 'suspended';
+
+const ToggleStatusButton = ({ user, onToggleStatus, t, style }) => {
+    const suspended = isSuspended(user);
+    return (
+        <button
+            onClick={() => onToggleStatus(user.id, user.status)}
+            style={{
+                ...style,
+                color: suspended ? '#22c55e' : '#ef4444'
+            }}
+            title={suspended ? t.activate_title : t.suspend_title}
+        >
+            {suspended ? <FaCheckCircle /> : <FaBan />}
+        </button>
+    );
+};
+
+const AdminUsersMobile = ({ users, onToggleStatus, styles, t }) => {
     if (users.length === 0) {
         return <div style={{ padding: '32px', textAlign: 'center', color: 'var(--text-secondary)' }}>{t.no_users}</div>;
     }
@@ -42,6 +60,12 @@ const AdminUsersMobile = ({ users, onDeleteUser, styles, t }) => {
                         </span>
                     </div>
                     <div style={styles.mobileCardRow}>
+                        <span style={styles.mobileCardLabel}>{t.th_status}</span>
+                        <span style={styles.badge(isSuspended(user) ? 'SUSPENDED' : 'ACTIVE')}>
+                            {isSuspended(user) ? t.status_suspended : t.status_active}
+                        </span>
+                    </div>
+                    <div style={styles.mobileCardRow}>
                         <span style={styles.mobileCardLabel}>{t.th_joined}</span>
                         <span style={{ color: 'var(--text-primary)' }}>
                             {user.created_at ? new Date(user.created_at).toLocaleDateString() : '-'}
@@ -49,14 +73,14 @@ const AdminUsersMobile = ({ users, onDeleteUser, styles, t }) => {
                     </div>
                     {!user.is_super_admin && (
                         <button
-                            onClick={() => onDeleteUser(user.id)}
+                            onClick={() => onToggleStatus(user.id, user.status)}
                             style={{
                                 width: '100%',
                                 marginTop: '8px',
                                 padding: '8px',
                                 borderRadius: '8px',
-                                backgroundColor: 'rgba(239, 68, 68, 0.1)',
-                                color: '#ef4444',
+                                backgroundColor: isSuspended(user) ? 'rgba(34, 197, 94, 0.1)' : 'rgba(239, 68, 68, 0.1)',
+                                color: isSuspended(user) ? '#22c55e' : '#ef4444',
                                 border: 'none',
                                 cursor: 'pointer',
                                 display: 'flex',
@@ -65,7 +89,8 @@ const AdminUsersMobile = ({ users, onDeleteUser, styles, t }) => {
                                 gap: '8px'
                             }}
                         >
-                            <FaTrash size={14} /> {t.delete_title}
+                            {isSuspended(user) ? <FaCheckCircle size={14} /> : <FaBan size={14} />}
+                            {isSuspended(user) ? t.activate_title : t.suspend_title}
                         </button>
                     )}
                 </div>
@@ -74,7 +99,7 @@ const AdminUsersMobile = ({ users, onDeleteUser, styles, t }) => {
     );
 };
 
-const AdminUsersTable = ({ users, loading, onDeleteUser, styles, t }) => (
+const AdminUsersTable = ({ users, loading, onToggleStatus, styles, t }) => (
     <div className="glass-panel" style={styles.tableContainer}>
         <div style={{ overflowX: 'auto' }}>
             <table style={styles.table}>
@@ -83,6 +108,7 @@ const AdminUsersTable = ({ users, loading, onDeleteUser, styles, t }) => (
                         <th style={styles.th}>{t.th_name}</th>
                         <th style={styles.th}>{t.th_email}</th>
                         <th style={styles.th}>{t.th_role}</th>
+                        <th style={styles.th}>{t.th_status}</th>
                         <th style={styles.th}>{t.th_joined}</th>
                         <th style={{ ...styles.th, textAlign: 'right' }}>{t.th_actions}</th>
                     </tr>
@@ -105,26 +131,28 @@ const AdminUsersTable = ({ users, loading, onDeleteUser, styles, t }) => (
                                     {user.is_super_admin ? t.role_super : t.role_user}
                                 </span>
                             </td>
+                            <td style={styles.td}>
+                                <span style={styles.badge(isSuspended(user) ? 'SUSPENDED' : 'ACTIVE')}>
+                                    {isSuspended(user) ? t.status_suspended : t.status_active}
+                                </span>
+                            </td>
                             <td style={{ ...styles.td, fontSize: '0.875rem', color: 'var(--text-secondary)' }}>
                                 {user.created_at ? new Date(user.created_at).toLocaleDateString() : '-'}
                             </td>
                             <td style={{ ...styles.td, textAlign: 'right' }}>
                                 {!user.is_super_admin && (
-                                    <button
-                                        onClick={() => onDeleteUser(user.id)}
-                                        style={{ background: 'transparent', border: 'none', cursor: 'pointer', color: 'var(--text-secondary)', padding: '8px' }}
-                                        onMouseOver={(e) => { e.currentTarget.style.color = '#ef4444'; }}
-                                        onMouseOut={(e) => { e.currentTarget.style.color = 'var(--text-secondary)'; }}
-                                        title={t.delete_title}
-                                    >
-                                        <FaTrash />
-                                    </button>
+                                    <ToggleStatusButton
+                                        user={user}
+                                        onToggleStatus={onToggleStatus}
+                                        t={t}
+                                        style={{ background: 'transparent', border: 'none', cursor: 'pointer', padding: '8px' }}
+                                    />
                                 )}
                             </td>
                         </tr>
                     )) : (
                         <tr>
-                            <td colSpan="5" style={{ padding: '32px', textAlign: 'center', color: 'var(--text-secondary)' }}>
+                            <td colSpan="6" style={{ padding: '32px', textAlign: 'center', color: 'var(--text-secondary)' }}>
                                 {loading ? t.loading : t.no_users}
                             </td>
                         </tr>
@@ -144,7 +172,7 @@ const AdminUsersSection = ({
     setSearch,
     loading,
     isMobile,
-    onDeleteUser,
+    onToggleStatus,
     styles,
     t
 }) => (
@@ -161,9 +189,9 @@ const AdminUsersSection = ({
         />
 
         {isMobile ? (
-            <AdminUsersMobile users={currentItems} onDeleteUser={onDeleteUser} styles={styles} t={t} />
+            <AdminUsersMobile users={currentItems} onToggleStatus={onToggleStatus} styles={styles} t={t} />
         ) : (
-            <AdminUsersTable users={currentItems} loading={loading} onDeleteUser={onDeleteUser} styles={styles} t={t} />
+            <AdminUsersTable users={currentItems} loading={loading} onToggleStatus={onToggleStatus} styles={styles} t={t} />
         )}
 
         <AdminPagination page={page} totalPages={totalPages} setPage={setPage} styles={styles} t={t} />
