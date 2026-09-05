@@ -1,0 +1,24 @@
+name: Security Review
+
+permissions:
+  pull-requests: write  # 允許在 PR 上留言
+  contents: read         # 允許讀取程式碼
+
+on:
+  pull_request:
+
+jobs:
+  security:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+          fetch-depth: 2
+
+      - uses: anthropics/claude-code-security-review@main
+        with:
+          claude-api-key: ${{ secrets.CLAUDE_API_KEY }}
+          comment-pr: true
+          upload-results: true
+          custom-security-scan-instructions: .github/security/security.md
