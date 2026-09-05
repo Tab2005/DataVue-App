@@ -24,7 +24,7 @@ class AIService:
         return _AIService.get_available_providers()
 
     @staticmethod
-    def get_available_models(provider: str = "zeabur", remote: bool = False, api_key: Optional[str] = None) -> Dict[str, Dict]:
+    def get_available_models(provider: str = "openrouter", remote: bool = False, api_key: Optional[str] = None) -> Dict[str, Dict]:
         return _AIService.get_available_models(provider, remote=remote, api_key=api_key)
 
     @staticmethod
@@ -32,14 +32,10 @@ class AIService:
         return _AIService.get_openrouter_client(api_key=api_key)
 
     @staticmethod
-    def get_zeabur_client(api_key: Optional[str] = None):
-        return _AIService.get_zeabur_client(api_key=api_key)
-
-    @staticmethod
     def test_connection(
         api_key: Optional[str] = None,
-        provider: str = "zeabur",
-        model: str = "gemini-2.5-flash"
+        provider: str = "openrouter",
+        model: str = "deepseek/deepseek-v4-flash"
     ) -> bool:
         return _AIService.test_connection(api_key=api_key, provider=provider, model=model)
 
@@ -48,7 +44,7 @@ class AIService:
         data: Dict[str, Any],
         context: str,
         api_key: Optional[str] = None,
-        provider: str = "zeabur",
+        provider: str = "openrouter",
         model: str = "deepseek/deepseek-v4-flash",
         report_type: str = "ad_analysis",
         period: str = "weekly",

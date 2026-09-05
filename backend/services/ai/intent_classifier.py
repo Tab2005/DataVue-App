@@ -13,7 +13,7 @@ import os
 import logging
 import sys
 from typing import Dict, List, Optional
-from .zeabur_client import ZeaburAIClient
+from .openrouter_client import OpenRouterClient
 
 logger = logging.getLogger(__name__)
 
@@ -90,27 +90,17 @@ class AIIntentClassifier:
         self,
         api_key: Optional[str] = None,
         model: str = "deepseek/deepseek-v4-flash",
-        provider: str = "zeabur"  # "zeabur" or "openrouter"
     ):
         """
         初始化 AI 意圖分類器
 
         Args:
-            api_key: API Key (Zeabur AI Hub 或 OpenRouter)
+            api_key: OpenRouter API Key
             model: 使用的 AI 模型
-            provider: AI 提供者 ("zeabur" 使用 Zeabur AI Hub, "openrouter" 使用 OpenRouter 客戶端)
         """
-        self.provider = provider
         self.model = model
-        
-        if provider == "openrouter":
-            # 使用 OpenRouter 客戶端
-            from .openrouter_client import OpenRouterClient
-            self.client = OpenRouterClient(api_key=api_key)
-            self.client.set_model(model)
-        else:
-            # 預設使用 Zeabur AI Hub
-            self.client = ZeaburAIClient(api_key=api_key)
+        self.client = OpenRouterClient(api_key=api_key)
+        self.client.set_model(model)
 
     def classify_queries(
         self,
@@ -148,7 +138,7 @@ class AIIntentClassifier:
         BATCH_DELAY = 6  # Seconds between batches
         
         # Check if batch processing is needed for OpenRouter
-        use_batching = self.provider == "openrouter" and len(queries) > BATCH_SIZE
+        use_batching = len(queries) > BATCH_SIZE
         
         if use_batching:
             logger.info(f"[AIIntentClassifier] Using batch processing for {len(queries)} keywords (OpenRouter rate limit)")
@@ -341,21 +331,12 @@ class AIIntentClassifier:
         部分 provider（例如 OpenRouter 上游的免費/限流模型）對非串流請求
         偶爾會回傳無 choices 的空內容，但串流呼叫可正常運作。
         """
-        if self.provider == "openrouter":
-            chunks = self.client.generate_content_stream(
-                prompt=prompt,
-                model=self.model,
-                temperature=temperature,
-                system_prompt=self.SYSTEM_PROMPT
-            )
-        else:
-            chunks = self.client.generate_content(
-                prompt=prompt,
-                model=self.model,
-                temperature=temperature,
-                system_prompt=self.SYSTEM_PROMPT,
-                stream=True
-            )
+        chunks = self.client.generate_content_stream(
+            prompt=prompt,
+            model=self.model,
+            temperature=temperature,
+            system_prompt=self.SYSTEM_PROMPT
+        )
         return "".join(chunks)
 
     def _parse_json_response(self, response: str) -> Dict:
@@ -446,7 +427,7 @@ class AIIntentClassifier:
 def test_intent_classifier():
     """
     測試搜尋意圖分類器
-    使用前請先設定環境變數: ZEABUR_AI_HUB_API_KEY
+    使用前請先設定環境變數: OPENROUTER_API_KEY
     """
     print("=" * 60)
     print("🔍 搜尋意圖分類測試 (Search Intent Classification Test)")

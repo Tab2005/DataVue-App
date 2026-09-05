@@ -9,7 +9,6 @@ Integration Service — 使用者第三方服務整合管理
   'facebook'  - Facebook Ads
   'gsc'       - Google Search Console
   'ga4'       - Google Analytics 4
-  'ai_zeabur' - Zeabur AI Hub
   'ai_gemini' - Google Gemini
 
 用法範例：
@@ -44,7 +43,6 @@ SUPPORTED_PROVIDERS = frozenset({
     "facebook",
     "gsc",
     "ga4",
-    "ai_zeabur",
     "ai_gemini",
 })
 

@@ -226,7 +226,7 @@ export const useGscPageAnalysis = ({
                 start_date: dateRange.start,
                 end_date: dateRange.end,
                 top_n: maxKeywords,
-                provider: localStorage.getItem('ai_provider') || 'zeabur'
+                provider: localStorage.getItem('ai_provider') || 'openrouter'
             };
             if (analyzeAll) requestBody.keywords = keywordsToAnalyze;
             const resp = await fetch(`${apiUrl}/api/gsc/page-intents`, {
@@ -324,7 +324,7 @@ export const useGscPageAnalysis = ({
                     start_date: gapDateRange.start,
                     end_date: gapDateRange.end,
                     missing_keywords: missingKeywords,
-                    provider: localStorage.getItem('ai_provider') || 'zeabur'
+                    provider: localStorage.getItem('ai_provider') || 'openrouter'
                 })
             });
             if (!resp.ok) {

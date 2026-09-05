@@ -122,7 +122,7 @@ def _resolve_per_user_openrouter_key(db_session, asset) -> str | None:
 
         user = db_session.query(User).filter(User.id == asset.uploaded_by).first()
         if user and user.google_id:
-            return TokenManager.get_ai_api_key(user.google_id, provider="openrouter")
+            return TokenManager.get_ai_api_key(user.google_id)
     except Exception as exc:
         logger.warning(
             "[MetaAndromeda] Failed to resolve per-user OpenRouter key for asset %s: %s",

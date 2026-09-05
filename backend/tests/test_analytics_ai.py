@@ -34,11 +34,11 @@ def test_ai_service_analytics_table_prompt_includes_selected_metric_labels(mocke
 
     captured = {}
 
-    def fake_zeabur(system_prompt, user_message, api_key, model):
+    def fake_openrouter(system_prompt, user_message, api_key, model):
         captured["system_prompt"] = system_prompt
         yield "ok"
 
-    mocker.patch.object(AIService, "_analyze_with_zeabur", side_effect=fake_zeabur)
+    mocker.patch.object(AIService, "_analyze_with_openrouter", side_effect=fake_openrouter)
 
     list(AIService.analyze_data(
         data={
@@ -48,7 +48,7 @@ def test_ai_service_analytics_table_prompt_includes_selected_metric_labels(mocke
         },
         context="test",
         report_type="analytics_table",
-        provider="zeabur",
+        provider="openrouter",
     ))
 
     assert "CTR" in captured["system_prompt"]
@@ -62,17 +62,17 @@ def test_ai_service_analytics_table_prompt_handles_empty_selected_metrics(mocker
 
     captured = {}
 
-    def fake_zeabur(system_prompt, user_message, api_key, model):
+    def fake_openrouter(system_prompt, user_message, api_key, model):
         captured["system_prompt"] = system_prompt
         yield "ok"
 
-    mocker.patch.object(AIService, "_analyze_with_zeabur", side_effect=fake_zeabur)
+    mocker.patch.object(AIService, "_analyze_with_openrouter", side_effect=fake_openrouter)
 
     list(AIService.analyze_data(
         data={"selected_metrics": [], "summary": {}, "rows": []},
         context="test",
         report_type="analytics_table",
-        provider="zeabur",
+        provider="openrouter",
     ))
 
     assert "尚未勾選任何指標" in captured["system_prompt"]
@@ -86,11 +86,11 @@ def test_ai_service_analytics_table_prompt_does_not_force_spend_roas(mocker):
 
     captured = {}
 
-    def fake_zeabur(system_prompt, user_message, api_key, model):
+    def fake_openrouter(system_prompt, user_message, api_key, model):
         captured["system_prompt"] = system_prompt
         yield "ok"
 
-    mocker.patch.object(AIService, "_analyze_with_zeabur", side_effect=fake_zeabur)
+    mocker.patch.object(AIService, "_analyze_with_openrouter", side_effect=fake_openrouter)
 
     list(AIService.analyze_data(
         data={
@@ -100,7 +100,7 @@ def test_ai_service_analytics_table_prompt_does_not_force_spend_roas(mocker):
         },
         context="test",
         report_type="analytics_table",
-        provider="zeabur",
+        provider="openrouter",
     ))
 
     assert "花費、ROAS、成交數" not in captured["system_prompt"]

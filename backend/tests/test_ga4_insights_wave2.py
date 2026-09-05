@@ -573,17 +573,17 @@ def test_ai_service_ga4_insights_prompt_switches_focus_by_kind(mocker):
 
     captured = {}
 
-    def fake_zeabur(system_prompt, user_message, api_key, model):
+    def fake_openrouter(system_prompt, user_message, api_key, model):
         captured["system_prompt"] = system_prompt
         yield "ok"
 
-    mocker.patch.object(AIService, "_analyze_with_zeabur", side_effect=fake_zeabur)
+    mocker.patch.object(AIService, "_analyze_with_openrouter", side_effect=fake_openrouter)
 
     list(AIService.analyze_data(
         data={"kind": "daily_channel", "channels": []},
         context="test",
         report_type="ga4_insights",
-        provider="zeabur",
+        provider="openrouter",
     ))
 
     assert "助攻" in captured["system_prompt"]
@@ -598,17 +598,17 @@ def test_ai_service_ga4_insights_prompt_avoids_last_click_metaphor_for_data_driv
 
     captured = {}
 
-    def fake_zeabur(system_prompt, user_message, api_key, model):
+    def fake_openrouter(system_prompt, user_message, api_key, model):
         captured["system_prompt"] = system_prompt
         yield "ok"
 
-    mocker.patch.object(AIService, "_analyze_with_zeabur", side_effect=fake_zeabur)
+    mocker.patch.object(AIService, "_analyze_with_openrouter", side_effect=fake_openrouter)
 
     list(AIService.analyze_data(
         data={"kind": "daily_channel", "channels": [], "attribution_model": "data_driven"},
         context="test",
         report_type="ga4_insights",
-        provider="zeabur",
+        provider="openrouter",
     ))
 
     assert "結帳前推最後一把" not in captured["system_prompt"]
@@ -623,17 +623,17 @@ def test_ai_service_ga4_insights_prompt_keeps_last_click_metaphor_for_last_click
 
     captured = {}
 
-    def fake_zeabur(system_prompt, user_message, api_key, model):
+    def fake_openrouter(system_prompt, user_message, api_key, model):
         captured["system_prompt"] = system_prompt
         yield "ok"
 
-    mocker.patch.object(AIService, "_analyze_with_zeabur", side_effect=fake_zeabur)
+    mocker.patch.object(AIService, "_analyze_with_openrouter", side_effect=fake_openrouter)
 
     list(AIService.analyze_data(
         data={"kind": "daily_channel", "channels": [], "attribution_model": "last_click"},
         context="test",
         report_type="ga4_insights",
-        provider="zeabur",
+        provider="openrouter",
     ))
 
     assert "最後一次點擊進來的" in captured["system_prompt"]

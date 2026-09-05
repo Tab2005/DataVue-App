@@ -53,11 +53,11 @@ async def runtime_ai_ready(
     db_key = None
     if _user and _user.google_id:
         try:
-            db_key = TokenManager.get_ai_api_key(_user.google_id, provider="openrouter")
+            db_key = TokenManager.get_ai_api_key(_user.google_id)
         except Exception:
             pass
 
-    # 再 fallback 至環境變數（OPENROUTER_API_KEY 或 ZEABUR_AI_HUB_API_KEY）
+    # 再 fallback 至環境變數（OPENROUTER_API_KEY）
     api_key_configured = bool(db_key) or bool(settings.OPENROUTER_API_KEY)
 
     if provider == "heuristic":

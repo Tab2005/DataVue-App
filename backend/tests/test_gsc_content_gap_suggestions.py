@@ -182,7 +182,7 @@ def test_content_gap_suggestions_uses_user_configured_model(client, sample_user)
 
     assert resp.status_code == 200
     assert resp.json()["model"] == "nvidia/nemotron-3-ultra:free"
-    mock_cls.assert_called_once_with(api_key="fake-key", provider="openrouter", model="nvidia/nemotron-3-ultra:free")
+    mock_cls.assert_called_once_with(api_key="fake-key", model="nvidia/nemotron-3-ultra:free")
 
 
 def test_content_gap_suggestions_ai_failure_returns_500(client, sample_user):

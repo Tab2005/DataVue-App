@@ -50,10 +50,9 @@ class User(Base):
     ga4_expires_at = Column(DateTime, nullable=True)
 
     # AI Integration (Encrypted API Keys)
-    zeabur_api_key = Column(String, nullable=True)
     gemini_api_key = Column(String, nullable=True)
     openrouter_api_key = Column(String, nullable=True)
-    ai_provider = Column(String, nullable=True, default="zeabur")
+    ai_provider = Column(String, nullable=True, default="openrouter")
     ai_model = Column(String, nullable=True, default="deepseek/deepseek-v4-flash")
     line_user_id = Column(String, nullable=True, index=True)
 

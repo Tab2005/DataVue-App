@@ -49,11 +49,7 @@ class OpenRouterClient:
 
     def __init__(self, api_key: Optional[str] = None):
         """初始化 OpenRouter 客戶端"""
-        self.api_key = (
-            api_key 
-            or os.getenv("OPENROUTER_API_KEY") 
-            or os.getenv("ZEABUR_AI_HUB_API_KEY")
-        )
+        self.api_key = api_key or os.getenv("OPENROUTER_API_KEY")
         if not self.api_key:
             self.client = None
             return

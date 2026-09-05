@@ -70,20 +70,18 @@ class Settings(BaseSettings):
         return [e.strip().lower() for e in raw.split(",") if e.strip()]
 
     # === AI 服務設定 ===
-    ZEABUR_AI_HUB_API_KEY: Optional[str] = None
-
     GOOGLE_AI_API_KEY_ENV: Optional[str] = Field(default=None, validation_alias="GOOGLE_AI_API_KEY")
     GOOGLE_API_KEY_ENV: Optional[str] = Field(default=None, validation_alias="GOOGLE_API_KEY")
 
     @property
     def GOOGLE_AI_API_KEY(self) -> Optional[str]:
-        return self.GOOGLE_AI_API_KEY_ENV or self.GOOGLE_API_KEY_ENV or self.ZEABUR_AI_HUB_API_KEY
+        return self.GOOGLE_AI_API_KEY_ENV or self.GOOGLE_API_KEY_ENV
 
     OPENROUTER_API_KEY_ENV: Optional[str] = Field(default=None, validation_alias="OPENROUTER_API_KEY")
 
     @property
     def OPENROUTER_API_KEY(self) -> Optional[str]:
-        return self.OPENROUTER_API_KEY_ENV or self.ZEABUR_AI_HUB_API_KEY
+        return self.OPENROUTER_API_KEY_ENV
 
     # === 應用設定 ===
     ENV: str = "development"

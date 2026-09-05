@@ -235,17 +235,6 @@ const OpenRouterSettingsTab = ({
                 </button>
             </div>
 
-            <div style={{
-                padding: '12px', borderRadius: '8px',
-                background: 'rgba(74, 222, 128, 0.1)',
-                border: '1px solid rgba(74, 222, 128, 0.2)',
-                fontSize: '0.85rem',
-                color: '#4ade80'
-            }}>
-                💡 {language === 'zh'
-                    ? '儲存後，請到上方切換啟用的 AI 模組為「💎 OpenRouter」即可開始使用。'
-                    : 'After saving, switch to "💎 OpenRouter" in the provider selector above to start using it.'}
-            </div>
         </div>
     );
 };

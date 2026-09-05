@@ -1,9 +1,8 @@
 import React from 'react';
-import { FiCpu, FiMessageSquare, FiTrendingUp, FiZap } from 'react-icons/fi';
+import { FiCpu, FiMessageSquare, FiTrendingUp } from 'react-icons/fi';
 
 const tabIcons = {
     facebook: <FiTrendingUp size={14} />,
-    ai: <FiZap size={14} />,
     gemini: <FiCpu size={14} />,
     line: <FiMessageSquare size={14} />,
 };

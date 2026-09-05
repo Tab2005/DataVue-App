@@ -389,7 +389,6 @@ async def health_detail(_admin: bool = Depends(require_super_admin())):
     google_key = os.getenv("GOOGLE_AI_API_KEY") or ""
     google_key_alt = os.getenv("GOOGLE_API_KEY") or ""
     openrouter_key = os.getenv("OPENROUTER_API_KEY") or ""
-    zeabur_key = os.getenv("ZEABUR_AI_HUB_API_KEY") or ""
 
     # 統計資料庫中有金鑰的用戶數
     db_users_with_gemini_key_count = 0
@@ -415,7 +414,6 @@ async def health_detail(_admin: bool = Depends(require_super_admin())):
         "GOOGLE_AI_API_KEY_len": len(google_key),
         "GOOGLE_API_KEY_len": len(google_key_alt),
         "OPENROUTER_API_KEY_len": len(openrouter_key),
-        "ZEABUR_AI_HUB_API_KEY_len": len(zeabur_key),
         "settings_GOOGLE_AI_API_KEY_len": len(settings.GOOGLE_AI_API_KEY or "") if settings.GOOGLE_AI_API_KEY else 0,
         "settings_OPENROUTER_API_KEY_len": len(settings.OPENROUTER_API_KEY or "") if settings.OPENROUTER_API_KEY else 0,
         "db_users_with_gemini_key_count": db_users_with_gemini_key_count,

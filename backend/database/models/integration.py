@@ -37,7 +37,6 @@ class UserIntegration(Base):
       'facebook'  - Facebook Ads Access Token
       'gsc'       - Google Search Console OAuth Token
       'ga4'       - Google Analytics 4 OAuth Token
-      'ai_zeabur' - Zeabur AI Hub API Key
       'ai_gemini' - Google Gemini API Key
     """
 
@@ -59,7 +58,7 @@ class UserIntegration(Base):
     )
 
     # ── 服務提供者識別 ──────────────────────────────────────────────────────
-    #   facebook | gsc | ga4 | ai_zeabur | ai_gemini
+    #   facebook | gsc | ga4 | ai_gemini
     provider = Column(String(50), nullable=False)
 
     # ── Token 欄位（Fernet 加密儲存）─────────────────────────────────────
@@ -70,7 +69,7 @@ class UserIntegration(Base):
     # ── 額外 Provider 設定（JSON）────────────────────────────────────────
     #   facebook: {"app_id": ..., "app_secret": ..., "default_account_id": ...}
     #   gsc/ga4: {"scope": ..., "token_uri": ...}
-    #   ai_zeabur/ai_gemini: {"model": ..., "max_tokens": ...}
+    #   ai_gemini: {"model": ..., "max_tokens": ...}
     extra_data = Column(JSON, nullable=True, default=dict)
 
     # ── 稽核時間戳 ─────────────────────────────────────────────────────────

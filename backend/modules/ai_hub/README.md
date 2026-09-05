@@ -4,7 +4,7 @@ AI 整合模組 - 提供 AI 客戶端、意圖分類器、以及相關 API。
 
 ## 功能
 
-- **多提供者支援**: Zeabur AI Hub、Google Gemini
+- **AI 提供者**: OpenRouter（聚合服務，預設 DeepSeek）、Google Gemini
 - **意圖分類**: 基於 AI 的搜尋意圖分析（informational, commercial, navigational, transactional）
 - **串流回應**: 支援 Server-Sent Events 串流 AI 回應
 - **加密儲存**: AI API Key 使用 Fernet 加密儲存
@@ -17,7 +17,7 @@ modules/ai_hub/
 ├── clients/                  # AI 客戶端
 │   ├── __init__.py
 │   ├── gemini.py            # Google Gemini 客戶端
-│   └── zeabur.py            # Zeabur AI Hub 客戶端
+│   └── openrouter.py        # OpenRouter 客戶端
 ├── intent_classifier.py     # 意圖分類器
 ├── router.py                # API 端點
 ├── service.py               # 主要 AI 服務
@@ -41,8 +41,8 @@ app.include_router(ai_router, prefix="/api/ai")
 # 測試 AI 連線
 success = AIService.test_connection(
     api_key="your_api_key",
-    provider="zeabur",  # or "gemini"
-    model="gemini-2.5-flash"
+    provider="openrouter",
+    model="deepseek/deepseek-v4-flash"
 )
 ```
 
@@ -51,7 +51,7 @@ success = AIService.test_connection(
 ```python
 from modules.ai_hub.intent_classifier import AIIntentClassifier
 
-classifier = AIIntentClassifier(api_key="key", provider="gemini")
+classifier = AIIntentClassifier(api_key="key")
 result = classifier.classify_queries([
     "如何減肥",           # informational
     "Nike 跑鞋價格",      # commercial
@@ -72,11 +72,11 @@ print(result)
 ### 直接使用客戶端
 
 ```python
-from modules.ai_hub.clients import ZeaburAIClient, OpenRouterClient
+from modules.ai_hub.clients import OpenRouterClient
 
-# Zeabur (OpenAI 相容)
-zeabur = ZeaburAIClient(api_key="key")
-response = zeabur.chat("Explain AI in 50 words")
+# OpenRouter（OpenAI 相容）
+client = OpenRouterClient(api_key="key")
+result = client.test_connection()
 
 # Gemini
 gemini = GoogleGeminiClient(api_key="key")
@@ -97,7 +97,7 @@ result = gemini.classify_intents(["query1", "query2"])
 
 ## 依賴
 
-- `openai`: Zeabur AI Hub (OpenAI 相容 API)
+- `openai`: OpenRouter（OpenAI 相容 API）
 - `google-genai`: Google Gemini API（可選）
 - `core.security`: 加密金鑰管理
 - `modules.auth`: Token 管理（AI Key 儲存）
@@ -109,7 +109,7 @@ result = gemini.classify_intents(["query1", "query2"])
    - `services/ai/`
    - `ai_service.py`
    - `core/security.py`
-   
+
 2. 安裝依賴:
    ```bash
    pip install openai google-genai cryptography
@@ -117,7 +117,7 @@ result = gemini.classify_intents(["query1", "query2"])
 
 3. 設定環境變數:
    ```bash
-   ZEABUR_AI_HUB_API_KEY=your_zeabur_key  # 可選
+   OPENROUTER_API_KEY=your_openrouter_key  # 可選
    GOOGLE_AI_API_KEY=your_gemini_key       # 可選
    ENCRYPTION_KEY=your_fernet_key
    ```

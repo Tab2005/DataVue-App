@@ -581,7 +581,7 @@ const RegularDataTab = ({ context }) => {
                                                                                                         onClick={(e) => {
                                                                                                             e.stopPropagation();
                                                                                                             // Check if using Gemini provider
-                                                                                                            const provider = localStorage.getItem('ai_provider') || 'zeabur';
+                                                                                                            const provider = localStorage.getItem('ai_provider') || 'openrouter';
                                                                                                             const isGemini = provider === 'gemini';
                                                                                                             const batchCount = Math.ceil(uncachedCount / 10);
                                                                                                             const estimatedTime = isGemini && batchCount > 1 ? Math.round(batchCount * 6) : 0;

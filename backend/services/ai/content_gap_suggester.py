@@ -11,7 +11,7 @@
 import json
 import logging
 from typing import Dict, List, Optional
-from .zeabur_client import ZeaburAIClient
+from .openrouter_client import OpenRouterClient
 
 logger = logging.getLogger(__name__)
 
@@ -60,25 +60,17 @@ class AIContentGapSuggester:
         self,
         api_key: Optional[str] = None,
         model: str = "deepseek/deepseek-v4-flash",
-        provider: str = "zeabur"
     ):
         """
         初始化文章方向建議器
 
         Args:
-            api_key: API Key (Zeabur AI Hub 或 OpenRouter)
+            api_key: OpenRouter API Key
             model: 使用的 AI 模型
-            provider: AI 提供者 ("zeabur" 使用 Zeabur AI Hub, "openrouter" 使用 OpenRouter 客戶端)
         """
-        self.provider = provider
         self.model = model
-
-        if provider == "openrouter":
-            from .openrouter_client import OpenRouterClient
-            self.client = OpenRouterClient(api_key=api_key)
-            self.client.set_model(model)
-        else:
-            self.client = ZeaburAIClient(api_key=api_key)
+        self.client = OpenRouterClient(api_key=api_key)
+        self.client.set_model(model)
 
     def suggest_directions(
         self,
@@ -154,21 +146,12 @@ class AIContentGapSuggester:
         而非一次性阻塞呼叫：部分 provider（例如 OpenRouter 上游的免費/限流模型）
         對非串流請求偶爾會回傳無 choices 的空內容，但串流呼叫可正常運作。
         """
-        if self.provider == "openrouter":
-            chunks = self.client.generate_content_stream(
-                prompt=prompt,
-                model=self.model,
-                temperature=temperature,
-                system_prompt=self.SYSTEM_PROMPT
-            )
-        else:
-            chunks = self.client.generate_content(
-                prompt=prompt,
-                model=self.model,
-                temperature=temperature,
-                system_prompt=self.SYSTEM_PROMPT,
-                stream=True
-            )
+        chunks = self.client.generate_content_stream(
+            prompt=prompt,
+            model=self.model,
+            temperature=temperature,
+            system_prompt=self.SYSTEM_PROMPT
+        )
         return "".join(chunks)
 
     def _parse_json_response(self, response: str) -> Dict:

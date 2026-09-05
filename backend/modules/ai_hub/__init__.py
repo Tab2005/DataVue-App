@@ -13,7 +13,7 @@ import `modules.ai_hub.service`，若這裡的 `__init__.py` 又 eager import
     from modules.ai_hub.router import router as ai_router
     from modules.ai_hub.service import AIService
     from modules.ai_hub.intent_classifier import AIIntentClassifier
-    from modules.ai_hub.clients import ZeaburAIClient, OpenRouterClient
+    from modules.ai_hub.clients import OpenRouterClient
 """
 
 __all__ = ["router", "service", "intent_classifier", "clients"]

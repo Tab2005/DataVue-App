@@ -13,17 +13,13 @@ import os
 import json
 from typing import Optional, Dict, Any, Generator
 
-# New Zeabur AI Hub client
-from services.ai.zeabur_client import ZeaburAIClient
 from services.ai.openrouter_client import OpenRouterClient
 
 
 class AIService:
     """
-    Service for interacting with AI models.
-    Supports Dual-Mode:
-    1. OpenRouter Mode (openrouter): Uses OpenRouter API aggregator (defaulting to DeepSeek)
-    2. Zeabur Mode (zeabur): Uses OpenAI-compatible API via Zeabur AI Hub (supports 10+ models)
+    Service for interacting with AI models via OpenRouter (API aggregator, defaulting
+    to DeepSeek).
     """
 
     # Available providers
@@ -31,11 +27,6 @@ class AIService:
         "openrouter": {
             "name": "OpenRouter",
             "description": "使用 OpenRouter API 聚合服務",
-            "requires_sdk": False
-        },
-        "zeabur": {
-            "name": "Zeabur AI Hub",
-            "description": "透過 Zeabur 統一介面，支援多種模型 (Gemini, Claude, GPT 等)",
             "requires_sdk": False
         }
     }
@@ -46,14 +37,9 @@ class AIService:
         return AIService.PROVIDERS.copy()
 
     @staticmethod
-    def get_available_models(provider: str = "zeabur", remote: bool = False, api_key: Optional[str] = None) -> Dict[str, Dict]:
+    def get_available_models(provider: str = "openrouter", remote: bool = False, api_key: Optional[str] = None) -> Dict[str, Dict]:
         """Get available models for a provider"""
-        if provider == "zeabur":
-            client = AIService.get_zeabur_client(api_key=api_key)
-            if client:
-                return client.get_available_models(remote=remote)
-            return ZeaburAIClient.MODELS
-        elif provider == "openrouter":
+        if provider == "openrouter":
             client = AIService.get_openrouter_client(api_key=api_key)
             if client:
                 return client.get_available_models(remote=remote)
@@ -70,48 +56,30 @@ class AIService:
             return None
 
     @staticmethod
-    def get_zeabur_client(api_key: Optional[str] = None) -> Optional[ZeaburAIClient]:
-        """
-        Initialize Zeabur AI Hub Client (OpenAI-compatible).
-        """
-        try:
-            return ZeaburAIClient(api_key=api_key)
-        except Exception as e:
-            print(f"Error initializing Zeabur Client: {e}")
-            return None
-
-    @staticmethod
     def test_connection(
         api_key: Optional[str] = None,
-        provider: str = "zeabur",
-        model: str = "gemini-2.5-flash"
+        provider: str = "openrouter",
+        model: str = "deepseek/deepseek-v4-flash"
     ) -> bool:
         """
         Test if the AI service is reachable.
         """
-        if provider == "zeabur":
-            client = AIService.get_zeabur_client(api_key)
-            if not client:
-                return False
-            return client.test_connection(model=model)
-        elif provider == "openrouter":
-            client = AIService.get_openrouter_client(api_key)
-            if not client:
-                return False
-            try:
-                res = client.test_connection()
-                return res.get("success", False)
-            except Exception as e:
-                print(f"OpenRouter Connection Failed: {e}")
-                return False
-        return False
+        client = AIService.get_openrouter_client(api_key)
+        if not client:
+            return False
+        try:
+            res = client.test_connection()
+            return res.get("success", False)
+        except Exception as e:
+            print(f"OpenRouter Connection Failed: {e}")
+            return False
 
     @staticmethod
     def analyze_data(
         data: Dict[str, Any],
         context: str,
         api_key: Optional[str] = None,
-        provider: str = "zeabur",
+        provider: str = "openrouter",
         model: str = "deepseek/deepseek-v4-flash",
         report_type: str = "ad_analysis",
         period: str = "weekly",
@@ -453,48 +421,12 @@ class AIService:
         {json.dumps(data, indent=2, ensure_ascii=False)}
         """
 
-        # Use appropriate provider
-        if provider == "zeabur":
-            yield from AIService._analyze_with_zeabur(
-                system_prompt=system_prompt,
-                user_message=user_message,
-                api_key=api_key,
-                model=model
-            )
-        else:
-            yield from AIService._analyze_with_openrouter(
-                system_prompt=system_prompt,
-                user_message=user_message,
-                api_key=api_key,
-                model=model
-            )
-
-    @staticmethod
-    def _analyze_with_zeabur(
-        system_prompt: str,
-        user_message: str,
-        api_key: Optional[str],
-        model: str
-    ) -> Generator[str, None, None]:
-        """Use Zeabur AI Hub (OpenAI-compatible) for analysis"""
-        client = AIService.get_zeabur_client(api_key)
-        if not client:
-            yield "Error: No valid API Key or AI Service configured."
-            return
-
-        try:
-            response = client.generate_content(
-                prompt=user_message,
-                model=model,
-                system_prompt=system_prompt,
-                stream=True
-            )
-
-            for chunk in response:
-                yield chunk
-
-        except Exception as e:
-            yield f"\n[System Error during Analysis: {str(e)}]"
+        yield from AIService._analyze_with_openrouter(
+            system_prompt=system_prompt,
+            user_message=user_message,
+            api_key=api_key,
+            model=model
+        )
 
     @staticmethod
     def _analyze_with_openrouter(

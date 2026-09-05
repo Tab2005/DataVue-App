@@ -19,10 +19,10 @@ def fix_database():
     
     # Add missing AI columns if needed
     new_columns = [
-        ("zeabur_api_key", "TEXT"),
         ("gemini_api_key", "TEXT"),
-        ("ai_provider", "TEXT DEFAULT 'zeabur'"),
-        ("ai_model", "TEXT DEFAULT 'gemini-2.5-flash'")
+        ("openrouter_api_key", "TEXT"),
+        ("ai_provider", "TEXT DEFAULT 'openrouter'"),
+        ("ai_model", "TEXT DEFAULT 'deepseek/deepseek-v4-flash'")
     ]
     
     for col_name, col_type in new_columns:

@@ -48,9 +48,6 @@ def test_service_role_normalized_on_assignment():
 
 def test_google_ai_api_key_fallback_chain():
     fresh = Settings(_env_file=None)
-    fresh.ZEABUR_AI_HUB_API_KEY = "zeabur-key"
-    assert fresh.GOOGLE_AI_API_KEY == "zeabur-key"
-
     fresh.GOOGLE_API_KEY_ENV = "google-api-key"
     assert fresh.GOOGLE_AI_API_KEY == "google-api-key"
 
@@ -60,9 +57,6 @@ def test_google_ai_api_key_fallback_chain():
 
 def test_openrouter_api_key_fallback_chain():
     fresh = Settings(_env_file=None)
-    fresh.ZEABUR_AI_HUB_API_KEY = "zeabur-key"
-    assert fresh.OPENROUTER_API_KEY == "zeabur-key"
-
     fresh.OPENROUTER_API_KEY_ENV = "openrouter-key"
     assert fresh.OPENROUTER_API_KEY == "openrouter-key"
 

@@ -4,15 +4,8 @@ from services.ai.content_gap_suggester import AIContentGapSuggester
 
 
 def _suggester():
-    with patch("services.ai.content_gap_suggester.ZeaburAIClient") as mock_zeabur_cls:
-        mock_zeabur_cls.return_value.generate_content.return_value = ""
-        suggester = AIContentGapSuggester(api_key="fake-key", provider="zeabur")
-    return suggester, mock_zeabur_cls.return_value
-
-
-def _openrouter_suggester():
-    with patch("services.ai.openrouter_client.OpenRouterClient") as mock_or_cls:
-        suggester = AIContentGapSuggester(api_key="fake-key", provider="openrouter")
+    with patch("services.ai.content_gap_suggester.OpenRouterClient") as mock_or_cls:
+        suggester = AIContentGapSuggester(api_key="fake-key")
     return suggester, mock_or_cls.return_value
 
 
@@ -31,7 +24,7 @@ def test_suggest_directions_reports_clear_error_on_empty_ai_response():
     "Failed to parse JSON from response: ..." message.
     """
     suggester, mock_client = _suggester()
-    mock_client.generate_content.return_value = ""
+    mock_client.generate_content_stream.return_value = iter([""])
 
     result = suggester.suggest_directions(
         "https://example.com/page",
@@ -45,13 +38,13 @@ def test_suggest_directions_reports_clear_error_on_empty_ai_response():
 
 def test_suggest_directions_uses_streaming_call_for_openrouter():
     """
-    Regression test: content gap suggestions for the OpenRouter provider must use
-    generate_content_stream (same call pattern as the working GA4 insights AI
-    analysis feature in ai_service.py), not the blocking generate_content, since
-    some free/rate-limited upstream models only respond correctly to streaming
+    Regression test: content gap suggestions must use generate_content_stream
+    (same call pattern as the working GA4 insights AI analysis feature in
+    ai_service.py), not the blocking generate_content, since some
+    free/rate-limited upstream models only respond correctly to streaming
     requests and silently return empty content on the non-streaming path.
     """
-    suggester, mock_client = _openrouter_suggester()
+    suggester, mock_client = _suggester()
     mock_client.generate_content_stream.return_value = iter([
         '{"suggestions": [{"type": "new_article", "title": "T", ',
         '"outline": ["a"], "target_keywords": ["kw1"], "reasoning": "r"}]}'
@@ -71,7 +64,7 @@ def test_suggest_directions_uses_streaming_call_for_openrouter():
 
 def test_suggest_directions_parses_valid_json_response():
     suggester, mock_client = _suggester()
-    mock_client.generate_content.return_value = '''{
+    mock_client.generate_content_stream.return_value = iter(['''{
         "suggestions": [
             {
                 "type": "new_article",
@@ -81,7 +74,7 @@ def test_suggest_directions_parses_valid_json_response():
                 "reasoning": "測試理由"
             }
         ]
-    }'''
+    }'''])
 
     result = suggester.suggest_directions(
         "https://example.com/page",
