@@ -9,7 +9,7 @@ Facebook Ads API 相關的核心業務端點
 - /api/analytics-trend: 取得趨勢資料
 """
 
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends, HTTPException, Query
 from typing import Optional
 import sys
 import json
@@ -19,6 +19,7 @@ logger = logging.getLogger(__name__)
 
 from database import SessionLocal, User, Team, TeamMember, UserRole
 from dependencies import get_db, get_current_team, require_module
+from modules.fb_ads.accounts_service import resolve_accessible_account_ids
 
 # Use existing verify_google_token from main.py (will be refactored later)
 # For now, import from dependencies or define here
@@ -48,6 +49,26 @@ router = APIRouter(prefix="/api", tags=["facebook"])
 
 # Module access check
 fb_ads_check = require_module("fb_ads")
+
+
+async def _ensure_account_access(account_id: str, *, team, db, google_id: str) -> None:
+    """驗證 account_id 在目前 team context 下對呼叫者可視；不可視則 403。
+
+    dashboard-data / analytics-data / analytics-trend 這三個端點過去直接拿
+    query string 傳入的 account_id 打 Facebook API，完全沒有再比對
+    team.visible_ad_account_ids 白名單（只有 /ad-accounts 清單端點有做過濾）——
+    非 owner 的團隊成員只要知道/猜到白名單外的 act_id，仍能用團隊 token 讀到
+    完整廣告成效資料。比照 modules/contribution/dependencies.py 的
+    ensure_account_access，沿用同一套 resolve_accessible_account_ids 判斷邏輯
+    補上這層檢查。
+    """
+    current_db_user = db.query(User).filter(User.google_id == google_id).first()
+    if not current_db_user:
+        raise HTTPException(status_code=403, detail=f"無權存取廣告帳戶 {account_id}")
+
+    accessible_ids, error = await resolve_accessible_account_ids(current_db_user, team)
+    if error or account_id not in accessible_ids:
+        raise HTTPException(status_code=403, detail=f"無權存取廣告帳戶 {account_id}")
 
 
 @router.get("/ad-accounts", dependencies=[Depends(fb_ads_check)])
@@ -121,19 +142,22 @@ async def get_ad_accounts(
 
 @router.get("/dashboard-data", dependencies=[Depends(fb_ads_check)])
 async def get_dashboard_data(
-    account_id: str = None, 
-    days: int = 7, 
-    user_id: str = Depends(verify_google_token), 
-    team: Team = Depends(get_current_team)
+    account_id: str = None,
+    days: int = 7,
+    user_id: str = Depends(verify_google_token),
+    team: Team = Depends(get_current_team),
+    db: SessionLocal = Depends(get_db)
 ):
     """取得儀表板摘要資料。"""
     from async_services import AsyncFacebookService
-    
+
     team_id = team.id if team else None
-    
+
     if not account_id:
         return {"error": "Account ID is required"}
-        
+
+    await _ensure_account_access(account_id, team=team, db=db, google_id=user_id)
+
     result = await AsyncFacebookService.get_account_insights(
         account_id, user_id, days=days, team_id=team_id
     )
@@ -146,16 +170,17 @@ async def get_dashboard_data(
 @router.get("/analytics-data", dependencies=[Depends(fb_ads_check)])
 async def get_analytics_data(
     account_id: str,
-    since: str, 
-    until: str, 
+    since: str,
+    until: str,
     level: str = "account",
     fields: str = None,
     user_id: str = Depends(verify_google_token),
-    team: Team = Depends(get_current_team)
+    team: Team = Depends(get_current_team),
+    db: SessionLocal = Depends(get_db)
 ):
     """
     取得進階分析資料。
-    
+
     Args:
         account_id: Facebook 廣告帳戶 ID
         since: 開始日期 (YYYY-MM-DD)
@@ -164,13 +189,14 @@ async def get_analytics_data(
         fields: 可選的指標欄位（逗號分隔）
     """
     from async_services import AsyncFacebookService
-    from fastapi import HTTPException
-    
+
     team_id = team.id if team else None
-    
+
+    await _ensure_account_access(account_id, team=team, db=db, google_id=user_id)
+
     # CRITICAL: Strict Mode - prevent data leak
     strict = True if team_id is None else False
-    
+
     result = await AsyncFacebookService.get_custom_report(
         account_id, user_id, since, until, level=level, 
         custom_fields=fields, team_id=team_id, strict_token=strict
@@ -198,18 +224,21 @@ async def get_analytics_trend_data(
     prev_since: str = None,
     prev_until: str = None,
     user_id: str = Depends(verify_google_token),
-    team: Team = Depends(get_current_team)
+    team: Team = Depends(get_current_team),
+    db: SessionLocal = Depends(get_db)
 ):
     """
     取得每日趨勢圖表資料。
     """
     from async_services import AsyncFacebookService
-    
+
     team_id = team.id if team else None
-    
+
+    await _ensure_account_access(account_id, team=team, db=db, google_id=user_id)
+
     # CRITICAL: Strict Mode - prevent data leak
     strict = True if team_id is None else False
-    
+
     result = await AsyncFacebookService.get_analytics_trend(
         account_id, user_id, since, until, 
         prev_since=prev_since, prev_until=prev_until,

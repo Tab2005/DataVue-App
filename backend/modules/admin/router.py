@@ -1,6 +1,7 @@
 from fastapi import APIRouter, Depends, HTTPException, status, Header
 from sqlalchemy.orm import Session, joinedload
 from typing import List, Dict, Any, Optional
+import hmac
 import logging
 import sys
 import os
@@ -76,7 +77,7 @@ def emergency_fix_super_admin(
     if not expected_key:
         raise HTTPException(status_code=500, detail="Server not configured properly (missing ENCRYPTION_KEY)")
     
-    if not x_emergency_key or x_emergency_key != expected_key:
+    if not x_emergency_key or not hmac.compare_digest(x_emergency_key, expected_key):
         logger.warning("[SECURITY] Emergency fix attempt with invalid key")
         raise HTTPException(status_code=403, detail="Invalid emergency key")
     
