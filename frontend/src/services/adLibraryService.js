@@ -1,5 +1,5 @@
 /**
- * 廣告文案庫 API 服務層（docs/73）
+ * 廣告文案庫 API 服務層（docs/73、docs/74）
  *
  * 包裝 backend/modules/ad_library/ 的端點：
  *   GET  /api/ad-library/accounts
@@ -8,6 +8,9 @@
  *   GET  /api/ad-library/ads
  *   GET  /api/ad-library/ads/export   （CSV，blob 下載）
  *   GET  /api/ad-library/media/{id}    （圖片，blob URL）
+ *   GET  /api/ad-library/tree           （行銷活動 → 廣告組合 → 廣告，docs/74）
+ *   GET  /api/ad-library/campaigns/{id}
+ *   GET  /api/ad-library/adsets/{id}
  *
  * 圖片與 CSV 需帶 Authorization header，<img src> / <a href> 無法直接帶，
  * 因此用 fetch 取回 blob 後轉成 object URL。
@@ -56,6 +59,13 @@ export const listAds = ({ accountId, status, mediaType, q, sort, order, page, pa
             page_size: pageSize,
         })}`
     );
+
+export const getTree = ({ accountId, status }) =>
+    apiClient.get(`${BASE}/tree${buildQuery({ account_id: accountId, status })}`);
+
+export const getCampaign = (id) => apiClient.get(`${BASE}/campaigns/${encodeURIComponent(id)}`);
+
+export const getAdset = (id) => apiClient.get(`${BASE}/adsets/${encodeURIComponent(id)}`);
 
 export const downloadCsv = async ({ accountId, status, mediaType, q, sort, order }) => {
     const qs = buildQuery({ account_id: accountId, status, media_type: mediaType, q, sort, order });

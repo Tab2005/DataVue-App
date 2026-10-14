@@ -63,7 +63,14 @@ from database.models.ga4_insights import (
     GA4ItemCategoryRule,
 )
 from database.models.fb_ads import FbAdsAnalyticsAiSnapshot
-from database.models.ad_library import AdLibraryItem, AdLibraryRefreshJob
+from database.models.ad_library import (
+    AdLibraryAdContent,
+    AdLibraryAdset,
+    AdLibraryCampaign,
+    AdLibraryContent,
+    AdLibraryItem,
+    AdLibraryRefreshJob,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -100,6 +107,10 @@ __all__ = [
     "FbAdsAnalyticsAiSnapshot",
     "AdLibraryItem",
     "AdLibraryRefreshJob",
+    "AdLibraryCampaign",
+    "AdLibraryAdset",
+    "AdLibraryContent",
+    "AdLibraryAdContent",
     "init_db",
 ]
 

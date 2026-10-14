@@ -1,5 +1,8 @@
 """
-Ad Library - creative 文案攤平（docs/73）
+Ad Library - Graph API 回傳攤平（docs/73、docs/74）
+
+- `normalize_ad`：單支廣告（含 creative / insights）→ `ad_library_items`
+- `normalize_campaign` / `normalize_adset`：行銷活動、廣告組合設定 → 對應表（docs/74）
 
 把 Graph API `/{act_id}/ads` 回傳的單支廣告（含 creative / insights）轉成
 `ad_library_items` 一列的 dict。純函數、不碰 DB 與網路，方便單元測試。
@@ -78,6 +81,136 @@ def _extract_insights(ad: dict) -> dict:
         "clicks": _to_int(row.get("clicks")),
         "spend": _to_float(row.get("spend")),
         "ctr": _to_float(row.get("ctr")),
+    }
+
+
+def _budget(value) -> int | None:
+    """FB 預算欄位為字串形式的最小貨幣單位；未設定時不回傳或為空。"""
+    if value in (None, ""):
+        return None
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return None
+
+
+def _names(entries) -> list[str]:
+    return _dedupe(e.get("name") for e in entries or [] if isinstance(e, dict))
+
+
+GENDER_LABELS = {1: "male", 2: "female"}
+
+
+def summarize_targeting(targeting: dict | None) -> dict[str, Any]:
+    """抽出常用的受眾欄位供篩選與 AI 精簡輸出；取不到就留空，不拋錯。
+
+    空陣列代表「未限制」（例如 genders 為空＝不限性別、publisher_platforms
+    為空＝自動版位）。
+    """
+    t = targeting if isinstance(targeting, dict) else {}
+    geo = t.get("geo_locations") if isinstance(t.get("geo_locations"), dict) else {}
+    excluded_geo = t.get("excluded_geo_locations") if isinstance(t.get("excluded_geo_locations"), dict) else {}
+
+    interests: list = list(t.get("interests") or [])
+    behaviors: list = list(t.get("behaviors") or [])
+    for spec in t.get("flexible_spec") or []:
+        if isinstance(spec, dict):
+            interests.extend(spec.get("interests") or [])
+            behaviors.extend(spec.get("behaviors") or [])
+
+    genders = []
+    for g in t.get("genders") or []:
+        try:
+            label = GENDER_LABELS.get(int(g))
+        except (TypeError, ValueError):
+            label = None
+        if label:
+            genders.append(label)
+
+    automation = t.get("targeting_automation") if isinstance(t.get("targeting_automation"), dict) else {}
+    return {
+        "age_min": t.get("age_min"),
+        "age_max": t.get("age_max"),
+        "genders": genders,
+        "countries": _dedupe(geo.get("countries") or []),
+        "regions": _names(geo.get("regions")),
+        "cities": _names(geo.get("cities")),
+        "excluded_countries": _dedupe(excluded_geo.get("countries") or []),
+        "location_types": _dedupe(geo.get("location_types") or []),
+        "interests": _names(interests),
+        "behaviors": _names(behaviors),
+        "custom_audiences": _names(t.get("custom_audiences")),
+        "excluded_custom_audiences": _names(t.get("excluded_custom_audiences")),
+        "advantage_audience": automation.get("advantage_audience") == 1,
+        "publisher_platforms": _dedupe(t.get("publisher_platforms") or []),
+        "facebook_positions": _dedupe(t.get("facebook_positions") or []),
+        "instagram_positions": _dedupe(t.get("instagram_positions") or []),
+        "device_platforms": _dedupe(t.get("device_platforms") or []),
+    }
+
+
+def _strip_insights(obj: dict) -> dict:
+    """raw 欄位保存完整設定，但成效已另存欄位，不重複存。"""
+    return {k: v for k, v in obj.items() if k != "insights"}
+
+
+def normalize_campaign(campaign: dict[str, Any], *, account_id: str, currency: str | None) -> dict[str, Any]:
+    """把單一行銷活動轉成 ad_library_campaigns 欄位 dict。"""
+    return {
+        "account_id": account_id,
+        "campaign_id": str(campaign.get("id")),
+        "name": campaign.get("name"),
+        "objective": campaign.get("objective"),
+        "status": campaign.get("status"),
+        "effective_status": campaign.get("effective_status"),
+        "buying_type": campaign.get("buying_type"),
+        "bid_strategy": campaign.get("bid_strategy"),
+        "smart_promotion_type": campaign.get("smart_promotion_type"),
+        "daily_budget": _budget(campaign.get("daily_budget")),
+        "lifetime_budget": _budget(campaign.get("lifetime_budget")),
+        "budget_remaining": _budget(campaign.get("budget_remaining")),
+        "currency": currency,
+        "special_ad_categories": _dedupe(campaign.get("special_ad_categories") or []),
+        "start_time": _parse_fb_datetime(campaign.get("start_time")),
+        "stop_time": _parse_fb_datetime(campaign.get("stop_time")),
+        "created_time": _parse_fb_datetime(campaign.get("created_time")),
+        "updated_time": _parse_fb_datetime(campaign.get("updated_time")),
+        "raw": _strip_insights(campaign),
+        **_extract_insights(campaign),
+    }
+
+
+def normalize_adset(adset: dict[str, Any], *, account_id: str, currency: str | None) -> dict[str, Any]:
+    """把單一廣告組合轉成 ad_library_adsets 欄位 dict。"""
+    targeting = adset.get("targeting") if isinstance(adset.get("targeting"), dict) else None
+    dynamic = adset.get("is_dynamic_creative")
+    return {
+        "account_id": account_id,
+        "adset_id": str(adset.get("id")),
+        "campaign_id": adset.get("campaign_id"),
+        "name": adset.get("name"),
+        "status": adset.get("status"),
+        "effective_status": adset.get("effective_status"),
+        "optimization_goal": adset.get("optimization_goal"),
+        "billing_event": adset.get("billing_event"),
+        "bid_strategy": adset.get("bid_strategy"),
+        "destination_type": adset.get("destination_type"),
+        "is_dynamic_creative": bool(dynamic) if dynamic is not None else None,
+        "bid_amount": _budget(adset.get("bid_amount")),
+        "daily_budget": _budget(adset.get("daily_budget")),
+        "lifetime_budget": _budget(adset.get("lifetime_budget")),
+        "budget_remaining": _budget(adset.get("budget_remaining")),
+        "currency": currency,
+        "targeting": targeting,
+        "targeting_summary": summarize_targeting(targeting),
+        "promoted_object": adset.get("promoted_object"),
+        "attribution_spec": adset.get("attribution_spec"),
+        "start_time": _parse_fb_datetime(adset.get("start_time")),
+        "end_time": _parse_fb_datetime(adset.get("end_time")),
+        "created_time": _parse_fb_datetime(adset.get("created_time")),
+        "updated_time": _parse_fb_datetime(adset.get("updated_time")),
+        "raw": _strip_insights(adset),
+        **_extract_insights(adset),
     }
 
 

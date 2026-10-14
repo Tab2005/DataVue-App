@@ -1,8 +1,9 @@
-"""Ad Library - API schemas（docs/73）。"""
+"""Ad Library - API schemas（docs/73、docs/74）。"""
 
 from __future__ import annotations
 
 from datetime import datetime
+from typing import Any
 
 from pydantic import BaseModel
 
@@ -16,6 +17,8 @@ class RefreshJobResponse(BaseModel):
     account_id: str
     status: str
     ads_fetched: int
+    campaigns_fetched: int = 0
+    adsets_fetched: int = 0
     media_stored: int
     error: str | None = None
     created_at: datetime | None = None
@@ -37,6 +40,7 @@ class AdLibraryItemResponse(BaseModel):
     ad_name: str | None = None
     campaign_id: str | None = None
     campaign_name: str | None = None
+    adset_id: str | None = None
     adset_name: str | None = None
     objective: str | None = None
     effective_status: str | None = None
@@ -64,3 +68,21 @@ class AdLibraryListResponse(BaseModel):
     page: int
     page_size: int
     latest_job: RefreshJobResponse | None = None
+
+
+class AdLibraryTreeResponse(BaseModel):
+    """docs/74：行銷活動 → 廣告組合 → 廣告。節點欄位見 hierarchy.py。"""
+
+    account_id: str
+    campaigns: list[dict[str, Any]]
+    latest_job: RefreshJobResponse | None = None
+
+
+class CampaignDetailResponse(BaseModel):
+    campaign: dict[str, Any]
+    adsets: list[dict[str, Any]]
+
+
+class AdsetDetailResponse(BaseModel):
+    adset: dict[str, Any]
+    ads: list[dict[str, Any]]

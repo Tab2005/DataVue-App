@@ -1,9 +1,10 @@
 /**
- * 廣告文案庫（docs/73）
+ * 廣告文案庫（docs/73、docs/74）
  *
  * 類似 Meta 官方廣告檔案庫的卡片牆，但資料來自團隊自家廣告帳號，
  * 並多了曝光／花費／CTR 可排序。資料讀取走本地快取（/api/ad-library/ads），
  * 「重新抓取」觸發背景刷新後輪詢 job 狀態，完成後重新載入列表。
+ * 「結構」分頁（docs/74）顯示行銷活動 → 廣告組合 → 廣告的階層與設定。
  */
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { useOutletContext } from 'react-router-dom';
@@ -17,12 +18,12 @@ import {
     listAds,
     startRefresh,
 } from '../services/adLibraryService';
+import StructureView from '../components/AdLibrary/StructureView';
+import { MEDIA_TYPE_LABELS, STATUS_LABELS, formatDate, formatMoney, formatNumber, t } from '../components/AdLibrary/labels';
 
 const PAGE_SIZE = 24;
 const POLL_INTERVAL_MS = 3000;
 const ACTIVE_JOB = new Set(['queued', 'running']);
-
-const t = (language, en, zh) => (language === 'en' ? en : zh);
 
 const STYLES = `
 .adlib-grid { display: grid; gap: 16px; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); }
@@ -48,29 +49,11 @@ const STYLES = `
 .adlib-stats { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; font-variant-numeric: tabular-nums; }
 .adlib-stats div { font-size: 0.75rem; color: var(--text-muted); }
 .adlib-stats strong { display: block; font-size: 0.95rem; color: var(--text-primary); }
+.adlib-tabs { display: flex; gap: 4px; border-bottom: 1px solid var(--glass-border); margin-bottom: 16px; }
+.adlib-tab { padding: 8px 14px; background: none; border: none; border-bottom: 2px solid transparent; margin-bottom: -1px;
+  color: var(--text-secondary); cursor: pointer; font-size: 0.9rem; }
+.adlib-tab[aria-selected="true"] { color: var(--accent-primary); border-bottom-color: var(--accent-primary); font-weight: 600; }
 `;
-
-const STATUS_LABELS = {
-    ACTIVE: ['Active', '投放中'],
-    PAUSED: ['Paused', '已暫停'],
-    CAMPAIGN_PAUSED: ['Campaign paused', '活動已暫停'],
-    ADSET_PAUSED: ['Ad set paused', '廣告組合已暫停'],
-    ARCHIVED: ['Archived', '已封存'],
-    DELETED: ['Deleted', '已刪除'],
-    DISAPPROVED: ['Disapproved', '未通過審查'],
-    WITH_ISSUES: ['With issues', '有問題'],
-};
-
-const MEDIA_TYPE_LABELS = {
-    image: ['Image', '圖片'],
-    video: ['Video', '影片'],
-    carousel: ['Carousel', '輪播'],
-    dynamic: ['Dynamic', '動態創意'],
-};
-
-const formatNumber = (n) => new Intl.NumberFormat('zh-TW').format(Math.round(n || 0));
-const formatMoney = (n) => new Intl.NumberFormat('zh-TW', { maximumFractionDigits: 2 }).format(n || 0);
-const formatDate = (s) => (s ? new Date(`${s}Z`).toLocaleDateString('zh-TW') : '—');
 
 const MediaThumb = ({ media, mediaType, previewLink, language }) => {
     const first = media?.[0];
@@ -251,6 +234,8 @@ const AdLibrary = () => {
     const [accounts, setAccounts] = useState([]);
     const [accountsError, setAccountsError] = useState(null);
     const [accountId, setAccountId] = useState('');
+    const [view, setView] = useState('ads');
+    const [treeReloadKey, setTreeReloadKey] = useState(0);
     const [status, setStatus] = useState('');
     const [mediaType, setMediaType] = useState('');
     const [query, setQuery] = useState('');
@@ -312,7 +297,10 @@ const AdLibrary = () => {
             try {
                 const next = await getRefreshJob(job.job_id);
                 setJob(next);
-                if (!ACTIVE_JOB.has(next.status)) loadAds();
+                if (!ACTIVE_JOB.has(next.status)) {
+                    loadAds();
+                    setTreeReloadKey((k) => k + 1);
+                }
             } catch (err) {
                 setError(err.message);
                 setJob(null);
@@ -358,11 +346,22 @@ const AdLibrary = () => {
                     </h1>
                 </div>
 
+                <div className="adlib-tabs" role="tablist">
+                    {[['ads', 'Ads', '廣告'], ['structure', 'Structure', '結構']].map(([key, en, zh]) => (
+                        <button key={key} type="button" role="tab" className="adlib-tab" aria-selected={view === key}
+                                onClick={() => setView(key)}>
+                            {t(language, en, zh)}
+                        </button>
+                    ))}
+                </div>
+
                 {accountsError && <Notice tone="error">{t(language, 'Failed to load ad accounts: ', '載入廣告帳戶失敗：')}{accountsError}</Notice>}
 
                 <div style={{
                     display: 'grid', gap: 10, marginBottom: 16,
-                    gridTemplateColumns: isMobile ? '1fr' : 'minmax(200px, 1.2fr) repeat(3, minmax(120px, 0.8fr)) minmax(180px, 1.4fr)',
+                    gridTemplateColumns: isMobile ? '1fr' : (view === 'ads'
+                        ? 'minmax(200px, 1.2fr) repeat(3, minmax(120px, 0.8fr)) minmax(180px, 1.4fr)'
+                        : 'minmax(200px, 1.2fr) minmax(120px, 0.8fr) 2.2fr'),
                 }}>
                     <select className="adlib-input" value={accountId} onChange={(e) => setAccountId(e.target.value)}
                             aria-label={t(language, 'Ad account', '廣告帳戶')}>
@@ -376,6 +375,7 @@ const AdLibrary = () => {
                         <option value="paused">{t(language, 'Paused', '已暫停')}</option>
                         <option value="other">{t(language, 'Other', '其他')}</option>
                     </select>
+                    {view === 'ads' && (<>
                     <select className="adlib-input" value={mediaType} onChange={(e) => setMediaType(e.target.value)}
                             aria-label={t(language, 'Media type', '素材類型')}>
                         <option value="">{t(language, 'All media', '全部素材')}</option>
@@ -396,6 +396,7 @@ const AdLibrary = () => {
                                placeholder={t(language, 'Search copy, ad or campaign name', '搜尋文案、廣告或活動名稱')}
                                style={{ width: '100%', paddingLeft: 30, boxSizing: 'border-box' }} />
                     </label>
+                    </>)}
                 </div>
 
                 <div style={{ display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap', marginBottom: 16 }}>
@@ -404,11 +405,13 @@ const AdLibrary = () => {
                         <FiRefreshCw size={14} className={refreshing ? 'spin' : undefined} />
                         {refreshing ? t(language, 'Fetching…', '抓取中…') : t(language, 'Fetch from Facebook', '從 Facebook 重新抓取')}
                     </button>
-                    <button type="button" className="adlib-btn" onClick={handleExport}
-                            disabled={!accountId || exporting || !data.total}>
-                        <FiDownload size={14} />
-                        {t(language, 'Export CSV', '匯出 CSV')}
-                    </button>
+                    {view === 'ads' && (
+                        <button type="button" className="adlib-btn" onClick={handleExport}
+                                disabled={!accountId || exporting || !data.total}>
+                            <FiDownload size={14} />
+                            {t(language, 'Export CSV', '匯出 CSV')}
+                        </button>
+                    )}
                     <span style={{ color: 'var(--text-muted)', fontSize: '0.82rem' }}>
                         <JobStatus job={job} language={language} total={data.total} />
                     </span>
@@ -420,7 +423,12 @@ const AdLibrary = () => {
                     <Notice tone="error">{t(language, 'Last fetch failed: ', '上次抓取失敗：')}{job.error}</Notice>
                 )}
 
-                {!loading && accountId && data.items.length === 0 && (
+                {view === 'structure' && accountId && (
+                    <StructureView accountId={accountId} status={status} language={language}
+                                   reloadKey={treeReloadKey} onError={setError} />
+                )}
+
+                {view === 'ads' && !loading && accountId && data.items.length === 0 && (
                     <Notice tone="info">
                         {hasFilters
                             ? t(language, 'No ads match these filters.', '沒有符合篩選條件的廣告。')
@@ -428,11 +436,13 @@ const AdLibrary = () => {
                     </Notice>
                 )}
 
-                <div className="adlib-grid" aria-busy={loading} style={{ opacity: loading ? 0.6 : 1 }}>
-                    {data.items.map((item) => <AdCard key={item.id} item={item} language={language} />)}
-                </div>
+                {view === 'ads' && (
+                    <div className="adlib-grid" aria-busy={loading} style={{ opacity: loading ? 0.6 : 1 }}>
+                        {data.items.map((item) => <AdCard key={item.id} item={item} language={language} />)}
+                    </div>
+                )}
 
-                {data.total > PAGE_SIZE && (
+                {view === 'ads' && data.total > PAGE_SIZE && (
                     <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', gap: 12, marginTop: 20 }}>
                         <button type="button" className="adlib-btn" disabled={page <= 1 || loading} onClick={() => setPage((p) => p - 1)}>
                             {t(language, 'Previous', '上一頁')}
@@ -461,7 +471,9 @@ const Notice = ({ tone, children }) => (
 
 const JobStatus = ({ job, language, total }) => {
     if (job && ACTIVE_JOB.has(job.status)) {
-        return t(language, `Fetched ${job.ads_fetched} ads so far…`, `已抓取 ${job.ads_fetched} 支廣告…`);
+        return t(language,
+            `Fetched ${job.campaigns_fetched || 0} campaigns, ${job.adsets_fetched || 0} ad sets, ${job.ads_fetched} ads so far…`,
+            `已抓取 ${job.campaigns_fetched || 0} 個行銷活動、${job.adsets_fetched || 0} 個廣告組合、${job.ads_fetched} 支廣告…`);
     }
     const parts = [t(language, `${total || 0} ads`, `共 ${total || 0} 支廣告`)];
     if (job?.finished_at) {

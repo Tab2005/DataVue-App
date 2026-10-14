@@ -3,13 +3,14 @@ import { fireEvent, screen, waitFor } from '@testing-library/react';
 
 import AdLibrary from '../AdLibrary';
 import { renderWithOutlet } from '../../test/renderWithOutlet';
-import { getRefreshJob, listAccounts, listAds, startRefresh } from '../../services/adLibraryService';
+import { getRefreshJob, getTree, listAccounts, listAds, startRefresh } from '../../services/adLibraryService';
 
 vi.mock('../../services/adLibraryService', () => ({
     listAccounts: vi.fn(),
     listAds: vi.fn(),
     startRefresh: vi.fn(),
     getRefreshJob: vi.fn(),
+    getTree: vi.fn(),
     downloadCsv: vi.fn(),
     fetchMediaBlobUrl: vi.fn(() => new Promise(() => {})),
 }));
@@ -87,5 +88,65 @@ describe('AdLibrary', () => {
         } finally {
             vi.useRealTimers();
         }
+    });
+
+    it('shows the campaign → ad set → ad structure with settings', async () => {
+        listAds.mockResolvedValue({ items: [], total: 0, page: 1, page_size: 24, latest_job: null });
+        getTree.mockResolvedValue({
+            account_id: 'act_001',
+            latest_job: null,
+            campaigns: [{
+                id: 'alc_1', campaign_id: 'c1', name: '春季活動', settings_available: true,
+                objective: 'OUTCOME_SALES', effective_status: 'ACTIVE', budget_level: 'campaign',
+                currency: 'TWD', daily_budget: 500, lifetime_budget: null,
+                metrics: { impressions: 1000, reach: 800, clicks: 10, spend: 300, ctr: 1 },
+                adsets: [{
+                    id: 'ala_1', adset_id: 's1', name: '女性 25-45', settings_available: true,
+                    effective_status: 'ACTIVE', optimization_goal: 'OFFSITE_CONVERSIONS',
+                    currency: 'TWD', daily_budget: null, lifetime_budget: null,
+                    targeting_summary: { age_min: 25, age_max: 45, genders: ['female'], countries: ['TW'], advantage_audience: true },
+                    metrics: { impressions: 1000, reach: 800, clicks: 10, spend: 300, ctr: 1 },
+                    ads: [{
+                        id: 'ali_1', ad_id: 'a1', name: '主打廣告', effective_status: 'ACTIVE', media_type: 'image',
+                        primary_text: '結構裡的文案', headline: '立即購買', variant_count: 1, thumbnail: null,
+                        metrics: { impressions: 1000, reach: 800, clicks: 10, spend: 300, ctr: 1 },
+                    }],
+                }],
+            }],
+        });
+        renderWithOutlet(<AdLibrary />, { outletContext });
+
+        fireEvent.click(await screen.findByRole('tab', { name: '結構' }));
+        const campaign = await screen.findByRole('button', { name: /春季活動/ });
+        expect(getTree).toHaveBeenCalledWith({ accountId: 'act_001', status: '' });
+        expect(screen.getByText('行銷活動預算')).toBeInTheDocument();
+        expect(screen.getByText('日預算 TWD 500')).toBeInTheDocument();
+        expect(screen.queryByText('女性 25-45')).not.toBeInTheDocument();
+
+        fireEvent.click(campaign);
+        const adset = await screen.findByRole('button', { name: /女性 25-45/ });
+        expect(screen.getByText('最佳化：轉換')).toBeInTheDocument();
+        expect(screen.getByText('25–45 歲')).toBeInTheDocument();
+        expect(screen.getByText('Advantage+ 受眾')).toBeInTheDocument();
+
+        fireEvent.click(adset);
+        expect(await screen.findByText('結構裡的文案')).toBeInTheDocument();
+    });
+
+    it('flags placeholder nodes whose settings were not fetched yet', async () => {
+        listAds.mockResolvedValue({ items: [], total: 0, page: 1, page_size: 24, latest_job: null });
+        getTree.mockResolvedValue({
+            account_id: 'act_001',
+            latest_job: null,
+            campaigns: [{
+                id: null, campaign_id: 'c9', name: '舊活動', settings_available: false, objective: null,
+                effective_status: null, metrics: { impressions: 0, reach: null, clicks: 0, spend: 0, ctr: 0 }, adsets: [],
+            }],
+        });
+        renderWithOutlet(<AdLibrary />, { outletContext });
+
+        fireEvent.click(await screen.findByRole('tab', { name: '結構' }));
+        expect(await screen.findByText('設定未抓取')).toBeInTheDocument();
+        expect(screen.getByText(/請重新從 Facebook 抓取一次/)).toBeInTheDocument();
     });
 });

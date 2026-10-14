@@ -1,5 +1,5 @@
 """
-Ad Library Module - Router（docs/73）
+Ad Library Module - Router（docs/73、docs/74）
 
 端點 async/sync 慣例（同 contribution，2026-07-08 事故修法）：
   - 走同步 SQLAlchemy 的端點一律宣告為 `def`（FastAPI 丟 threadpool）
@@ -22,7 +22,7 @@ from database.models.team import Team
 from modules.auth.dependencies import get_current_team, get_current_user
 from modules.fb_ads import accounts_service
 
-from . import repository
+from . import hierarchy, repository
 from .dependencies import (
     accessible_account_ids,
     require_ad_library_module,
@@ -34,6 +34,9 @@ from .media import build_media_response
 from .schemas import (
     AdLibraryItemResponse,
     AdLibraryListResponse,
+    AdLibraryTreeResponse,
+    AdsetDetailResponse,
+    CampaignDetailResponse,
     RefreshJobResponse,
     RefreshRequest,
 )
@@ -57,6 +60,8 @@ def _job_to_response(job) -> RefreshJobResponse:
         account_id=job.account_id,
         status=job.status,
         ads_fetched=job.ads_fetched or 0,
+        campaigns_fetched=job.campaigns_fetched or 0,
+        adsets_fetched=job.adsets_fetched or 0,
         media_stored=job.media_stored or 0,
         error=job.error,
         created_at=job.created_at,
@@ -73,6 +78,7 @@ def _item_to_response(item) -> AdLibraryItemResponse:
         ad_name=item.ad_name,
         campaign_id=item.campaign_id,
         campaign_name=item.campaign_name,
+        adset_id=item.adset_id,
         adset_name=item.adset_name,
         objective=item.objective,
         effective_status=item.effective_status,
@@ -286,6 +292,75 @@ def get_ad(
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=not_found)
     verify_resource_access_or_404(item.account_id, team=team, user=user, not_found_detail=not_found)
     return _item_to_response(item)
+
+
+@router.get("/tree", response_model=AdLibraryTreeResponse)
+def get_tree(
+    account_id: str = Query(...),
+    status_filter: str | None = Query(None, alias="status", pattern="^(active|paused|other)$"),
+    user=Depends(get_current_user),
+    team: Team | None = Depends(get_current_team),
+    db=Depends(get_db),
+):
+    """docs/74：帳號底下的行銷活動 → 廣告組合 → 廣告。"""
+    verify_account_access_or_403(account_id, team=team, user=user)
+    campaigns, adsets, items = repository.load_hierarchy(db, account_id)
+    latest_job = repository.get_latest_job(db, account_id)
+    return AdLibraryTreeResponse(
+        account_id=account_id,
+        campaigns=hierarchy.build_tree(campaigns, adsets, items, status=status_filter),
+        latest_job=_job_to_response(latest_job) if latest_job else None,
+    )
+
+
+@router.get("/campaigns/{row_id}", response_model=CampaignDetailResponse)
+def get_campaign(
+    row_id: str,
+    user=Depends(get_current_user),
+    team: Team | None = Depends(get_current_team),
+    db=Depends(get_db),
+):
+    not_found = f"行銷活動 {row_id} 不存在"
+    campaign = repository.get_campaign(db, row_id)
+    if campaign is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=not_found)
+    verify_resource_access_or_404(campaign.account_id, team=team, user=user, not_found_detail=not_found)
+    adsets = repository.list_adsets_for_campaign(db, campaign.account_id, campaign.campaign_id)
+    node = hierarchy.campaign_node(campaign, [])
+    node.pop("adsets")
+    adset_nodes = []
+    for adset in adsets:
+        adset_node = hierarchy.adset_node(adset, [])
+        adset_node.pop("ads")
+        adset_nodes.append(adset_node)
+    return CampaignDetailResponse(campaign=node, adsets=hierarchy.sort_by_spend(adset_nodes))
+
+
+@router.get("/adsets/{row_id}", response_model=AdsetDetailResponse)
+def get_adset(
+    row_id: str,
+    user=Depends(get_current_user),
+    team: Team | None = Depends(get_current_team),
+    db=Depends(get_db),
+):
+    not_found = f"廣告組合 {row_id} 不存在"
+    adset = repository.get_adset(db, row_id)
+    if adset is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=not_found)
+    verify_resource_access_or_404(adset.account_id, team=team, user=user, not_found_detail=not_found)
+    items = repository.list_items_for_adset(db, adset.account_id, adset.adset_id)
+    node = hierarchy.adset_node(adset, [])
+    node.pop("ads")
+    # 詳情頁才帶完整原始設定（樹狀列表只帶摘要，避免回應過大）
+    node.update({
+        "campaign_id": adset.campaign_id,
+        "targeting": adset.targeting,
+        "promoted_object": adset.promoted_object,
+        "attribution_spec": adset.attribution_spec,
+    })
+    return AdsetDetailResponse(
+        adset=node, ads=hierarchy.sort_by_spend([hierarchy.ad_node(i) for i in items])
+    )
 
 
 @router.get("/media/{asset_id}")
