@@ -562,3 +562,62 @@ def asset_metrics_for_contents(db: Session, content_ids: list[str]) -> dict[str,
         }
         for content_id, ads, impressions, clicks, spend in rows
     }
+
+
+# ── AI 脈絡（docs/74 第 4 階段）───────────────────────────────────────────
+def account_currency(db: Session, account_id: str) -> str | None:
+    row = (
+        db.query(AdLibraryCampaign.currency)
+        .filter(AdLibraryCampaign.account_id == account_id, AdLibraryCampaign.currency.isnot(None))
+        .first()
+    )
+    return row[0] if row else None
+
+
+def load_campaign_bundle(db: Session, account_id: str, campaign_id: str) -> dict | None:
+    """單一行銷活動的設定、廣告組合、廣告、元件與元件成效；行銷活動不存在時回 None。"""
+    campaign = (
+        db.query(AdLibraryCampaign)
+        .filter(AdLibraryCampaign.account_id == account_id, AdLibraryCampaign.campaign_id == campaign_id)
+        .first()
+    )
+    items = (
+        db.query(AdLibraryItem)
+        .filter(AdLibraryItem.account_id == account_id, AdLibraryItem.campaign_id == campaign_id)
+        .all()
+    )
+    if campaign is None and not items:
+        return None
+    adsets = list_adsets_for_campaign(db, account_id, campaign_id)
+
+    item_ids = [i.id for i in items]
+    links = []
+    contents: dict[str, AdLibraryContent] = {}
+    if item_ids:
+        links = [
+            (item_id, content_id, position)
+            for item_id, content_id, position in db.query(
+                AdLibraryAdContent.item_id, AdLibraryAdContent.content_id, AdLibraryAdContent.position
+            ).filter(AdLibraryAdContent.item_id.in_(item_ids))
+        ]
+    ad_ids = [i.ad_id for i in items]
+    insights = []
+    if ad_ids:
+        insights = (
+            db.query(AdLibraryAssetInsight)
+            .filter(AdLibraryAssetInsight.account_id == account_id, AdLibraryAssetInsight.ad_id.in_(ad_ids))
+            .all()
+        )
+    content_ids = {c for _i, c, _p in links} | {i.content_id for i in insights}
+    if content_ids:
+        contents = {
+            c.id: c for c in db.query(AdLibraryContent).filter(AdLibraryContent.id.in_(content_ids))
+        }
+    return {
+        "campaign": campaign,
+        "adsets": adsets,
+        "items": items,
+        "links": links,
+        "contents": contents,
+        "asset_insights": insights,
+    }

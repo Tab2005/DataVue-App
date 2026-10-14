@@ -22,7 +22,7 @@ from database.models.team import Team
 from modules.auth.dependencies import get_current_team, get_current_user
 from modules.fb_ads import accounts_service
 
-from . import comparisons, hierarchy, repository
+from . import ai_context, comparisons, hierarchy, repository
 from .dependencies import (
     accessible_account_ids,
     require_ad_library_module,
@@ -529,6 +529,38 @@ def get_ad_asset_insights(
         fetched_at=fetched_at,
         entries={kind: rows for kind, rows in entries.items() if rows},
         note=ASSET_INSIGHTS_NOTE,
+    )
+
+
+@router.get("/ai-context")
+def get_ai_context(
+    account_id: str = Query(...),
+    campaign_id: str | None = Query(None, max_length=64),
+    user=Depends(get_current_user),
+    team: Team | None = Depends(get_current_team),
+    db=Depends(get_db),
+):
+    """docs/74 第 4 階段：給 AI 分析用的精簡 JSON。
+
+    不帶 campaign_id → 各行銷活動摘要；帶 campaign_id → 該行銷活動的完整脈絡
+    （行銷活動不屬於此帳號時回 404）。
+    """
+    verify_account_access_or_403(account_id, team=team, user=user)
+    repository.ensure_contents(db, account_id)
+    currency = repository.account_currency(db, account_id)
+    if not campaign_id:
+        campaigns, adsets, items = repository.load_hierarchy(db, account_id)
+        return ai_context.build_account_summary(
+            account_id=account_id,
+            currency=currency,
+            tree=hierarchy.build_tree(campaigns, adsets, items),
+            items=items,
+        )
+    bundle = repository.load_campaign_bundle(db, account_id, campaign_id)
+    if bundle is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"行銷活動 {campaign_id} 不存在")
+    return ai_context.build_campaign_context(
+        account_id=account_id, currency=currency, campaign_id=campaign_id, **bundle
     )
 
 
