@@ -10,6 +10,7 @@ from sqlalchemy.orm import Session
 from database.models.ad_library import (
     AdLibraryAdContent,
     AdLibraryAdset,
+    AdLibraryAiAnalysis,
     AdLibraryAssetInsight,
     AdLibraryCampaign,
     AdLibraryContent,
@@ -621,3 +622,20 @@ def load_campaign_bundle(db: Session, account_id: str, campaign_id: str) -> dict
         "contents": contents,
         "asset_insights": insights,
     }
+
+
+# ── AI 分析結果（docs/75）─────────────────────────────────────────────────
+def latest_ai_analysis(db: Session, account_id: str, campaign_id: str):
+    return (
+        db.query(AdLibraryAiAnalysis)
+        .filter(AdLibraryAiAnalysis.account_id == account_id, AdLibraryAiAnalysis.campaign_id == campaign_id)
+        .order_by(AdLibraryAiAnalysis.created_at.desc(), AdLibraryAiAnalysis.id.desc())
+        .first()
+    )
+
+
+def save_ai_analysis(db: Session, **fields) -> str:
+    row = AdLibraryAiAnalysis(created_at=_utcnow(), **fields)
+    db.add(row)
+    db.commit()
+    return row.id

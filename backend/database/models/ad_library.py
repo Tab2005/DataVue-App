@@ -236,3 +236,24 @@ class AdLibraryAssetInsight(Base):
     clicks = Column(BigInteger, nullable=False, default=0)
     spend = Column(Float, nullable=False, default=0.0)
     fetched_at = Column(DateTime, nullable=False, server_default=text("CURRENT_TIMESTAMP"))
+
+
+class AdLibraryAiAnalysis(Base):
+    """行銷活動 AI 分析結果（docs/75）。保存結果避免重複付費；context_hash 用於判斷資料是否已更新。"""
+
+    __tablename__ = "ad_library_ai_analyses"
+    __table_args__ = (
+        Index("ix_ad_library_ai_analyses_account_campaign", "account_id", "campaign_id", "created_at"),
+    )
+
+    id = Column(String, primary_key=True, default=lambda: f"alai_{uuid.uuid4().hex[:12]}")
+    account_id = Column(String(64), nullable=False)
+    campaign_id = Column(String(64), nullable=False)
+    requested_by = Column(String, ForeignKey("users.id"), nullable=False)
+    model = Column(String(128), nullable=False)
+    context_hash = Column(String(64), nullable=False)
+    context_chars = Column(Integer, nullable=False, default=0)
+    content = Column(Text, nullable=False, default="")
+    # succeeded | failed（串流中斷或模型回錯時保存已收到的部分）
+    status = Column(String(20), nullable=False, default="succeeded")
+    created_at = Column(DateTime, nullable=False, server_default=text("CURRENT_TIMESTAMP"))

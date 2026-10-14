@@ -8,6 +8,7 @@
  * 成效為廣告層級數字，只是固定一個變因後的比較，頁面上一併顯示此前提。
  */
 import React, { useEffect, useState } from 'react';
+import { FiCpu } from 'react-icons/fi';
 
 import { getComparisons } from '../../services/adLibraryService';
 import { MEDIA_TYPE_LABELS, formatMoney, formatNumber, t } from './labels';
@@ -96,12 +97,14 @@ export const bestVariantKey = (variants) => {
     return eligible.reduce((best, v) => (v.metrics.ctr > best.metrics.ctr ? v : best)).key;
 };
 
-const GroupCard = ({ group, scope, language, onFilterKey }) => {
+const GroupCard = ({ group, scope, language, onFilterKey, onAnalyzeCampaign }) => {
     const [en, zh] = RELATION_LABELS[group.relation];
     const [hintEn, hintZh] = RELATION_HINTS[group.relation];
     const best = group.relation === 'duplicate' ? null : bestVariantKey(group.variants);
     const showAdset = scope === 'campaign';
     const fixed = group.fixed;
+    const campaignId = group.scope.level === 'campaign' ? group.scope.id : group.scope.campaign_id;
+    const campaignName = group.scope.level === 'campaign' ? group.scope.name : group.scope.campaign_name;
 
     return (
         <article className="adlib-cmp-group">
@@ -158,21 +161,28 @@ const GroupCard = ({ group, scope, language, onFilterKey }) => {
                 ))}
             </div>
 
-            {fixed.kind !== 'both' && (
-                <div>
+            <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                {fixed.kind !== 'both' && (
                     <button type="button" className="adlib-btn"
                             onClick={() => onFilterKey({ type: fixed.kind === 'copy' ? 'copy' : 'media', key: fixed.key })}>
                         {fixed.kind === 'copy'
                             ? t(language, 'All ads with this copy', '查看所有使用此文案的廣告')
                             : t(language, 'All ads with this media', '查看所有使用此素材的廣告')}
                     </button>
-                </div>
-            )}
+                )}
+                {onAnalyzeCampaign && campaignId && (
+                    <button type="button" className="adlib-btn"
+                            onClick={() => onAnalyzeCampaign({ campaign_id: campaignId, name: campaignName })}>
+                        <FiCpu size={14} />
+                        {t(language, 'AI analysis of this campaign', 'AI 分析此行銷活動')}
+                    </button>
+                )}
+            </div>
         </article>
     );
 };
 
-const ComparisonView = ({ accountId, language, reloadKey, onError, onFilterKey }) => {
+const ComparisonView = ({ accountId, language, reloadKey, onError, onFilterKey, onAnalyzeCampaign }) => {
     const [scope, setScope] = useState('adset');
     const [relation, setRelation] = useState('');
     const [data, setData] = useState(null);
@@ -240,7 +250,8 @@ const ComparisonView = ({ accountId, language, reloadKey, onError, onFilterKey }
             <div aria-busy={loading} style={{ display: 'flex', flexDirection: 'column', gap: 12, opacity: loading ? 0.6 : 1 }}>
                 {groups.slice(0, visible).map((group) => (
                     <GroupCard key={`${group.relation}:${group.scope.id}:${group.fixed.key}`} group={group}
-                               scope={data.scope} language={language} onFilterKey={onFilterKey} />
+                               scope={data.scope} language={language} onFilterKey={onFilterKey}
+                               onAnalyzeCampaign={onAnalyzeCampaign} />
                 ))}
             </div>
 

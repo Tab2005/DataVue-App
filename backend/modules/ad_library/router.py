@@ -19,10 +19,12 @@ from fastapi.responses import StreamingResponse
 
 from database import get_db
 from database.models.team import Team
+from modules.ai_hub.service import AIService
 from modules.auth.dependencies import get_current_team, get_current_user
+from modules.auth.service import TokenManager
 from modules.fb_ads import accounts_service
 
-from . import ai_context, comparisons, hierarchy, repository
+from . import ai_analysis, ai_context, comparisons, hierarchy, repository
 from .dependencies import (
     accessible_account_ids,
     require_ad_library_module,
@@ -37,6 +39,7 @@ from .schemas import (
     AdLibraryListResponse,
     AssetInsightEntry,
     AdLibraryTreeResponse,
+    AiAnalysisRequest,
     AdsetDetailResponse,
     CampaignDetailResponse,
     ComparisonsResponse,
@@ -561,6 +564,145 @@ def get_ai_context(
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"行銷活動 {campaign_id} 不存在")
     return ai_context.build_campaign_context(
         account_id=account_id, currency=currency, campaign_id=campaign_id, **bundle
+    )
+
+
+def _build_campaign_ai_context(db, account_id: str, campaign_id: str) -> dict | None:
+    """docs/75：送給模型的脈絡（已套用字數上限）；行銷活動不存在時回 None。"""
+    repository.ensure_contents(db, account_id)
+    bundle = repository.load_campaign_bundle(db, account_id, campaign_id)
+    if bundle is None:
+        return None
+    context = ai_context.build_campaign_context(
+        account_id=account_id,
+        currency=repository.account_currency(db, account_id),
+        campaign_id=campaign_id,
+        **bundle,
+    )
+    return ai_analysis.fit_context(context)
+
+
+def _user_ai_model(user, requested: str | None = None) -> str:
+    if requested:
+        return requested
+    settings = TokenManager.get_ai_settings(user.google_id) or {}
+    return settings.get("ai_model") or ai_analysis.DEFAULT_MODEL
+
+
+def _open_session():
+    """串流結束後寫入結果用的短 session（測試會替換）。"""
+    from database import SessionLocal
+
+    return SessionLocal()
+
+
+def _analysis_to_dict(row) -> dict | None:
+    if row is None:
+        return None
+    return {
+        "id": row.id,
+        "model": row.model,
+        "status": row.status,
+        "content": row.content,
+        "context_hash": row.context_hash,
+        "context_chars": row.context_chars,
+        "created_at": row.created_at,
+    }
+
+
+@router.get("/ai-analysis")
+def get_ai_analysis(
+    account_id: str = Query(...),
+    campaign_id: str = Query(..., max_length=64),
+    user=Depends(get_current_user),
+    team: Team | None = Depends(get_current_team),
+    db=Depends(get_db),
+):
+    """docs/75：最近一次分析結果，以及目前資料的脈絡雜湊（判斷是否需要重新分析）。"""
+    verify_account_access_or_403(account_id, team=team, user=user)
+    context = _build_campaign_ai_context(db, account_id, campaign_id)
+    if context is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"行銷活動 {campaign_id} 不存在")
+    current_hash = ai_analysis.context_hash(context)
+    latest = repository.latest_ai_analysis(db, account_id, campaign_id)
+    latest_job = repository.get_latest_job(db, account_id)
+    return {
+        "analysis": _analysis_to_dict(latest),
+        "is_stale": bool(latest) and latest.context_hash != current_hash,
+        "context_hash": current_hash,
+        "context_chars": len(ai_analysis.serialize(context)),
+        "model": _user_ai_model(user),
+        "has_api_key": bool(TokenManager.get_ai_api_key(user.google_id)),
+        "data_fetched_at": latest_job.finished_at if latest_job else None,
+    }
+
+
+@router.post("/ai-analysis")
+def start_ai_analysis(
+    payload: AiAnalysisRequest,
+    user=Depends(get_current_user),
+    team: Team | None = Depends(get_current_team),
+    db=Depends(get_db),
+):
+    """docs/75：串流產生行銷活動 AI 分析，結束後保存（中斷或模型回錯時以 failed 保存已收到的部分）。"""
+    account_id, campaign_id = payload.account_id, payload.campaign_id
+    verify_account_access_or_403(account_id, team=team, user=user)
+    api_key = TokenManager.get_ai_api_key(user.google_id)
+    if not api_key:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="尚未設定 AI API Key，請先到「設定 → OpenRouter」填入。",
+        )
+    context = _build_campaign_ai_context(db, account_id, campaign_id)
+    if context is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"行銷活動 {campaign_id} 不存在")
+
+    model = _user_ai_model(user, payload.model)
+    current_hash = ai_analysis.context_hash(context)
+    context_chars = len(ai_analysis.serialize(context))
+    user_id = user.id
+    # 脈絡已組好，串流（可能數十秒）期間不持有 DB 連線（2026-07-08、2026-08-07 連線池事故）
+    db.close()
+
+    def stream():
+        chunks: list[str] = []
+        completed = False
+        try:
+            for chunk in AIService.analyze_data(
+                data=context,
+                context=ai_analysis.PROMPT_CONTEXT,
+                api_key=api_key,
+                model=model,
+                report_type=ai_analysis.REPORT_TYPE,
+            ):
+                chunks.append(chunk)
+                yield chunk
+            completed = True
+        finally:
+            content = "".join(chunks)
+            result_status = "succeeded" if completed and not ai_analysis.is_error_output(content) else "failed"
+            session = _open_session()
+            try:
+                repository.save_ai_analysis(
+                    session,
+                    account_id=account_id,
+                    campaign_id=campaign_id,
+                    requested_by=user_id,
+                    model=model,
+                    context_hash=current_hash,
+                    context_chars=context_chars,
+                    content=content,
+                    status=result_status,
+                )
+            except Exception:
+                logger.error("[AdLibrary] failed to save AI analysis for %s/%s", account_id, campaign_id, exc_info=True)
+            finally:
+                session.close()
+
+    return StreamingResponse(
+        stream(),
+        media_type="text/plain; charset=utf-8",
+        headers={"Cache-Control": "no-cache", "X-Context-Hash": current_hash},
     )
 
 

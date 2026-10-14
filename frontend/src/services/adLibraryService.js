@@ -14,6 +14,8 @@
  *   GET  /api/ad-library/comparisons    （素材測試／文案測試／重複投放，docs/74）
  *   GET  /api/ad-library/contents       （內容元件）
  *   GET  /api/ad-library/ads/{id}/asset-insights（動態素材元件成效，docs/74 第 3 階段）
+ *   GET  /api/ad-library/ai-analysis   （最近一次 AI 分析，docs/75）
+ *   POST /api/ad-library/ai-analysis   （串流產生 AI 分析，回傳純文字 Markdown）
  *
  * 圖片與 CSV 需帶 Authorization header，<img src> / <a href> 無法直接帶，
  * 因此用 fetch 取回 blob 後轉成 object URL。
@@ -80,6 +82,44 @@ export const listContents = ({ accountId, kind, q, sort, page, pageSize }) =>
 
 export const getAdAssetInsights = (itemId) =>
     apiClient.get(`${BASE}/ads/${encodeURIComponent(itemId)}/asset-insights`);
+
+export const getAiAnalysis = ({ accountId, campaignId }) =>
+    apiClient.get(`${BASE}/ai-analysis${buildQuery({ account_id: accountId, campaign_id: campaignId })}`);
+
+/**
+ * 串流產生 AI 分析；每收到一段文字呼叫 onChunk(累積全文)。
+ * 失敗時拋出帶後端 detail 的 Error（例如未設定 AI API Key）。
+ */
+export const streamAiAnalysis = async ({ accountId, campaignId, model, onChunk, signal }) => {
+    const resp = await fetch(`${API_URL}${BASE}/ai-analysis`, {
+        method: 'POST',
+        headers: { ...authHeaders(), 'Content-Type': 'application/json' },
+        body: JSON.stringify({ account_id: accountId, campaign_id: campaignId, ...(model && { model }) }),
+        signal,
+    });
+    if (!resp.ok) {
+        let detail = `AI 分析失敗（${resp.status}）`;
+        try {
+            const body = await resp.json();
+            if (body?.detail) detail = typeof body.detail === 'string' ? body.detail : detail;
+        } catch {
+            // 非 JSON 錯誤回應時沿用預設訊息
+        }
+        throw new Error(detail);
+    }
+    const reader = resp.body.getReader();
+    const decoder = new TextDecoder();
+    let text = '';
+    for (;;) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        text += decoder.decode(value, { stream: true });
+        onChunk?.(text);
+    }
+    text += decoder.decode();
+    onChunk?.(text);
+    return text;
+};
 
 export const getContent = (id) => apiClient.get(`${BASE}/contents/${encodeURIComponent(id)}`);
 

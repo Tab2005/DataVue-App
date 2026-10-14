@@ -6,6 +6,7 @@
  * 「重新抓取」觸發背景刷新後輪詢 job 狀態，完成後重新載入列表。
  * 「結構」分頁（docs/74）顯示行銷活動 → 廣告組合 → 廣告的階層與設定。
  * 「比對」分頁（docs/74）列出同範圍內的素材測試、文案測試與重複投放。
+ * 行銷活動可開啟 AI 分析側邊面板（docs/75）。
  */
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useOutletContext } from 'react-router-dom';
@@ -19,6 +20,7 @@ import {
     listAds,
     startRefresh,
 } from '../services/adLibraryService';
+import AiAnalysisPanel from '../components/AdLibrary/AiAnalysisPanel';
 import AssetInsightsPanel from '../components/AdLibrary/AssetInsightsPanel';
 import ComparisonView from '../components/AdLibrary/ComparisonView';
 import StructureView from '../components/AdLibrary/StructureView';
@@ -276,6 +278,8 @@ const AdLibrary = () => {
     const [accountId, setAccountId] = useState('');
     const [view, setView] = useState('ads');
     const [keyFilter, setKeyFilter] = useState(null);
+    const [aiCampaign, setAiCampaign] = useState(null);
+    const closeAiPanel = useCallback(() => setAiCampaign(null), []);
     const [treeReloadKey, setTreeReloadKey] = useState(0);
     const [status, setStatus] = useState('');
     const [mediaType, setMediaType] = useState('');
@@ -310,7 +314,7 @@ const AdLibrary = () => {
     }, [query]);
 
     useEffect(() => { setPage(1); }, [accountId, status, mediaType, debouncedQuery, sort, keyFilter]);
-    useEffect(() => { setKeyFilter(null); }, [accountId]);
+    useEffect(() => { setKeyFilter(null); setAiCampaign(null); }, [accountId]);
 
     const keyParams = useMemo(() => (keyFilter
         ? { copyKey: keyFilter.type === 'copy' ? keyFilter.key : undefined, mediaKey: keyFilter.type === 'media' ? keyFilter.key : undefined }
@@ -492,14 +496,19 @@ const AdLibrary = () => {
                     <Notice tone="error">{t(language, 'Last fetch failed: ', '上次抓取失敗：')}{job.error}</Notice>
                 )}
 
+                {aiCampaign && accountId && (
+                    <AiAnalysisPanel accountId={accountId} campaign={aiCampaign} language={language} onClose={closeAiPanel} />
+                )}
+
                 {view === 'compare' && accountId && (
                     <ComparisonView accountId={accountId} language={language} isMobile={isMobile}
-                                    reloadKey={treeReloadKey} onError={setError} onFilterKey={handleFilterKey} />
+                                    reloadKey={treeReloadKey} onError={setError} onFilterKey={handleFilterKey}
+                                    onAnalyzeCampaign={setAiCampaign} />
                 )}
 
                 {view === 'structure' && accountId && (
                     <StructureView accountId={accountId} status={status} language={language}
-                                   reloadKey={treeReloadKey} onError={setError} />
+                                   reloadKey={treeReloadKey} onError={setError} onAnalyzeCampaign={setAiCampaign} />
                 )}
 
                 {view === 'ads' && !loading && accountId && data.items.length === 0 && (

@@ -4,7 +4,8 @@ import { fireEvent, screen, waitFor } from '@testing-library/react';
 import AdLibrary from '../AdLibrary';
 import { renderWithOutlet } from '../../test/renderWithOutlet';
 import {
-    getAdAssetInsights, getComparisons, getRefreshJob, getTree, listAccounts, listAds, startRefresh,
+    getAdAssetInsights, getAiAnalysis, getComparisons, getRefreshJob, getTree, listAccounts, listAds, startRefresh,
+    streamAiAnalysis,
 } from '../../services/adLibraryService';
 
 vi.mock('../../services/adLibraryService', () => ({
@@ -15,6 +16,8 @@ vi.mock('../../services/adLibraryService', () => ({
     getTree: vi.fn(),
     getComparisons: vi.fn(),
     getAdAssetInsights: vi.fn(),
+    getAiAnalysis: vi.fn(),
+    streamAiAnalysis: vi.fn(),
     downloadCsv: vi.fn(),
     fetchMediaBlobUrl: vi.fn(() => new Promise(() => {})),
 }));
@@ -121,7 +124,7 @@ describe('AdLibrary', () => {
         renderWithOutlet(<AdLibrary />, { outletContext });
 
         fireEvent.click(await screen.findByRole('tab', { name: '結構' }));
-        const campaign = await screen.findByRole('button', { name: /春季活動/ });
+        const campaign = await screen.findByRole('button', { name: /^春季活動/ });
         expect(getTree).toHaveBeenCalledWith({ accountId: 'act_001', status: '' });
         expect(screen.getByText('行銷活動預算')).toBeInTheDocument();
         expect(screen.getByText('日預算 TWD 500')).toBeInTheDocument();
@@ -229,5 +232,83 @@ describe('AdLibrary', () => {
 
         fireEvent.click(await screen.findByRole('button', { name: '查看元件成效' }));
         expect(await screen.findByText(/尚無元件成效/)).toBeInTheDocument();
+    });
+    const treeWithCampaign = {
+        account_id: 'act_001',
+        latest_job: null,
+        campaigns: [{
+            id: 'alc_1', campaign_id: 'c1', name: '春季活動', settings_available: true, objective: 'OUTCOME_SALES',
+            effective_status: 'ACTIVE', budget_level: 'adset', currency: 'TWD', daily_budget: null, lifetime_budget: null,
+            metrics: { impressions: 0, reach: 0, clicks: 0, spend: 0, ctr: 0 }, adsets: [],
+        }],
+    };
+    const aiMeta = (overrides = {}) => ({
+        analysis: null, is_stale: false, context_hash: 'h', context_chars: 12345, model: 'deepseek/deepseek-v4-flash',
+        has_api_key: true, data_fetched_at: '2026-10-14T10:00:00', ...overrides,
+    });
+
+    it('opens the AI panel with the saved analysis and a stale notice', async () => {
+        listAds.mockResolvedValue({ items: [], total: 0, page: 1, page_size: 24, latest_job: null });
+        getTree.mockResolvedValue(treeWithCampaign);
+        getAiAnalysis.mockResolvedValue(aiMeta({
+            is_stale: true,
+            analysis: {
+                id: 'alai_1', model: 'openai/gpt-x', status: 'succeeded', content: '## 📌 重點摘要\n- 舊的分析結果',
+                context_hash: 'old', context_chars: 100, created_at: '2026-10-13T10:00:00',
+            },
+        }));
+        renderWithOutlet(<AdLibrary />, { outletContext });
+
+        fireEvent.click(await screen.findByRole('tab', { name: '結構' }));
+        fireEvent.click(await screen.findByRole('button', { name: 'AI 分析：春季活動' }));
+        expect(await screen.findByText('舊的分析結果')).toBeInTheDocument();
+        expect(getAiAnalysis).toHaveBeenCalledWith({ accountId: 'act_001', campaignId: 'c1' });
+        expect(screen.getByRole('heading', { name: /重點摘要/ })).toBeInTheDocument();
+        expect(screen.getByText(/資料已重新抓取/)).toBeInTheDocument();
+        expect(screen.getByText(/openai\/gpt-x/)).toBeInTheDocument();
+        expect(screen.getByRole('button', { name: /重新分析/ })).toBeInTheDocument();
+
+        fireEvent.click(screen.getByRole('button', { name: '關閉' }));
+        await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument());
+    });
+
+    it('guides the user to settings when no AI key is configured', async () => {
+        listAds.mockResolvedValue({ items: [], total: 0, page: 1, page_size: 24, latest_job: null });
+        getTree.mockResolvedValue(treeWithCampaign);
+        getAiAnalysis.mockResolvedValue(aiMeta({ has_api_key: false }));
+        renderWithOutlet(<AdLibrary />, { outletContext });
+
+        fireEvent.click(await screen.findByRole('tab', { name: '結構' }));
+        fireEvent.click(await screen.findByRole('button', { name: 'AI 分析：春季活動' }));
+        expect(await screen.findByText(/設定 → OpenRouter/)).toBeInTheDocument();
+        expect(screen.queryByRole('button', { name: /開始分析/ })).not.toBeInTheDocument();
+    });
+
+    it('streams a new analysis and reloads the saved result', async () => {
+        listAds.mockResolvedValue({ items: [], total: 0, page: 1, page_size: 24, latest_job: null });
+        getTree.mockResolvedValue(treeWithCampaign);
+        getAiAnalysis.mockResolvedValueOnce(aiMeta()).mockResolvedValue(aiMeta({
+            analysis: {
+                id: 'alai_2', model: 'deepseek/deepseek-v4-flash', status: 'succeeded', content: '## 建議下一步\n1. 加碼 P1',
+                context_hash: 'h', context_chars: 12345, created_at: '2026-10-14T11:00:00',
+            },
+        }));
+        streamAiAnalysis.mockImplementation(async ({ onChunk }) => {
+            onChunk('## 建議');
+            onChunk('## 建議下一步\n1. 加碼 P1');
+            return '## 建議下一步\n1. 加碼 P1';
+        });
+        renderWithOutlet(<AdLibrary />, { outletContext });
+
+        fireEvent.click(await screen.findByRole('tab', { name: '結構' }));
+        fireEvent.click(await screen.findByRole('button', { name: 'AI 分析：春季活動' }));
+        expect(await screen.findByText(/資料約 12,345 字元/)).toBeInTheDocument();
+        fireEvent.click(screen.getByRole('button', { name: /開始分析/ }));
+
+        await waitFor(() => expect(streamAiAnalysis).toHaveBeenCalledWith(
+            expect.objectContaining({ accountId: 'act_001', campaignId: 'c1' }),
+        ));
+        expect(await screen.findByText('加碼 P1')).toBeInTheDocument();
+        await waitFor(() => expect(getAiAnalysis).toHaveBeenCalledTimes(2));
     });
 });

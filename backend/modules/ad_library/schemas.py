@@ -5,7 +5,7 @@ from __future__ import annotations
 from datetime import datetime
 from typing import Any
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 
 class RefreshRequest(BaseModel):
@@ -161,3 +161,11 @@ class AdAssetInsightsResponse(BaseModel):
     fetched_at: datetime | None = None
     entries: dict[str, list[AssetInsightEntry]]
     note: str
+
+
+class AiAnalysisRequest(BaseModel):
+    """docs/75：model 省略時使用使用者在設定頁選的模型。"""
+
+    account_id: str
+    campaign_id: str = Field(..., max_length=64)
+    model: str | None = Field(None, max_length=128)

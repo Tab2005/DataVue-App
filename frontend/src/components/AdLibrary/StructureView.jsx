@@ -5,7 +5,7 @@
  * 預設全部收合，展開廣告組合時才載入廣告縮圖，避免大帳號一次打上千張圖。
  */
 import React, { useEffect, useMemo, useState } from 'react';
-import { FiChevronDown, FiChevronRight } from 'react-icons/fi';
+import { FiChevronDown, FiChevronRight, FiCpu } from 'react-icons/fi';
 
 import { getTree } from '../../services/adLibraryService';
 import Thumb from './Thumb';
@@ -169,14 +169,23 @@ const AdsetNode = ({ adset, language, open, onToggle }) => {
 
 const nodeKey = (prefix, node, index) => `${prefix}:${node.id || node.campaign_id || node.adset_id || `i${index}`}`;
 
-const CampaignNode = ({ campaign, index, language, openKeys, toggle }) => {
+const CampaignNode = ({ campaign, index, language, openKeys, toggle, onAnalyze }) => {
     const key = nodeKey('c', campaign, index);
     const open = openKeys.has(key);
     const budget = budgetText(campaign, language);
     const adCount = campaign.adsets.reduce((n, s) => n + s.ads.length, 0);
     return (
-        <div className="adlib-node">
-            <button type="button" className="adlib-node-head" onClick={() => toggle(key)} aria-expanded={open}>
+        <div className="adlib-node" style={{ position: 'relative' }}>
+            {onAnalyze && campaign.campaign_id && (
+                <button type="button" className="adlib-btn" onClick={() => onAnalyze(campaign)}
+                        style={{ position: 'absolute', top: 10, right: 10, zIndex: 1, padding: '6px 10px' }}
+                        aria-label={t(language, `AI analysis: ${campaign.name || campaign.campaign_id}`, `AI 分析：${campaign.name || campaign.campaign_id}`)}>
+                    <FiCpu size={14} />
+                    {t(language, 'AI', 'AI 分析')}
+                </button>
+            )}
+            <button type="button" className="adlib-node-head" onClick={() => toggle(key)} aria-expanded={open}
+                    style={onAnalyze ? { paddingRight: 110 } : undefined}>
                 {open ? <FiChevronDown style={{ marginTop: 3, flexShrink: 0 }} /> : <FiChevronRight style={{ marginTop: 3, flexShrink: 0 }} />}
                 <div style={{ minWidth: 0, flex: 1 }}>
                     <div className="adlib-node-title">
@@ -219,7 +228,7 @@ const CampaignNode = ({ campaign, index, language, openKeys, toggle }) => {
     );
 };
 
-const StructureView = ({ accountId, status, language, reloadKey, onError }) => {
+const StructureView = ({ accountId, status, language, reloadKey, onError, onAnalyzeCampaign }) => {
     const [campaigns, setCampaigns] = useState([]);
     const [loading, setLoading] = useState(false);
     const [loaded, setLoaded] = useState(false);
@@ -306,7 +315,7 @@ const StructureView = ({ accountId, status, language, reloadKey, onError }) => {
             <div className="adlib-tree" aria-busy={loading} style={{ opacity: loading ? 0.6 : 1 }}>
                 {campaigns.map((campaign, i) => (
                     <CampaignNode key={nodeKey('c', campaign, i)} campaign={campaign} index={i} language={language}
-                                  openKeys={openKeys} toggle={toggle} />
+                                  openKeys={openKeys} toggle={toggle} onAnalyze={onAnalyzeCampaign} />
                 ))}
             </div>
         </>
