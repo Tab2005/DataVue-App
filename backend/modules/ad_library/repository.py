@@ -10,6 +10,7 @@ from sqlalchemy.orm import Session
 from database.models.ad_library import (
     AdLibraryAdContent,
     AdLibraryAdset,
+    AdLibraryAssetInsight,
     AdLibraryCampaign,
     AdLibraryContent,
     AdLibraryItem,
@@ -172,28 +173,21 @@ def _item_payload(item: AdLibraryItem) -> dict:
     }
 
 
-def _sync_contents(db: Session, items: list[AdLibraryItem]) -> None:
-    """重建這批廣告（同一帳號）的元件關聯，並寫回 copy_key / media_key。不 commit。"""
-    if not items:
-        return
-    account_id = items[0].account_id
-    extracted = {item.id: extract_components(_item_payload(item)) for item in items}
-
-    first_seen: dict[tuple[str, str], dict] = {}
-    for result in extracted.values():
-        for comp in result["components"]:
-            first_seen.setdefault((comp["kind"], comp["fingerprint"]), comp)
-
+def _ensure_content_rows(
+    db: Session, account_id: str, components: dict[tuple[str, str], dict]
+) -> dict[tuple[str, str], AdLibraryContent]:
+    """取得或建立元件列（以 (kind, fingerprint) 對應），flush 後回傳對照表。不 commit。"""
     contents: dict[tuple[str, str], AdLibraryContent] = {}
-    if first_seen:
-        fingerprints = {fp for _kind, fp in first_seen}
-        for row in db.query(AdLibraryContent).filter(
-            AdLibraryContent.account_id == account_id, AdLibraryContent.fingerprint.in_(fingerprints)
-        ):
-            contents[(row.kind, row.fingerprint)] = row
+    if not components:
+        return contents
+    fingerprints = {fp for _kind, fp in components}
+    for row in db.query(AdLibraryContent).filter(
+        AdLibraryContent.account_id == account_id, AdLibraryContent.fingerprint.in_(fingerprints)
+    ):
+        contents[(row.kind, row.fingerprint)] = row
 
     now = _utcnow()
-    for key, comp in first_seen.items():
+    for key, comp in components.items():
         row = contents.get(key)
         if row is None:
             row = AdLibraryContent(
@@ -214,6 +208,21 @@ def _sync_contents(db: Session, items: list[AdLibraryItem]) -> None:
             if comp.get("asset_id") and not row.asset_id:
                 row.asset_id = comp["asset_id"]
     db.flush()
+    return contents
+
+
+def _sync_contents(db: Session, items: list[AdLibraryItem]) -> None:
+    """重建這批廣告（同一帳號）的元件關聯，並寫回 copy_key / media_key。不 commit。"""
+    if not items:
+        return
+    account_id = items[0].account_id
+    extracted = {item.id: extract_components(_item_payload(item)) for item in items}
+
+    first_seen: dict[tuple[str, str], dict] = {}
+    for result in extracted.values():
+        for comp in result["components"]:
+            first_seen.setdefault((comp["kind"], comp["fingerprint"]), comp)
+    contents = _ensure_content_rows(db, account_id, first_seen)
 
     item_ids = [item.id for item in items]
     db.query(AdLibraryAdContent).filter(AdLibraryAdContent.item_id.in_(item_ids)).delete(
@@ -466,3 +475,90 @@ def list_items_for_content(db: Session, content_id: str) -> list[AdLibraryItem]:
     # 以子查詢取代 DISTINCT：PostgreSQL 的 json 欄位無法做 DISTINCT
     item_ids = db.query(AdLibraryAdContent.item_id).filter(AdLibraryAdContent.content_id == content_id)
     return db.query(AdLibraryItem).filter(AdLibraryItem.id.in_(item_ids)).all()
+
+
+# ── 動態素材元件成效（docs/74 第 3 階段）──────────────────────────────────
+def dynamic_ads_for_asset_insights(db: Session, account_id: str, limit: int) -> tuple[list[dict], int]:
+    """有曝光的動態素材廣告，依花費由高到低取前 limit 則；回傳 (清單, 符合條件的總數)。"""
+    query = db.query(AdLibraryItem).filter(
+        AdLibraryItem.account_id == account_id,
+        AdLibraryItem.media_type == "dynamic",
+        AdLibraryItem.impressions > 0,
+    )
+    total = query.count()
+    items = query.order_by(AdLibraryItem.spend.desc(), AdLibraryItem.ad_id).limit(limit).all()
+    return [
+        {
+            "ad_id": item.ad_id,
+            "primary_texts": item.primary_texts,
+            "headlines": item.headlines,
+            "descriptions": item.descriptions,
+            "media": item.media,
+        }
+        for item in items
+    ], total
+
+
+def replace_asset_insights(db: Session, account_id: str, ad_id: str, entries: list[dict]) -> int:
+    """以本次抓到的元件成效取代該廣告的舊資料；回傳寫入列數。"""
+    contents = _ensure_content_rows(
+        db, account_id, {(e["kind"], e["fingerprint"]): e for e in entries}
+    )
+    db.query(AdLibraryAssetInsight).filter(
+        AdLibraryAssetInsight.account_id == account_id, AdLibraryAssetInsight.ad_id == ad_id
+    ).delete(synchronize_session=False)
+    now = _utcnow()
+    for e in entries:
+        db.add(AdLibraryAssetInsight(
+            account_id=account_id,
+            ad_id=ad_id,
+            content_id=contents[(e["kind"], e["fingerprint"])].id,
+            kind=e["kind"],
+            fb_asset_id=e.get("fb_asset_id"),
+            impressions=e["impressions"],
+            reach=e["reach"],
+            clicks=e["clicks"],
+            spend=e["spend"],
+            fetched_at=now,
+        ))
+    db.commit()
+    return len(entries)
+
+
+def asset_insights_for_ad(db: Session, account_id: str, ad_id: str) -> list[tuple]:
+    """[(AdLibraryAssetInsight, AdLibraryContent)]，依曝光由高到低。"""
+    return (
+        db.query(AdLibraryAssetInsight, AdLibraryContent)
+        .join(AdLibraryContent, AdLibraryContent.id == AdLibraryAssetInsight.content_id)
+        .filter(AdLibraryAssetInsight.account_id == account_id, AdLibraryAssetInsight.ad_id == ad_id)
+        .order_by(AdLibraryAssetInsight.impressions.desc(), AdLibraryAssetInsight.id)
+        .all()
+    )
+
+
+def asset_metrics_for_contents(db: Session, content_ids: list[str]) -> dict[str, dict]:
+    """元件在動態素材廣告中的實際成效（可直接歸給元件），供 /contents 一併回傳。"""
+    if not content_ids:
+        return {}
+    rows = (
+        db.query(
+            AdLibraryAssetInsight.content_id,
+            func.count(func.distinct(AdLibraryAssetInsight.ad_id)),
+            func.coalesce(func.sum(AdLibraryAssetInsight.impressions), 0),
+            func.coalesce(func.sum(AdLibraryAssetInsight.clicks), 0),
+            func.coalesce(func.sum(AdLibraryAssetInsight.spend), 0.0),
+        )
+        .filter(AdLibraryAssetInsight.content_id.in_(content_ids))
+        .group_by(AdLibraryAssetInsight.content_id)
+        .all()
+    )
+    return {
+        content_id: {
+            "ads": ads,
+            "impressions": int(impressions or 0),
+            "clicks": int(clicks or 0),
+            "spend": float(spend or 0.0),
+            "ctr": (clicks / impressions * 100) if impressions else 0.0,
+        }
+        for content_id, ads, impressions, clicks, spend in rows
+    }

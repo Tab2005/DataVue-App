@@ -66,6 +66,7 @@ from database.models.fb_ads import FbAdsAnalyticsAiSnapshot
 from database.models.ad_library import (
     AdLibraryAdContent,
     AdLibraryAdset,
+    AdLibraryAssetInsight,
     AdLibraryCampaign,
     AdLibraryContent,
     AdLibraryItem,
@@ -111,6 +112,7 @@ __all__ = [
     "AdLibraryAdset",
     "AdLibraryContent",
     "AdLibraryAdContent",
+    "AdLibraryAssetInsight",
     "init_db",
 ]
 

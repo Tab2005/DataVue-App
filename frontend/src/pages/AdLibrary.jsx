@@ -19,6 +19,7 @@ import {
     listAds,
     startRefresh,
 } from '../services/adLibraryService';
+import AssetInsightsPanel from '../components/AdLibrary/AssetInsightsPanel';
 import ComparisonView from '../components/AdLibrary/ComparisonView';
 import StructureView from '../components/AdLibrary/StructureView';
 import { MEDIA_TYPE_LABELS, STATUS_LABELS, formatDate, formatMoney, formatNumber, t } from '../components/AdLibrary/labels';
@@ -139,6 +140,7 @@ const AdCard = ({ item, language, onFilterKey }) => {
     const [variant, setVariant] = useState(0);
     const [expanded, setExpanded] = useState(false);
     const [copied, setCopied] = useState(false);
+    const [showAssets, setShowAssets] = useState(false);
     const texts = item.primary_texts || [];
     const text = texts[variant] || '';
     const status = STATUS_LABELS[item.effective_status];
@@ -244,6 +246,18 @@ const AdCard = ({ item, language, onFilterKey }) => {
                     <div>{t(language, 'Spend', '花費')}<strong>{formatMoney(item.spend)}</strong></div>
                     <div>CTR<strong>{(item.ctr || 0).toFixed(2)}%</strong></div>
                 </div>
+
+                {item.media_type === 'dynamic' && (
+                    <>
+                        <button type="button" className="adlib-btn" aria-expanded={showAssets}
+                                onClick={() => setShowAssets((v) => !v)} style={{ justifyContent: 'center' }}>
+                            {showAssets
+                                ? t(language, 'Hide per-asset results', '收合元件成效')
+                                : t(language, 'Per-asset results', '查看元件成效')}
+                        </button>
+                        {showAssets && <AssetInsightsPanel itemId={item.id} language={language} />}
+                    </>
+                )}
 
                 <button type="button" className="adlib-btn" onClick={handleCopy} style={{ justifyContent: 'center' }}>
                     <FiCopy size={14} />
@@ -473,7 +487,7 @@ const AdLibrary = () => {
                 )}
 
                 {error && <Notice tone="error">{error}</Notice>}
-                {job?.status === 'partial' && job.error && <Notice tone="info">{job.error}</Notice>}
+                {(job?.status === 'partial' || job?.status === 'succeeded') && job.error && <Notice tone="info">{job.error}</Notice>}
                 {job?.status === 'failed' && job.error && (
                     <Notice tone="error">{t(language, 'Last fetch failed: ', '上次抓取失敗：')}{job.error}</Notice>
                 )}
@@ -534,8 +548,10 @@ const Notice = ({ tone, children }) => (
 const JobStatus = ({ job, language, total }) => {
     if (job && ACTIVE_JOB.has(job.status)) {
         return t(language,
-            `Fetched ${job.campaigns_fetched || 0} campaigns, ${job.adsets_fetched || 0} ad sets, ${job.ads_fetched} ads so far…`,
-            `已抓取 ${job.campaigns_fetched || 0} 個行銷活動、${job.adsets_fetched || 0} 個廣告組合、${job.ads_fetched} 支廣告…`);
+            `Fetched ${job.campaigns_fetched || 0} campaigns, ${job.adsets_fetched || 0} ad sets, ${job.ads_fetched} ads`
+                + `${job.asset_insights_ads ? `, per-asset results for ${job.asset_insights_ads} dynamic ads` : ''} so far…`,
+            `已抓取 ${job.campaigns_fetched || 0} 個行銷活動、${job.adsets_fetched || 0} 個廣告組合、${job.ads_fetched} 支廣告`
+                + `${job.asset_insights_ads ? `、${job.asset_insights_ads} 則動態素材的元件成效` : ''}…`);
     }
     const parts = [t(language, `${total || 0} ads`, `共 ${total || 0} 支廣告`)];
     if (job?.finished_at) {

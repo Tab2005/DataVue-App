@@ -13,6 +13,7 @@
  *   GET  /api/ad-library/adsets/{id}
  *   GET  /api/ad-library/comparisons    （素材測試／文案測試／重複投放，docs/74）
  *   GET  /api/ad-library/contents       （內容元件）
+ *   GET  /api/ad-library/ads/{id}/asset-insights（動態素材元件成效，docs/74 第 3 階段）
  *
  * 圖片與 CSV 需帶 Authorization header，<img src> / <a href> 無法直接帶，
  * 因此用 fetch 取回 blob 後轉成 object URL。
@@ -76,6 +77,9 @@ export const getComparisons = ({ accountId, scope, relation }) =>
 
 export const listContents = ({ accountId, kind, q, sort, page, pageSize }) =>
     apiClient.get(`${BASE}/contents${buildQuery({ account_id: accountId, kind, q, sort, page, page_size: pageSize })}`);
+
+export const getAdAssetInsights = (itemId) =>
+    apiClient.get(`${BASE}/ads/${encodeURIComponent(itemId)}/asset-insights`);
 
 export const getContent = (id) => apiClient.get(`${BASE}/contents/${encodeURIComponent(id)}`);
 

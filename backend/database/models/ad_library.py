@@ -85,6 +85,8 @@ class AdLibraryRefreshJob(Base):
     ads_fetched = Column(Integer, nullable=False, default=0)
     campaigns_fetched = Column(Integer, nullable=False, default=0, server_default="0")
     adsets_fetched = Column(Integer, nullable=False, default=0, server_default="0")
+    # docs/74 第 3 階段：已抓取元件成效的動態素材廣告數
+    asset_insights_ads = Column(Integer, nullable=False, default=0, server_default="0")
     media_stored = Column(Integer, nullable=False, default=0)
     error = Column(Text, nullable=True)
     created_at = Column(DateTime, nullable=False, server_default=text("CURRENT_TIMESTAMP"))
@@ -206,3 +208,31 @@ class AdLibraryAdContent(Base):
         String, ForeignKey("ad_library_contents.id", ondelete="CASCADE"), primary_key=True, index=True
     )
     position = Column(Integer, primary_key=True, default=0)
+
+
+class AdLibraryAssetInsight(Base):
+    """動態素材廣告的單一元件成效（docs/74 第 3 階段）。
+
+    來源為 `/{ad_id}/insights?breakdowns=body_asset|title_asset|...`，成效可直接
+    歸給元件（一般廣告只有整則廣告的成效）。每次刷新整則廣告的列重建。
+    """
+
+    __tablename__ = "ad_library_asset_insights"
+    __table_args__ = (
+        UniqueConstraint("account_id", "ad_id", "content_id", name="uq_ad_library_asset_insights_account_ad_content"),
+    )
+
+    id = Column(String, primary_key=True, default=lambda: f"alx_{uuid.uuid4().hex[:12]}")
+    account_id = Column(String(64), nullable=False, index=True)
+    ad_id = Column(String(64), nullable=False)
+    content_id = Column(
+        String, ForeignKey("ad_library_contents.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    kind = Column(String(20), nullable=False)
+    # Meta 的 asset id（breakdown 回傳的 id），僅供追查
+    fb_asset_id = Column(String(64), nullable=True)
+    impressions = Column(BigInteger, nullable=False, default=0)
+    reach = Column(BigInteger, nullable=False, default=0)
+    clicks = Column(BigInteger, nullable=False, default=0)
+    spend = Column(Float, nullable=False, default=0.0)
+    fetched_at = Column(DateTime, nullable=False, server_default=text("CURRENT_TIMESTAMP"))

@@ -4,7 +4,7 @@ import { fireEvent, screen, waitFor } from '@testing-library/react';
 import AdLibrary from '../AdLibrary';
 import { renderWithOutlet } from '../../test/renderWithOutlet';
 import {
-    getComparisons, getRefreshJob, getTree, listAccounts, listAds, startRefresh,
+    getAdAssetInsights, getComparisons, getRefreshJob, getTree, listAccounts, listAds, startRefresh,
 } from '../../services/adLibraryService';
 
 vi.mock('../../services/adLibraryService', () => ({
@@ -14,6 +14,7 @@ vi.mock('../../services/adLibraryService', () => ({
     getRefreshJob: vi.fn(),
     getTree: vi.fn(),
     getComparisons: vi.fn(),
+    getAdAssetInsights: vi.fn(),
     downloadCsv: vi.fn(),
     fetchMediaBlobUrl: vi.fn(() => new Promise(() => {})),
 }));
@@ -200,5 +201,33 @@ describe('AdLibrary', () => {
         fireEvent.click(screen.getByRole('button', { name: '查看所有使用此文案的廣告' }));
         await waitFor(() => expect(listAds).toHaveBeenLastCalledWith(expect.objectContaining({ copyKey: 'b'.repeat(64) })));
         expect(screen.getByRole('tab', { name: '廣告' })).toHaveAttribute('aria-selected', 'true');
+    });
+    it('shows per-asset results for dynamic creative ads', async () => {
+        listAds.mockResolvedValue({ items: [sampleItem], total: 1, page: 1, page_size: 24, latest_job: null });
+        const entry = (id, text, impressions, clicks) => ({
+            content_id: id, kind: 'primary_text', text_value: text, impressions, reach: 0, clicks,
+            spend: 10, ctr: (clicks / impressions) * 100,
+        });
+        getAdAssetInsights.mockResolvedValue({
+            item_id: 'ali_1', ad_id: '111', fetched_at: null, note: '元件成效由 Meta 依元件拆分',
+            entries: { primary_text: [entry('t1', '文案甲', 2000, 10), entry('t2', '文案乙', 2000, 50)] },
+        });
+        renderWithOutlet(<AdLibrary />, { outletContext });
+
+        fireEvent.click(await screen.findByRole('button', { name: '查看元件成效' }));
+        expect(await screen.findByText('文案乙')).toBeInTheDocument();
+        expect(getAdAssetInsights).toHaveBeenCalledWith('ali_1');
+        expect(screen.getByText('文案乙').closest('li')).toHaveTextContent('CTR 最高');
+        expect(screen.getByText('文案甲').closest('li')).not.toHaveTextContent('CTR 最高');
+        expect(screen.getByText('元件成效由 Meta 依元件拆分')).toBeInTheDocument();
+    });
+
+    it('explains how to get per-asset results when none are stored', async () => {
+        listAds.mockResolvedValue({ items: [sampleItem], total: 1, page: 1, page_size: 24, latest_job: null });
+        getAdAssetInsights.mockResolvedValue({ item_id: 'ali_1', ad_id: '111', fetched_at: null, note: '', entries: {} });
+        renderWithOutlet(<AdLibrary />, { outletContext });
+
+        fireEvent.click(await screen.findByRole('button', { name: '查看元件成效' }));
+        expect(await screen.findByText(/尚無元件成效/)).toBeInTheDocument();
     });
 });

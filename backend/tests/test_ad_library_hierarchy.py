@@ -252,13 +252,16 @@ async def test_fetch_account_info_error_raises():
 class _FakeDb:
     """取代 service._db：記錄呼叫、不碰真 DB。"""
 
-    def __init__(self):
+    def __init__(self, dynamic_ads=None):
         self.calls = []
+        self.dynamic_ads = dynamic_ads or []
 
     async def __call__(self, fn, *args, **kwargs):
         self.calls.append((fn.__name__, args, kwargs))
         if fn is repository.known_image_assets:
             return {}
+        if fn is repository.dynamic_ads_for_asset_insights:
+            return self.dynamic_ads, len(self.dynamic_ads)
         return None
 
     def job_updates(self):

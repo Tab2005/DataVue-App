@@ -19,6 +19,7 @@ class RefreshJobResponse(BaseModel):
     ads_fetched: int
     campaigns_fetched: int = 0
     adsets_fetched: int = 0
+    asset_insights_ads: int = 0
     media_stored: int
     error: str | None = None
     created_at: datetime | None = None
@@ -120,6 +121,8 @@ class ContentResponse(BaseModel):
     ctr: float = 0.0
     first_seen_at: datetime | None = None
     last_seen_at: datetime | None = None
+    # docs/74 第 3 階段：此元件在動態素材廣告中的實際元件成效（可直接歸給元件）
+    asset_metrics: dict[str, Any] | None = None
 
 
 class ContentListResponse(BaseModel):
@@ -134,3 +137,27 @@ class ContentListResponse(BaseModel):
 class ContentDetailResponse(BaseModel):
     content: ContentResponse
     ads: list[dict[str, Any]]
+
+
+class AssetInsightEntry(BaseModel):
+    content_id: str
+    kind: str
+    text_value: str | None = None
+    image_hash: str | None = None
+    video_id: str | None = None
+    asset_id: str | None = None
+    impressions: int
+    reach: int
+    clicks: int
+    spend: float
+    ctr: float
+
+
+class AdAssetInsightsResponse(BaseModel):
+    """docs/74 第 3 階段：單一動態素材廣告的元件成效，依 kind 分組。"""
+
+    item_id: str
+    ad_id: str
+    fetched_at: datetime | None = None
+    entries: dict[str, list[AssetInsightEntry]]
+    note: str

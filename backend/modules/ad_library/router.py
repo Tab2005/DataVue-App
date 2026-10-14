@@ -32,8 +32,10 @@ from .dependencies import (
 )
 from .media import build_media_response
 from .schemas import (
+    AdAssetInsightsResponse,
     AdLibraryItemResponse,
     AdLibraryListResponse,
+    AssetInsightEntry,
     AdLibraryTreeResponse,
     AdsetDetailResponse,
     CampaignDetailResponse,
@@ -57,7 +59,15 @@ router = APIRouter(
 MAX_PAGE_SIZE = 100
 EXPORT_LIMIT = 5000
 KEY_PATTERN = "^[0-9a-f]{64}$"
-CONTENT_NOTE = "一則廣告包含多個元件時，該廣告的成效會分別計入每個元件；動態素材廣告尤其明顯，僅供參考。"
+CONTENT_NOTE = (
+    "ad_count／impressions／clicks／spend 為使用此元件的廣告整體成效：一則廣告包含多個元件時，"
+    "成效會分別計入每個元件，僅供參考。asset_metrics 為動態素材廣告依元件拆分的實際成效。"
+)
+ASSET_INSIGHTS_NOTE = (
+    "動態素材廣告的元件成效由 Meta 依元件拆分，可直接比較同一則廣告內各段文案、各張素材的表現。"
+    "Meta 僅提供曝光、點擊、花費、觸及，CTR 為點擊 ÷ 曝光。"
+)
+ASSET_KIND_ORDER = ("primary_text", "headline", "description", "image", "video")
 
 
 def _job_to_response(job) -> RefreshJobResponse:
@@ -68,6 +78,7 @@ def _job_to_response(job) -> RefreshJobResponse:
         ads_fetched=job.ads_fetched or 0,
         campaigns_fetched=job.campaigns_fetched or 0,
         adsets_fetched=job.adsets_fetched or 0,
+        asset_insights_ads=job.asset_insights_ads or 0,
         media_stored=job.media_stored or 0,
         error=job.error,
         created_at=job.created_at,
@@ -402,7 +413,7 @@ def get_comparisons(
 
 
 def _content_to_response(content, ad_count=0, adset_count=0, campaign_count=0,
-                         impressions=0, clicks=0, spend=0.0) -> ContentResponse:
+                         impressions=0, clicks=0, spend=0.0, asset_metrics=None) -> ContentResponse:
     return ContentResponse(
         id=content.id,
         kind=content.kind,
@@ -419,6 +430,7 @@ def _content_to_response(content, ad_count=0, adset_count=0, campaign_count=0,
         ctr=(clicks / impressions * 100) if impressions else 0.0,
         first_seen_at=content.first_seen_at,
         last_seen_at=content.last_seen_at,
+        asset_metrics=asset_metrics,
     )
 
 
@@ -440,8 +452,9 @@ def list_contents(
     rows, total = repository.list_contents(
         db, account_id=account_id, kind=kind, q=q, sort=sort, page=page, page_size=page_size
     )
+    asset_metrics = repository.asset_metrics_for_contents(db, [row[0].id for row in rows])
     return ContentListResponse(
-        items=[_content_to_response(*row) for row in rows],
+        items=[_content_to_response(*row, asset_metrics=asset_metrics.get(row[0].id)) for row in rows],
         total=total,
         page=page,
         page_size=page_size,
@@ -473,8 +486,49 @@ def get_content(
             impressions=impressions,
             clicks=clicks,
             spend=sum(i.spend or 0.0 for i in items),
+            asset_metrics=repository.asset_metrics_for_contents(db, [content_id]).get(content_id),
         ),
         ads=hierarchy.sort_by_spend([comparisons.ad_summary(i) for i in items]),
+    )
+
+
+@router.get("/ads/{item_id}/asset-insights", response_model=AdAssetInsightsResponse)
+def get_ad_asset_insights(
+    item_id: str,
+    user=Depends(get_current_user),
+    team: Team | None = Depends(get_current_team),
+    db=Depends(get_db),
+):
+    """docs/74 第 3 階段：動態素材廣告的元件成效。"""
+    not_found = f"廣告 {item_id} 不存在"
+    item = repository.get_item(db, item_id)
+    if item is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=not_found)
+    verify_resource_access_or_404(item.account_id, team=team, user=user, not_found_detail=not_found)
+
+    entries: dict[str, list[AssetInsightEntry]] = {kind: [] for kind in ASSET_KIND_ORDER}
+    fetched_at = None
+    for insight, content in repository.asset_insights_for_ad(db, item.account_id, item.ad_id):
+        fetched_at = max(fetched_at, insight.fetched_at) if fetched_at else insight.fetched_at
+        entries.setdefault(insight.kind, []).append(AssetInsightEntry(
+            content_id=content.id,
+            kind=insight.kind,
+            text_value=content.text_value,
+            image_hash=content.image_hash,
+            video_id=content.video_id,
+            asset_id=content.asset_id,
+            impressions=insight.impressions or 0,
+            reach=insight.reach or 0,
+            clicks=insight.clicks or 0,
+            spend=insight.spend or 0.0,
+            ctr=(insight.clicks / insight.impressions * 100) if insight.impressions else 0.0,
+        ))
+    return AdAssetInsightsResponse(
+        item_id=item.id,
+        ad_id=item.ad_id,
+        fetched_at=fetched_at,
+        entries={kind: rows for kind, rows in entries.items() if rows},
+        note=ASSET_INSIGHTS_NOTE,
     )
 
 

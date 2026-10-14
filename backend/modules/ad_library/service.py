@@ -6,7 +6,9 @@ Ad Library - 刷新流程編排（docs/73、docs/74）
   2. 抓帳號幣別（同時決定用哪個 token：owner 自己的失效時退回團隊 token）
   3. 依序抓行銷活動 → 廣告組合 → 廣告，每頁 normalize 後 upsert；
      廣告另做圖片落地（依 image_hash／fb_url 去重，限制並發）
-  4. job → succeeded / partial（被截斷或撞 rate limit）/ failed
+  4. 對有曝光的動態素材廣告抓元件 breakdown（docs/74 第 3 階段，依花費取前
+     MAX_ASSET_INSIGHT_ADS 則）
+  5. job → succeeded / partial（被截斷或撞 rate limit）/ failed
      撞 rate limit 後不再抓後面的層級（再打也只會繼續被擋）
 
 全程不持有長生命週期 DB session：每段同步 DB 操作在 to_thread 內開關短 session
@@ -23,12 +25,14 @@ from datetime import datetime, timezone
 import httpx
 
 from . import repository
+from .asset_insights import INSIGHT_FIELDS, breakdowns_for_ad, parse_asset_rows
 from .data_source import (
     RATE_LIMIT_CODES,
     AdLibraryAPIError,
     AdLibraryDataSourceError,
     download_image,
     fetch_account_info,
+    fetch_ad_asset_insights,
     fetch_adsets,
     fetch_ads,
     fetch_campaigns,
@@ -39,6 +43,8 @@ from .normalizer import normalize_ad, normalize_adset, normalize_campaign
 logger = logging.getLogger(__name__)
 
 MEDIA_CONCURRENCY = 4
+# 每則動態素材廣告最多 5 次 breakdown 呼叫，上限 100 則 ≈ 500 次
+MAX_ASSET_INSIGHT_ADS = 100
 MEDIA_DOWNLOAD_TIMEOUT = 20.0
 
 
@@ -134,6 +140,43 @@ async def _run_stage(fetch, **kwargs) -> dict:
         raise
 
 
+async def _refresh_asset_insights(*, account_id, google_id, token, on_progress, counts) -> tuple[bool, list[str]]:
+    """docs/74 第 3 階段：抓動態素材廣告的元件成效。回傳 (是否部分完成, 附註)。
+
+    這一層失敗不讓整個刷新失敗（前面的資料都已存好），只標 partial 並附上原因。
+    """
+    ads, total = await _db(repository.dynamic_ads_for_asset_insights, account_id, MAX_ASSET_INSIGHT_ADS)
+    notes: list[str] = []
+    if total > len(ads):
+        notes.append(f"動態素材廣告共 {total} 則，元件成效只分析花費最高的 {len(ads)} 則")
+    skipped_total = 0
+    for ad in ads:
+        breakdowns = breakdowns_for_ad(ad)
+        if not breakdowns:
+            continue
+        try:
+            result = await fetch_ad_asset_insights(
+                ad["ad_id"], breakdowns, user_id=google_id, fields=INSIGHT_FIELDS, **token
+            )
+        except AdLibraryAPIError as exc:
+            if exc.fb_code in RATE_LIMIT_CODES:
+                notes.append("抓取動態素材元件成效時 Facebook API 達到請求上限，已先儲存目前抓到的資料，請稍後再刷新")
+            else:
+                notes.append(f"動態素材元件成效抓取中斷：{exc}")
+            return True, notes
+        entries: list[dict] = []
+        for breakdown, rows in result.items():
+            parsed, skipped = parse_asset_rows(breakdown, rows)
+            entries.extend(parsed)
+            skipped_total += skipped
+        await _db(repository.replace_asset_insights, account_id, ad["ad_id"], entries)
+        counts["asset_ads"] += 1
+        await on_progress()
+    if skipped_total:
+        logger.info("[AdLibrary] %s asset insights: skipped %d unidentifiable rows", account_id, skipped_total)
+    return False, notes
+
+
 async def run_refresh(
     *,
     job_id: str,
@@ -147,7 +190,7 @@ async def run_refresh(
     """背景任務：抓取帳號的行銷活動、廣告組合與廣告並落庫。錯誤一律記入 job，不往外拋。"""
     await _db(repository.update_job, job_id, status="running", started_at=_utcnow())
 
-    counts = {"campaigns": 0, "adsets": 0, "ads": 0}
+    counts = {"campaigns": 0, "adsets": 0, "ads": 0, "asset_ads": 0}
     resolver: _MediaResolver | None = None
 
     def _progress() -> dict:
@@ -155,6 +198,7 @@ async def run_refresh(
             "campaigns_fetched": counts["campaigns"],
             "adsets_fetched": counts["adsets"],
             "ads_fetched": counts["ads"],
+            "asset_insights_ads": counts["asset_ads"],
             "media_stored": resolver.stored if resolver else 0,
         }
 
@@ -185,6 +229,7 @@ async def run_refresh(
         known = await _db(repository.known_image_assets, account_id)
         notes: list[str] = []
         partial = False
+        stopped = False
         async with httpx.AsyncClient(timeout=MEDIA_DOWNLOAD_TIMEOUT) as media_client:
             resolver = _MediaResolver(known=known, uploaded_by=user_id, client=media_client)
 
@@ -213,7 +258,17 @@ async def run_refresh(
                     notes.append(
                         f"抓取{label}時 Facebook API 達到請求上限，已先儲存目前抓到的資料，請稍後再刷新"
                     )
+                    stopped = True
                     break
+
+        if not stopped:
+            asset_partial, asset_notes = await _refresh_asset_insights(
+                account_id=account_id, google_id=google_id, token=token,
+                on_progress=lambda: _db(repository.update_job, job_id, **_progress()),
+                counts=counts,
+            )
+            partial = partial or asset_partial
+            notes.extend(asset_notes)
 
         await _db(
             repository.update_job, job_id,

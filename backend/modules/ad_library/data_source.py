@@ -261,6 +261,62 @@ async def fetch_adsets(
     )
 
 
+TOKEN_ERROR_CODES = {190}
+
+
+async def fetch_ad_asset_insights(
+    ad_id: str,
+    breakdowns: list[str],
+    *,
+    user_id: str,
+    team_id: str | None,
+    strict_token: bool,
+    fields: str,
+    client: httpx.AsyncClient | None = None,
+) -> dict[str, list[dict]]:
+    """docs/74 第 3 階段：逐一查詢動態素材廣告的元件 breakdown。
+
+    單一 breakdown 回錯（例如此廣告不支援該元件）只略過該 breakdown；
+    rate limit 與 token 錯誤則往外拋，由呼叫端決定是否停止。
+
+    Returns:
+        {breakdown: [rows]}
+    """
+    headers = await _get_headers(user_id, team_id, strict_token)
+    own_client = client is None
+    http = client or httpx.AsyncClient(timeout=TIMEOUT)
+    out: dict[str, list[dict]] = {}
+    try:
+        for breakdown in breakdowns:
+            url: str | None = f"{BASE_URL}/{ad_id}/insights"
+            params: dict | None = {
+                "fields": fields,
+                "breakdowns": breakdown,
+                "date_preset": "maximum",
+                "limit": PAGE_LIMIT,
+            }
+            rows: list[dict] = []
+            while url:
+                data = await _get_json(http, url, headers, params)
+                if "error" in data:
+                    err = data["error"] or {}
+                    code = err.get("code")
+                    if code in RATE_LIMIT_CODES or code in TOKEN_ERROR_CODES:
+                        raise AdLibraryAPIError(err.get("message") or "FB API 錯誤", fb_code=code)
+                    logger.warning("[AdLibrary] ad %s breakdown %s skipped: code=%s", ad_id, breakdown, code)
+                    rows = []
+                    break
+                rows.extend(data.get("data") or [])
+                url = (data.get("paging") or {}).get("next")
+                params = None
+            out[breakdown] = rows
+            await asyncio.sleep(INTER_PAGE_SLEEP_SEC)
+    finally:
+        if own_client:
+            await http.aclose()
+    return out
+
+
 async def download_image(url: str, *, client: httpx.AsyncClient, max_bytes: int = 15 * 1024 * 1024) -> tuple[bytes, str | None] | None:
     """下載 FB CDN 圖片；失敗或過大回 None（不阻斷刷新）。"""
     try:
