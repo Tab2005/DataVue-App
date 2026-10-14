@@ -5,9 +5,10 @@
  * 預設全部收合，展開廣告組合時才載入廣告縮圖，避免大帳號一次打上千張圖。
  */
 import React, { useEffect, useMemo, useState } from 'react';
-import { FiChevronDown, FiChevronRight, FiImage } from 'react-icons/fi';
+import { FiChevronDown, FiChevronRight } from 'react-icons/fi';
 
-import { fetchMediaBlobUrl, getTree } from '../../services/adLibraryService';
+import { getTree } from '../../services/adLibraryService';
+import Thumb from './Thumb';
 import {
     MEDIA_TYPE_LABELS,
     OBJECTIVE_LABELS,
@@ -29,19 +30,11 @@ const STYLES = `
 .adlib-node-meta { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 6px; align-items: center; }
 .adlib-node-children { padding: 0 14px 12px 34px; display: flex; flex-direction: column; gap: 8px; }
 @media (max-width: 640px) { .adlib-node-children { padding-left: 14px; } }
-.adlib-metrics { display: flex; gap: 14px; flex-wrap: wrap; font-size: 0.78rem; color: var(--text-muted);
-  font-variant-numeric: tabular-nums; margin-top: 6px; }
-.adlib-metrics strong { color: var(--text-primary); font-weight: 600; margin-left: 4px; }
 .adlib-ad-row { display: flex; gap: 12px; padding: 10px; border: 1px solid var(--glass-border); border-radius: var(--radius-md, 8px);
   background: var(--bg-primary); min-width: 0; }
-.adlib-ad-thumb { width: 64px; height: 64px; flex-shrink: 0; border-radius: 6px; overflow: hidden; background: var(--bg-secondary);
-  display: flex; align-items: center; justify-content: center; color: var(--text-muted); }
-.adlib-ad-thumb img { width: 100%; height: 100%; object-fit: cover; display: block; }
-.adlib-chip { font-size: 0.72rem; padding: 2px 8px; border-radius: 6px; background: var(--bg-primary); color: var(--text-secondary);
-  border: 1px solid var(--glass-border); }
 `;
 
-const StatusBadge = ({ status, language }) => {
+export const StatusBadge = ({ status, language }) => {
     if (!status) return null;
     const entry = STATUS_LABELS[status];
     return (
@@ -51,7 +44,7 @@ const StatusBadge = ({ status, language }) => {
     );
 };
 
-const Metrics = ({ metrics, language }) => (
+export const Metrics = ({ metrics, language }) => (
     <div className="adlib-metrics">
         <span>{t(language, 'Spend', '花費')}<strong>{formatMoney(metrics?.spend)}</strong></span>
         <span>{t(language, 'Impr.', '曝光')}<strong>{formatNumber(metrics?.impressions)}</strong></span>
@@ -94,33 +87,6 @@ export const targetingChips = (summary, language) => {
         ? summary.publisher_platforms.join('、')
         : t(language, 'Automatic placements', '自動版位'));
     return chips;
-};
-
-const Thumb = ({ thumbnail }) => {
-    const [src, setSrc] = useState(null);
-    const [failed, setFailed] = useState(false);
-
-    useEffect(() => {
-        setSrc(null);
-        setFailed(false);
-        if (!thumbnail?.asset_id) return undefined;
-        const controller = new AbortController();
-        let objectUrl = null;
-        fetchMediaBlobUrl(thumbnail.asset_id, controller.signal)
-            .then((url) => { objectUrl = url; setSrc(url); })
-            .catch((err) => { if (err.name !== 'AbortError') setFailed(true); });
-        return () => {
-            controller.abort();
-            if (objectUrl) URL.revokeObjectURL(objectUrl);
-        };
-    }, [thumbnail?.asset_id]);
-
-    const displaySrc = src || (!thumbnail?.asset_id && thumbnail?.fb_url) || null;
-    return (
-        <div className="adlib-ad-thumb">
-            {displaySrc && !failed ? <img src={displaySrc} alt="" loading="lazy" onError={() => setFailed(true)} /> : <FiImage size={22} />}
-        </div>
-    );
 };
 
 const AdRow = ({ ad, language }) => {

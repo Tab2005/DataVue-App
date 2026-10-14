@@ -5,8 +5,9 @@
  * 並多了曝光／花費／CTR 可排序。資料讀取走本地快取（/api/ad-library/ads），
  * 「重新抓取」觸發背景刷新後輪詢 job 狀態，完成後重新載入列表。
  * 「結構」分頁（docs/74）顯示行銷活動 → 廣告組合 → 廣告的階層與設定。
+ * 「比對」分頁（docs/74）列出同範圍內的素材測試、文案測試與重複投放。
  */
-import React, { useCallback, useEffect, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useOutletContext } from 'react-router-dom';
 import { FiCopy, FiDownload, FiExternalLink, FiImage, FiPlay, FiRefreshCw, FiSearch } from 'react-icons/fi';
 
@@ -18,6 +19,7 @@ import {
     listAds,
     startRefresh,
 } from '../services/adLibraryService';
+import ComparisonView from '../components/AdLibrary/ComparisonView';
 import StructureView from '../components/AdLibrary/StructureView';
 import { MEDIA_TYPE_LABELS, STATUS_LABELS, formatDate, formatMoney, formatNumber, t } from '../components/AdLibrary/labels';
 
@@ -49,6 +51,16 @@ const STYLES = `
 .adlib-stats { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; font-variant-numeric: tabular-nums; }
 .adlib-stats div { font-size: 0.75rem; color: var(--text-muted); }
 .adlib-stats strong { display: block; font-size: 0.95rem; color: var(--text-primary); }
+.adlib-ad-thumb { width: 64px; height: 64px; flex-shrink: 0; border-radius: 6px; overflow: hidden; background: var(--bg-secondary);
+  display: flex; align-items: center; justify-content: center; color: var(--text-muted); }
+.adlib-ad-thumb img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.adlib-metrics { display: flex; gap: 14px; flex-wrap: wrap; font-size: 0.78rem; color: var(--text-muted);
+  font-variant-numeric: tabular-nums; margin-top: 6px; }
+.adlib-metrics strong { color: var(--text-primary); font-weight: 600; margin-left: 4px; }
+.adlib-chip { font-size: 0.72rem; padding: 2px 8px; border-radius: 6px; background: var(--bg-primary); color: var(--text-secondary);
+  border: 1px solid var(--glass-border); }
+.adlib-keylink { cursor: pointer; background: none; font: inherit; }
+.adlib-keylink:hover { border-color: var(--accent-primary); color: var(--accent-primary); }
 .adlib-tabs { display: flex; gap: 4px; border-bottom: 1px solid var(--glass-border); margin-bottom: 16px; }
 .adlib-tab { padding: 8px 14px; background: none; border: none; border-bottom: 2px solid transparent; margin-bottom: -1px;
   color: var(--text-secondary); cursor: pointer; font-size: 0.9rem; }
@@ -123,7 +135,7 @@ const MediaThumb = ({ media, mediaType, previewLink, language }) => {
     );
 };
 
-const AdCard = ({ item, language }) => {
+const AdCard = ({ item, language, onFilterKey }) => {
     const [variant, setVariant] = useState(0);
     const [expanded, setExpanded] = useState(false);
     const [copied, setCopied] = useState(false);
@@ -157,6 +169,20 @@ const AdCard = ({ item, language }) => {
                     {!status && item.effective_status && <span className="adlib-badge">{item.effective_status}</span>}
                     {mediaType && <span className="adlib-badge">{t(language, mediaType[0], mediaType[1])}</span>}
                     <span className="adlib-badge">{formatDate(item.ad_created_at)}</span>
+                    {item.same_copy_count > 0 && (
+                        <button type="button" className="adlib-badge adlib-keylink"
+                                onClick={() => onFilterKey({ type: 'copy', key: item.copy_key })}
+                                title={t(language, 'Show ads using the same copy', '查看使用相同文案的廣告')}>
+                            {t(language, `Same copy ×${item.same_copy_count}`, `同文案 ${item.same_copy_count} 則`)}
+                        </button>
+                    )}
+                    {item.same_media_count > 0 && (
+                        <button type="button" className="adlib-badge adlib-keylink"
+                                onClick={() => onFilterKey({ type: 'media', key: item.media_key })}
+                                title={t(language, 'Show ads using the same media', '查看使用相同素材的廣告')}>
+                            {t(language, `Same media ×${item.same_media_count}`, `同素材 ${item.same_media_count} 則`)}
+                        </button>
+                    )}
                 </div>
 
                 <div style={{ fontSize: '0.78rem', color: 'var(--text-muted)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}
@@ -235,6 +261,7 @@ const AdLibrary = () => {
     const [accountsError, setAccountsError] = useState(null);
     const [accountId, setAccountId] = useState('');
     const [view, setView] = useState('ads');
+    const [keyFilter, setKeyFilter] = useState(null);
     const [treeReloadKey, setTreeReloadKey] = useState(0);
     const [status, setStatus] = useState('');
     const [mediaType, setMediaType] = useState('');
@@ -268,7 +295,17 @@ const AdLibrary = () => {
         return () => clearTimeout(timer);
     }, [query]);
 
-    useEffect(() => { setPage(1); }, [accountId, status, mediaType, debouncedQuery, sort]);
+    useEffect(() => { setPage(1); }, [accountId, status, mediaType, debouncedQuery, sort, keyFilter]);
+    useEffect(() => { setKeyFilter(null); }, [accountId]);
+
+    const keyParams = useMemo(() => (keyFilter
+        ? { copyKey: keyFilter.type === 'copy' ? keyFilter.key : undefined, mediaKey: keyFilter.type === 'media' ? keyFilter.key : undefined }
+        : {}), [keyFilter]);
+    const handleFilterKey = (filter) => {
+        setKeyFilter(filter);
+        setView('ads');
+        window.scrollTo?.({ top: 0, behavior: 'smooth' });
+    };
 
     const loadAds = useCallback(async () => {
         if (!accountId) return;
@@ -277,6 +314,7 @@ const AdLibrary = () => {
         try {
             const res = await listAds({
                 accountId, status, mediaType, q: debouncedQuery, sort, order: 'desc', page, pageSize: PAGE_SIZE,
+                ...keyParams,
             });
             setData(res);
             setJob((prev) => (prev && ACTIVE_JOB.has(prev.status) ? prev : res.latest_job));
@@ -285,7 +323,7 @@ const AdLibrary = () => {
         } finally {
             setLoading(false);
         }
-    }, [accountId, status, mediaType, debouncedQuery, sort, page]);
+    }, [accountId, status, mediaType, debouncedQuery, sort, page, keyParams]);
 
     useEffect(() => { loadAds(); }, [loadAds]);
 
@@ -321,7 +359,7 @@ const AdLibrary = () => {
     const handleExport = async () => {
         setExporting(true);
         try {
-            await downloadCsv({ accountId, status, mediaType, q: debouncedQuery, sort, order: 'desc' });
+            await downloadCsv({ accountId, status, mediaType, q: debouncedQuery, sort, order: 'desc', ...keyParams });
         } catch (err) {
             setError(err.message);
         } finally {
@@ -331,7 +369,7 @@ const AdLibrary = () => {
 
     const refreshing = job && ACTIVE_JOB.has(job.status) && job.account_id === accountId;
     const totalPages = Math.max(1, Math.ceil((data.total || 0) / PAGE_SIZE));
-    const hasFilters = Boolean(status || mediaType || debouncedQuery);
+    const hasFilters = Boolean(status || mediaType || debouncedQuery || keyFilter);
 
     return (
         <>
@@ -347,7 +385,7 @@ const AdLibrary = () => {
                 </div>
 
                 <div className="adlib-tabs" role="tablist">
-                    {[['ads', 'Ads', '廣告'], ['structure', 'Structure', '結構']].map(([key, en, zh]) => (
+                    {[['ads', 'Ads', '廣告'], ['structure', 'Structure', '結構'], ['compare', 'Compare', '比對']].map(([key, en, zh]) => (
                         <button key={key} type="button" role="tab" className="adlib-tab" aria-selected={view === key}
                                 onClick={() => setView(key)}>
                             {t(language, en, zh)}
@@ -359,15 +397,18 @@ const AdLibrary = () => {
 
                 <div style={{
                     display: 'grid', gap: 10, marginBottom: 16,
-                    gridTemplateColumns: isMobile ? '1fr' : (view === 'ads'
-                        ? 'minmax(200px, 1.2fr) repeat(3, minmax(120px, 0.8fr)) minmax(180px, 1.4fr)'
-                        : 'minmax(200px, 1.2fr) minmax(120px, 0.8fr) 2.2fr'),
+                    gridTemplateColumns: isMobile ? '1fr' : ({
+                        ads: 'minmax(200px, 1.2fr) repeat(3, minmax(120px, 0.8fr)) minmax(180px, 1.4fr)',
+                        structure: 'minmax(200px, 1.2fr) minmax(120px, 0.8fr) 2.2fr',
+                        compare: 'minmax(200px, 1.2fr) 3fr',
+                    })[view],
                 }}>
                     <select className="adlib-input" value={accountId} onChange={(e) => setAccountId(e.target.value)}
                             aria-label={t(language, 'Ad account', '廣告帳戶')}>
                         {accounts.length === 0 && <option value="">{t(language, 'No ad accounts', '沒有可用的廣告帳戶')}</option>}
                         {accounts.map((a) => <option key={a.id} value={a.id}>{a.name} ({a.id})</option>)}
                     </select>
+                    {view !== 'compare' && (
                     <select className="adlib-input" value={status} onChange={(e) => setStatus(e.target.value)}
                             aria-label={t(language, 'Status', '狀態')}>
                         <option value="">{t(language, 'All statuses', '全部狀態')}</option>
@@ -375,6 +416,7 @@ const AdLibrary = () => {
                         <option value="paused">{t(language, 'Paused', '已暫停')}</option>
                         <option value="other">{t(language, 'Other', '其他')}</option>
                     </select>
+                    )}
                     {view === 'ads' && (<>
                     <select className="adlib-input" value={mediaType} onChange={(e) => setMediaType(e.target.value)}
                             aria-label={t(language, 'Media type', '素材類型')}>
@@ -417,10 +459,28 @@ const AdLibrary = () => {
                     </span>
                 </div>
 
+                {view === 'ads' && keyFilter && (
+                    <div style={{ display: 'flex', gap: 8, alignItems: 'center', marginBottom: 12 }}>
+                        <span className="adlib-badge" style={{ color: 'var(--accent-primary)', borderColor: 'var(--accent-primary)' }}>
+                            {keyFilter.type === 'copy'
+                                ? t(language, 'Showing ads with the same copy', '只看使用相同文案的廣告')
+                                : t(language, 'Showing ads with the same media', '只看使用相同素材的廣告')}
+                        </span>
+                        <button type="button" className="adlib-btn" onClick={() => setKeyFilter(null)}>
+                            {t(language, 'Clear', '清除')}
+                        </button>
+                    </div>
+                )}
+
                 {error && <Notice tone="error">{error}</Notice>}
                 {job?.status === 'partial' && job.error && <Notice tone="info">{job.error}</Notice>}
                 {job?.status === 'failed' && job.error && (
                     <Notice tone="error">{t(language, 'Last fetch failed: ', '上次抓取失敗：')}{job.error}</Notice>
+                )}
+
+                {view === 'compare' && accountId && (
+                    <ComparisonView accountId={accountId} language={language} isMobile={isMobile}
+                                    reloadKey={treeReloadKey} onError={setError} onFilterKey={handleFilterKey} />
                 )}
 
                 {view === 'structure' && accountId && (
@@ -438,7 +498,9 @@ const AdLibrary = () => {
 
                 {view === 'ads' && (
                     <div className="adlib-grid" aria-busy={loading} style={{ opacity: loading ? 0.6 : 1 }}>
-                        {data.items.map((item) => <AdCard key={item.id} item={item} language={language} />)}
+                        {data.items.map((item) => (
+                            <AdCard key={item.id} item={item} language={language} onFilterKey={handleFilterKey} />
+                        ))}
                     </div>
                 )}
 

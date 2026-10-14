@@ -22,7 +22,7 @@ from database.models.team import Team
 from modules.auth.dependencies import get_current_team, get_current_user
 from modules.fb_ads import accounts_service
 
-from . import hierarchy, repository
+from . import comparisons, hierarchy, repository
 from .dependencies import (
     accessible_account_ids,
     require_ad_library_module,
@@ -37,6 +37,10 @@ from .schemas import (
     AdLibraryTreeResponse,
     AdsetDetailResponse,
     CampaignDetailResponse,
+    ComparisonsResponse,
+    ContentDetailResponse,
+    ContentListResponse,
+    ContentResponse,
     RefreshJobResponse,
     RefreshRequest,
 )
@@ -52,6 +56,8 @@ router = APIRouter(
 
 MAX_PAGE_SIZE = 100
 EXPORT_LIMIT = 5000
+KEY_PATTERN = "^[0-9a-f]{64}$"
+CONTENT_NOTE = "一則廣告包含多個元件時，該廣告的成效會分別計入每個元件；動態素材廣告尤其明顯，僅供參考。"
 
 
 def _job_to_response(job) -> RefreshJobResponse:
@@ -70,7 +76,8 @@ def _job_to_response(job) -> RefreshJobResponse:
     )
 
 
-def _item_to_response(item) -> AdLibraryItemResponse:
+def _item_to_response(item, counts: dict | None = None) -> AdLibraryItemResponse:
+    counts = counts or {"copy": {}, "media": {}}
     return AdLibraryItemResponse(
         id=item.id,
         account_id=item.account_id,
@@ -93,6 +100,10 @@ def _item_to_response(item) -> AdLibraryItemResponse:
             for m in item.media or []
         ],
         preview_link=item.preview_link,
+        copy_key=item.copy_key,
+        media_key=item.media_key,
+        same_copy_count=max(counts["copy"].get(item.copy_key, 1) - 1, 0) if item.copy_key else 0,
+        same_media_count=max(counts["media"].get(item.media_key, 1) - 1, 0) if item.media_key else 0,
         impressions=item.impressions or 0,
         reach=item.reach or 0,
         clicks=item.clicks or 0,
@@ -185,11 +196,14 @@ def list_ads(
     order: str = Query("desc", pattern="^(asc|desc)$"),
     page: int = Query(1, ge=1),
     page_size: int = Query(24, ge=1, le=MAX_PAGE_SIZE),
+    copy_key: str | None = Query(None, pattern=KEY_PATTERN),
+    media_key: str | None = Query(None, pattern=KEY_PATTERN),
     user=Depends(get_current_user),
     team: Team | None = Depends(get_current_team),
     db=Depends(get_db),
 ):
     verify_account_access_or_403(account_id, team=team, user=user)
+    repository.ensure_contents(db, account_id)
     items, total = repository.list_items(
         db,
         account_id=account_id,
@@ -200,10 +214,13 @@ def list_ads(
         order=order,
         page=page,
         page_size=page_size,
+        copy_key=copy_key,
+        media_key=media_key,
     )
+    counts = repository.same_key_counts(db, account_id, items)
     latest_job = repository.get_latest_job(db, account_id)
     return AdLibraryListResponse(
-        items=[_item_to_response(i) for i in items],
+        items=[_item_to_response(i, counts) for i in items],
         total=total,
         page=page,
         page_size=page_size,
@@ -219,6 +236,8 @@ def export_ads(
     q: str | None = Query(None, max_length=200),
     sort: str = Query("impressions", pattern="^(impressions|spend|ctr|created)$"),
     order: str = Query("desc", pattern="^(asc|desc)$"),
+    copy_key: str | None = Query(None, pattern=KEY_PATTERN),
+    media_key: str | None = Query(None, pattern=KEY_PATTERN),
     user=Depends(get_current_user),
     team: Team | None = Depends(get_current_team),
     db=Depends(get_db),
@@ -234,6 +253,8 @@ def export_ads(
         order=order,
         page=1,
         page_size=EXPORT_LIMIT,
+        copy_key=copy_key,
+        media_key=media_key,
     )
 
     buf = io.StringIO()
@@ -360,6 +381,100 @@ def get_adset(
     })
     return AdsetDetailResponse(
         adset=node, ads=hierarchy.sort_by_spend([hierarchy.ad_node(i) for i in items])
+    )
+
+
+@router.get("/comparisons", response_model=ComparisonsResponse)
+def get_comparisons(
+    account_id: str = Query(...),
+    scope: str = Query("adset", pattern="^(adset|campaign)$"),
+    relation: str | None = Query(None, pattern="^(media_test|copy_test|duplicate)$"),
+    user=Depends(get_current_user),
+    team: Team | None = Depends(get_current_team),
+    db=Depends(get_db),
+):
+    """docs/74 第二節：同範圍內的素材測試、文案測試與重複投放。"""
+    verify_account_access_or_403(account_id, team=team, user=user)
+    repository.ensure_contents(db, account_id)
+    items = repository.list_comparison_items(db, account_id)
+    result = comparisons.build_comparisons(items, scope=scope, relation=relation)
+    return ComparisonsResponse(account_id=account_id, **result)
+
+
+def _content_to_response(content, ad_count=0, adset_count=0, campaign_count=0,
+                         impressions=0, clicks=0, spend=0.0) -> ContentResponse:
+    return ContentResponse(
+        id=content.id,
+        kind=content.kind,
+        text_value=content.text_value,
+        image_hash=content.image_hash,
+        video_id=content.video_id,
+        asset_id=content.asset_id,
+        ad_count=ad_count or 0,
+        adset_count=adset_count or 0,
+        campaign_count=campaign_count or 0,
+        impressions=int(impressions or 0),
+        clicks=int(clicks or 0),
+        spend=float(spend or 0.0),
+        ctr=(clicks / impressions * 100) if impressions else 0.0,
+        first_seen_at=content.first_seen_at,
+        last_seen_at=content.last_seen_at,
+    )
+
+
+@router.get("/contents", response_model=ContentListResponse)
+def list_contents(
+    account_id: str = Query(...),
+    kind: str | None = Query(None, pattern="^(primary_text|headline|description|image|video)$"),
+    q: str | None = Query(None, max_length=200),
+    sort: str = Query("ads", pattern="^(ads|spend|impressions|ctr)$"),
+    page: int = Query(1, ge=1),
+    page_size: int = Query(50, ge=1, le=MAX_PAGE_SIZE),
+    user=Depends(get_current_user),
+    team: Team | None = Depends(get_current_team),
+    db=Depends(get_db),
+):
+    """docs/74 第二節：內容元件清單（文案段落、圖片、影片）與使用情形。"""
+    verify_account_access_or_403(account_id, team=team, user=user)
+    repository.ensure_contents(db, account_id)
+    rows, total = repository.list_contents(
+        db, account_id=account_id, kind=kind, q=q, sort=sort, page=page, page_size=page_size
+    )
+    return ContentListResponse(
+        items=[_content_to_response(*row) for row in rows],
+        total=total,
+        page=page,
+        page_size=page_size,
+        note=CONTENT_NOTE,
+    )
+
+
+@router.get("/contents/{content_id}", response_model=ContentDetailResponse)
+def get_content(
+    content_id: str,
+    user=Depends(get_current_user),
+    team: Team | None = Depends(get_current_team),
+    db=Depends(get_db),
+):
+    not_found = f"內容元件 {content_id} 不存在"
+    content = repository.get_content(db, content_id)
+    if content is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=not_found)
+    verify_resource_access_or_404(content.account_id, team=team, user=user, not_found_detail=not_found)
+    items = repository.list_items_for_content(db, content_id)
+    impressions = sum(i.impressions or 0 for i in items)
+    clicks = sum(i.clicks or 0 for i in items)
+    return ContentDetailResponse(
+        content=_content_to_response(
+            content,
+            ad_count=len(items),
+            adset_count=len({i.adset_id for i in items if i.adset_id}),
+            campaign_count=len({i.campaign_id for i in items if i.campaign_id}),
+            impressions=impressions,
+            clicks=clicks,
+            spend=sum(i.spend or 0.0 for i in items),
+        ),
+        ads=hierarchy.sort_by_spend([comparisons.ad_summary(i) for i in items]),
     )
 
 

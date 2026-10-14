@@ -56,7 +56,9 @@ def test_normalize_single_image_ad():
     assert row["cta_types"] == ["SHOP_NOW"]
     assert row["link_url"] == "https://shop.example.com"
     assert row["page_id"] == "p1"
-    assert row["media"] == [{"kind": "image", "fb_url": "https://cdn/img1.jpg", "image_hash": "h1", "asset_id": None}]
+    assert row["media"] == [
+        {"kind": "image", "fb_url": "https://cdn/img1.jpg", "image_hash": "h1", "video_id": None, "asset_id": None}
+    ]
     assert row["impressions"] == 1200 and row["spend"] == 35.5
     assert row["ad_created_at"].hour == 2  # 轉成 UTC
     assert "限時 8 折" in row["search_text"]

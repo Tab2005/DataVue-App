@@ -66,10 +66,19 @@ def _to_float(value) -> float:
         return 0.0
 
 
-def _media_entry(kind: str, fb_url: str | None, image_hash: str | None = None) -> dict | None:
-    if not fb_url and not image_hash:
+def _media_entry(
+    kind: str, fb_url: str | None, image_hash: str | None = None, video_id: str | None = None
+) -> dict | None:
+    """video_id 用於 docs/74 的素材指紋；影片縮圖的 image_hash 只代表縮圖，不作為影片識別。"""
+    if not fb_url and not image_hash and not video_id:
         return None
-    return {"kind": kind, "fb_url": fb_url, "image_hash": image_hash, "asset_id": None}
+    return {
+        "kind": kind,
+        "fb_url": fb_url,
+        "image_hash": image_hash,
+        "video_id": str(video_id) if video_id else None,
+        "asset_id": None,
+    }
 
 
 def _extract_insights(ad: dict) -> dict:
@@ -244,7 +253,7 @@ def normalize_ad(ad: dict[str, Any], *, account_id: str) -> dict[str, Any]:
             if entry:
                 media.append(entry)
         for vid in feed.get("videos") or []:
-            entry = _media_entry("video_thumbnail", vid.get("thumbnail_url"))
+            entry = _media_entry("video_thumbnail", vid.get("thumbnail_url"), video_id=vid.get("video_id"))
             if entry:
                 media.append(entry)
     elif video_data:
@@ -259,6 +268,7 @@ def normalize_ad(ad: dict[str, Any], *, account_id: str) -> dict[str, Any]:
             "video_thumbnail",
             video_data.get("image_url") or creative.get("thumbnail_url"),
             video_data.get("image_hash"),
+            video_id=video_data.get("video_id") or creative.get("video_id"),
         )
         if entry:
             media.append(entry)
@@ -288,6 +298,7 @@ def normalize_ad(ad: dict[str, Any], *, account_id: str) -> dict[str, Any]:
             "video_thumbnail" if media_type == "video" else "image",
             creative.get("image_url") or link_data.get("picture") or creative.get("thumbnail_url"),
             creative.get("image_hash") or link_data.get("image_hash"),
+            video_id=creative.get("video_id"),
         )
         if entry:
             media.append(entry)
@@ -304,6 +315,7 @@ def normalize_ad(ad: dict[str, Any], *, account_id: str) -> dict[str, Any]:
             "video_thumbnail" if media_type == "video" else "image",
             creative.get("image_url") or creative.get("thumbnail_url"),
             creative.get("image_hash"),
+            video_id=creative.get("video_id") if media_type == "video" else None,
         )
         if entry:
             media.append(entry)

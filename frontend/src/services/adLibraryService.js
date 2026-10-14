@@ -11,6 +11,8 @@
  *   GET  /api/ad-library/tree           （行銷活動 → 廣告組合 → 廣告，docs/74）
  *   GET  /api/ad-library/campaigns/{id}
  *   GET  /api/ad-library/adsets/{id}
+ *   GET  /api/ad-library/comparisons    （素材測試／文案測試／重複投放，docs/74）
+ *   GET  /api/ad-library/contents       （內容元件）
  *
  * 圖片與 CSV 需帶 Authorization header，<img src> / <a href> 無法直接帶，
  * 因此用 fetch 取回 blob 後轉成 object URL。
@@ -46,7 +48,7 @@ export const startRefresh = (accountId) =>
 
 export const getRefreshJob = (jobId) => apiClient.get(`${BASE}/refresh/${encodeURIComponent(jobId)}`);
 
-export const listAds = ({ accountId, status, mediaType, q, sort, order, page, pageSize }) =>
+export const listAds = ({ accountId, status, mediaType, q, sort, order, page, pageSize, copyKey, mediaKey }) =>
     apiClient.get(
         `${BASE}/ads${buildQuery({
             account_id: accountId,
@@ -57,6 +59,8 @@ export const listAds = ({ accountId, status, mediaType, q, sort, order, page, pa
             order,
             page,
             page_size: pageSize,
+            copy_key: copyKey,
+            media_key: mediaKey,
         })}`
     );
 
@@ -67,8 +71,18 @@ export const getCampaign = (id) => apiClient.get(`${BASE}/campaigns/${encodeURIC
 
 export const getAdset = (id) => apiClient.get(`${BASE}/adsets/${encodeURIComponent(id)}`);
 
-export const downloadCsv = async ({ accountId, status, mediaType, q, sort, order }) => {
-    const qs = buildQuery({ account_id: accountId, status, media_type: mediaType, q, sort, order });
+export const getComparisons = ({ accountId, scope, relation }) =>
+    apiClient.get(`${BASE}/comparisons${buildQuery({ account_id: accountId, scope, relation })}`);
+
+export const listContents = ({ accountId, kind, q, sort, page, pageSize }) =>
+    apiClient.get(`${BASE}/contents${buildQuery({ account_id: accountId, kind, q, sort, page, page_size: pageSize })}`);
+
+export const getContent = (id) => apiClient.get(`${BASE}/contents/${encodeURIComponent(id)}`);
+
+export const downloadCsv = async ({ accountId, status, mediaType, q, sort, order, copyKey, mediaKey }) => {
+    const qs = buildQuery({
+        account_id: accountId, status, media_type: mediaType, q, sort, order, copy_key: copyKey, media_key: mediaKey,
+    });
     const resp = await fetch(`${API_URL}${BASE}/ads/export${qs}`, { headers: authHeaders() });
     if (!resp.ok) throw new Error(`匯出失敗（${resp.status}）`);
     const blob = await resp.blob();

@@ -52,6 +52,11 @@ class AdLibraryItemResponse(BaseModel):
     link_url: str | None = None
     media: list[MediaItem]
     preview_link: str | None = None
+    # docs/74 第二節：文案／素材指紋，以及同帳號內「其他」使用相同文案／素材的廣告數
+    copy_key: str | None = None
+    media_key: str | None = None
+    same_copy_count: int = 0
+    same_media_count: int = 0
     impressions: int
     reach: int
     clicks: int
@@ -85,4 +90,47 @@ class CampaignDetailResponse(BaseModel):
 
 class AdsetDetailResponse(BaseModel):
     adset: dict[str, Any]
+    ads: list[dict[str, Any]]
+
+
+class ComparisonsResponse(BaseModel):
+    """docs/74 第二節：文案測試／素材測試／重複投放。組結構見 comparisons.py。"""
+
+    account_id: str
+    scope: str
+    counts: dict[str, int]
+    groups: list[dict[str, Any]]
+    coverage: dict[str, int]
+    note: str
+
+
+class ContentResponse(BaseModel):
+    id: str
+    kind: str
+    text_value: str | None = None
+    image_hash: str | None = None
+    video_id: str | None = None
+    asset_id: str | None = None
+    ad_count: int = 0
+    adset_count: int = 0
+    campaign_count: int = 0
+    impressions: int = 0
+    clicks: int = 0
+    spend: float = 0.0
+    ctr: float = 0.0
+    first_seen_at: datetime | None = None
+    last_seen_at: datetime | None = None
+
+
+class ContentListResponse(BaseModel):
+    items: list[ContentResponse]
+    total: int
+    page: int
+    page_size: int
+    # 一則廣告含多個元件時，成效會重複計入每個元件（動態素材尤其明顯）
+    note: str
+
+
+class ContentDetailResponse(BaseModel):
+    content: ContentResponse
     ads: list[dict[str, Any]]

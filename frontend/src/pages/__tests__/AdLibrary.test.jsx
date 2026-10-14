@@ -3,7 +3,9 @@ import { fireEvent, screen, waitFor } from '@testing-library/react';
 
 import AdLibrary from '../AdLibrary';
 import { renderWithOutlet } from '../../test/renderWithOutlet';
-import { getRefreshJob, getTree, listAccounts, listAds, startRefresh } from '../../services/adLibraryService';
+import {
+    getComparisons, getRefreshJob, getTree, listAccounts, listAds, startRefresh,
+} from '../../services/adLibraryService';
 
 vi.mock('../../services/adLibraryService', () => ({
     listAccounts: vi.fn(),
@@ -11,6 +13,7 @@ vi.mock('../../services/adLibraryService', () => ({
     startRefresh: vi.fn(),
     getRefreshJob: vi.fn(),
     getTree: vi.fn(),
+    getComparisons: vi.fn(),
     downloadCsv: vi.fn(),
     fetchMediaBlobUrl: vi.fn(() => new Promise(() => {})),
 }));
@@ -148,5 +151,54 @@ describe('AdLibrary', () => {
         fireEvent.click(await screen.findByRole('tab', { name: '結構' }));
         expect(await screen.findByText('設定未抓取')).toBeInTheDocument();
         expect(screen.getByText(/請重新從 Facebook 抓取一次/)).toBeInTheDocument();
+    });
+    it('filters the ad list by same copy when clicking the card badge', async () => {
+        listAds.mockResolvedValue({
+            items: [{ ...sampleItem, copy_key: 'a'.repeat(64), same_copy_count: 2 }],
+            total: 1, page: 1, page_size: 24, latest_job: null,
+        });
+        renderWithOutlet(<AdLibrary />, { outletContext });
+
+        fireEvent.click(await screen.findByRole('button', { name: '同文案 2 則' }));
+        await waitFor(() => expect(listAds).toHaveBeenLastCalledWith(expect.objectContaining({ copyKey: 'a'.repeat(64) })));
+        expect(screen.getByText('只看使用相同文案的廣告')).toBeInTheDocument();
+
+        fireEvent.click(screen.getByRole('button', { name: '清除' }));
+        await waitFor(() => expect(listAds.mock.lastCall[0]).not.toHaveProperty('copyKey'));
+    });
+
+    it('shows media tests with the best CTR variant and the attribution note', async () => {
+        listAds.mockResolvedValue({ items: [], total: 0, page: 1, page_size: 24, latest_job: null });
+        const metrics = (impressions, clicks, spend) => ({ impressions, clicks, spend, ctr: (clicks / impressions) * 100 });
+        const ad = (id, name) => ({ id, ad_id: id, name, adset_name: '女性 25-45', metrics: metrics(2000, 20, 100) });
+        getComparisons.mockResolvedValue({
+            account_id: 'act_001',
+            scope: 'adset',
+            counts: { media_test: 1, copy_test: 0, duplicate: 0 },
+            coverage: { ads: 2, without_copy_key: 0, without_media_key: 0 },
+            note: '成效為廣告層級數字',
+            groups: [{
+                relation: 'media_test',
+                scope: { level: 'adset', id: 's1', name: '女性 25-45', campaign_id: 'c1', campaign_name: '春季活動' },
+                fixed: { kind: 'copy', key: 'b'.repeat(64), preview: { primary_texts: ['固定的那段文案'], headlines: [], descriptions: [] } },
+                metrics: metrics(4000, 60, 200),
+                variants: [
+                    { key: 'm1', preview: { media_type: 'image', media_count: 1, thumbnail: null }, ads: [ad('a1', '圖 A')], metrics: metrics(2000, 20, 100) },
+                    { key: 'm2', preview: { media_type: 'image', media_count: 1, thumbnail: null }, ads: [ad('a2', '圖 B')], metrics: metrics(2000, 40, 100) },
+                ],
+            }],
+        });
+        renderWithOutlet(<AdLibrary />, { outletContext });
+
+        fireEvent.click(await screen.findByRole('tab', { name: '比對' }));
+        expect(await screen.findByText('固定的那段文案')).toBeInTheDocument();
+        expect(getComparisons).toHaveBeenCalledWith({ accountId: 'act_001', scope: 'adset', relation: '' });
+        expect(screen.getByText('成效為廣告層級數字')).toBeInTheDocument();
+        const best = screen.getByText('CTR 最高').closest('.adlib-cmp-variant');
+        expect(best).toHaveTextContent('圖 B');
+
+        fireEvent.click(screen.getByRole('button', { name: '查看所有使用此文案的廣告' }));
+        await waitFor(() => expect(listAds).toHaveBeenLastCalledWith(expect.objectContaining({ copyKey: 'b'.repeat(64) })));
+        expect(screen.getByRole('tab', { name: '廣告' })).toHaveAttribute('aria-selected', 'true');
     });
 });
