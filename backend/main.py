@@ -213,6 +213,7 @@ from routers import debug, analytics_ai
 from modules.fb_ads.metrics_router import router as metrics_router
 from modules.meta_andromeda.router import router as meta_andromeda_router
 from modules.contribution import router as contribution_router
+from modules.ad_library.router import router as ad_library_router
 from modules.ga4.router import router as ga4_router
 from modules.ga4.insights_router import router as ga4_insights_router
 from modules.gsc.router import router as gsc_router
@@ -251,6 +252,7 @@ app.include_router(reports_router)
 app.include_router(line_router)
 app.include_router(meta_andromeda_router, prefix="/api/meta-andromeda", tags=["meta_andromeda"])
 app.include_router(contribution_router, prefix="/api/contribution", tags=["contribution"])
+app.include_router(ad_library_router)
 
 # Metrics Registry (4.6)
 app.include_router(metrics_router)

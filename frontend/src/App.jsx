@@ -34,6 +34,7 @@ const MetaAndromedaMonitoring = lazy(() => import('./pages/MetaAndromedaMonitori
 const MetaAndromedaRelease = lazy(() => import('./pages/MetaAndromedaRelease'));
 const MetaAndromedaScoreLab = lazy(() => import('./pages/MetaAndromedaScoreLab'));
 const ContributionAnalysis = lazy(() => import('./pages/ContributionAnalysis'));
+const AdLibrary = lazy(() => import('./pages/AdLibrary'));
 const PrivacyPolicy = lazy(() => import('./pages/PrivacyPolicy'));
 const TermsOfService = lazy(() => import('./pages/TermsOfService'));
 
@@ -122,7 +123,8 @@ function AppInner() {
                       <GA4Insights />
                     </ErrorBoundary>
                   </ProtectedModule>
-                } />`r`n                <Route path="/meta-andromeda" element={
+                } />
+                <Route path="/meta-andromeda" element={
                   <ProtectedModule module="meta_andromeda">
                     <ErrorBoundary>
                       <MetaAndromeda />
@@ -161,6 +163,13 @@ function AppInner() {
                   <ProtectedModule module="contribution">
                     <ErrorBoundary>
                       <ContributionAnalysis />
+                    </ErrorBoundary>
+                  </ProtectedModule>
+                } />
+                <Route path="/ad-library" element={
+                  <ProtectedModule module="ad_library">
+                    <ErrorBoundary>
+                      <AdLibrary />
                     </ErrorBoundary>
                   </ProtectedModule>
                 } />

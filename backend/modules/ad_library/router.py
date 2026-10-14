@@ -1,0 +1,314 @@
+"""
+Ad Library Module - Router（docs/73）
+
+端點 async/sync 慣例（同 contribution，2026-07-08 事故修法）：
+  - 走同步 SQLAlchemy 的端點一律宣告為 `def`（FastAPI 丟 threadpool）
+  - 只有需要 await 外部 I/O 的端點（/accounts、/media）維持 `async def`，
+    且在等待外部 I/O 前先釋放 DB session
+"""
+
+from __future__ import annotations
+
+import asyncio
+import csv
+import io
+import logging
+
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query, status
+from fastapi.responses import StreamingResponse
+
+from database import get_db
+from database.models.team import Team
+from modules.auth.dependencies import get_current_team, get_current_user
+from modules.fb_ads import accounts_service
+
+from . import repository
+from .dependencies import (
+    accessible_account_ids,
+    require_ad_library_module,
+    resolve_token_scope,
+    verify_account_access_or_403,
+    verify_resource_access_or_404,
+)
+from .media import build_media_response
+from .schemas import (
+    AdLibraryItemResponse,
+    AdLibraryListResponse,
+    RefreshJobResponse,
+    RefreshRequest,
+)
+from .service import run_refresh
+
+logger = logging.getLogger(__name__)
+
+router = APIRouter(
+    prefix="/api/ad-library",
+    tags=["ad_library"],
+    dependencies=[Depends(require_ad_library_module)],
+)
+
+MAX_PAGE_SIZE = 100
+EXPORT_LIMIT = 5000
+
+
+def _job_to_response(job) -> RefreshJobResponse:
+    return RefreshJobResponse(
+        job_id=job.id,
+        account_id=job.account_id,
+        status=job.status,
+        ads_fetched=job.ads_fetched or 0,
+        media_stored=job.media_stored or 0,
+        error=job.error,
+        created_at=job.created_at,
+        started_at=job.started_at,
+        finished_at=job.finished_at,
+    )
+
+
+def _item_to_response(item) -> AdLibraryItemResponse:
+    return AdLibraryItemResponse(
+        id=item.id,
+        account_id=item.account_id,
+        ad_id=item.ad_id,
+        ad_name=item.ad_name,
+        campaign_id=item.campaign_id,
+        campaign_name=item.campaign_name,
+        adset_name=item.adset_name,
+        objective=item.objective,
+        effective_status=item.effective_status,
+        media_type=item.media_type,
+        primary_texts=item.primary_texts or [],
+        headlines=item.headlines or [],
+        descriptions=item.descriptions or [],
+        cta_types=item.cta_types or [],
+        link_url=item.link_url,
+        media=[
+            {"kind": m.get("kind") or "image", "asset_id": m.get("asset_id"), "fb_url": m.get("fb_url")}
+            for m in item.media or []
+        ],
+        preview_link=item.preview_link,
+        impressions=item.impressions or 0,
+        reach=item.reach or 0,
+        clicks=item.clicks or 0,
+        spend=item.spend or 0.0,
+        ctr=item.ctr or 0.0,
+        ad_created_at=item.ad_created_at,
+        ad_updated_at=item.ad_updated_at,
+        fetched_at=item.fetched_at,
+    )
+
+
+@router.get("/ping")
+def ping():
+    return {"module": "ad_library", "status": "ok"}
+
+
+@router.get("/accounts")
+async def list_accounts(
+    user=Depends(get_current_user),
+    team: Team | None = Depends(get_current_team),
+):
+    """本模組可用的廣告帳號（已套用團隊白名單）。
+
+    不直接依賴 fb_ads 的 /api/ad-accounts：只有 ad_library 權限、沒有 fb_ads
+    權限的使用者也要能選帳號。
+    """
+    scope = resolve_token_scope(user, team)
+    accounts, error = await accounts_service.get_all_ad_accounts(
+        user.google_id, team_id=scope["token_team_id"], strict_token=scope["strict_token"]
+    )
+    if (not accounts or error) and scope["fallback_team_id"]:
+        accounts, error = await accounts_service.get_all_ad_accounts(user.google_id, team_id=scope["fallback_team_id"])
+    if error:
+        raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=f"無法取得廣告帳戶：{error}")
+    allowed = await accessible_account_ids(user, team)
+    return [acc for acc in accounts or [] if acc.get("id") in allowed]
+
+
+@router.post("/refresh", response_model=RefreshJobResponse, status_code=status.HTTP_202_ACCEPTED)
+def start_refresh(
+    payload: RefreshRequest,
+    background_tasks: BackgroundTasks,
+    user=Depends(get_current_user),
+    team: Team | None = Depends(get_current_team),
+    db=Depends(get_db),
+):
+    account_id = payload.account_id
+    verify_account_access_or_403(account_id, team=team, user=user)
+
+    if repository.get_active_job(db, account_id):
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="此帳號正在刷新中，請稍候")
+
+    job = repository.create_job(
+        db, account_id=account_id, team_id=team.id if team else None, requested_by=user.id
+    )
+    response = _job_to_response(job)
+    background_tasks.add_task(
+        run_refresh,
+        job_id=job.id,
+        account_id=account_id,
+        google_id=user.google_id,
+        user_id=user.id,
+        **resolve_token_scope(user, team),
+    )
+    return response
+
+
+@router.get("/refresh/{job_id}", response_model=RefreshJobResponse)
+def get_refresh_job(
+    job_id: str,
+    user=Depends(get_current_user),
+    team: Team | None = Depends(get_current_team),
+    db=Depends(get_db),
+):
+    not_found = f"刷新任務 {job_id} 不存在"
+    job = repository.get_job(db, job_id)
+    if job is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=not_found)
+    verify_resource_access_or_404(job.account_id, team=team, user=user, not_found_detail=not_found)
+    return _job_to_response(job)
+
+
+@router.get("/ads", response_model=AdLibraryListResponse)
+def list_ads(
+    account_id: str = Query(...),
+    status_filter: str | None = Query(None, alias="status", pattern="^(active|paused|other)$"),
+    media_type: str | None = Query(None, pattern="^(image|video|carousel|dynamic)$"),
+    q: str | None = Query(None, max_length=200),
+    sort: str = Query("impressions", pattern="^(impressions|spend|ctr|created)$"),
+    order: str = Query("desc", pattern="^(asc|desc)$"),
+    page: int = Query(1, ge=1),
+    page_size: int = Query(24, ge=1, le=MAX_PAGE_SIZE),
+    user=Depends(get_current_user),
+    team: Team | None = Depends(get_current_team),
+    db=Depends(get_db),
+):
+    verify_account_access_or_403(account_id, team=team, user=user)
+    items, total = repository.list_items(
+        db,
+        account_id=account_id,
+        status=status_filter,
+        media_type=media_type,
+        q=q,
+        sort=sort,
+        order=order,
+        page=page,
+        page_size=page_size,
+    )
+    latest_job = repository.get_latest_job(db, account_id)
+    return AdLibraryListResponse(
+        items=[_item_to_response(i) for i in items],
+        total=total,
+        page=page,
+        page_size=page_size,
+        latest_job=_job_to_response(latest_job) if latest_job else None,
+    )
+
+
+@router.get("/ads/export")
+def export_ads(
+    account_id: str = Query(...),
+    status_filter: str | None = Query(None, alias="status", pattern="^(active|paused|other)$"),
+    media_type: str | None = Query(None, pattern="^(image|video|carousel|dynamic)$"),
+    q: str | None = Query(None, max_length=200),
+    sort: str = Query("impressions", pattern="^(impressions|spend|ctr|created)$"),
+    order: str = Query("desc", pattern="^(asc|desc)$"),
+    user=Depends(get_current_user),
+    team: Team | None = Depends(get_current_team),
+    db=Depends(get_db),
+):
+    verify_account_access_or_403(account_id, team=team, user=user)
+    items, _total = repository.list_items(
+        db,
+        account_id=account_id,
+        status=status_filter,
+        media_type=media_type,
+        q=q,
+        sort=sort,
+        order=order,
+        page=1,
+        page_size=EXPORT_LIMIT,
+    )
+
+    buf = io.StringIO()
+    buf.write("﻿")  # UTF-8 BOM，Excel 直接開啟不亂碼
+    writer = csv.writer(buf)
+    writer.writerow([
+        "廣告 ID", "廣告名稱", "行銷活動", "狀態", "素材類型", "主要文字", "標題", "說明",
+        "CTA", "連結", "曝光", "觸及", "點擊", "花費", "CTR(%)", "建立時間",
+    ])
+    for item in items:
+        writer.writerow([
+            item.ad_id,
+            _csv_safe(item.ad_name),
+            _csv_safe(item.campaign_name),
+            item.effective_status or "",
+            item.media_type,
+            _csv_safe("\n---\n".join(item.primary_texts or [])),
+            _csv_safe(" / ".join(item.headlines or [])),
+            _csv_safe(" / ".join(item.descriptions or [])),
+            " / ".join(item.cta_types or []),
+            _csv_safe(item.link_url),
+            item.impressions or 0,
+            item.reach or 0,
+            item.clicks or 0,
+            round(item.spend or 0.0, 2),
+            round(item.ctr or 0.0, 2),
+            item.ad_created_at.isoformat() if item.ad_created_at else "",
+        ])
+
+    filename = f"ad_library_{account_id}.csv"
+    return StreamingResponse(
+        iter([buf.getvalue()]),
+        media_type="text/csv; charset=utf-8",
+        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+    )
+
+
+def _csv_safe(value) -> str:
+    """防 CSV 公式注入：以 = + - @ 開頭的文字前置單引號。"""
+    s = "" if value is None else str(value)
+    if s and s[0] in ("=", "+", "-", "@", "\t", "\r"):
+        return "'" + s
+    return s
+
+
+@router.get("/ads/{item_id}", response_model=AdLibraryItemResponse)
+def get_ad(
+    item_id: str,
+    user=Depends(get_current_user),
+    team: Team | None = Depends(get_current_team),
+    db=Depends(get_db),
+):
+    not_found = f"廣告 {item_id} 不存在"
+    item = repository.get_item(db, item_id)
+    if item is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=not_found)
+    verify_resource_access_or_404(item.account_id, team=team, user=user, not_found_detail=not_found)
+    return _item_to_response(item)
+
+
+@router.get("/media/{asset_id}")
+async def get_media(
+    asset_id: str,
+    user=Depends(get_current_user),
+    team: Team | None = Depends(get_current_team),
+    db=Depends(get_db),
+):
+    not_found = "素材不存在"
+    found = await asyncio.to_thread(repository.find_media_owner, db, asset_id)
+    if found is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=not_found)
+    owners, asset = found
+    asset_uri = asset.asset_uri
+    storage_backend = asset.storage_backend
+    # 已取得所需 metadata，先釋放 DB 連線再做跨服務代理（同 meta_andromeda preview_asset，
+    # 2026-08-07 連線池事故）；asset 純量欄位已載入，關閉後仍可存取
+    await asyncio.to_thread(db.close)
+
+    if not owners & await accessible_account_ids(user, team):
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=not_found)
+
+    response = await build_media_response(asset_uri=asset_uri, storage_backend=storage_backend, asset=asset)
+    response.headers["Cache-Control"] = "private, max-age=86400"
+    return response

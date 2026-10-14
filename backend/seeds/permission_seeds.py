@@ -6,6 +6,7 @@ MODULES = [
     {"key": "ga4", "name": "Google Analytics 4", "icon": "📈", "sort_order": 3, "enabled": True},
     {"key": "meta_andromeda", "name": "Meta Andromeda", "icon": "🛰️", "sort_order": 4, "enabled": True},
     {"key": "contribution", "name": "貢獻分析", "icon": "📊", "sort_order": 5, "enabled": True},
+    {"key": "ad_library", "name": "廣告文案庫", "icon": "🗂️", "sort_order": 6, "enabled": True},
 ]
 
 PERMISSIONS = {
@@ -34,6 +35,8 @@ PERMISSIONS = {
     # 貢獻分析模組（docs/21）：採 module-only access，不分細項權限
     #（同 meta_andromeda；細項權限待第 2 波依使用回饋再拆分）。
     "contribution": [],
+    # 廣告文案庫模組（docs/73）：module-only access，不分細項權限。
+    "ad_library": [],
 }
 
 ROLES = [
