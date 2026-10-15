@@ -36,6 +36,7 @@ from .data_source import (
     fetch_adsets,
     fetch_ads,
     fetch_campaigns,
+    fetch_video_pictures,
 )
 from .media import store_image
 from .normalizer import normalize_ad, normalize_adset, normalize_campaign
@@ -233,8 +234,25 @@ async def run_refresh(
         async with httpx.AsyncClient(timeout=MEDIA_DOWNLOAD_TIMEOUT) as media_client:
             resolver = _MediaResolver(known=known, uploaded_by=user_id, client=media_client)
 
+            video_pictures: dict[str, str] = {}
+
+            async def fill_video_thumbnails(rows: list[dict]) -> None:
+                """asset_feed_spec 沒帶縮圖的影片，補抓 picture 後交給 resolver 落地。"""
+                missing = sorted({
+                    m["video_id"] for row in rows for m in row["media"]
+                    if m.get("kind") == "video_thumbnail" and m.get("video_id") and not m.get("fb_url")
+                    and m["video_id"] not in video_pictures
+                })
+                if missing:
+                    video_pictures.update(await fetch_video_pictures(missing, user_id=google_id, **token))
+                for row in rows:
+                    for m in row["media"]:
+                        if m.get("kind") == "video_thumbnail" and not m.get("fb_url") and m.get("video_id"):
+                            m["fb_url"] = video_pictures.get(m["video_id"])
+
             async def on_ads(ads: list[dict]) -> None:
                 rows = [normalize_ad(ad, account_id=account_id) for ad in ads if ad.get("id")]
+                await fill_video_thumbnails(rows)
                 await asyncio.gather(*(resolver.resolve(m) for row in rows for m in row["media"]))
                 await _db(repository.upsert_items, rows)
                 counts["ads"] += len(rows)

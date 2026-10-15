@@ -262,6 +262,44 @@ async def fetch_adsets(
 
 
 TOKEN_ERROR_CODES = {190}
+VIDEO_IDS_PER_CALL = 50
+
+
+async def fetch_video_pictures(
+    video_ids: list[str],
+    *,
+    user_id: str,
+    team_id: str | None,
+    strict_token: bool,
+    client: httpx.AsyncClient | None = None,
+) -> dict[str, str]:
+    """動態素材的 asset_feed_spec 不一定帶影片縮圖：以 `/?ids=...&fields=picture`
+    批次補抓（每次 50 支）。失敗不影響刷新，回傳拿得到的 {video_id: 縮圖網址}。
+    """
+    if not video_ids:
+        return {}
+    headers = await _get_headers(user_id, team_id, strict_token)
+    own_client = client is None
+    http = client or httpx.AsyncClient(timeout=TIMEOUT)
+    out: dict[str, str] = {}
+    try:
+        for start in range(0, len(video_ids), VIDEO_IDS_PER_CALL):
+            chunk = video_ids[start:start + VIDEO_IDS_PER_CALL]
+            try:
+                data = await _get_json(http, f"{BASE_URL}/", headers, {"ids": ",".join(chunk), "fields": "picture"})
+            except AdLibraryAPIError:
+                continue
+            if "error" in data:
+                logger.warning("[AdLibrary] video pictures skipped: code=%s", (data["error"] or {}).get("code"))
+                continue
+            for video_id, node in data.items():
+                picture = (node or {}).get("picture") if isinstance(node, dict) else None
+                if picture:
+                    out[str(video_id)] = picture
+    finally:
+        if own_client:
+            await http.aclose()
+    return out
 
 
 async def fetch_ad_asset_insights(

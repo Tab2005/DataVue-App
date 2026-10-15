@@ -88,6 +88,7 @@ def test_ad_library_prompt_branch_contains_key_rules():
     assert "settings_available" in prompt
     assert "勝負結論只能來自" in prompt  # 2026-10-15 試跑後：不得比較文案與素材都不同的廣告
     assert "極高機率" in prompt  # 禁止斷定用語
+    assert "錯誤示範" in prompt and "正確示範" in prompt  # 第二次試跑後加強 7a
     assert "春季活動" in captured["user_message"]
 
 

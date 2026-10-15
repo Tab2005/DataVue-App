@@ -334,3 +334,55 @@ def test_parse_skips_catalog_template_text_assets():
         {"title_asset": {"text": "立即購買"}, "impressions": "5"},
     ])
     assert [e["text_value"] for e in entries] == ["立即購買"] and skipped == 1
+
+
+# ── 2026-10-15 第二次試跑後：影片縮圖補抓 ───────────────────────────────
+@pytest.mark.asyncio
+async def test_fetch_video_pictures_batches_and_skips_errors():
+    ids = [f"v{i}" for i in range(51)]
+    client = _FakeClient([
+        {f"v{i}": {"picture": f"https://cdn/{i}.jpg", "id": f"v{i}"} for i in range(50)},
+        {"error": {"code": 100, "message": "bad"}},
+    ])
+    with patch.object(data_source, "get_headers", return_value={"Authorization": "Bearer x"}):
+        pictures = await data_source.fetch_video_pictures(
+            ids, user_id="g", team_id=None, strict_token=True, client=client,
+        )
+    assert len(pictures) == 50 and pictures["v0"] == "https://cdn/0.jpg"
+    assert client.params[0]["fields"] == "picture"
+    assert client.params[0]["ids"].count(",") == 49
+    assert client.params[1]["ids"] == "v50"
+
+
+@pytest.mark.asyncio
+async def test_run_refresh_fills_missing_video_thumbnails():
+    fake_db = _FakeDb()
+    ad = {
+        "id": "a1",
+        "creative": {"asset_feed_spec": {
+            "bodies": [{"text": "文案"}],
+            "videos": [{"video_id": "vid1"}, {"video_id": "vid2", "thumbnail_url": "https://cdn/has.jpg"}],
+        }},
+    }
+    pictures = AsyncMock(return_value={"vid1": "https://cdn/vid1.jpg"})
+    download = AsyncMock(return_value=(b"img", "image/jpeg"))
+    store = AsyncMock(side_effect=lambda **kw: {"asset_id": f"asset_{kw['filename_stem']}", "asset_uri": "u"})
+    patches = _base_patches(fake_db, AsyncMock(return_value={}))
+    patches[4] = patch.object(service, "fetch_ads", _stage([[ad]]))
+    patches += [
+        patch.object(service, "fetch_video_pictures", pictures),
+        patch.object(service, "download_image", download),
+        patch.object(service, "store_image", store),
+    ]
+    _start = [p.start() for p in patches]  # noqa: F841
+    try:
+        await service.run_refresh(**_refresh_kwargs())
+    finally:
+        for p in patches:
+            p.stop()
+
+    assert pictures.await_args.args[0] == ["vid1"]  # 已有縮圖的 vid2 不重抓
+    rows = [args[0] for name, args, _ in fake_db.calls if name == "upsert_items"][0]
+    media = {m["video_id"]: m for m in rows[0]["media"]}
+    assert media["vid1"]["fb_url"] == "https://cdn/vid1.jpg"
+    assert media["vid1"]["asset_id"]

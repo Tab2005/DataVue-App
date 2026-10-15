@@ -143,6 +143,7 @@ def test_ai_context_campaign_uses_refs_and_includes_comparisons(ad_library_clien
     assert ai_context.ATTRIBUTION_NOTE in notes
     assert ai_context.MISSING_SETTINGS_NOTE in notes
     assert ai_context.ASSET_RESULTS_NOTE in notes
+    assert ai_context.COMPARISON_SCOPE_NOTE in notes
 
 
 @pytest.mark.integration

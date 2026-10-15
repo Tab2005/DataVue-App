@@ -28,6 +28,10 @@ ASSET_RESULTS_NOTE = (
     "asset_results 為 Meta 依元件拆分的動態素材成效，可直接比較同一則廣告內各元件；"
     "Meta 只提供曝光、點擊、花費、觸及，ctr 為 clicks ÷ impressions × 100。"
 )
+COMPARISON_SCOPE_NOTE = (
+    "只有 comparisons[] 內的組（固定一個變因）與 asset_results 可以下勝負結論；"
+    "其他廣告之間文案與素材都不同（或為素材無法識別的商品目錄廣告），只能排序描述，不能判斷優劣原因。"
+)
 MISSING_SETTINGS_NOTE = "部分行銷活動或廣告組合的設定尚未抓取（settings_available=false），請勿推論其設定。"
 METRICS_NOTE = "成效為帳號建立以來的累計數字（date_preset=maximum），spend 為帳號幣別的一般金額。"
 
@@ -154,7 +158,7 @@ def build_campaign_context(
         contents: {content_id: AdLibraryContent}
         asset_insights: [AdLibraryAssetInsight]（此行銷活動內廣告的元件成效）
     """
-    notes = [METRICS_NOTE, ATTRIBUTION_NOTE]
+    notes = [METRICS_NOTE, ATTRIBUTION_NOTE, COMPARISON_SCOPE_NOTE]
     refs = _RefTable(contents)
 
     items = sorted(items, key=lambda i: i.spend or 0.0, reverse=True)
