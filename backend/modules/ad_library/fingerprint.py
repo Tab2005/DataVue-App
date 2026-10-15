@@ -12,6 +12,8 @@ Ad Library - 內容元件指紋（docs/74 第二節）
 - 任何一個素材取不到識別（沒有 image_hash / video_id）→ 該廣告 `media_key`
   為 None，不參與素材比對，避免以會過期的 CDN URL 誤判。
 - 輪播保留卡片順序；動態素材的順序由系統決定，排序後再組合。
+- 只有商品目錄變數（例如 `{{product.name}}`）的文字不算文案：目錄廣告的實際
+  文字由商品決定，若納入會讓所有目錄廣告被判為「同文案」。
 """
 
 from __future__ import annotations
@@ -25,6 +27,7 @@ TEXT_KINDS = ("primary_text", "headline", "description")
 MEDIA_KINDS = ("image", "video")
 _TEXT_SOURCES = {"primary_text": "primary_texts", "headline": "headlines", "description": "descriptions"}
 _BLANK_LINES = re.compile(r"\n{3,}")
+_TEMPLATE_ONLY = re.compile(r"^(\{\{[^{}]+\}\}\s*)+$")
 
 
 def normalize_text(value: str | None) -> str:
@@ -35,6 +38,10 @@ def normalize_text(value: str | None) -> str:
     text = "\n".join(line.rstrip() for line in text.split("\n"))
     text = _BLANK_LINES.sub("\n\n", text)
     return text.strip()
+
+
+def is_template_only(text: str) -> bool:
+    return bool(_TEMPLATE_ONLY.match(text))
 
 
 def _sha(value: str) -> str:
@@ -53,7 +60,13 @@ def _media_component(entry: dict) -> dict | None:
         video_id = entry.get("video_id")
         if not video_id:
             return None
-        return {"kind": "video", "fingerprint": f"vid:{video_id}", "video_id": str(video_id)}
+        # asset_id 為影片縮圖的落地素材，供元件成效面板顯示
+        return {
+            "kind": "video",
+            "fingerprint": f"vid:{video_id}",
+            "video_id": str(video_id),
+            "asset_id": entry.get("asset_id"),
+        }
     image_hash = entry.get("image_hash")
     if not image_hash:
         return None
@@ -84,7 +97,7 @@ def extract_components(item: dict[str, Any]) -> dict[str, Any]:
         fps: list[str] = []
         for value in item.get(_TEXT_SOURCES[kind]) or []:
             text = normalize_text(value)
-            if not text:
+            if not text or is_template_only(text):
                 continue
             fp = text_fingerprint(text)
             if fp in seen:

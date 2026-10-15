@@ -70,7 +70,7 @@ const STYLES = `
 .adlib-tab[aria-selected="true"] { color: var(--accent-primary); border-bottom-color: var(--accent-primary); font-weight: 600; }
 `;
 
-const MediaThumb = ({ media, mediaType, previewLink, language }) => {
+const MediaThumb = ({ media, mediaType, previewLink, language, catalog }) => {
     const first = media?.[0];
     const [src, setSrc] = useState(null);
     const [failed, setFailed] = useState(false);
@@ -102,7 +102,14 @@ const MediaThumb = ({ media, mediaType, previewLink, language }) => {
     const body = displaySrc && !failed ? (
         <img src={displaySrc} alt="" loading="lazy" onError={() => setFailed(true)} />
     ) : (
-        <FiImage size={36} aria-label={t(language, 'No preview', '無預覽')} />
+        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 8, padding: 16, textAlign: 'center' }}>
+            <FiImage size={36} aria-hidden="true" />
+            <span style={{ fontSize: '0.78rem' }}>
+                {catalog
+                    ? t(language, 'Catalog ad: media comes from the product catalog', '商品目錄廣告：素材來自商品目錄')
+                    : t(language, 'No preview', '無預覽')}
+            </span>
+        </div>
     );
 
     return (
@@ -161,7 +168,8 @@ const AdCard = ({ item, language, onFilterKey }) => {
 
     return (
         <article className="adlib-card">
-            <MediaThumb media={item.media} mediaType={item.media_type} previewLink={item.preview_link} language={language} />
+            <MediaThumb media={item.media} mediaType={item.media_type} previewLink={item.preview_link} language={language}
+                        catalog={[...(item.primary_texts || []), ...(item.headlines || [])].some((s) => s.includes('{{product.'))} />
             <div style={{ padding: 16, display: 'flex', flexDirection: 'column', gap: 10, flex: 1 }}>
                 <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
                     {status && (

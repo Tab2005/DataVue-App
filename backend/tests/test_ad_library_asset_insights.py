@@ -312,3 +312,25 @@ def test_ad_asset_insights_of_other_account_returns_404(ad_library_client, db):
         missing = ad_library_client.get("/api/ad-library/ads/nope/asset-insights")
     assert resp.status_code == 404
     assert missing.status_code == 404
+
+
+@pytest.mark.integration
+def test_ad_asset_insights_video_uses_ad_thumbnail(ad_library_client, db):
+    row = _dynamic_row("act_mine", "v1ad")
+    row["media"] = [{"kind": "video_thumbnail", "fb_url": None, "image_hash": "th", "video_id": "vid9",
+                     "asset_id": "asset_thumb9"}]
+    repository.upsert_items(db, [row])
+    videos, _ = parse_asset_rows("video_asset", [{"video_asset": {"video_id": "vid9", "id": "1"}, "impressions": "10"}])
+    repository.replace_asset_insights(db, "act_mine", "v1ad", videos)
+    item = db.query(AdLibraryItem).filter_by(account_id="act_mine", ad_id="v1ad").one()
+    with _mine():
+        resp = ad_library_client.get(f"/api/ad-library/ads/{item.id}/asset-insights")
+    assert resp.json()["entries"]["video"][0]["asset_id"] == "asset_thumb9"
+
+
+def test_parse_skips_catalog_template_text_assets():
+    entries, skipped = parse_asset_rows("title_asset", [
+        {"title_asset": {"text": "{{product.name}}"}, "impressions": "10"},
+        {"title_asset": {"text": "立即購買"}, "impressions": "5"},
+    ])
+    assert [e["text_value"] for e in entries] == ["立即購買"] and skipped == 1

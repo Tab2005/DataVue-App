@@ -305,3 +305,24 @@ def test_content_of_other_account_returns_404(ad_library_client, db):
         missing = ad_library_client.get("/api/ad-library/contents/nope")
     assert resp.status_code == 404
     assert missing.status_code == 404
+
+
+# ── 2026-10-15 正式環境試跑後的修正 ─────────────────────────────────────
+def test_catalog_template_texts_do_not_count_as_copy():
+    """目錄廣告只有 {{product.name}} 等變數時不應被判為「同文案」。"""
+    template_only = extract_components(_item(texts=[], headlines=["{{product.name}}"]))
+    assert template_only["copy_key"] is None
+    assert extract_components(_item(texts=["{{product.name}} {{product.price}}"]))["copy_key"] is None
+    # 真實文案 + 目錄變數標題：只以真實文案判定
+    a = extract_components(_item(texts=["限時優惠"], headlines=["{{product.name}}"]))["copy_key"]
+    b = extract_components(_item(texts=["限時優惠"], headlines=[]))["copy_key"]
+    assert a == b is not None
+    # 變數夾在一般文字中仍是一般文案
+    assert extract_components(_item(texts=["買 {{product.name}} 送贈品"]))["copy_key"] is not None
+
+
+def test_video_component_keeps_thumbnail_asset():
+    video = {"kind": "video_thumbnail", "fb_url": "https://cdn/t.jpg", "image_hash": "thumb", "video_id": "v1",
+             "asset_id": "asset_thumb"}
+    components = extract_components(_item(media=[video], media_type="video"))["components"]
+    assert [c for c in components if c["kind"] == "video"][0]["asset_id"] == "asset_thumb"

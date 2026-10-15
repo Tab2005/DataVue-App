@@ -86,6 +86,8 @@ def test_ad_library_prompt_branch_contains_key_rules():
     assert "1,000" in prompt  # 樣本量規則
     assert "其他條件相同" in prompt  # 成效歸屬規則
     assert "settings_available" in prompt
+    assert "勝負結論只能來自" in prompt  # 2026-10-15 試跑後：不得比較文案與素材都不同的廣告
+    assert "極高機率" in prompt  # 禁止斷定用語
     assert "春季活動" in captured["user_message"]
 
 

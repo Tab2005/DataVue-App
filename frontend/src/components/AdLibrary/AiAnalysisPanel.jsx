@@ -14,6 +14,22 @@ import { FiCpu, FiRefreshCw, FiX } from 'react-icons/fi';
 import { getAiAnalysis, streamAiAnalysis } from '../../services/adLibraryService';
 import { formatNumber, t } from './labels';
 
+// 表格放進可橫向捲動的容器；數字不在中間斷行，長網址等文字段落才允許任意斷行
+const REPORT_STYLES = `
+.adlib-ai-report p, .adlib-ai-report li { overflow-wrap: anywhere; }
+.adlib-ai-report .adlib-ai-table { overflow-x: auto; margin: 0.6rem 0 0.8rem; }
+.adlib-ai-report .adlib-ai-table table { width: auto; min-width: 100%; margin: 0; }
+.adlib-ai-report th { white-space: nowrap; }
+.adlib-ai-report td { overflow-wrap: normal; word-break: normal; min-width: 3.5em; }
+`;
+
+const MARKDOWN_COMPONENTS = {
+    // eslint-disable-next-line no-unused-vars
+    table: ({ node, ...props }) => (
+        <div className="adlib-ai-table"><table {...props} /></div>
+    ),
+};
+
 const formatTime = (s) => (s ? new Date(`${s}Z`).toLocaleString('zh-TW') : '—');
 
 const AiAnalysisPanel = ({ accountId, campaign, language, onClose }) => {
@@ -143,8 +159,9 @@ const AiAnalysisPanel = ({ accountId, campaign, language, onClose }) => {
                     )}
 
                     {content ? (
-                        <div className="report-ai-content" style={{ color: 'var(--text-primary)', lineHeight: 1.7, overflowWrap: 'anywhere' }}>
-                            <ReactMarkdown remarkPlugins={[remarkGfm]}>{content}</ReactMarkdown>
+                        <div className="report-ai-content adlib-ai-report" style={{ color: 'var(--text-primary)', lineHeight: 1.7 }}>
+                            <style>{REPORT_STYLES}</style>
+                            <ReactMarkdown remarkPlugins={[remarkGfm]} components={MARKDOWN_COMPONENTS}>{content}</ReactMarkdown>
                         </div>
                     ) : (
                         meta && !noKey && !streaming && (

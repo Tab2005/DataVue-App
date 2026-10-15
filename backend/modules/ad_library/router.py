@@ -510,6 +510,10 @@ def get_ad_asset_insights(
     verify_resource_access_or_404(item.account_id, team=team, user=user, not_found_detail=not_found)
 
     entries: dict[str, list[AssetInsightEntry]] = {kind: [] for kind in ASSET_KIND_ORDER}
+    # 影片元件沒有自己的圖，借用廣告素材中同一支影片的縮圖
+    video_thumbs = {
+        m.get("video_id"): m.get("asset_id") for m in item.media or [] if m.get("video_id") and m.get("asset_id")
+    }
     fetched_at = None
     for insight, content in repository.asset_insights_for_ad(db, item.account_id, item.ad_id):
         fetched_at = max(fetched_at, insight.fetched_at) if fetched_at else insight.fetched_at
@@ -519,7 +523,7 @@ def get_ad_asset_insights(
             text_value=content.text_value,
             image_hash=content.image_hash,
             video_id=content.video_id,
-            asset_id=content.asset_id,
+            asset_id=content.asset_id or video_thumbs.get(content.video_id),
             impressions=insight.impressions or 0,
             reach=insight.reach or 0,
             clicks=insight.clicks or 0,

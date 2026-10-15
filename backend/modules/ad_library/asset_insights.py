@@ -19,7 +19,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from .fingerprint import normalize_text, text_fingerprint
+from .fingerprint import is_template_only, normalize_text, text_fingerprint
 
 # breakdown → (元件 kind, 該廣告需要有哪種內容才值得查)
 BREAKDOWNS: dict[str, str] = {
@@ -67,7 +67,7 @@ def _component(breakdown: str, asset: dict) -> dict | None:
     kind = BREAKDOWNS[breakdown]
     if kind in ("primary_text", "headline", "description"):
         text = normalize_text(asset.get("text"))
-        if not text:
+        if not text or is_template_only(text):
             return None
         return {"kind": kind, "fingerprint": text_fingerprint(text), "text_value": text}
     if kind == "image":

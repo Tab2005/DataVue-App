@@ -311,4 +311,29 @@ describe('AdLibrary', () => {
         expect(await screen.findByText('加碼 P1')).toBeInTheDocument();
         await waitFor(() => expect(getAiAnalysis).toHaveBeenCalledTimes(2));
     });
+    it('labels catalog ads that have no previewable media', async () => {
+        listAds.mockResolvedValue({
+            items: [{ ...sampleItem, id: 'ali_cat', primary_texts: [], headlines: ['{{product.name}}'], media: [] }],
+            total: 1, page: 1, page_size: 24, latest_job: null,
+        });
+        renderWithOutlet(<AdLibrary />, { outletContext });
+        expect(await screen.findByText('商品目錄廣告：素材來自商品目錄')).toBeInTheDocument();
+    });
+
+    it('wraps AI report tables in a horizontal scroll container', async () => {
+        listAds.mockResolvedValue({ items: [], total: 0, page: 1, page_size: 24, latest_job: null });
+        getTree.mockResolvedValue(treeWithCampaign);
+        getAiAnalysis.mockResolvedValue(aiMeta({
+            analysis: {
+                id: 'alai_3', model: 'm', status: 'succeeded', context_hash: 'h', context_chars: 1, created_at: '2026-10-15T01:00:00',
+                content: '## 文案與素材測試\n\n| 版本 | 曝光 |\n|---|---|\n| P1 | 19,799 |\n',
+            },
+        }));
+        renderWithOutlet(<AdLibrary />, { outletContext });
+
+        fireEvent.click(await screen.findByRole('tab', { name: '結構' }));
+        fireEvent.click(await screen.findByRole('button', { name: 'AI 分析：春季活動' }));
+        const cell = await screen.findByText('19,799');
+        expect(cell.closest('.adlib-ai-table')).not.toBeNull();
+    });
 });
