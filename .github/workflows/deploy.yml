@@ -4,9 +4,16 @@ name: Deploy (Tencent Cloud)
 # 需要的 repository secrets：
 #   DEPLOY_HOST     主機 IP
 #   DEPLOY_SSH_KEY  部署用 SSH 私鑰（對應主機 ubuntu 帳號 authorized_keys）
-# 切換到騰訊雲之前只手動觸發；正式切換後再加上 push: branches: [main]
+# 2026-11-15 已從 Zeabur 切換到騰訊雲 sitetegy-01：push 到 main 自動部署，也可手動觸發
 
 on:
+  push:
+    branches: [main]
+    paths-ignore:
+      - "docs/**"
+      - "documentation/**"
+      - "**/*.md"
+      - ".github/workflows/security-review.yml"
   workflow_dispatch:
     inputs:
       ssh_check_only:
@@ -106,7 +113,9 @@ jobs:
           set -euo pipefail
           cd /opt/datavue
           echo "$GHCR_TOKEN" | docker login ghcr.io -u "$GHCR_USER" --password-stdin
-          export IMAGE_TAG COMMIT_REF="$IMAGE_TAG"
+          # 寫入 .env，之後在主機上手動 docker compose up 也會沿用這次部署的版本
+          if grep -q '^IMAGE_TAG=' .env; then sed -i "s/^IMAGE_TAG=.*/IMAGE_TAG=$IMAGE_TAG/" .env; else printf '\nIMAGE_TAG=%s\n' "$IMAGE_TAG" >> .env; fi
+          export IMAGE_TAG
           docker compose -f docker-compose.prod.yml pull
           docker compose -f docker-compose.prod.yml up -d --remove-orphans
           docker logout ghcr.io
