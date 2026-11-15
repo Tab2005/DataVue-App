@@ -66,7 +66,8 @@ services:
     environment:
       <<: *backend-env
       SERVICE_ROLE: worker
-      ENABLE_REPORT_SCHEDULER: "true"
+      # 由 /opt/datavue/.env 控制；切換前設為 false，避免與 Zeabur 重複發送報表／通知
+      ENABLE_REPORT_SCHEDULER: ${ENABLE_REPORT_SCHEDULER:-true}
       DB_POOL_SIZE: "20"
       DB_MAX_OVERFLOW: "20"
     mem_limit: 1g
