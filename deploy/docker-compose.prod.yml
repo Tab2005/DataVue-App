@@ -11,7 +11,6 @@
 # 常用指令：
 #   docker compose -f docker-compose.prod.yml up -d
 #   docker compose -f docker-compose.prod.yml logs -f --tail 100 backend
-#   啟用獨立 worker：docker compose -f docker-compose.prod.yml --profile worker up -d
 
 name: datavue
 
@@ -19,6 +18,7 @@ x-backend: &backend
   image: ghcr.io/tab2005/datavue-backend:${IMAGE_TAG:-latest}
   env_file: .env
   environment: &backend-env
+    SERVICE_ROLE: web
     DATABASE_URL: postgresql://datavue:${POSTGRES_PASSWORD}@postgres:5432/datavue
     REDIS_URL: redis://redis:6379/0
     META_ANDROMEDA_STORAGE_ROOT: /app/storage/meta_andromeda
@@ -60,14 +60,15 @@ services:
     <<: *backend
     mem_limit: 1536m
 
-  # 獨立 Meta Andromeda worker（docs/24 Wave 2），預設不啟動
+  # 獨立 Meta Andromeda worker（docs/24 Wave 2），設定比照 Zeabur 的 meta-andromeda-worker
   worker:
     <<: *backend
     environment:
       <<: *backend-env
       SERVICE_ROLE: worker
-    profiles:
-      - worker
+      ENABLE_REPORT_SCHEDULER: "true"
+      DB_POOL_SIZE: "20"
+      DB_MAX_OVERFLOW: "20"
     mem_limit: 1g
 
   postgres:
@@ -77,7 +78,7 @@ services:
       POSTGRES_DB: datavue
       POSTGRES_USER: datavue
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?請在 /opt/datavue/.env 設定 POSTGRES_PASSWORD}
-    command: postgres -c shared_buffers=256MB -c effective_cache_size=1GB -c max_connections=50
+    command: postgres -c shared_buffers=256MB -c effective_cache_size=1GB -c max_connections=100
     volumes:
       # PG 18 起官方映像的 PGDATA 改為 /var/lib/postgresql/18/docker，volume 需掛在上一層
       - pg_data:/var/lib/postgresql
