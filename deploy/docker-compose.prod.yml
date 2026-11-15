@@ -71,14 +71,16 @@ services:
     mem_limit: 1g
 
   postgres:
-    image: postgres:17-alpine
+    # 與 Zeabur 原資料庫同為 18（18.4），pg_dump / pg_restore 版本才對得上
+    image: postgres:18-alpine
     environment:
       POSTGRES_DB: datavue
       POSTGRES_USER: datavue
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?請在 /opt/datavue/.env 設定 POSTGRES_PASSWORD}
     command: postgres -c shared_buffers=256MB -c effective_cache_size=1GB -c max_connections=50
     volumes:
-      - pg_data:/var/lib/postgresql/data
+      # PG 18 起官方映像的 PGDATA 改為 /var/lib/postgresql/18/docker，volume 需掛在上一層
+      - pg_data:/var/lib/postgresql
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U datavue -d datavue"]
       interval: 5s
