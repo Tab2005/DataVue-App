@@ -1,0 +1,14 @@
+# /etc/systemd/system/cloudflare-only.service
+# 開機（Docker 建好 DOCKER-USER chain 之後）套用 deploy/edge/cloudflare-only.sh
+[Unit]
+Description=sitetegy-01: allow 80/443 only from Cloudflare
+After=docker.service network-online.target
+Wants=network-online.target
+Requires=docker.service
+
+[Service]
+Type=oneshot
+ExecStart=/opt/edge/cloudflare-only.sh on
+
+[Install]
+WantedBy=multi-user.target

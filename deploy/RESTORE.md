@@ -60,7 +60,9 @@ docker run --rm -v datavue_storage:/s alpine chown -R 995:995 /s
 
 1. 新主機依 sitetegy-01 的方式安裝 Docker，建立 `docker network create edge`
 2. 放回 `/opt/edge`（`deploy/edge/` + Origin 憑證）、`/opt/datavue/.env`、`/opt/backup/r2.env`
-3. `cd /opt/edge && docker compose up -d`
+3. `cd /opt/edge && docker compose up -d`；安裝 `ipset`，放回 `deploy/edge/cloudflare-only.sh` 到 `/opt/edge/`、
+   `cloudflare-only.service` / `.timer` 到 `/etc/systemd/system/`，`systemctl enable --now cloudflare-only.service cloudflare-only.timer`
+   （80/443 只接受 Cloudflare；要直接連主機 IP 測試時先 `sudo /opt/edge/cloudflare-only.sh off`）
 4. 手動觸發 GitHub Actions「Deploy (Tencent Cloud)」，或在主機 `docker compose -f docker-compose.prod.yml up -d`
 5. 依上面步驟還原資料庫與素材，安裝 `/etc/cron.d/datavue-backup`
 6. Cloudflare DNS 指向新 IP

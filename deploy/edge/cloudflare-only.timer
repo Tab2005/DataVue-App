@@ -1,0 +1,11 @@
+# /etc/systemd/system/cloudflare-only.timer
+# 每週更新 Cloudflare IP 清單
+[Unit]
+Description=Weekly refresh of Cloudflare IP allowlist
+
+[Timer]
+OnCalendar=Mon 04:17
+Persistent=true
+
+[Install]
+WantedBy=timers.target
