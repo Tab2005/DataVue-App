@@ -99,7 +99,7 @@ jobs:
 
       - name: Copy compose and edge site files
         run: |
-          scp -i ~/.ssh/deploy_key deploy/docker-compose.prod.yml \
+          scp -i ~/.ssh/deploy_key deploy/docker-compose.prod.yml deploy/backup.sh \
             ubuntu@${{ secrets.DEPLOY_HOST }}:/opt/datavue/
           scp -i ~/.ssh/deploy_key deploy/edge/sites/datavue.caddy \
             ubuntu@${{ secrets.DEPLOY_HOST }}:/opt/edge/sites/
