@@ -7,6 +7,7 @@
 # 主機位置：/opt/datavue/backup.sh（由 GitHub Actions 部署時複製）
 # R2 憑證：/opt/backup/r2.env（R2_ACCOUNT_ID / R2_ACCESS_KEY_ID / R2_SECRET_ACCESS_KEY，sitetegy-01 各專案共用）
 # 排程：/etc/cron.d/datavue-backup；紀錄：/opt/datavue/backup/backup.log
+# 失敗通知：/opt/backup/healthchecks.env（HC_DATAVUE_DB / HC_DATAVUE_FILES，Healthchecks.io ping 網址，選用）
 # 還原步驟見 deploy/RESTORE.md
 set -euo pipefail
 
@@ -19,7 +20,17 @@ RCLONE_IMAGE=rclone/rclone:1.68.2
 set -a
 # shellcheck disable=SC1091
 . /opt/backup/r2.env
+# shellcheck disable=SC1091
+[ -f /opt/backup/healthchecks.env ] && . /opt/backup/healthchecks.env
 set +a
+
+case "$MODE" in
+  db) HC_URL="${HC_DATAVUE_DB:-}" ;;
+  files) HC_URL="${HC_DATAVUE_FILES:-}" ;;
+esac
+hc_ping() { [ -n "${HC_URL:-}" ] && curl -fsS -m 10 --retry 3 -o /dev/null "$HC_URL$1" || true; }
+hc_ping /start
+trap 'hc_ping /fail' ERR
 
 rclone() {
   docker run --rm \
@@ -62,3 +73,5 @@ case "$MODE" in
     exit 2
     ;;
 esac
+
+hc_ping ""
