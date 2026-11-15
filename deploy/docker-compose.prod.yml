@@ -1,10 +1,12 @@
 # deploy/docker-compose.prod.yml
-# 正式環境（騰訊雲 Lighthouse 東京，取代 Zeabur）
+# 正式環境（騰訊雲 Lighthouse 東京 sitetegy-01，取代 Zeabur）
 #
 # 主機目錄：/opt/datavue
-#   docker-compose.prod.yml、Caddyfile  ← 由 GitHub Actions 部署時複製
-#   .env                                 ← backend 環境變數（手動放置，不進 git）
-#   certs/origin.pem、certs/origin.key   ← Cloudflare Origin Certificate
+#   docker-compose.prod.yml  ← 由 GitHub Actions 部署時複製
+#   .env                     ← backend 環境變數與 POSTGRES_PASSWORD（手動放置，不進 git）
+#
+# 對外入口是共用的 edge Caddy（deploy/edge/），本專案不佔用 80/443；
+# frontend / backend 以 datavue-frontend / datavue-backend 別名接上外部網路 edge。
 #
 # 映像檔由 .github/workflows/deploy.yml 建置並推到 GHCR，主機只 pull 不 build。
 #
@@ -24,7 +26,7 @@ x-backend: &backend
     META_ANDROMEDA_STORAGE_ROOT: /app/storage/meta_andromeda
     FRONTEND_URL: https://datavue.sitetegy.com
     COMMIT_REF: ${IMAGE_TAG:-latest}
-    # backend 只透過 Caddy 對外，信任 Caddy 傳來的 X-Forwarded-For（slowapi 依此限流）
+    # backend 只透過 edge Caddy 對外，信任 Caddy 傳來的 X-Forwarded-For（slowapi 依此限流）
     FORWARDED_ALLOW_IPS: "*"
   volumes:
     - storage:/app/storage
@@ -41,23 +43,21 @@ x-backend: &backend
       max-file: "5"
 
 services:
-  caddy:
+  frontend:
     image: ghcr.io/tab2005/datavue-frontend:${IMAGE_TAG:-latest}
-    ports:
-      - "80:80"
-      - "443:443"
-    volumes:
-      - ./Caddyfile:/etc/caddy/Caddyfile:ro
-      - ./certs:/etc/caddy/certs:ro
-      - caddy_data:/data
-    depends_on:
-      - backend
+    networks:
+      edge:
+        aliases: [datavue-frontend]
     restart: unless-stopped
-    mem_limit: 128m
+    mem_limit: 64m
     logging: *logging
 
   backend:
     <<: *backend
+    networks:
+      default:
+      edge:
+        aliases: [datavue-backend]
     mem_limit: 1536m
 
   # 獨立 Meta Andromeda worker（docs/24 Wave 2），設定比照 Zeabur 的 meta-andromeda-worker
@@ -105,8 +105,11 @@ services:
     mem_limit: 320m
     logging: *logging
 
+networks:
+  edge:
+    external: true
+
 volumes:
   storage:
   pg_data:
   redis_data:
-  caddy_data:

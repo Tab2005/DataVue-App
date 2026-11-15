@@ -40,7 +40,7 @@ jobs:
           chmod 600 ~/.ssh/deploy_key
           ssh-keyscan -H "${{ secrets.DEPLOY_HOST }}" >> ~/.ssh/known_hosts
           ssh -i ~/.ssh/deploy_key ubuntu@${{ secrets.DEPLOY_HOST }} \
-            "hostname && docker --version && ls -l /opt/datavue/certs"
+            "hostname && docker --version && ls -l /opt/edge/certs"
 
   build:
     if: ${{ !inputs.ssh_check_only }}
@@ -90,10 +90,12 @@ jobs:
           chmod 600 ~/.ssh/deploy_key
           ssh-keyscan -H "${{ secrets.DEPLOY_HOST }}" >> ~/.ssh/known_hosts
 
-      - name: Copy compose files
+      - name: Copy compose and edge site files
         run: |
-          scp -i ~/.ssh/deploy_key deploy/docker-compose.prod.yml deploy/Caddyfile \
+          scp -i ~/.ssh/deploy_key deploy/docker-compose.prod.yml \
             ubuntu@${{ secrets.DEPLOY_HOST }}:/opt/datavue/
+          scp -i ~/.ssh/deploy_key deploy/edge/sites/datavue.caddy \
+            ubuntu@${{ secrets.DEPLOY_HOST }}:/opt/edge/sites/
 
       - name: Pull and restart
         env:
@@ -108,6 +110,8 @@ jobs:
           docker compose -f docker-compose.prod.yml pull
           docker compose -f docker-compose.prod.yml up -d --remove-orphans
           docker logout ghcr.io
+          # 共用 edge Caddy 重新載入 sites/datavue.caddy（設定有誤時 reload 會失敗，舊設定繼續生效）
+          docker compose -f /opt/edge/docker-compose.yml exec -T caddy caddy reload --config /etc/caddy/Caddyfile
           docker image prune -af --filter "until=168h"
           docker compose -f docker-compose.prod.yml ps
           EOF

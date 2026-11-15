@@ -1,0 +1,46 @@
+# deploy/edge/docker-compose.yml
+# sitetegy-01 共用入口：唯一佔用 80/443 的 Caddy，依網域轉給各專案容器
+#
+# 主機目錄：/opt/edge
+#   docker-compose.yml、Caddyfile        ← 本檔與 deploy/edge/Caddyfile（手動同步，基礎設施很少變動）
+#   sites/<專案>.caddy                    ← 各專案的網域設定，由各專案的部署流程放置
+#   certs/origin.pem、certs/origin.key    ← Cloudflare Origin Certificate（*.sitetegy.com）
+#
+# 各專案的容器要接上外部網路 `edge`（一次性建立：docker network create edge），
+# 並以「<專案>-<服務>」為網路別名，避免不同專案的 backend 撞名。
+#
+# 常用指令：
+#   docker compose up -d
+#   docker compose exec caddy caddy reload --config /etc/caddy/Caddyfile   # 改了 sites/*.caddy 後
+
+name: edge
+
+services:
+  caddy:
+    image: caddy:2.10-alpine
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - ./sites:/etc/caddy/sites:ro
+      - ./certs:/etc/caddy/certs:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    networks:
+      - edge
+    restart: unless-stopped
+    mem_limit: 128m
+    logging:
+      driver: json-file
+      options:
+        max-size: "20m"
+        max-file: "5"
+
+networks:
+  edge:
+    external: true
+
+volumes:
+  caddy_data:
+  caddy_config:

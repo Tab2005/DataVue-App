@@ -1,0 +1,20 @@
+# DataVue 的網域設定，部署時由 .github/workflows/deploy.yml 複製到 /opt/edge/sites/
+
+# 前端（datavue-frontend 容器以 Caddy 提供 Vite SPA 靜態檔）
+datavue.sitetegy.com {
+	import cf_tls
+	encode zstd gzip
+	reverse_proxy datavue-frontend:80
+}
+
+# 後端 API
+datavue-bk.sitetegy.com {
+	import cf_tls
+	encode zstd gzip
+	request_body {
+		max_size 200MB
+	}
+	reverse_proxy datavue-backend:8000 {
+		header_up X-Forwarded-For {client_ip}
+	}
+}
