@@ -61,7 +61,7 @@ def create_invite_link(
     if not origin:
         # Fallback to env var or specific defaults
         import os
-        origin = os.getenv("FRONTEND_URL", "https://fbdashboard-dev-saas.zeabur.app")
+        origin = os.getenv("FRONTEND_URL", "https://datavue.sitetegy.com")
         
     url = f"{origin}/invite/{code}"
 

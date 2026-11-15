@@ -60,7 +60,7 @@ class OpenRouterClient:
                 base_url="https://openrouter.ai/api/v1",
                 api_key=clean_key,
                 default_headers={
-                    "HTTP-Referer": "https://datavue-app.zeabur.app",
+                    "HTTP-Referer": "https://datavue.sitetegy.com",
                     "X-Title": "DataVue-App",
                 }
             )
@@ -86,7 +86,7 @@ class OpenRouterClient:
         try:
             headers = {
                 "Authorization": f"Bearer {self.api_key.strip()}",
-                "HTTP-Referer": "https://datavue-app.zeabur.app",
+                "HTTP-Referer": "https://datavue.sitetegy.com",
                 "X-Title": "DataVue-App"
             }
             # 發送請求獲取 OpenRouter 模型列表

@@ -1,0 +1,109 @@
+# deploy/docker-compose.prod.yml
+# 正式環境（騰訊雲 Lighthouse 東京，取代 Zeabur）
+#
+# 主機目錄：/opt/datavue
+#   docker-compose.prod.yml、Caddyfile  ← 由 GitHub Actions 部署時複製
+#   .env                                 ← backend 環境變數（手動放置，不進 git）
+#   certs/origin.pem、certs/origin.key   ← Cloudflare Origin Certificate
+#
+# 映像檔由 .github/workflows/deploy.yml 建置並推到 GHCR，主機只 pull 不 build。
+#
+# 常用指令：
+#   docker compose -f docker-compose.prod.yml up -d
+#   docker compose -f docker-compose.prod.yml logs -f --tail 100 backend
+#   啟用獨立 worker：docker compose -f docker-compose.prod.yml --profile worker up -d
+
+name: datavue
+
+x-backend: &backend
+  image: ghcr.io/tab2005/datavue-backend:${IMAGE_TAG:-latest}
+  env_file: .env
+  environment: &backend-env
+    DATABASE_URL: postgresql://datavue:${POSTGRES_PASSWORD}@postgres:5432/datavue
+    REDIS_URL: redis://redis:6379/0
+    META_ANDROMEDA_STORAGE_ROOT: /app/storage/meta_andromeda
+    FRONTEND_URL: https://datavue.sitetegy.com
+    COMMIT_REF: ${IMAGE_TAG:-latest}
+    # backend 只透過 Caddy 對外，信任 Caddy 傳來的 X-Forwarded-For（slowapi 依此限流）
+    FORWARDED_ALLOW_IPS: "*"
+  volumes:
+    - storage:/app/storage
+  depends_on:
+    postgres:
+      condition: service_healthy
+    redis:
+      condition: service_healthy
+  restart: unless-stopped
+  logging: &logging
+    driver: json-file
+    options:
+      max-size: "20m"
+      max-file: "5"
+
+services:
+  caddy:
+    image: ghcr.io/tab2005/datavue-frontend:${IMAGE_TAG:-latest}
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - ./certs:/etc/caddy/certs:ro
+      - caddy_data:/data
+    depends_on:
+      - backend
+    restart: unless-stopped
+    mem_limit: 128m
+    logging: *logging
+
+  backend:
+    <<: *backend
+    mem_limit: 1536m
+
+  # 獨立 Meta Andromeda worker（docs/24 Wave 2），預設不啟動
+  worker:
+    <<: *backend
+    environment:
+      <<: *backend-env
+      SERVICE_ROLE: worker
+    profiles:
+      - worker
+    mem_limit: 1g
+
+  postgres:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_DB: datavue
+      POSTGRES_USER: datavue
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?請在 /opt/datavue/.env 設定 POSTGRES_PASSWORD}
+    command: postgres -c shared_buffers=256MB -c effective_cache_size=1GB -c max_connections=50
+    volumes:
+      - pg_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U datavue -d datavue"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    restart: unless-stopped
+    mem_limit: 768m
+    logging: *logging
+
+  redis:
+    image: redis:7-alpine
+    command: redis-server --appendonly yes --maxmemory 256mb --maxmemory-policy allkeys-lru
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+    restart: unless-stopped
+    mem_limit: 320m
+    logging: *logging
+
+volumes:
+  storage:
+  pg_data:
+  redis_data:
+  caddy_data:

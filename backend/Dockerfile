@@ -23,8 +23,9 @@ RUN pip install --no-cache-dir --upgrade pip \
 # 複製應用程式碼
 COPY . .
 
-# 建立非 root 使用者（安全最佳實踐）
+# 建立非 root 使用者（安全最佳實踐）；先建好 storage 目錄，讓掛上的 volume 繼承 appuser 權限
 RUN useradd --system --no-create-home appuser \
+    && mkdir -p /app/storage \
     && chown -R appuser:appuser /app
 USER appuser
 
