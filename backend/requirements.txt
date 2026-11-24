@@ -34,8 +34,6 @@ google-analytics-admin>=0.22.0,<1.0.0
 google-analytics-data>=0.18.0,<1.0.0
 
 # AI 服務
-google-genai>=1.0.0,<2.0.0
-google-generativeai>=0.8.0,<1.0.0
 openai>=1.58.0,<2.0.0
 
 # 加密與安全
