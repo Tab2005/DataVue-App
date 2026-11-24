@@ -3,7 +3,7 @@
 # 對外由 sitetegy-01 的 edge Caddy 轉入（見 deploy/edge/sites/datavue.caddy）。
 # 建置 context 為 frontend/；刻意不放在 frontend/Dockerfile，避免 Zeabur 自動偵測改用它建置
 #   docker build -f deploy/frontend.Dockerfile frontend
-FROM node:20-alpine AS build
+FROM node:22-alpine AS build
 WORKDIR /app
 
 COPY package.json package-lock.json ./
