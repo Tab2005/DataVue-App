@@ -69,16 +69,22 @@ METRICS_REGISTRY = {
 
     # --- Video Metrics ---
     'video_views': {'source': 'actions', 'action_type': 'video_view'},
-    'video_thruplay': {'source': 'actions', 'action_type': 'video_view'},
+    # ThruPlay 是獨立欄位；actions 裡的 video_view 是「3 秒觀看」
+    'video_thruplay': {'source': 'direct', 'fb_field': 'video_thruplay_watched_actions'},
     'video_p25_watched': {'source': 'direct', 'fb_field': 'video_p25_watched_actions'},
     'video_p50_watched': {'source': 'direct', 'fb_field': 'video_p50_watched_actions'},
     'video_p75_watched': {'source': 'direct', 'fb_field': 'video_p75_watched_actions'},
     'video_p100_watched': {'source': 'direct', 'fb_field': 'video_p100_watched_actions'},
     'video_avg_time_watched': {'source': 'direct', 'fb_field': 'video_avg_time_watched_actions'},
-    'cost_per_thruplay': {'source': 'calculated'},
+    'cost_per_thruplay': {'source': 'calculated', 'depends_on': ['spend', 'video_thruplay']},
     'video_6_sec_views': {'source': 'direct', 'fb_field': 'video_6_sec_watched_actions'},
     'cost_per_6_sec_video_view': {'source': 'calculated', 'depends_on': ['spend', 'video_6_sec_views']},
     'video_6_sec_view_rate': {'source': 'calculated', 'depends_on': ['video_6_sec_views', 'impressions']},
+
+    # --- Results（廣告管理員的「成果」）---
+    'results': {'source': 'direct', 'fb_field': 'results'},
+    'result_type': {'source': 'direct', 'fb_field': 'results'},
+    'cost_per_result': {'source': 'calculated', 'depends_on': ['spend', 'results']},
 
     # --- Messaging Metrics ---
     'messaging_first_reply': {'source': 'actions', 'action_type': 'onsite_conversion.messaging_first_reply'},

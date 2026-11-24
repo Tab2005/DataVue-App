@@ -17,6 +17,59 @@ from modules.fb_ads.metrics_registry import build_fb_fields
 from modules.fb_ads.actions_parsing import apply_messaging_metrics, process_actions
 
 
+# 成果類型（results 的 indicator）中文名稱；未列出的直接顯示原始 action type
+RESULT_TYPE_LABELS = {
+    "offsite_conversion.fb_pixel_purchase": "購買",
+    "purchase": "購買",
+    "omni_purchase": "購買",
+    "offsite_conversion.fb_pixel_add_to_cart": "加到購物車",
+    "omni_add_to_cart": "加到購物車",
+    "offsite_conversion.fb_pixel_lead": "潛在客戶（網站）",
+    "lead": "潛在客戶",
+    "onsite_conversion.lead_grouped": "潛在客戶（表單）",
+    "onsite_conversion.messaging_conversation_started_7d": "開始對話",
+    "link_click": "連結點擊",
+    "landing_page_view": "連結頁面瀏覽",
+    "omni_landing_page_view": "連結頁面瀏覽",
+    "post_engagement": "貼文互動",
+    "video_thruplay_watched_actions": "ThruPlay",
+    "video_view": "影片觀看",
+    "reach": "觸及人數",
+    "impressions": "曝光次數",
+    "like": "粉絲專頁按讚",
+    "mobile_app_install": "應用程式安裝",
+    "estimated_ad_recallers": "廣告回想提升",
+    "mixed": "多種",  # 行銷活動底下的廣告組合目標不同
+}
+
+
+def _parse_results(results):
+    """解析 Insights 的 results 欄位，回傳 (成果數, 成果類型)。
+
+    格式：[{"indicator": "actions:offsite_conversion.fb_pixel_purchase",
+            "values": [{"value": "517", "attribution_windows": ["default"]}]}]
+    沒有這個欄位（例如帳號層級，各行銷活動目標不同無法加總）時回傳 (None, "")；
+    有 indicator 但沒有 values（期間內沒有成果）時回傳 (0, 類型)；
+    indicator 為 "mixed"（廣告組合目標不同）時 Meta 不給數字，回傳 (None, "多種")。
+    """
+    if not isinstance(results, list) or not results:
+        return None, ""
+    entry = results[0] or {}
+    indicator = entry.get("indicator") or ""
+    action_type = indicator.split(":", 1)[1] if ":" in indicator else indicator
+    result_type = RESULT_TYPE_LABELS.get(action_type, action_type)
+    if action_type == "mixed":
+        # 廣告組合目標不同，Meta 不提供合計數字
+        return None, result_type
+    total = 0
+    for v in entry.get("values") or []:
+        try:
+            total += float(v.get("value") or 0)
+        except (TypeError, ValueError):
+            continue
+    return (int(total) if total == int(total) else total), result_type
+
+
 def _to_int(value) -> int:
     try:
         return int(float(value or 0))
@@ -159,7 +212,7 @@ def _process_flat_row(row: dict, level: str, ad_meta_map: dict) -> dict:
 
     # Video Metrics
     flat["video_views"] = acts.get("video_view", 0)
-    flat["video_thruplay"] = acts.get("video_view", 0)
+    # video_view 是「3 秒觀看」；ThruPlay（看完或看滿 15 秒）是獨立欄位
 
     def get_video_metric(field_name):
         video_data = row.get(field_name, [])
@@ -178,9 +231,16 @@ def _process_flat_row(row: dict, level: str, ad_meta_map: dict) -> dict:
         if isinstance(video_avg_data, list) and video_avg_data else 0
     )
 
-    flat["cost_per_thruplay"] = float(
-        row.get("cost_per_thruplay", [{}])[0].get("value", 0)
-        if row.get("cost_per_thruplay") else 0
+    flat["video_thruplay"] = get_video_metric("video_thruplay_watched_actions")
+    flat["cost_per_thruplay"] = (
+        flat["spend"] / flat["video_thruplay"] if flat["video_thruplay"] > 0 else 0
+    )
+
+    # 成果（廣告管理員的「成果」欄）：依各行銷活動的目標決定類型，帳號層級不回傳
+    flat["results"], flat["result_type"] = _parse_results(row.get("results"))
+    flat["cost_per_result"] = (
+        None if flat["results"] is None
+        else (flat["spend"] / flat["results"] if flat["results"] > 0 else 0)
     )
 
     # 6 秒影片觀看（v24 之後新增的 Insights 欄位）
@@ -291,7 +351,8 @@ async def get_custom_report(
             "actions,action_values,purchase_roas,"
             "catalog_segment_value,catalog_segment_actions,"
             "video_p25_watched_actions,video_p50_watched_actions,video_p75_watched_actions,"
-            "video_p100_watched_actions,video_avg_time_watched_actions"
+            "video_p100_watched_actions,video_avg_time_watched_actions,"
+            "video_thruplay_watched_actions"
         )
         if level == "ad":
             api_fields += ",quality_ranking,engagement_rate_ranking,conversion_rate_ranking"

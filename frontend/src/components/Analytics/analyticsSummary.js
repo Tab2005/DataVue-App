@@ -117,6 +117,18 @@ export const calculateSummary = (dataSource, selectedRowIds) => {
 
     // Video Derived Rates
     total.cost_per_thruplay = total.video_thruplay > 0 ? total.spend / total.video_thruplay : 0;
+
+    // 成果：只有所有列的成果類型相同時才能加總（購買 + 開始對話相加沒有意義）
+    const resultTypes = new Set(targetData.map((row) => row.result_type || ''));
+    if (resultTypes.size === 1 && !resultTypes.has('') && !resultTypes.has('多種')) {
+        total.results = sum('results');
+        total.result_type = [...resultTypes][0];
+        total.cost_per_result = total.results > 0 ? total.spend / total.results : 0;
+    } else {
+        total.results = null;
+        total.result_type = resultTypes.size > 1 || resultTypes.has('多種') ? '多種' : null;
+        total.cost_per_result = null;
+    }
     total.cost_per_6_sec_video_view = total.video_6_sec_views > 0 ? total.spend / total.video_6_sec_views : 0;
     total.video_6_sec_view_rate = total.impressions > 0 ? (total.video_6_sec_views / total.impressions) * 100 : 0;
 
