@@ -3,7 +3,7 @@
 # 對外由 sitetegy-01 的 edge Caddy 轉入（見 deploy/edge/sites/datavue.caddy）。
 # 建置 context 為 frontend/；刻意不放在 frontend/Dockerfile，避免 Zeabur 自動偵測改用它建置
 #   docker build -f deploy/frontend.Dockerfile frontend
-FROM node:22-alpine AS build
+FROM node:26-alpine AS build
 WORKDIR /app
 
 COPY package.json package-lock.json ./
@@ -14,7 +14,7 @@ ARG VITE_API_URL=https://datavue-bk.sitetegy.com
 ENV VITE_API_URL=$VITE_API_URL
 RUN npm run build
 
-FROM caddy:2.10-alpine
+FROM caddy:2.11-alpine
 COPY --from=build /app/dist /srv
 COPY <<'EOF' /etc/caddy/Caddyfile
 :80 {
