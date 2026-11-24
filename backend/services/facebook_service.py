@@ -8,6 +8,7 @@ import requests
 import logging
 from datetime import datetime, timedelta
 from modules.auth.service import TokenManager
+from core.meta_api import GRAPH_API_BASE_URL
 from modules.fb_ads.actions_parsing import (
     calculate_change,
     format_charts,
@@ -19,7 +20,7 @@ from modules.fb_ads.actions_parsing import (
 logger = logging.getLogger(__name__)
 
 class FacebookService:
-    BASE_URL = "https://graph.facebook.com/v24.0"
+    BASE_URL = GRAPH_API_BASE_URL
 
     @staticmethod
     def get_headers(user_id, team_id=None, allow_fallback=True):

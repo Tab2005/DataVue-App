@@ -8,6 +8,7 @@ import requests
 import sys
 import logging
 from modules.auth.service import TokenManager
+from core.meta_api import GRAPH_API_BASE_URL
 
 logger = logging.getLogger(__name__)
 
@@ -15,7 +16,7 @@ logger = logging.getLogger(__name__)
 class FacebookAPIClient:
     """Low-level client for Facebook Graph API calls."""
     
-    BASE_URL = "https://graph.facebook.com/v24.0"
+    BASE_URL = GRAPH_API_BASE_URL
     TIMEOUT = 30  # seconds
     
     # Standard fields for API requests
