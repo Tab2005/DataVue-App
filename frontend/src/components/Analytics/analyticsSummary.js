@@ -56,6 +56,12 @@ export const calculateSummary = (dataSource, selectedRowIds) => {
         // Messaging Metrics
         messaging_first_reply: sum('messaging_first_reply'),
         messaging_conversation_started: sum('messaging_conversation_started'),
+        messaging_welcome_message_view: sum('messaging_welcome_message_view'),
+        messaging_connections: sum('messaging_connections'),
+        messaging_depth_2: sum('messaging_depth_2'),
+        messaging_depth_3: sum('messaging_depth_3'),
+        messaging_conversation_replied: sum('messaging_conversation_replied'),
+        messaging_blocks: sum('messaging_blocks'),
         // Lead Metrics
         leads: sum('leads'),
         onsite_leads: sum('onsite_leads'),
@@ -109,8 +115,15 @@ export const calculateSummary = (dataSource, selectedRowIds) => {
     // Video Derived Rates
     total.cost_per_thruplay = total.video_thruplay > 0 ? total.spend / total.video_thruplay : 0;
 
-    // Messaging Derived Rates
+    // Messaging Derived Rates（比率由加總後的原始數重算，不能直接加總各列比率）
     total.cost_per_message = total.messaging_first_reply > 0 ? total.spend / total.messaging_first_reply : 0;
+    {
+        const started = total.messaging_conversation_started;
+        total.cost_per_conversation_started = started > 0 ? total.spend / started : 0;
+        total.messaging_depth_2_rate = started > 0 ? (total.messaging_depth_2 / started) * 100 : 0;
+        total.messaging_reply_rate = started > 0 ? (total.messaging_conversation_replied / started) * 100 : 0;
+        total.messaging_block_rate = started > 0 ? (total.messaging_blocks / started) * 100 : 0;
+    }
 
     // Lead Derived Rates
     total.cost_per_lead = total.leads > 0 ? total.spend / total.leads : 0;

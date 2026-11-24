@@ -13,7 +13,7 @@ logger = logging.getLogger(__name__)
 
 from cache import get_trend_cache, set_trend_cache
 from modules.fb_ads._base import BASE_URL, TIMEOUT, get_headers
-from modules.fb_ads.actions_parsing import process_actions
+from modules.fb_ads.actions_parsing import apply_messaging_metrics, process_actions
 
 
 def _process_daily_item(item: dict) -> dict:
@@ -82,7 +82,7 @@ def _process_daily_item(item: dict) -> dict:
     )
     
     # Messaging & Leads
-    row["messaging_first_reply"] = acts.get("onsite_conversion.messaging_first_reply", 0)
+    apply_messaging_metrics(row, acts)
     row["leads"] = acts.get("lead", 0)
     row["cost_per_lead"] = row["spend"] / row["leads"] if row["leads"] > 0 else 0
     

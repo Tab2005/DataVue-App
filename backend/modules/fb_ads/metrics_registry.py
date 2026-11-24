@@ -78,7 +78,18 @@ METRICS_REGISTRY = {
     # --- Messaging Metrics ---
     'messaging_first_reply': {'source': 'actions', 'action_type': 'onsite_conversion.messaging_first_reply'},
     'messaging_conversation_started': {'source': 'actions', 'action_type': 'onsite_conversion.messaging_conversation_started_7d'},
-    'cost_per_message': {'source': 'calculated'},
+    'cost_per_message': {'source': 'calculated', 'depends_on': ['spend', 'messaging_first_reply']},
+    'messaging_welcome_message_view': {'source': 'actions', 'action_type': 'onsite_conversion.messaging_welcome_message_view'},
+    'messaging_connections': {'source': 'actions', 'action_type': 'onsite_conversion.total_messaging_connection'},
+    'messaging_depth_2': {'source': 'actions', 'action_type': 'onsite_conversion.messaging_user_depth_2_message_send'},
+    'messaging_depth_3': {'source': 'actions', 'action_type': 'onsite_conversion.messaging_user_depth_3_message_send'},
+    'messaging_conversation_replied': {'source': 'actions', 'action_type': 'onsite_conversion.messaging_conversation_replied_7d'},
+    'messaging_blocks': {'source': 'actions', 'action_type': 'onsite_conversion.messaging_block'},
+    # 衍生指標：depends_on 讓 build_fb_fields 一併抓取計算所需的原始欄位
+    'cost_per_conversation_started': {'source': 'calculated', 'depends_on': ['spend', 'messaging_conversation_started']},
+    'messaging_depth_2_rate': {'source': 'calculated', 'depends_on': ['messaging_depth_2', 'messaging_conversation_started']},
+    'messaging_reply_rate': {'source': 'calculated', 'depends_on': ['messaging_conversation_replied', 'messaging_conversation_started']},
+    'messaging_block_rate': {'source': 'calculated', 'depends_on': ['messaging_blocks', 'messaging_conversation_started']},
 
     # --- Lead Gen Metrics ---
     'leads': {'source': 'actions', 'action_type': 'lead'},
@@ -125,6 +136,11 @@ def build_fb_fields(custom_fields: str = None, level: str = "account") -> str:
         return None  # 通知呼叫方使用原有硬編碼欄位
 
     requested_keys = [k.strip() for k in custom_fields.split(",") if k.strip()]
+    # 展開衍生指標的依賴（只展開一層，依賴本身不是 calculated）
+    for key in list(requested_keys):
+        for dep in METRICS_REGISTRY.get(key, {}).get('depends_on', []):
+            if dep not in requested_keys:
+                requested_keys.append(dep)
 
     fb_fields = set(base_structure)
     needs_actions = False

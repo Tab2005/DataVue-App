@@ -172,6 +172,61 @@ METRICS_REGISTRY: dict[str, dict] = {
         "category": "messaging", "type": "integer", "format": "number",
         "description": "使用者透過廣告傳送訊息的次數", "breakdown_compatible": True,
     },
+    "messaging_conversation_started": {
+        "key": "messaging_conversation_started", "label": "開始對話", "label_en": "Conversations Started",
+        "category": "messaging", "type": "integer", "format": "number",
+        "description": "廣告帶來的新對話數（7 天歸因）", "breakdown_compatible": True,
+    },
+    "messaging_welcome_message_view": {
+        "key": "messaging_welcome_message_view", "label": "歡迎訊息瀏覽", "label_en": "Welcome Message Views",
+        "category": "messaging", "type": "integer", "format": "number",
+        "description": "使用者看到歡迎訊息的次數（漏斗第一層）", "breakdown_compatible": True,
+    },
+    "messaging_connections": {
+        "key": "messaging_connections", "label": "訊息聯繫總數", "label_en": "Messaging Connections",
+        "category": "messaging", "type": "integer", "format": "number",
+        "description": "與商家建立訊息聯繫的總人數", "breakdown_compatible": True,
+    },
+    "messaging_depth_2": {
+        "key": "messaging_depth_2", "label": "對話深度 2", "label_en": "Depth 2 Messages",
+        "category": "messaging", "type": "integer", "format": "number",
+        "description": "使用者在對話中傳送第 2 則訊息的次數", "breakdown_compatible": True,
+    },
+    "messaging_depth_3": {
+        "key": "messaging_depth_3", "label": "對話深度 3", "label_en": "Depth 3 Messages",
+        "category": "messaging", "type": "integer", "format": "number",
+        "description": "使用者在對話中傳送第 3 則訊息的次數", "breakdown_compatible": True,
+    },
+    "messaging_conversation_replied": {
+        "key": "messaging_conversation_replied", "label": "商家已回覆對話", "label_en": "Conversations Replied",
+        "category": "messaging", "type": "integer", "format": "number",
+        "description": "商家有回覆的對話數（7 天歸因）", "breakdown_compatible": True,
+    },
+    "messaging_blocks": {
+        "key": "messaging_blocks", "label": "封鎖次數", "label_en": "Messaging Blocks",
+        "category": "messaging", "type": "integer", "format": "number",
+        "description": "使用者封鎖商家訊息的次數", "breakdown_compatible": True,
+    },
+    "messaging_depth_2_rate": {
+        "key": "messaging_depth_2_rate", "label": "深度對話率", "label_en": "Depth 2 Rate",
+        "category": "messaging", "type": "float", "format": "percent",
+        "description": "對話深度 2 ÷ 開始對話", "breakdown_compatible": False,
+    },
+    "messaging_reply_rate": {
+        "key": "messaging_reply_rate", "label": "回覆率", "label_en": "Reply Rate",
+        "category": "messaging", "type": "float", "format": "percent",
+        "description": "商家已回覆對話 ÷ 開始對話", "breakdown_compatible": False,
+    },
+    "messaging_block_rate": {
+        "key": "messaging_block_rate", "label": "封鎖率", "label_en": "Block Rate",
+        "category": "messaging", "type": "float", "format": "percent",
+        "description": "封鎖次數 ÷ 開始對話", "breakdown_compatible": False,
+    },
+    "cost_per_conversation_started": {
+        "key": "cost_per_conversation_started", "label": "每次開始對話成本", "label_en": "Cost per Conversation",
+        "category": "cost", "type": "float", "format": "currency",
+        "description": "花費 ÷ 開始對話", "breakdown_compatible": False,
+    },
     "cost_per_message": {
         "key": "cost_per_message", "label": "每次訊息成本", "label_en": "Cost per Message",
         "category": "cost", "type": "float", "format": "currency",

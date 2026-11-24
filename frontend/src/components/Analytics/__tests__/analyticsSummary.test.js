@@ -70,3 +70,31 @@ describe('renderMetricValue', () => {
         expect(renderMetricValue(10.5, 'currency_decimal')).toBe('$10.5');
     });
 });
+
+describe('calculateSummary messaging metrics', () => {
+    const rows = [
+        { id: 'a', spend: 100, messaging_conversation_started: 10, messaging_depth_2: 5, messaging_conversation_replied: 8, messaging_blocks: 1, messaging_welcome_message_view: 40 },
+        { id: 'b', spend: 300, messaging_conversation_started: 30, messaging_depth_2: 9, messaging_conversation_replied: 12, messaging_blocks: 3, messaging_welcome_message_view: 60 },
+    ];
+
+    it('sums raw messaging counts', () => {
+        const summary = calculateSummary(rows, new Set(['a', 'b']));
+        expect(summary.messaging_conversation_started).toBe(40);
+        expect(summary.messaging_welcome_message_view).toBe(100);
+        expect(summary.messaging_blocks).toBe(4);
+    });
+
+    it('recomputes messaging rates from summed counts instead of summing row rates', () => {
+        const summary = calculateSummary(rows, new Set(['a', 'b']));
+        expect(summary.cost_per_conversation_started).toBe(10);
+        expect(summary.messaging_depth_2_rate).toBeCloseTo(35);
+        expect(summary.messaging_reply_rate).toBeCloseTo(50);
+        expect(summary.messaging_block_rate).toBeCloseTo(10);
+    });
+
+    it('returns 0 rates when no conversations started', () => {
+        const summary = calculateSummary([{ id: 'x', spend: 50, messaging_blocks: 2 }], new Set(['x']));
+        expect(summary.messaging_block_rate).toBe(0);
+        expect(summary.cost_per_conversation_started).toBe(0);
+    });
+});

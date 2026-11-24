@@ -373,6 +373,76 @@ export const METRICS_REGISTRY = {
         source: 'calculated', formula: 'spend / messaging_first_reply',
         is_default: false
     },
+    messaging_welcome_message_view: {
+        key: 'messaging_welcome_message_view', label_zh: '歡迎訊息瀏覽', label_en: 'Welcome Message Views',
+        category: 'messaging', format: 'number',
+        source: 'actions', action_type: 'onsite_conversion.messaging_welcome_message_view',
+        is_default: false,
+        description_zh: '使用者看到歡迎訊息的次數（漏斗第一層）'
+    },
+    messaging_connections: {
+        key: 'messaging_connections', label_zh: '訊息聯繫總數', label_en: 'Messaging Connections',
+        category: 'messaging', format: 'number',
+        source: 'actions', action_type: 'onsite_conversion.total_messaging_connection',
+        is_default: false,
+        description_zh: '與商家建立訊息聯繫的總人數'
+    },
+    messaging_depth_2: {
+        key: 'messaging_depth_2', label_zh: '對話深度 2', label_en: 'Depth 2 Messages',
+        category: 'messaging', format: 'number',
+        source: 'actions', action_type: 'onsite_conversion.messaging_user_depth_2_message_send',
+        is_default: false,
+        description_zh: '使用者在對話中傳送第 2 則訊息的次數'
+    },
+    messaging_depth_3: {
+        key: 'messaging_depth_3', label_zh: '對話深度 3', label_en: 'Depth 3 Messages',
+        category: 'messaging', format: 'number',
+        source: 'actions', action_type: 'onsite_conversion.messaging_user_depth_3_message_send',
+        is_default: false,
+        description_zh: '使用者在對話中傳送第 3 則訊息的次數'
+    },
+    messaging_conversation_replied: {
+        key: 'messaging_conversation_replied', label_zh: '商家已回覆對話', label_en: 'Conversations Replied',
+        category: 'messaging', format: 'number',
+        source: 'actions', action_type: 'onsite_conversion.messaging_conversation_replied_7d',
+        is_default: false,
+        description_zh: '商家有回覆的對話數（7 天歸因）'
+    },
+    messaging_blocks: {
+        key: 'messaging_blocks', label_zh: '封鎖次數', label_en: 'Messaging Blocks',
+        category: 'messaging', format: 'number',
+        source: 'actions', action_type: 'onsite_conversion.messaging_block',
+        is_default: false,
+        description_zh: '使用者封鎖商家訊息的次數'
+    },
+    cost_per_conversation_started: {
+        key: 'cost_per_conversation_started', label_zh: '每次開始對話成本', label_en: 'Cost per Conversation',
+        category: 'messaging', format: 'currency', isInverse: true,
+        source: 'calculated', formula: 'spend / messaging_conversation_started',
+        is_default: false,
+        description_zh: '花費 ÷ 開始對話'
+    },
+    messaging_depth_2_rate: {
+        key: 'messaging_depth_2_rate', label_zh: '深度對話率', label_en: 'Depth 2 Rate',
+        category: 'messaging', format: 'percent',
+        source: 'calculated', formula: 'messaging_depth_2 / messaging_conversation_started * 100',
+        is_default: false,
+        description_zh: '對話深度 2 ÷ 開始對話'
+    },
+    messaging_reply_rate: {
+        key: 'messaging_reply_rate', label_zh: '回覆率', label_en: 'Reply Rate',
+        category: 'messaging', format: 'percent',
+        source: 'calculated', formula: 'messaging_conversation_replied / messaging_conversation_started * 100',
+        is_default: false,
+        description_zh: '商家已回覆對話 ÷ 開始對話'
+    },
+    messaging_block_rate: {
+        key: 'messaging_block_rate', label_zh: '封鎖率', label_en: 'Block Rate',
+        category: 'messaging', format: 'percent', isInverse: true,
+        source: 'calculated', formula: 'messaging_blocks / messaging_conversation_started * 100',
+        is_default: false,
+        description_zh: '封鎖次數 ÷ 開始對話'
+    },
 
     // ─────────────────────────────────────────────────────────────────────────
     // LEAD GEN METRICS (NEW - Extended)

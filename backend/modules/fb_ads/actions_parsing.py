@@ -273,3 +273,39 @@ __all__ = [
     "format_kpi",
     "format_charts",
 ]
+
+
+# 訊息廣告 action_type → 扁平欄位（Messenger / Instagram / WhatsApp 對話）
+MESSAGING_ACTION_FIELDS = {
+    "messaging_first_reply": "onsite_conversion.messaging_first_reply",
+    "messaging_conversation_started": "onsite_conversion.messaging_conversation_started_7d",
+    "messaging_welcome_message_view": "onsite_conversion.messaging_welcome_message_view",
+    "messaging_connections": "onsite_conversion.total_messaging_connection",
+    "messaging_depth_2": "onsite_conversion.messaging_user_depth_2_message_send",
+    "messaging_depth_3": "onsite_conversion.messaging_user_depth_3_message_send",
+    "messaging_conversation_replied": "onsite_conversion.messaging_conversation_replied_7d",
+    "messaging_blocks": "onsite_conversion.messaging_block",
+}
+
+
+def apply_messaging_metrics(flat, acts):
+    """把訊息相關 action 寫進 flat，並計算衍生的成本與比率。
+
+    需要 flat 已有 "spend"；acts 為 process_actions() 的結果。
+    比率以「開始對話」為分母（百分比）。
+    """
+    for key, action_type in MESSAGING_ACTION_FIELDS.items():
+        flat[key] = acts.get(action_type, 0)
+
+    spend = flat.get("spend", 0) or 0
+    started = flat["messaging_conversation_started"]
+
+    def _ratio(numerator, denominator, scale=1):
+        return numerator / denominator * scale if denominator > 0 else 0
+
+    flat["cost_per_message"] = _ratio(spend, flat["messaging_first_reply"])
+    flat["cost_per_conversation_started"] = _ratio(spend, started)
+    flat["messaging_depth_2_rate"] = _ratio(flat["messaging_depth_2"], started, 100)
+    flat["messaging_reply_rate"] = _ratio(flat["messaging_conversation_replied"], started, 100)
+    flat["messaging_block_rate"] = _ratio(flat["messaging_blocks"], started, 100)
+    return flat
