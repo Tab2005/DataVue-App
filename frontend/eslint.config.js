@@ -46,4 +46,19 @@ export default defineConfig([
       '@typescript-eslint/no-unused-vars': ['error', { varsIgnorePattern: '^[A-Z_]' }],
     },
   },
+  // 測試檔：vite.config.js 設定 test.globals = true，describe / it / expect / vi 為全域；
+  // 測試中也會用到 Node 的 global（例如 global.fetch mock）
+  {
+    files: ['**/__tests__/**/*.{js,jsx,ts,tsx}', '**/*.test.{js,jsx,ts,tsx}', 'src/test/**/*.{js,jsx,ts,tsx}'],
+    languageOptions: {
+      globals: { ...globals.vitest, ...globals.node },
+    },
+  },
+  // 設定檔在 Node 環境執行
+  {
+    files: ['*.config.{js,mjs,cjs,ts}'],
+    languageOptions: {
+      globals: globals.node,
+    },
+  },
 ])
