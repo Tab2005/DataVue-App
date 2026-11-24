@@ -10,6 +10,7 @@ from datetime import datetime, timedelta
 from modules.auth.service import TokenManager
 from core.meta_api import GRAPH_API_BASE_URL
 from modules.fb_ads.actions_parsing import (
+    apply_messaging_metrics,
     calculate_change,
     format_charts,
     format_kpi,
@@ -375,8 +376,7 @@ class FacebookService:
                 flat["video_thruplay"] = acts.get("video_view", 0)  # ThruPlay uses same action type
 
                 # 2.3 Messaging Metrics
-                flat["messaging_first_reply"] = acts.get("onsite_conversion.messaging_first_reply", 0)
-                flat["messaging_conversation_started"] = acts.get("onsite_conversion.messaging_conversation_started_7d", 0)
+                apply_messaging_metrics(flat, acts)
                 
                 # 2.4 Lead Gen Metrics
                 flat["leads"] = acts.get("lead", 0)
@@ -404,9 +404,6 @@ class FacebookService:
                 flat["cpa"] = flat["spend"] / flat["purchases"] if flat["purchases"] > 0 else 0
                 flat["cost_per_atc"] = flat["spend"] / flat["add_to_cart"] if flat["add_to_cart"] > 0 else 0
                 flat["cvr"] = (flat["purchases"] / flat["link_clicks"] * 100) if flat["link_clicks"] > 0 else 0
-                
-                # Cost per Message
-                flat["cost_per_message"] = flat["spend"] / flat["messaging_first_reply"] if flat["messaging_first_reply"] > 0 else 0
                 
                 # Cost per Lead
                 flat["cost_per_lead"] = flat["spend"] / flat["leads"] if flat["leads"] > 0 else 0

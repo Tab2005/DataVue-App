@@ -49,9 +49,16 @@ SUSPECT_FIELDS = [
     ("conversion_rate_ranking", "ad"),
 ]
 
+# 與 modules/fb_ads/actions_parsing.MESSAGING_ACTION_FIELDS 保持一致
 MESSAGING_ACTION_TYPES = [
     "onsite_conversion.messaging_first_reply",
     "onsite_conversion.messaging_conversation_started_7d",
+    "onsite_conversion.messaging_welcome_message_view",
+    "onsite_conversion.total_messaging_connection",
+    "onsite_conversion.messaging_user_depth_2_message_send",
+    "onsite_conversion.messaging_user_depth_3_message_send",
+    "onsite_conversion.messaging_conversation_replied_7d",
+    "onsite_conversion.messaging_block",
 ]
 
 

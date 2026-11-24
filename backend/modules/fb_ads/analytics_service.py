@@ -14,7 +14,7 @@ logger = logging.getLogger(__name__)
 from cache import get_analytics_cache, set_analytics_cache
 from modules.fb_ads._base import BASE_URL, TIMEOUT, get_headers
 from modules.fb_ads.metrics_registry import build_fb_fields
-from modules.fb_ads.actions_parsing import process_actions
+from modules.fb_ads.actions_parsing import apply_messaging_metrics, process_actions
 
 
 def _process_flat_row(row: dict, level: str, ad_meta_map: dict) -> dict:
@@ -147,9 +147,7 @@ def _process_flat_row(row: dict, level: str, ad_meta_map: dict) -> dict:
     )
 
     # Messaging Metrics
-    flat["messaging_first_reply"] = acts.get("onsite_conversion.messaging_first_reply", 0)
-    flat["messaging_conversation_started"] = acts.get("onsite_conversion.messaging_conversation_started_7d", 0)
-    flat["cost_per_message"] = flat["spend"] / flat["messaging_first_reply"] if flat["messaging_first_reply"] > 0 else 0
+    apply_messaging_metrics(flat, acts)
 
     # Lead Metrics
     flat["leads"] = acts.get("lead", 0)
