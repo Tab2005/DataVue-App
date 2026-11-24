@@ -11,6 +11,15 @@ from openai import OpenAI
 logger = logging.getLogger(__name__)
 
 
+def _error_message(error_info) -> str:
+    """從 OpenRouter 的 error 物件取出訊息（可能是 dict、物件或 None）。"""
+    if not error_info:
+        return "upstream provider returned finish_reason=error"
+    if isinstance(error_info, dict):
+        return str(error_info.get("message") or error_info)
+    return str(error_info)
+
+
 class OpenRouterClient:
     """OpenRouter 客戶端 - 對接 OpenAI 相容 API 規範"""
 
@@ -61,6 +70,8 @@ class OpenRouterClient:
                 api_key=clean_key,
                 default_headers={
                     "HTTP-Referer": "https://datavue.sitetegy.com",
+                    # OpenRouter 文件目前使用 X-OpenRouter-Title；保留舊的 X-Title 相容
+                    "X-OpenRouter-Title": "DataVue-App",
                     "X-Title": "DataVue-App",
                 }
             )
@@ -194,7 +205,12 @@ class OpenRouterClient:
                 logger.warning("[OpenRouterClient] API response returned no choices: %s", response)
                 raise RuntimeError(f"OpenRouter API returned no choices for model {model_to_use}.")
 
-            content = response.choices[0].message.content or ""
+            choice = response.choices[0]
+            content = choice.message.content or ""
+            if not content and getattr(choice, "finish_reason", None) == "error":
+                error_message = _error_message(getattr(response, "error", None))
+                logger.warning("[OpenRouterClient] API response finished with error: %s", error_message)
+                raise RuntimeError(f"OpenRouter upstream error ({model_to_use}): {error_message}")
             logger.info("[OpenRouterClient] Received response content length: %d", len(content))
             return content
         except Exception as e:
@@ -228,14 +244,17 @@ class OpenRouterClient:
                 stream=True
             )
             for chunk in response:
-                if not chunk.choices:
-                    error_info = getattr(chunk, "error", None)
-                    if error_info:
-                        error_message = error_info.get("message") if isinstance(error_info, dict) else str(error_info)
-                        logger.warning("[OpenRouterClient] Stream chunk returned no choices, error=%s", error_info)
-                        raise RuntimeError(f"OpenRouter upstream error ({model_to_use}): {error_message}")
+                # 串流開始後上游出錯時，OpenRouter 仍回 HTTP 200，改送一個帶頂層 error、
+                # finish_reason="error" 的 chunk（可能同時帶 choices），必須視為失敗
+                choice = chunk.choices[0] if chunk.choices else None
+                error_info = getattr(chunk, "error", None)
+                if error_info or (choice is not None and getattr(choice, "finish_reason", None) == "error"):
+                    error_message = _error_message(error_info)
+                    logger.warning("[OpenRouterClient] Stream ended with error: %s", error_message)
+                    raise RuntimeError(f"OpenRouter upstream error ({model_to_use}): {error_message}")
+                if choice is None:
                     continue
-                content = chunk.choices[0].delta.content
+                content = choice.delta.content
                 if content:
                     yield content
         except Exception as e:
