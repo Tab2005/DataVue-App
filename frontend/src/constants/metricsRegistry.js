@@ -296,6 +296,20 @@ export const METRICS_REGISTRY = {
         source: 'actions', action_type: 'like',
         is_default: false
     },
+    instagram_profile_visits: {
+        key: 'instagram_profile_visits', label_zh: 'IG 個人檔案瀏覽', label_en: 'IG Profile Visits',
+        category: 'engagement', format: 'number',
+        source: 'direct', fb_field: 'instagram_profile_visits',
+        is_default: false,
+        description_zh: '廣告帶來的 Instagram 個人檔案瀏覽次數'
+    },
+    instagram_profile_follow: {
+        key: 'instagram_profile_follow', label_zh: 'IG 追蹤數', label_en: 'IG Follows',
+        category: 'engagement', format: 'number',
+        source: 'direct', fb_field: 'instagram_profile_follow',
+        is_default: false,
+        description_zh: '廣告帶來的 Instagram 新追蹤數'
+    },
 
     // ─────────────────────────────────────────────────────────────────────────
     // VIDEO METRICS (NEW - Extended)
@@ -350,6 +364,27 @@ export const METRICS_REGISTRY = {
         category: 'video', format: 'currency_decimal', isInverse: true,
         source: 'calculated',
         is_default: false
+    },
+    video_6_sec_views: {
+        key: 'video_6_sec_views', label_zh: '6 秒影片觀看', label_en: '6-Second Video Views',
+        category: 'video', format: 'number',
+        source: 'direct', fb_field: 'video_6_sec_watched_actions',
+        is_default: false,
+        description_zh: '影片被觀看至少 6 秒的次數'
+    },
+    video_6_sec_view_rate: {
+        key: 'video_6_sec_view_rate', label_zh: '6 秒觀看率', label_en: '6-Second View Rate',
+        category: 'video', format: 'percent',
+        source: 'calculated', formula: 'video_6_sec_views / impressions * 100',
+        is_default: false,
+        description_zh: '6 秒影片觀看 ÷ 曝光，看素材前幾秒能否留住人'
+    },
+    cost_per_6_sec_video_view: {
+        key: 'cost_per_6_sec_video_view', label_zh: '每次 6 秒觀看成本', label_en: 'Cost per 6-Second View',
+        category: 'video', format: 'currency_decimal', isInverse: true,
+        source: 'calculated', formula: 'spend / video_6_sec_views',
+        is_default: false,
+        description_zh: '花費 ÷ 6 秒影片觀看'
     },
 
     // ─────────────────────────────────────────────────────────────────────────

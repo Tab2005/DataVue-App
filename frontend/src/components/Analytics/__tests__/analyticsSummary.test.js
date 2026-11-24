@@ -98,3 +98,23 @@ describe('calculateSummary messaging metrics', () => {
         expect(summary.cost_per_conversation_started).toBe(0);
     });
 });
+
+describe('calculateSummary IG and 6-second video metrics', () => {
+    const rows = [
+        { id: 'a', spend: 100, impressions: 1000, video_6_sec_views: 200, instagram_profile_visits: 5, instagram_profile_follow: 1 },
+        { id: 'b', spend: 300, impressions: 3000, video_6_sec_views: 200, instagram_profile_visits: 7, instagram_profile_follow: 2 },
+    ];
+
+    it('sums IG profile counts and 6-second views', () => {
+        const summary = calculateSummary(rows, new Set(['a', 'b']));
+        expect(summary.instagram_profile_visits).toBe(12);
+        expect(summary.instagram_profile_follow).toBe(3);
+        expect(summary.video_6_sec_views).toBe(400);
+    });
+
+    it('recomputes 6-second rate and cost from summed counts', () => {
+        const summary = calculateSummary(rows, new Set(['a', 'b']));
+        expect(summary.video_6_sec_view_rate).toBeCloseTo(10);
+        expect(summary.cost_per_6_sec_video_view).toBe(1);
+    });
+});

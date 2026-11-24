@@ -17,6 +17,43 @@ from modules.fb_ads.metrics_registry import build_fb_fields
 from modules.fb_ads.actions_parsing import apply_messaging_metrics, process_actions
 
 
+def _to_int(value) -> int:
+    try:
+        return int(float(value or 0))
+    except (TypeError, ValueError):
+        return 0
+
+
+async def _sum_campaign_ig_profile_visits(url: str, headers: dict, time_range: str):
+    """帳號層級的 insights 不回傳 instagram_profile_visits，改抓行銷活動層級加總。
+
+    行銷活動層級的加總與 Meta 後台的帳號總數一致（已用真實帳號比對）。失敗時回傳 None。
+    """
+    params = {
+        "fields": "instagram_profile_visits",
+        "level": "campaign",
+        "time_range": time_range,
+        "time_increment": "all_days",
+        "limit": 500,
+    }
+    total = 0
+    try:
+        async with httpx.AsyncClient(timeout=TIMEOUT) as client:
+            next_url, next_params = url, params
+            while next_url:
+                res = (await client.get(next_url, headers=headers, params=next_params)).json()
+                if "error" in res:
+                    logger.warning("[FB ASYNC] IG profile visits fallback failed")
+                    return None
+                total += sum(_to_int(r.get("instagram_profile_visits")) for r in res.get("data", []))
+                next_url = res.get("paging", {}).get("next")
+                next_params = None  # next 連結已含所有參數
+    except Exception:
+        logger.warning("[FB ASYNC] IG profile visits fallback error", exc_info=True)
+        return None
+    return total
+
+
 def _process_flat_row(row: dict, level: str, ad_meta_map: dict) -> dict:
     """將原始 Facebook API 資料列轉換為扁平化字典"""
     # 判斷名稱與 ID
@@ -145,6 +182,19 @@ def _process_flat_row(row: dict, level: str, ad_meta_map: dict) -> dict:
         row.get("cost_per_thruplay", [{}])[0].get("value", 0)
         if row.get("cost_per_thruplay") else 0
     )
+
+    # 6 秒影片觀看（v24 之後新增的 Insights 欄位）
+    flat["video_6_sec_views"] = get_video_metric("video_6_sec_watched_actions")
+    flat["cost_per_6_sec_video_view"] = (
+        flat["spend"] / flat["video_6_sec_views"] if flat["video_6_sec_views"] > 0 else 0
+    )
+    flat["video_6_sec_view_rate"] = (
+        flat["video_6_sec_views"] / flat["impressions"] * 100 if flat["impressions"] > 0 else 0
+    )
+
+    # Instagram 個人檔案（v24 之後新增；帳號層級不回傳 visits，由 get_custom_report 補上）
+    flat["instagram_profile_visits"] = _to_int(row.get("instagram_profile_visits"))
+    flat["instagram_profile_follow"] = _to_int(row.get("instagram_profile_follow"))
 
     # Messaging Metrics
     apply_messaging_metrics(flat, acts)
@@ -303,6 +353,18 @@ async def get_custom_report(
 
         data = res.get("data", [])
         logger.info(f"[FB ASYNC] Report: Level={level} Rows={len(data)}")
+
+        # 帳號層級不回傳 instagram_profile_visits：有要求時改用行銷活動層級加總補上
+        if (
+            level == "account"
+            and not ad_id
+            and data
+            and "instagram_profile_visits" in api_fields.split(",")
+            and not any("instagram_profile_visits" in r for r in data)
+        ):
+            visits = await _sum_campaign_ig_profile_visits(url, headers, params["time_range"])
+            if visits is not None:
+                data[0]["instagram_profile_visits"] = str(visits)
 
         # 建立廣告素材元資料對應表
         ad_meta_map = {}
