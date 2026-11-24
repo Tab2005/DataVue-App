@@ -159,11 +159,38 @@ METRICS_REGISTRY: dict[str, dict] = {
         "description": "使用者對廣告的反應（讚、愛心等）次數", "breakdown_compatible": True,
     },
 
+    "instagram_profile_visits": {
+        "key": "instagram_profile_visits", "label": "IG 個人檔案瀏覽", "label_en": "IG Profile Visits",
+        "category": "engagement", "type": "integer", "format": "number",
+        "description": "廣告帶來的 Instagram 個人檔案瀏覽次數", "breakdown_compatible": True,
+    },
+    "instagram_profile_follow": {
+        "key": "instagram_profile_follow", "label": "IG 追蹤數", "label_en": "IG Follows",
+        "category": "engagement", "type": "integer", "format": "number",
+        "description": "廣告帶來的 Instagram 新追蹤數", "breakdown_compatible": True,
+    },
+
     # --- 影片指標 (Video) ---
     "video_views": {
         "key": "video_views", "label": "影片觀看", "label_en": "Video Views",
         "category": "video", "type": "integer", "format": "number",
         "description": "影片被觀看的次數", "breakdown_compatible": True,
+    },
+
+    "video_6_sec_views": {
+        "key": "video_6_sec_views", "label": "6 秒影片觀看", "label_en": "6-Second Video Views",
+        "category": "video", "type": "integer", "format": "number",
+        "description": "影片被觀看至少 6 秒的次數", "breakdown_compatible": True,
+    },
+    "video_6_sec_view_rate": {
+        "key": "video_6_sec_view_rate", "label": "6 秒觀看率", "label_en": "6-Second View Rate",
+        "category": "video", "type": "float", "format": "percent",
+        "description": "6 秒影片觀看 ÷ 曝光", "breakdown_compatible": False,
+    },
+    "cost_per_6_sec_video_view": {
+        "key": "cost_per_6_sec_video_view", "label": "每次 6 秒觀看成本", "label_en": "Cost per 6-Second View",
+        "category": "cost", "type": "float", "format": "currency",
+        "description": "花費 ÷ 6 秒影片觀看", "breakdown_compatible": False,
     },
 
     # --- 訊息指標 (Messaging) ---

@@ -39,6 +39,8 @@ export const calculateSummary = (dataSource, selectedRowIds) => {
         post_engagement: sum('post_engagement'),
         post_reactions: sum('post_reactions'),
         page_likes: sum('page_likes'),
+        instagram_profile_visits: sum('instagram_profile_visits'),
+        instagram_profile_follow: sum('instagram_profile_follow'),
         // CPAS (New)
         shared_purchases: sum('shared_purchases'),
         shared_purchase_value: sum('shared_purchase_value'),
@@ -53,6 +55,7 @@ export const calculateSummary = (dataSource, selectedRowIds) => {
         video_p75_watched: sum('video_p75_watched'),
         video_p100_watched: sum('video_p100_watched'),
         video_avg_time_watched: sum('video_avg_time_watched'),
+        video_6_sec_views: sum('video_6_sec_views'),
         // Messaging Metrics
         messaging_first_reply: sum('messaging_first_reply'),
         messaging_conversation_started: sum('messaging_conversation_started'),
@@ -114,6 +117,8 @@ export const calculateSummary = (dataSource, selectedRowIds) => {
 
     // Video Derived Rates
     total.cost_per_thruplay = total.video_thruplay > 0 ? total.spend / total.video_thruplay : 0;
+    total.cost_per_6_sec_video_view = total.video_6_sec_views > 0 ? total.spend / total.video_6_sec_views : 0;
+    total.video_6_sec_view_rate = total.impressions > 0 ? (total.video_6_sec_views / total.impressions) * 100 : 0;
 
     // Messaging Derived Rates（比率由加總後的原始數重算，不能直接加總各列比率）
     total.cost_per_message = total.messaging_first_reply > 0 ? total.spend / total.messaging_first_reply : 0;

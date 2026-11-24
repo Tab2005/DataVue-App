@@ -64,6 +64,8 @@ METRICS_REGISTRY = {
     'post_engagement': {'source': 'actions', 'action_type': 'post_engagement'},
     'post_reactions': {'source': 'actions', 'action_type': 'post_reaction'},
     'page_likes': {'source': 'actions', 'action_type': 'like'},
+    'instagram_profile_visits': {'source': 'direct', 'fb_field': 'instagram_profile_visits'},
+    'instagram_profile_follow': {'source': 'direct', 'fb_field': 'instagram_profile_follow'},
 
     # --- Video Metrics ---
     'video_views': {'source': 'actions', 'action_type': 'video_view'},
@@ -74,6 +76,9 @@ METRICS_REGISTRY = {
     'video_p100_watched': {'source': 'direct', 'fb_field': 'video_p100_watched_actions'},
     'video_avg_time_watched': {'source': 'direct', 'fb_field': 'video_avg_time_watched_actions'},
     'cost_per_thruplay': {'source': 'calculated'},
+    'video_6_sec_views': {'source': 'direct', 'fb_field': 'video_6_sec_watched_actions'},
+    'cost_per_6_sec_video_view': {'source': 'calculated', 'depends_on': ['spend', 'video_6_sec_views']},
+    'video_6_sec_view_rate': {'source': 'calculated', 'depends_on': ['video_6_sec_views', 'impressions']},
 
     # --- Messaging Metrics ---
     'messaging_first_reply': {'source': 'actions', 'action_type': 'onsite_conversion.messaging_first_reply'},
