@@ -9,10 +9,10 @@ from datetime import datetime, timezone, timedelta
 
 @pytest.mark.unit
 def test_exchange_token_missing_credential(client):
-    """未提供 credential 時應回傳 422 或 403"""
+    """未提供 credential 時應回傳 422、401 或 403（FastAPI 0.122+ 的 HTTPBearer 缺少憑證時回 401）"""
     response = client.post("/api/auth/exchange-token", json={})
     # Rate limiting 或 schema 驗證失敗均可接受
-    assert response.status_code in (422, 403)
+    assert response.status_code in (422, 401, 403)
 
 
 @pytest.mark.unit

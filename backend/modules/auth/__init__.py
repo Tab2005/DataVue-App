@@ -8,7 +8,7 @@ Auth Module
 使用方式 (在其他專案):
     1. 複製 modules/auth/ 資料夾
     2. 複製 core/security.py（加密依賴）
-    3. 安裝依賴: pip install cryptography google-auth python-jose
+    3. 安裝依賴: pip install cryptography google-auth
 
     from fastapi import FastAPI
     from modules.auth.router import router as auth_router
