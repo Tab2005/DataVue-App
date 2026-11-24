@@ -170,11 +170,38 @@ METRICS_REGISTRY: dict[str, dict] = {
         "description": "廣告帶來的 Instagram 新追蹤數", "breakdown_compatible": True,
     },
 
+    # --- 成果 (Results)：廣告管理員的「成果」欄，類型依行銷活動目標而定 ---
+    "results": {
+        "key": "results", "label": "成果", "label_en": "Results",
+        "category": "performance", "type": "integer", "format": "number",
+        "description": "依行銷活動目標計算的成果數（與廣告管理員「成果」欄一致）；帳號層級不提供", "breakdown_compatible": True,
+    },
+    "result_type": {
+        "key": "result_type", "label": "成果類型", "label_en": "Result Type",
+        "category": "performance", "type": "string", "format": "string",
+        "description": "成果對應的動作類型，例如購買、開始對話", "breakdown_compatible": False,
+    },
+    "cost_per_result": {
+        "key": "cost_per_result", "label": "每次成果成本", "label_en": "Cost per Result",
+        "category": "cost", "type": "float", "format": "currency",
+        "description": "花費 ÷ 成果", "breakdown_compatible": False,
+    },
+
     # --- 影片指標 (Video) ---
     "video_views": {
         "key": "video_views", "label": "影片觀看", "label_en": "Video Views",
         "category": "video", "type": "integer", "format": "number",
-        "description": "影片被觀看的次數", "breakdown_compatible": True,
+        "description": "影片播放 3 秒以上的次數", "breakdown_compatible": True,
+    },
+    "video_thruplay": {
+        "key": "video_thruplay", "label": "ThruPlay", "label_en": "ThruPlay",
+        "category": "video", "type": "integer", "format": "number",
+        "description": "影片完整播放或播放至少 15 秒的次數", "breakdown_compatible": True,
+    },
+    "cost_per_thruplay": {
+        "key": "cost_per_thruplay", "label": "每次 ThruPlay 成本", "label_en": "Cost per ThruPlay",
+        "category": "cost", "type": "float", "format": "currency",
+        "description": "花費 ÷ ThruPlay", "breakdown_compatible": False,
     },
 
     "video_6_sec_views": {

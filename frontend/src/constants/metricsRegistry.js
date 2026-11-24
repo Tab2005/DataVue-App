@@ -37,6 +37,28 @@ export const METRICS_REGISTRY = {
         source: 'direct', fb_field: 'spend',
         is_default: true
     },
+    // 成果：廣告管理員的「成果」欄，類型依行銷活動目標而定（帳號層級不提供）
+    results: {
+        key: 'results', label_zh: '成果', label_en: 'Results',
+        category: 'general', format: 'number',
+        source: 'direct', fb_field: 'results',
+        is_default: false,
+        description_zh: '依行銷活動目標計算的成果數，與廣告管理員「成果」欄一致'
+    },
+    result_type: {
+        key: 'result_type', label_zh: '成果類型', label_en: 'Result Type',
+        category: 'general', format: 'string',
+        source: 'direct', fb_field: 'results',
+        is_default: false,
+        description_zh: '成果對應的動作類型，例如購買、開始對話'
+    },
+    cost_per_result: {
+        key: 'cost_per_result', label_zh: '每次成果成本', label_en: 'Cost per Result',
+        category: 'general', format: 'currency', isInverse: true,
+        source: 'calculated', formula: 'spend / results',
+        is_default: false,
+        description_zh: '花費 ÷ 成果'
+    },
     impressions: {
         key: 'impressions', label_zh: '曝光次數', label_en: 'Impressions',
         category: 'general', format: 'number',
@@ -324,7 +346,7 @@ export const METRICS_REGISTRY = {
     video_thruplay: {
         key: 'video_thruplay', label_zh: 'ThruPlay', label_en: 'ThruPlay',
         category: 'video', format: 'number',
-        source: 'actions', action_type: 'video_view',
+        source: 'direct', fb_field: 'video_thruplay_watched_actions',
         is_default: false,
         description_zh: '影片完整播放或播放至少 15 秒的次數'
     },

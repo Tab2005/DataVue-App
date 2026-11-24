@@ -118,3 +118,39 @@ describe('calculateSummary IG and 6-second video metrics', () => {
         expect(summary.cost_per_6_sec_video_view).toBe(1);
     });
 });
+
+describe('calculateSummary results', () => {
+    it('sums results when all rows share one result type', () => {
+        const rows = [
+            { id: 'a', spend: 200, results: 10, result_type: '購買' },
+            { id: 'b', spend: 100, results: 5, result_type: '購買' },
+        ];
+        const summary = calculateSummary(rows, new Set(['a', 'b']));
+        expect(summary.results).toBe(15);
+        expect(summary.result_type).toBe('購買');
+        expect(summary.cost_per_result).toBe(20);
+    });
+
+    it('does not add up different result types', () => {
+        const rows = [
+            { id: 'a', spend: 200, results: 10, result_type: '購買' },
+            { id: 'b', spend: 100, results: 50, result_type: '開始對話' },
+        ];
+        const summary = calculateSummary(rows, new Set(['a', 'b']));
+        expect(summary.results).toBeNull();
+        expect(summary.result_type).toBe('多種');
+        expect(summary.cost_per_result).toBeNull();
+    });
+
+    it('treats a single mixed-objective row as having no total', () => {
+        const summary = calculateSummary([{ id: 'a', spend: 100, results: null, result_type: '多種' }], new Set(['a']));
+        expect(summary.results).toBeNull();
+        expect(summary.result_type).toBe('多種');
+    });
+
+    it('leaves results empty when rows have no results (account level)', () => {
+        const summary = calculateSummary([{ id: 'a', spend: 100, results: null, result_type: '' }], new Set(['a']));
+        expect(summary.results).toBeNull();
+        expect(summary.result_type).toBeNull();
+    });
+});
