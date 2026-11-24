@@ -11,6 +11,7 @@ import json
 import asyncio
 from typing import List, Dict, Any, Optional
 from modules.auth.service import TokenManager
+from core.meta_api import GRAPH_API_BASE_URL
 import sys
 import logging
 
@@ -25,7 +26,7 @@ class FacebookBatchService:
     reducing network overhead and API rate limit consumption.
     """
     
-    BASE_URL = "https://graph.facebook.com/v24.0"
+    BASE_URL = GRAPH_API_BASE_URL
     BATCH_LIMIT = 50  # Facebook limit per batch
     TIMEOUT = 60.0    # Longer timeout for batch requests
     

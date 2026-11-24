@@ -15,6 +15,7 @@ logger = logging.getLogger(__name__)
 
 # 使用 core 模組的加密功能
 from core.security import encrypt_value, decrypt_value
+from core.meta_api import GRAPH_API_BASE_URL
 
 # 資料庫依賴（保持向後相容）
 from database import SessionLocal, User, UserRole, Team, TeamMember
@@ -241,7 +242,7 @@ class TokenManager:
         Returns:
             (success, message)
         """
-        url = "https://graph.facebook.com/v24.0/oauth/access_token"
+        url = f"{GRAPH_API_BASE_URL}/oauth/access_token"
         params = {
             "grant_type": "fb_exchange_token",
             "client_id": app_id,
